@@ -15,7 +15,7 @@ interface AppShellProps {
  * contents change as features (editor, layout engine, themes) land.
  */
 export function AppShell({ project }: AppShellProps) {
-  useKeyboardShortcuts()
+  useKeyboardShortcuts(project.id)
 
   return (
     <div className="flex h-dvh w-full bg-background">

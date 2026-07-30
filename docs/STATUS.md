@@ -546,19 +546,119 @@ consistent on-screen and in the exported PDF.
   above) — verified via code review/type-checking/unit tests only this
   session.
 
+### Phase 14 — Undo/redo
+The biggest remaining trust gap: a bad text edit, an accidental image delete, or an
+accidental asset removal used to be unrecoverable except by manually re-doing the
+work. `Toolbar.tsx`'s Undo/Redo buttons (previously a dead, permanently-`disabled`
+UI slot) are now real, and every editing surface routes through a real undo/redo
+stack.
+
+- **`src/store/historyStore.ts`** — a new, generic, per-project command-based
+  undo/redo stack (`undoStackByProject`/`redoStackByProject`, each holding
+  `{ id, label, undo, redo }` commands). `record` pushes a command and clears the
+  redo stack (a new edit invalidates the old "future"); `undo`/`redo` pop-and-invoke,
+  moving the command to the other stack; `canUndo`/`canRedo`/`peekUndoLabel`/
+  `peekRedoLabel` back the Toolbar's disabled state and dynamic tooltip text (e.g.
+  "Undo: Edit text"). Capped at 100 entries per project (oldest dropped first) since
+  books may run past 1,000 pages and a long session could otherwise grow the stack
+  unboundedly. In-memory only, deliberately not wrapped in `persist` — a command's
+  `undo`/`redo` are function values that can't round-trip through JSON, so history
+  resetting on reload is the correct, simple default (same reasoning
+  `virtualEditorStore.ts`'s own revision log already documents).
+- **`src/store/editorActions.ts`** — history-aware wrapper functions that are now
+  the *only* sanctioned way editing UI mutates `contentStore`/`assetStore`:
+  `editBlock` (snapshots the full old block before `updateBlock`, since it
+  shallow-merges — undo has to spread the *entire* old block back in, not just the
+  touched fields), `insertBlockWithHistory` (undo = `deleteBlock` the new block;
+  redo = re-`insertBlock` at the same position), `deleteBlockWithHistory` (captures
+  the deleted block's full snapshot AND its preceding sibling's id — or `null` if it
+  was first — so undo re-`insertBlock`s it back in the exact same spot),
+  `renameChapterWithHistory` (swaps old/new titles), and `removeAssetWithHistory`
+  (the one genuinely destructive action this phase closes the gap on — see below).
+  None of these touch `contentStore`/`assetStore` internals; every mutation still
+  goes through the store's own published action, same as before this phase.
+- **`assetStore.restoreAsset(projectId, asset, blob)`** — new, small, additive
+  action needed so `removeAssetWithHistory`'s undo can bring a deleted asset back
+  under its *original* id (re-`putAsset`s into IndexedDB, then updates
+  `byProject`/`objectUrls` like `importFiles` does). Deliberately does NOT reuse
+  `importFiles`'s id-generating path: any `ImageBlock.assetId` still pointing at the
+  deleted asset needs the restored asset to resolve under the same id, not a fresh
+  one.
+- **Every listed call site migrated**: `TypographyPanel.tsx` (heading level),
+  `ImagePanel.tsx` (every image control's `patch` helper, plus the delete-image
+  button), `Sidebar.tsx` (chapter rename, asset-library delete button), and
+  `Page.tsx` (inline-edit commit, drag-and-drop image insertion, chapter-opener
+  title rename) all now call the `editorActions.ts` wrappers instead of the raw
+  `contentStore`/`assetStore` actions. Every existing behaviour (confirm dialogs,
+  selection-clearing, etc.) is unchanged — only which function performs the
+  mutation changed. `virtualEditorStore.ts`'s `acceptFix`/`restoreRevision` were
+  deliberately left untouched, per this phase's explicit non-goal (see below).
+- **Toolbar**: the two dead `IconButton`s now call `historyStore.undo(project.id)`/
+  `redo(project.id)`, are `disabled` when there's nothing to undo/redo, and their
+  tooltip is a dynamic `` `Undo${label ? `: ${label}` : ''}` `` built from
+  `peekUndoLabel`/`peekRedoLabel`.
+- **Keyboard shortcuts**: `useKeyboardShortcuts` now takes a `projectId` parameter
+  (threaded from `AppShell.tsx`, which already receives the active `project` as a
+  prop). Ctrl/Cmd+Z (undo), Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+Y (both treated as redo)
+  are a narrow, deliberate exception carved out of the hook's existing "ignore every
+  Ctrl/Cmd combination" guard — but the exception itself still checks
+  `isTypingTarget` first and bails out (letting the browser's own native
+  field-level undo run) whenever focus is on an `INPUT`/`TEXTAREA`/
+  `contentEditable` element. `KeyboardShortcutsDialog.tsx`'s `SHORTCUTS` list gained
+  matching entries.
+- **Tests**: `scripts/smoke-test.ts` grew from 100 to 145 passing checks —
+  `historyStore`'s full stack mechanics (record/undo/redo, redo-stack-cleared-on-
+  new-record, no-ops on an empty project, the 100-entry depth cap actually dropping
+  the oldest 5 of 105 records), and every `editorActions.ts` wrapper exercised
+  end-to-end against a real manuscript fixture (`editBlock` undo restores the exact
+  prior block; `insertBlockWithHistory`/`deleteBlockWithHistory` covering both the
+  `null`-preceding-block (chapter start) and mid-chapter cases; `renameChapterWithHistory`).
+  `removeAssetWithHistory` is tested against the **real** `assetDb.ts` IndexedDB
+  code path (not a hand-rolled mock) using `fake-indexeddb` (new devDependency) —
+  there was no pre-existing asset-store test pattern in this file to follow, since
+  `assetStore`/`assetDb` had zero smoke-test coverage before this phase (jsdom
+  itself doesn't implement IndexedDB). Confirms the deleted blob is actually gone
+  from IndexedDB and that undo restores both the metadata and the blob, byte-for-
+  byte, under the same asset id.
+
+### Explicitly deferred (intentional scope boundaries, not oversights)
+- **Autosave / periodic version-snapshot history** — a separate, upcoming milestone
+  that depends on this one having landed first.
+- **Undo for `projectStore` settings changes** (theme, trim size, margins) — these
+  are non-destructive and trivially reversible by re-picking the old value; not
+  worth a history entry.
+- **Undo for `contentStore.setManuscript`/`clearManuscript`** (importing a whole new
+  manuscript) — a project-level operation, not an incremental edit; a different
+  problem from what this phase solves.
+- **Unifying with `virtualEditorStore`'s existing revision/restore system** — left
+  completely alone, on purpose. It already has its own working snapshot-then-
+  restore flow for AI-suggested fixes; merging it into the new global undo stack
+  would risk double-tracking the same edit in two systems for no real benefit.
+- **Real-browser verification of Ctrl/Cmd+Z contention with native browser undo** —
+  the `isTypingTarget` guard was verified by code review and the unit tests above
+  (which exercise the store logic directly), but the actual keyboard event in a live
+  browser tab — confirming Ctrl+Z inside a real `contentEditable` block truly falls
+  through to native undo, and that it's intercepted everywhere else — was **not**
+  exercised in a real browser this session; jsdom dispatches synthetic `keydown`
+  events but doesn't reproduce a real browser's native-undo-vs-`preventDefault`
+  arbitration.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
 end-to-end, the Virtual Editor has a real foundation (Phase 9) with reliable
 navigation and bulk-fix actions (Phase 13), the manuscript is no longer read-only
-(Phase 10), and the image block feature set (Phase 11 + 12) is now fully WYSIWYG
-between screen and PDF. Good next steps in priority order: (1) a second real checker
-engine on top of the existing `Checker` pattern — Consistency (terminology/units/
-spelling-variant matching) is the best next candidate since it's still fully
-deterministic, (2) manually verify the Phase 13 scroll-to-block flow in a real browser
-(force-mount + smooth-scroll + auto-edit across a multi-page chapter) since jsdom
-couldn't exercise it, (3) line-level text flow so paragraphs can split across pages
-like a real book, (4) justified text and image rotation in the PDF exporter, (5)
-proper glyph subsetting once the fontkit bug is understood, (6) the first real
-`AiReviewer` (readability is the most self-contained candidate — no layout/print
-context needed), (7) EPUB/Kindle export, (8) undo/redo — now that direct editing (and,
-as of Phase 12, image deletion) exists, this is a more pressing gap than before.
+(Phase 10), the image block feature set (Phase 11 + 12) is now fully WYSIWYG
+between screen and PDF, and undo/redo (Phase 14) closes the biggest remaining trust
+gap for direct editing and destructive asset/image deletion. Good next steps in
+priority order: (1) autosave / periodic version-snapshot history — explicitly
+deferred by Phase 14 as its own follow-on milestone, and now unblocked, (2) a second
+real checker engine on top of the existing `Checker` pattern — Consistency
+(terminology/units/spelling-variant matching) is the best next candidate since it's
+still fully deterministic, (3) manually verify the Phase 13 scroll-to-block flow in a
+real browser (force-mount + smooth-scroll + auto-edit across a multi-page chapter)
+since jsdom couldn't exercise it — and, while in a real browser, also do the Phase 14
+Ctrl/Cmd+Z-vs-native-undo spot check noted above, (4) line-level text flow so
+paragraphs can split across pages like a real book, (5) justified text and image
+rotation in the PDF exporter, (6) proper glyph subsetting once the fontkit bug is
+understood, (7) the first real `AiReviewer` (readability is the most self-contained
+candidate — no layout/print context needed), (8) EPUB/Kindle export.

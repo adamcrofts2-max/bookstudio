@@ -8,6 +8,7 @@ import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
+import { deleteBlockWithHistory, editBlock } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
 import type { ImageBlock } from '@/types/content'
@@ -30,8 +31,6 @@ export function ImagePanel({ projectId }: ImagePanelProps) {
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const clearSelection = useSelectionStore((s) => s.clear)
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
-  const updateBlock = useContentStore((s) => s.updateBlock)
-  const deleteBlock = useContentStore((s) => s.deleteBlock)
   const assets = useAssetStore((s) => s.byProject[projectId] ?? EMPTY_ASSETS)
 
   const chapter = manuscript?.chapters.find((c) => c.id === selectedChapterId)
@@ -53,7 +52,7 @@ export function ImagePanel({ projectId }: ImagePanelProps) {
   const aspectLocked = block.aspectLocked ?? true
   const sizeMode = block.widthMm != null ? 'custom' : String(block.widthPercent ?? 100)
 
-  const patch = (updates: Partial<ImageBlock>) => updateBlock(projectId, chapter.id, block.id, updates)
+  const patch = (updates: Partial<ImageBlock>) => editBlock(projectId, chapter.id, block.id, updates)
 
   const handleSizeModeChange = (value: string) => {
     if (value === 'custom') {
@@ -92,7 +91,7 @@ export function ImagePanel({ projectId }: ImagePanelProps) {
 
   const handleDelete = () => {
     if (window.confirm('Delete this image? This cannot be undone.')) {
-      deleteBlock(projectId, chapter.id, block.id)
+      deleteBlockWithHistory(projectId, chapter.id, block.id)
       clearSelection()
     }
   }

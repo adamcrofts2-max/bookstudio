@@ -24,6 +24,16 @@ interface AssetStoreActions {
   loadAssets: (projectId: string) => Promise<void>
   importFiles: (projectId: string, files: File[]) => Promise<ImageAsset[]>
   removeAsset: (projectId: string, assetId: string) => Promise<void>
+  /**
+   * Re-inserts a previously-removed asset under its own original `id` —
+   * the undo half of `removeAsset`, used by `editorActions.ts`'s
+   * `removeAssetWithHistory`. Deliberately does NOT reuse `importFiles`'
+   * id-generating path: any `ImageBlock.assetId` still referencing the
+   * deleted asset (the block itself isn't touched by asset deletion) must
+   * keep resolving, so the restored asset has to come back byte-for-byte
+   * under the same id, not a fresh one.
+   */
+  restoreAsset: (projectId: string, asset: ImageAsset, blob: Blob) => Promise<void>
   getObjectUrl: (assetId: string) => string | undefined
 }
 
@@ -91,6 +101,18 @@ export const useAssetStore = create<AssetStoreState & AssetStoreActions>()((set,
         ...state.byProject,
         [projectId]: (state.byProject[projectId] ?? []).filter((a) => a.id !== assetId),
       },
+    }))
+  },
+
+  restoreAsset: async (projectId, asset, blob) => {
+    await putAsset(asset, blob)
+    const objectUrl = URL.createObjectURL(blob)
+    set((state) => ({
+      byProject: {
+        ...state.byProject,
+        [projectId]: [...(state.byProject[projectId] ?? []).filter((a) => a.id !== asset.id), asset],
+      },
+      objectUrls: { ...state.objectUrls, [asset.id]: objectUrl },
     }))
   },
 

@@ -1,4 +1,11 @@
 import { JSDOM } from 'jsdom'
+// Polyfills `indexedDB`/`IDBKeyRange` as real globals — needed to exercise
+// `assetDb.ts` (real `idb`-wrapped IndexedDB calls) below for the
+// `removeAssetWithHistory` test, since jsdom itself doesn't implement
+// IndexedDB. `URL.createObjectURL`/`Blob` are NOT stubbed here: Node's own
+// globals already provide both natively, and `assetStore.ts` references
+// them as ambient globals (not via jsdom's `window`), so they work as-is.
+import 'fake-indexeddb/auto'
 
 // `url` is required so `localStorage` isn't on an opaque origin — needed by
 // the zustand `persist` middleware (contentStore) exercised further below.
@@ -21,6 +28,7 @@ import { parseText } from '../src/parser/text'
 import { parseHtmlDocument, sanitiseInline } from '../src/parser/html'
 import { paginate } from '../src/renderer/paginate'
 import type { ContentBlock } from '../src/types/content'
+import type { ImageAsset } from '../src/types/asset'
 
 let failures = 0
 function check(label: string, cond: boolean) {
@@ -598,6 +606,200 @@ function imageXFor(align: 'left' | 'center' | 'right', displayWidth: number): nu
 check('exportPdf alignment: left aligns flush to contentX', imageXFor('left', 200) === alignContentX)
 check('exportPdf alignment: right aligns flush to the far edge of the content column', imageXFor('right', 200) === alignContentX + 200)
 check('exportPdf alignment: center splits the remaining space evenly', imageXFor('center', 200) === alignContentX + 100)
+
+// --- Phase 14: historyStore — generic per-project undo/redo command stack ---
+const { useHistoryStore } = await import('../src/store/historyStore')
+const historyProjectId = 'history-test-project'
+
+let undoCalls = 0
+let redoCalls = 0
+useHistoryStore.getState().record(historyProjectId, 'First edit', () => { undoCalls++ }, () => { redoCalls++ })
+check('historyStore: record makes canUndo true', useHistoryStore.getState().canUndo(historyProjectId))
+check('historyStore: record leaves canRedo false (nothing to redo yet)', !useHistoryStore.getState().canRedo(historyProjectId))
+check('historyStore: peekUndoLabel reflects the just-recorded command', useHistoryStore.getState().peekUndoLabel(historyProjectId) === 'First edit')
+check('historyStore: peekRedoLabel is undefined when the redo stack is empty', useHistoryStore.getState().peekRedoLabel(historyProjectId) === undefined)
+
+useHistoryStore.getState().record(historyProjectId, 'Second edit', () => { undoCalls++ }, () => { redoCalls++ })
+check('historyStore: peekUndoLabel reflects the most recent of 2 recorded commands', useHistoryStore.getState().peekUndoLabel(historyProjectId) === 'Second edit')
+
+useHistoryStore.getState().undo(historyProjectId)
+check("historyStore: undo calls the command's undo()", undoCalls === 1)
+check('historyStore: undo moves the command onto the redo stack', useHistoryStore.getState().canRedo(historyProjectId))
+check("historyStore: peekRedoLabel is the just-undone command's label", useHistoryStore.getState().peekRedoLabel(historyProjectId) === 'Second edit')
+check('historyStore: peekUndoLabel now points at the remaining older command', useHistoryStore.getState().peekUndoLabel(historyProjectId) === 'First edit')
+
+useHistoryStore.getState().redo(historyProjectId)
+check("historyStore: redo calls the command's redo()", redoCalls === 1)
+check('historyStore: redo moves the command back onto the undo stack', useHistoryStore.getState().peekUndoLabel(historyProjectId) === 'Second edit')
+check('historyStore: redo stack empty again after redoing everything', !useHistoryStore.getState().canRedo(historyProjectId))
+
+useHistoryStore.getState().undo(historyProjectId)
+useHistoryStore.getState().undo(historyProjectId)
+check('historyStore: undo stack empty after undoing both recorded commands', !useHistoryStore.getState().canUndo(historyProjectId))
+check('historyStore: redo stack holds both undone commands', useHistoryStore.getState().canRedo(historyProjectId))
+useHistoryStore.getState().record(historyProjectId, 'Third edit (new branch)', () => {}, () => {})
+check('historyStore: recording a new command clears the redo stack (a fresh edit invalidates the old "future")', !useHistoryStore.getState().canRedo(historyProjectId))
+
+const historyEmptyProjectId = 'history-empty-project'
+useHistoryStore.getState().undo(historyEmptyProjectId)
+useHistoryStore.getState().redo(historyEmptyProjectId)
+check(
+  'historyStore: undo/redo on a project with no history at all are harmless no-ops (no throw, stacks stay empty)',
+  !useHistoryStore.getState().canUndo(historyEmptyProjectId) && !useHistoryStore.getState().canRedo(historyEmptyProjectId),
+)
+
+const historyDepthProjectId = 'history-depth-test-project'
+for (let i = 0; i < 105; i++) {
+  useHistoryStore.getState().record(historyDepthProjectId, `edit-${i}`, () => {}, () => {})
+}
+const historyDepthStack = useHistoryStore.getState().undoStackByProject[historyDepthProjectId] ?? []
+check('historyStore: undo stack capped at 100 entries even after 105 records', historyDepthStack.length === 100)
+check('historyStore: oldest entries dropped once over the cap (bottom of stack is edit-5, not edit-0)', historyDepthStack[0].label === 'edit-5')
+check('historyStore: newest entry still on top after capping', historyDepthStack[historyDepthStack.length - 1].label === 'edit-104')
+
+// --- Phase 14: editorActions.ts — history-aware wrappers around
+// contentStore's mutating actions. `useContentStore` here is the same
+// binding imported further up this file for the revision-signal tests. ---
+const { editBlock, insertBlockWithHistory, deleteBlockWithHistory, renameChapterWithHistory, removeAssetWithHistory } =
+  await import('../src/store/editorActions')
+
+const eaProjectId = 'editor-actions-test-project'
+const eaManuscript: Manuscript = {
+  chapters: [
+    {
+      id: 'ea-chapter',
+      title: 'Chapter One',
+      order: 0,
+      blocks: [
+        { id: 'ea-block-a', type: 'heading', level: 2, text: 'Original heading' } as HeadingBlock,
+        { id: 'ea-block-b', type: 'paragraph', html: 'Paragraph B' } as ParagraphBlock,
+        { id: 'ea-block-c', type: 'paragraph', html: 'Paragraph C' } as ParagraphBlock,
+      ],
+    },
+  ],
+  importedAt: new Date().toISOString(),
+  sourceFileName: 'editor-actions-fixture.md',
+}
+useContentStore.getState().setManuscript(eaProjectId, eaManuscript)
+const eaBlockIds = () => useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].blocks.map((b) => b.id)
+
+// editBlock: full-block snapshot restore (updateBlock shallow-merges, so
+// undo must spread back the ENTIRE old block, not just the touched field).
+editBlock(eaProjectId, 'ea-chapter', 'ea-block-a', { text: 'Edited heading' })
+check(
+  'editBlock: applies the update like updateBlock would',
+  (useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].blocks[0] as HeadingBlock).text === 'Edited heading',
+)
+check('editBlock: records a command on historyStore', useHistoryStore.getState().canUndo(eaProjectId))
+check('editBlock: label is type-appropriate ("Edit text" for a non-image block)', useHistoryStore.getState().peekUndoLabel(eaProjectId) === 'Edit text')
+
+useHistoryStore.getState().undo(eaProjectId)
+check(
+  'editBlock -> undo: restores the exact prior block',
+  (useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].blocks[0] as HeadingBlock).text === 'Original heading',
+)
+check('editBlock -> undo: moves the command onto the redo stack', useHistoryStore.getState().canRedo(eaProjectId))
+
+useHistoryStore.getState().redo(eaProjectId)
+check(
+  'editBlock -> undo -> redo: re-applies the edit',
+  (useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].blocks[0] as HeadingBlock).text === 'Edited heading',
+)
+
+// deleteBlockWithHistory: a mid-chapter delete captures the PRECEDING
+// block's id, so undo re-inserts at the same (middle) position.
+deleteBlockWithHistory(eaProjectId, 'ea-chapter', 'ea-block-b')
+check('deleteBlockWithHistory: removes the targeted block', !eaBlockIds().includes('ea-block-b'))
+check('deleteBlockWithHistory: label reflects the block type ("Delete block" for a non-image block)', useHistoryStore.getState().peekUndoLabel(eaProjectId) === 'Delete block')
+
+useHistoryStore.getState().undo(eaProjectId)
+check('deleteBlockWithHistory -> undo: re-inserts the deleted block at the same (middle) position', eaBlockIds().join(',') === 'ea-block-a,ea-block-b,ea-block-c')
+
+useHistoryStore.getState().redo(eaProjectId)
+check('deleteBlockWithHistory -> undo -> redo: deletes it again', !eaBlockIds().includes('ea-block-b'))
+
+// insertBlockWithHistory with a `null` afterBlockId (insert at the very
+// start of the chapter) — covers the other branch of contentStore.insertBlock.
+const eaNewImageBlock: ImageBlock = { id: 'ea-new-image', type: 'image', assetId: 'ea-asset-1', caption: undefined, rotation: 0, widthPercent: 100 }
+insertBlockWithHistory(eaProjectId, 'ea-chapter', null, eaNewImageBlock)
+check('insertBlockWithHistory: null afterBlockId inserts at index 0', eaBlockIds().join(',') === 'ea-new-image,ea-block-a,ea-block-c')
+check('insertBlockWithHistory: label is type-appropriate ("Insert image")', useHistoryStore.getState().peekUndoLabel(eaProjectId) === 'Insert image')
+
+useHistoryStore.getState().undo(eaProjectId)
+check('insertBlockWithHistory -> undo: removes the just-inserted block', !eaBlockIds().includes('ea-new-image'))
+
+useHistoryStore.getState().redo(eaProjectId)
+check('insertBlockWithHistory -> undo -> redo: re-inserts at the same (start) position', eaBlockIds().join(',') === 'ea-new-image,ea-block-a,ea-block-c')
+
+// deleteBlockWithHistory on the FIRST block in the chapter — precedingBlockId
+// must be captured as `null`, so undo re-inserts it back at the start too.
+deleteBlockWithHistory(eaProjectId, 'ea-chapter', 'ea-new-image')
+check('deleteBlockWithHistory (first block): removes it', !eaBlockIds().includes('ea-new-image'))
+check('deleteBlockWithHistory (first block): label reflects the image type ("Delete image")', useHistoryStore.getState().peekUndoLabel(eaProjectId) === 'Delete image')
+
+useHistoryStore.getState().undo(eaProjectId)
+check(
+  'deleteBlockWithHistory (first block) -> undo: re-inserts at the start (precedingBlockId captured as null)',
+  eaBlockIds().join(',') === 'ea-new-image,ea-block-a,ea-block-c',
+)
+
+// renameChapterWithHistory
+renameChapterWithHistory(eaProjectId, 'ea-chapter', 'Renamed Chapter')
+check('renameChapterWithHistory: applies the rename', useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].title === 'Renamed Chapter')
+check('renameChapterWithHistory: label', useHistoryStore.getState().peekUndoLabel(eaProjectId) === 'Rename chapter')
+
+useHistoryStore.getState().undo(eaProjectId)
+check('renameChapterWithHistory -> undo: restores the old title', useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].title === 'Chapter One')
+
+useHistoryStore.getState().redo(eaProjectId)
+check('renameChapterWithHistory -> undo -> redo: re-applies the new title', useContentStore.getState().getManuscript(eaProjectId)!.chapters[0].title === 'Renamed Chapter')
+
+// --- Phase 14: removeAssetWithHistory — the one genuinely destructive
+// action this milestone closes the gap on. Exercises the REAL assetDb.ts
+// IndexedDB calls via fake-indexeddb (imported at the very top of this
+// file), since jsdom itself doesn't implement IndexedDB; there was no
+// pre-existing asset-store test pattern in this file to follow, since
+// assetStore/assetDb had no smoke-test coverage before this phase.
+const { useAssetStore } = await import('../src/store/assetStore')
+const { putAsset, getAssetBlob } = await import('../src/store/assetDb')
+
+const assetHistoryProjectId = 'asset-history-test-project'
+const assetUnderTest: ImageAsset = {
+  id: 'asset-under-test',
+  projectId: assetHistoryProjectId,
+  name: 'test.png',
+  mimeType: 'image/png',
+  size: 4,
+  width: 10,
+  height: 10,
+  createdAt: new Date().toISOString(),
+}
+const blobUnderTest = new Blob([new Uint8Array([1, 2, 3, 4])], { type: 'image/png' })
+await putAsset(assetUnderTest, blobUnderTest)
+useAssetStore.setState((state) => ({ byProject: { ...state.byProject, [assetHistoryProjectId]: [assetUnderTest] } }))
+
+await removeAssetWithHistory(assetHistoryProjectId, assetUnderTest.id)
+check(
+  'removeAssetWithHistory: removes the asset from assetStore state',
+  !(useAssetStore.getState().byProject[assetHistoryProjectId] ?? []).some((a) => a.id === assetUnderTest.id),
+)
+check('removeAssetWithHistory: deletes the blob from IndexedDB', (await getAssetBlob(assetUnderTest.id)) === undefined)
+check('removeAssetWithHistory: records an undo command', useHistoryStore.getState().canUndo(assetHistoryProjectId))
+check('removeAssetWithHistory: label', useHistoryStore.getState().peekUndoLabel(assetHistoryProjectId) === 'Delete image asset')
+
+useHistoryStore.getState().undo(assetHistoryProjectId)
+// The undo command's body is `void restoreAsset(...)` — historyStore's
+// `undo`/`redo` signatures are synchronous (`() => void`), so this is
+// deliberately fire-and-forget; give its internal `putAsset` (IndexedDB)
+// await a moment to actually settle before asserting on it.
+await new Promise((resolve) => setTimeout(resolve, 50))
+const assetsAfterUndo = useAssetStore.getState().byProject[assetHistoryProjectId] ?? []
+check('removeAssetWithHistory -> undo: restores the asset under the same id', assetsAfterUndo.some((a) => a.id === assetUnderTest.id))
+const blobAfterUndo = await getAssetBlob(assetUnderTest.id)
+check(
+  'removeAssetWithHistory -> undo: restores the blob byte-for-byte in IndexedDB',
+  blobAfterUndo !== undefined && blobAfterUndo.size === blobUnderTest.size && blobAfterUndo.type === blobUnderTest.type,
+)
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

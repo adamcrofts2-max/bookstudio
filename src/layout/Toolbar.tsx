@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { useTheme } from '@/hooks/useTheme'
+import { useHistoryStore } from '@/store/historyStore'
 import { useUiStore } from '@/store/uiStore'
 import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
@@ -55,6 +56,12 @@ export function Toolbar({ project }: ToolbarProps) {
   const workspaceMode = useUiStore((s) => s.workspaceMode)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
+  const canUndo = useHistoryStore((s) => s.canUndo(project.id))
+  const canRedo = useHistoryStore((s) => s.canRedo(project.id))
+  const undoLabel = useHistoryStore((s) => s.peekUndoLabel(project.id))
+  const redoLabel = useHistoryStore((s) => s.peekRedoLabel(project.id))
+  const undo = useHistoryStore((s) => s.undo)
+  const redo = useHistoryStore((s) => s.redo)
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-panel px-3">
@@ -67,10 +74,18 @@ export function Toolbar({ project }: ToolbarProps) {
       {collapsed && <Separator orientation="vertical" className="h-6" />}
 
       <div className="flex items-center gap-0.5 pl-1">
-        <IconButton label="Undo" disabled>
+        <IconButton
+          label={`Undo${undoLabel ? `: ${undoLabel}` : ''}`}
+          onClick={() => undo(project.id)}
+          disabled={!canUndo}
+        >
           <Undo2 className="size-4" />
         </IconButton>
-        <IconButton label="Redo" disabled>
+        <IconButton
+          label={`Redo${redoLabel ? `: ${redoLabel}` : ''}`}
+          onClick={() => redo(project.id)}
+          disabled={!canRedo}
+        >
           <Redo2 className="size-4" />
         </IconButton>
       </div>

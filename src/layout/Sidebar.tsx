@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
+import { removeAssetWithHistory, renameChapterWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -27,7 +28,6 @@ export function Sidebar({ project }: SidebarProps) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
 
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
-  const renameChapter = useContentStore((s) => s.renameChapter)
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
   const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
 
@@ -40,7 +40,7 @@ export function Sidebar({ project }: SidebarProps) {
   }
 
   const commitRename = (chapterId: string, fallback: string) => {
-    renameChapter(project.id, chapterId, titleDraft.trim() || fallback)
+    renameChapterWithHistory(project.id, chapterId, titleDraft.trim() || fallback)
     setRenamingChapterId(null)
   }
 
@@ -48,7 +48,6 @@ export function Sidebar({ project }: SidebarProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const importFiles = useAssetStore((s) => s.importFiles)
-  const removeAsset = useAssetStore((s) => s.removeAsset)
   const startDraggingAsset = useDragStore((s) => s.startDraggingAsset)
   const stopDraggingAsset = useDragStore((s) => s.stopDraggingAsset)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -184,7 +183,7 @@ export function Sidebar({ project }: SidebarProps) {
                     )}
                     <button
                       type="button"
-                      onClick={() => removeAsset(project.id, asset.id)}
+                      onClick={() => removeAssetWithHistory(project.id, asset.id)}
                       aria-label={`Delete ${asset.name}`}
                       className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100"
                     >

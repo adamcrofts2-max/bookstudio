@@ -6,6 +6,8 @@ interface KeyboardShortcutsDialogProps {
 }
 
 const SHORTCUTS: { keys: string; label: string }[] = [
+  { keys: 'Ctrl/⌘ Z', label: 'Undo' },
+  { keys: 'Ctrl/⌘ Shift+Z', label: 'Redo' },
   { keys: '[', label: 'Toggle sidebar' },
   { keys: ']', label: 'Toggle inspector' },
   { keys: 'V', label: 'Toggle spread / single page view' },

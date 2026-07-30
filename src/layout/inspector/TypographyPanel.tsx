@@ -5,6 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
+import { editBlock } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { stripHtml, wordCount } from '@/utils'
 import type { Chapter, ContentBlock } from '@/types/content'
@@ -51,13 +52,13 @@ function blockPlainText(block: ContentBlock): string {
  * where it makes sense, lets the user adjust it. Selection lives in
  * `selectionStore` (Layer: ephemeral UI state) and is resolved against the
  * real manuscript in `contentStore` (Layer 2) — this panel never mutates
- * content directly, only via `updateBlock`.
+ * content directly, only via `editorActions.editBlock` (a history-aware
+ * wrapper around `contentStore.updateBlock`, see `editorActions.ts`).
  */
 export function TypographyPanel({ projectId }: TypographyPanelProps) {
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
-  const updateBlock = useContentStore((s) => s.updateBlock)
 
   const { chapter, block } =
     manuscript && selectedChapterId && selectedBlockId
@@ -94,7 +95,7 @@ export function TypographyPanel({ projectId }: TypographyPanelProps) {
           <Select
             value={String(block.level)}
             onValueChange={(value) =>
-              updateBlock(projectId, chapter.id, block.id, { level: Number(value) as 2 | 3 })
+              editBlock(projectId, chapter.id, block.id, { level: Number(value) as 2 | 3 })
             }
           >
             <SelectTrigger>

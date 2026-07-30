@@ -8,6 +8,7 @@ import { BlockContent } from '@/renderer/BlockContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
+import { editBlock, insertBlockWithHistory, renameChapterWithHistory } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { generateId } from '@/utils'
@@ -72,9 +73,6 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const editRequestId = useSelectionStore((s) => s.editRequestId)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
-  const updateBlock = useContentStore((s) => s.updateBlock)
-  const renameChapter = useContentStore((s) => s.renameChapter)
-  const insertBlock = useContentStore((s) => s.insertBlock)
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
 
   const [isRenamingTitle, setIsRenamingTitle] = useState(false)
@@ -105,7 +103,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
         selected={selectedBlockId === block.id}
         onSelect={() => page.chapterId && handleSelect(page.chapterId, block)}
         editable
-        onCommit={(updates) => page.chapterId && updateBlock(projectId, page.chapterId, block.id, updates)}
+        onCommit={(updates) => page.chapterId && editBlock(projectId, page.chapterId, block.id, updates)}
         autoEdit={selectedBlockId === block.id && editRequestId !== null}
         onAutoEditHandled={consumeEditRequest}
       />
@@ -126,7 +124,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       rotation: 0,
       widthPercent: 100,
     }
-    insertBlock(projectId, chapterId, afterBlockId, newBlock)
+    insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
     select(chapterId, newBlock.id)
     setInspectorTab('image')
   }
@@ -170,7 +168,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   }
 
   const commitRenameTitle = () => {
-    if (page.chapterId) renameChapter(projectId, page.chapterId, titleDraft.trim() || page.chapterTitle || 'Untitled')
+    if (page.chapterId) renameChapterWithHistory(projectId, page.chapterId, titleDraft.trim() || page.chapterTitle || 'Untitled')
     setIsRenamingTitle(false)
   }
 
