@@ -1230,23 +1230,105 @@ failure — plus the 2 new `replacePageContent` checks added alongside the fix =
 This phase is now fully verified per `CLAUDE.md`'s "every commit compiles and lints
 clean" rule.
 
-## Recommended next task
-Phase 20 is now fully verified (build/lint/test all clean, 246/246 — see the
-follow-up note directly above) and closed.
+## Phase 21 — Modular Page System Milestone 4 (second batch): Conclusion, Appendix, About the Author, Bibliography, Glossary, Index, ISBN Page, Barcode (2026-07-30)
 
-`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 4** continues: batch
-in the remaining ~25 back-matter-heavy types (5–8 per milestone, per the plan's
-§7.4), following the exact registry-entry pattern this phase and Phase 19 both
-proved — **Conclusion, Bibliography, Glossary, Index, Appendix, About the Author,
-ISBN Page, Barcode** are the natural next batch (back-matter-heavy, per Phase 19's
-own original recommendation). Each new type needs only a registry entry (`Render`
-+ `drawPdf` + `defaultContent`) plus a `StructuralPagePanel.tsx` case and an
-"addable types" list entry in `Sidebar.tsx` (this time in `BACK_MATTER_ADDABLE_TYPES`)
-— no changes to `structuralPageStore.ts`, `composePages.ts`, `Page.tsx`, or
-`exportPdf.ts` should be needed, exactly as this phase and Phase 19 both
-confirmed in practice. (Milestone 3 — full drag-and-drop reordering and a theme
-`pageStyles` extension point — remains a reasonable alternative next step if
-polish is preferred over taxonomy breadth.) Outside that track, everything in the
+The second, back-matter-heavy batch of `docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s
+Milestone 4, per Phase 20's own "Recommended next task." Eight new
+`StructuralPage` types, all `category: 'back-matter'`, each a mechanical
+registry entry following the exact pattern Phases 19–20 already proved.
+`structuralPageStore.ts`, `composePages.ts`, `paginate.ts`, `Page.tsx`'s
+structural-page dispatch, and `exportPdf.ts`'s page loop needed **zero
+changes** — confirming, a third time, that new structural page types really
+are additive registry entries and not a hand-synchronized switch.
+
+- **Conclusion, Appendix** — both reuse `src/structuralPages/longForm.tsx`'s
+  shared "heading + paragraphs" `LongFormPageRender`/`drawLongFormPagePdf`
+  helpers exactly like Preface/Acknowledgements did in Phase 20. Appendix is
+  the one variant with an *editable* heading (`content.title`, falling back
+  to "Appendix" when empty) since books commonly have several appendices
+  each needing a distinct title (e.g. "Appendix A: Plant Species List").
+- **About the Author** (`about-the-author`) — heading + bio paragraphs, plus
+  an optional author photo via the exact same `imageAssetId` +
+  `assetStore`/`imageForPdf.ts` embedding pipeline `cover.tsx` proved in
+  Phase 19 (a small centred circular portrait rather than a full-bleed
+  background). Like Cover's own image field, this milestone ships the data
+  model and rendering for `imageAssetId` but no picker UI to set it yet — a
+  drag-and-drop-onto-page picker for both Cover and About the Author is a
+  natural candidate for a future milestone, not a new gap this phase created.
+- **Bibliography** (`content: { entries?: string[] }`) — a heading plus a
+  plain, one-line-per-reference list. **Glossary**
+  (`content: { entries?: { term, definition }[] }`) — heading plus each
+  entry as a bold term + regular definition on one flowing line, using
+  `wrapRuns`'s existing mixed bold/regular-run support (already built for
+  the block system, reused here rather than duplicated) so the PDF drawer
+  wraps long definitions correctly. **Index** (`content: { entries?:
+  string[] }`) — heading plus a manual, single-column freeform list.
+  **Known, deliberate V1 simplification**: real book indexes are
+  automatically generated from actual page references across the whole
+  manuscript after layout — that's exactly the kind of feature
+  `docs/ARCHITECTURE_PRINCIPLES.md`'s "design with future AI integration in
+  mind" principle earmarks for later. This milestone ships manual,
+  freeform text entry only, no term/page-number computation — the same
+  honest-simplification style as this project's existing "PDF export is
+  left-aligned even for justified themes" note.
+- **ISBN Page** (`content: { isbn?, edition?, printerInfo? }`) — small,
+  unobtrusive bottom-of-page text, same visual treatment as `copyright.tsx`,
+  showing only whichever fields are actually set.
+- **Barcode** (`content: { isbn? }`) — falls back to a sibling ISBN Page's
+  `isbn` via the same `siblingPages`/`ctx.structuralPages` sibling-read
+  pattern `copyright.tsx` already uses for the Title Page's author.
+  **Important honesty note**: this is deliberately **not** a real,
+  scannable EAN-13/ISBN barcode. Building a proper barcode-symbology
+  renderer (checksum digits, quiet-zone rules, a real bar-width encoding
+  table) is a distinct, larger future task that doesn't belong smuggled
+  into a mechanical batch like this one. What ships instead is an honest
+  placeholder: a deterministic pattern of vertical bars derived from the
+  ISBN's own digits (so a given ISBN always renders the same bars, not
+  randomly) with the ISBN printed as human-readable text underneath —
+  structurally similar to a real back-cover barcode strip, but not
+  claiming to be machine-readable. A real barcode-generation library is a
+  good candidate for its own future milestone.
+- **`StructuralPagePanel.tsx`** — editable-fields forms for all 8. Per the
+  brief's explicit scope guidance, Bibliography/Index use a plain
+  "one entry per line" `Textarea` (not a rich add/remove-row UI — that's an
+  unnecessary escalation for this milestone); Glossary's textarea parses
+  each line as `"Term: definition"`, splitting on the first colon.
+- **`Sidebar.tsx`** — `BACK_MATTER_ADDABLE_TYPES` grew from `['blank']` to
+  all 9 back-matter types, in a rough back-matter reading-order convention
+  (cosmetic only, same as front matter's list).
+- **Tests**: `scripts/smoke-test.ts` grew from 246 to 269 passing checks —
+  registry lookups for all 8 new types (mirroring Phases 19/20's exact
+  pattern), `insertPageWithHistory`/`updatePageContentWithHistory`/undo
+  coverage for Bibliography (array-of-strings content) and Glossary
+  (array-of-objects content) specifically chosen to re-exercise the class
+  of undo bug fixed in Phase 20 (a field going from absent to present and
+  back via undo) for array-shaped fields, not just scalar strings — both
+  pass cleanly, confirming `replacePageContent`'s fix generalizes correctly
+  to array content. Also verified the ISBN Page/Barcode sibling-read data
+  relationship directly.
+- **Verified**: `npx tsc -b --force` clean, `npm run build` clean (2451
+  modules, up from 2443), `npm run lint` 0 errors / 31 warnings (up from 23
+  — 8 new registry-module files hitting the same already-accepted
+  `react/only-export-components` Fast-Refresh heuristic as every prior
+  block/structural-page type module), `npm run test` **269/269 passing**
+  (246 baseline + 23 new checks). All verification actually run and read,
+  not deferred — no repeat of Phase 20's "lint/test owed" gap.
+
+## Recommended next task
+`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 5** is next: new in-chapter
+content block types via the existing block registry (`src/blocks/registry.ts`
++ `src/blocks/types/*.tsx`, proven since Phase 17) — Pull Quote, Callout
+(Tip/Warning/Info as one block with a `variant` field rather than three
+near-identical types, to avoid taxonomy bloat per the plan's own §7.5
+guidance), Case Study, Timeline, Gallery, FAQ, Statistics, Checklist. Unlike
+structural pages, these are meant to sit *inside* a chapter's flowing
+narrative and reflow through the existing, proven `paginate.ts` auto-flow
+engine exactly like a paragraph or image does today — no new page-level
+plumbing needed, "just" new `ContentBlockType` union members plus registry
+entries. (Milestone 3 — full drag-and-drop reordering of structural pages
+and a theme `pageStyles` extension point — remains a reasonable alternative
+next step if polish is preferred over new taxonomy.) Outside that track,
+everything in the
 Development Plan's "Definition of Version 1 Complete" still works end-to-end, the
 Virtual Editor has a real foundation (Phase 9) with reliable navigation and
 bulk-fix actions (Phase 13), the manuscript is no longer read-only (Phase 10), the

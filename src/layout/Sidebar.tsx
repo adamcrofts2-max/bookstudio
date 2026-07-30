@@ -42,7 +42,22 @@ const FRONT_MATTER_ADDABLE_TYPES: StructuralPageType[] = [
   'acknowledgements',
   'blank',
 ]
-const BACK_MATTER_ADDABLE_TYPES: StructuralPageType[] = ['blank']
+/** Phase 21 (Milestone 4, second batch) added eight back-matter types —
+ * order here roughly matches real back-matter convention (Conclusion first,
+ * then Appendix/Glossary/Bibliography/Index, then About the Author, then
+ * the printing-info pages last) and is cosmetic only, same as front
+ * matter's list above. */
+const BACK_MATTER_ADDABLE_TYPES: StructuralPageType[] = [
+  'conclusion',
+  'appendix',
+  'glossary',
+  'bibliography',
+  'index',
+  'about-the-author',
+  'isbn-page',
+  'barcode',
+  'blank',
+]
 
 interface StructuralPageRowProps {
   projectId: string

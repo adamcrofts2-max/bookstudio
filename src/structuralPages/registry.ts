@@ -14,6 +14,14 @@ import { dedicationPageType } from '@/structuralPages/types/dedication'
 import { forewordPageType } from '@/structuralPages/types/foreword'
 import { prefacePageType } from '@/structuralPages/types/preface'
 import { acknowledgementsPageType } from '@/structuralPages/types/acknowledgements'
+import { conclusionPageType } from '@/structuralPages/types/conclusion'
+import { appendixPageType } from '@/structuralPages/types/appendix'
+import { aboutTheAuthorPageType } from '@/structuralPages/types/aboutTheAuthor'
+import { bibliographyPageType } from '@/structuralPages/types/bibliography'
+import { glossaryPageType } from '@/structuralPages/types/glossary'
+import { indexPageType } from '@/structuralPages/types/indexPage'
+import { isbnPagePageType } from '@/structuralPages/types/isbnPage'
+import { barcodePageType } from '@/structuralPages/types/barcode'
 import { blankPageType } from '@/structuralPages/types/blank'
 
 /**
@@ -77,6 +85,14 @@ const STRUCTURAL_PAGE_REGISTRY: Record<StructuralPageType, StructuralPageTypeDef
   foreword: forewordPageType,
   preface: prefacePageType,
   acknowledgements: acknowledgementsPageType,
+  conclusion: conclusionPageType,
+  appendix: appendixPageType,
+  'about-the-author': aboutTheAuthorPageType,
+  bibliography: bibliographyPageType,
+  glossary: glossaryPageType,
+  index: indexPageType,
+  'isbn-page': isbnPagePageType,
+  barcode: barcodePageType,
   blank: blankPageType,
 }
 
@@ -96,6 +112,14 @@ export function listStructuralPageTypes(): StructuralPageTypeDefinition[] {
     forewordPageType,
     prefacePageType,
     acknowledgementsPageType,
+    conclusionPageType,
+    appendixPageType,
+    aboutTheAuthorPageType,
+    bibliographyPageType,
+    glossaryPageType,
+    indexPageType,
+    isbnPagePageType,
+    barcodePageType,
     blankPageType,
   ]
 }

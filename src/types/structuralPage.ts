@@ -89,6 +89,53 @@ export interface AcknowledgementsPage extends BaseStructuralPage {
   content: { text?: string }
 }
 
+/**
+ * Phase 21 (Milestone 4, second batch): eight back-matter types, following
+ * the exact same discriminated-union shape as everything above — see
+ * `src/structuralPages/types/{conclusion,appendix,aboutTheAuthor,
+ * bibliography,glossary,indexPage,isbnPage,barcode}.tsx` and
+ * `docs/STATUS.md`'s Phase 21 entry.
+ */
+export interface ConclusionPage extends BaseStructuralPage {
+  type: 'conclusion'
+  content: { text?: string }
+}
+
+export interface AppendixPage extends BaseStructuralPage {
+  type: 'appendix'
+  content: { title?: string; text?: string }
+}
+
+export interface AboutTheAuthorPage extends BaseStructuralPage {
+  type: 'about-the-author'
+  content: { text?: string; imageAssetId?: string }
+}
+
+export interface BibliographyPage extends BaseStructuralPage {
+  type: 'bibliography'
+  content: { entries?: string[] }
+}
+
+export interface GlossaryPage extends BaseStructuralPage {
+  type: 'glossary'
+  content: { entries?: { term: string; definition: string }[] }
+}
+
+export interface IndexPage extends BaseStructuralPage {
+  type: 'index'
+  content: { entries?: string[] }
+}
+
+export interface IsbnPage extends BaseStructuralPage {
+  type: 'isbn-page'
+  content: { isbn?: string; edition?: string; printerInfo?: string }
+}
+
+export interface BarcodePage extends BaseStructuralPage {
+  type: 'barcode'
+  content: { isbn?: string }
+}
+
 export type StructuralPage =
   | CoverPage
   | TitlePage
@@ -99,4 +146,12 @@ export type StructuralPage =
   | ForewordPage
   | PrefacePage
   | AcknowledgementsPage
+  | ConclusionPage
+  | AppendixPage
+  | AboutTheAuthorPage
+  | BibliographyPage
+  | GlossaryPage
+  | IndexPage
+  | IsbnPage
+  | BarcodePage
 export type StructuralPageType = StructuralPage['type']

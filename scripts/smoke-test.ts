@@ -1404,5 +1404,102 @@ check(
   useStructuralPageStore.getState().getPages(rpcProjectId).find((p) => p.id === rpcHalfTitleId)?.content.title === undefined,
 )
 
+// --- Phase 21: 8 new back-matter structural page types (Milestone 4,
+// second batch) — Conclusion, Appendix, About the Author, Bibliography,
+// Glossary, Index, ISBN Page, Barcode. Same registry-lookup + editorActions
+// coverage pattern Phases 19/20 established.
+const BACK_MATTER_STRUCTURAL_TYPES: StructuralPageType[] = [
+  'conclusion',
+  'appendix',
+  'about-the-author',
+  'bibliography',
+  'glossary',
+  'index',
+  'isbn-page',
+  'barcode',
+]
+for (const type of BACK_MATTER_STRUCTURAL_TYPES) {
+  const def = getStructuralPageTypeDefinition(type)
+  check(
+    `structural page registry (Phase 21): has a complete definition for "${type}"`,
+    !!def && def.id === type && typeof def.Render === 'function' && typeof def.drawPdf === 'function' && typeof def.defaultContent === 'function',
+  )
+  check(`structural page registry (Phase 21): "${type}" is category "back-matter"`, def?.category === 'back-matter')
+}
+
+const eaBackMatterProjectId = 'ea-structural-pages-back-matter-project'
+
+// Bibliography: array-of-strings content, insertPageWithHistory + update +
+// undo — exercises the exact "field goes from absent to present and back"
+// path the Phase 20 undo bug lived in, this time for an array field.
+const bibliographyId = insertPageWithHistory(eaBackMatterProjectId, 'back-matter', 'bibliography', null)
+check(
+  'insertPageWithHistory (Phase 21): creates a Bibliography page',
+  useStructuralPageStore.getState().getPages(eaBackMatterProjectId).some((p) => p.id === bibliographyId && p.type === 'bibliography'),
+)
+updatePageContentWithHistory(eaBackMatterProjectId, bibliographyId, { entries: ['Smith, J. (2020). Forest Ecology.', 'Doe, A. (2018). Soil Science.'] })
+check(
+  'updatePageContentWithHistory (Phase 21): applies Bibliography entries',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaBackMatterProjectId).find((pg) => pg.id === bibliographyId)
+    return p?.type === 'bibliography' && p.content.entries?.length === 2 && p.content.entries[0] === 'Smith, J. (2020). Forest Ecology.'
+  })(),
+)
+useHistoryStoreForPages.getState().undo(eaBackMatterProjectId)
+check(
+  'updatePageContentWithHistory (Phase 21) -> undo: restores Bibliography entries to empty (not left over from the merge)',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaBackMatterProjectId).find((pg) => pg.id === bibliographyId)
+    return p?.type === 'bibliography' && p.content.entries === undefined
+  })(),
+)
+useHistoryStoreForPages.getState().redo(eaBackMatterProjectId)
+check(
+  'updatePageContentWithHistory (Phase 21) -> undo -> redo: Bibliography entries come back',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaBackMatterProjectId).find((pg) => pg.id === bibliographyId)
+    return p?.type === 'bibliography' && p.content.entries?.length === 2
+  })(),
+)
+
+// Glossary: array-of-objects content — same absent/present undo check, one
+// level more complex than Bibliography's array-of-strings.
+const glossaryId = insertPageWithHistory(eaBackMatterProjectId, 'back-matter', 'glossary', bibliographyId)
+updatePageContentWithHistory(eaBackMatterProjectId, glossaryId, { entries: [{ term: 'Mulch', definition: 'A protective layer over soil.' }] })
+check(
+  'updatePageContentWithHistory (Phase 21): applies Glossary entries',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaBackMatterProjectId).find((pg) => pg.id === glossaryId)
+    return p?.type === 'glossary' && p.content.entries?.[0]?.term === 'Mulch'
+  })(),
+)
+useHistoryStoreForPages.getState().undo(eaBackMatterProjectId)
+check(
+  'updatePageContentWithHistory (Phase 21) -> undo: restores Glossary entries to empty',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaBackMatterProjectId).find((pg) => pg.id === glossaryId)
+    return p?.type === 'glossary' && p.content.entries === undefined
+  })(),
+)
+
+// ISBN Page + Barcode: the sibling-read pattern (Barcode falls back to a
+// sibling ISBN Page's `isbn` value, same as copyright.tsx reading the Title
+// Page's author) — exercised directly against the registry's `Render`
+// resolution logic isn't practical in jsdom without mounting React, so this
+// verifies the underlying data relationship the render/drawPdf functions
+// both depend on: the sibling page actually exists with the expected value.
+const isbnPageId = insertPageWithHistory(eaBackMatterProjectId, 'back-matter', 'isbn-page', null)
+updatePageContentWithHistory(eaBackMatterProjectId, isbnPageId, { isbn: '978-1-234567-89-0' })
+const barcodeId = insertPageWithHistory(eaBackMatterProjectId, 'back-matter', 'barcode', isbnPageId)
+check(
+  'structural pages (Phase 21): Barcode and ISBN Page can coexist so Barcode can read its sibling\'s isbn',
+  (() => {
+    const pages = useStructuralPageStore.getState().getPages(eaBackMatterProjectId)
+    const isbnPage = pages.find((p) => p.id === isbnPageId)
+    const barcode = pages.find((p) => p.id === barcodeId)
+    return isbnPage?.type === 'isbn-page' && isbnPage.content.isbn === '978-1-234567-89-0' && barcode?.type === 'barcode' && barcode.content.isbn === undefined
+  })(),
+)
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)
