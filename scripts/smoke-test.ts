@@ -801,5 +801,216 @@ check(
   blobAfterUndo !== undefined && blobAfterUndo.size === blobUnderTest.size && blobAfterUndo.type === blobUnderTest.type,
 )
 
+// --- Phase 15: version history (snapshotDb.ts / versionStore.ts) — a
+// coarse, periodic + manual whole-manuscript-plus-settings safety net,
+// completely separate from Phase 14's undo/redo. Exercises the REAL
+// snapshotDb.ts IndexedDB calls via fake-indexeddb (imported at the very
+// top of this file), same approach as the removeAssetWithHistory tests
+// above.
+const { useVersionStore } = await import('../src/store/versionStore')
+const { listSnapshotsForProject: listSnapshotsFromDb } = await import('../src/store/snapshotDb')
+const { useProjectStore } = await import('../src/store/projectStore')
+
+function makeVersionTestManuscript(sourceFileName: string): Manuscript {
+  return {
+    chapters: [
+      {
+        id: 'vh-chapter',
+        title: 'Chapter One',
+        order: 0,
+        blocks: [{ id: 'vh-block-a', type: 'heading', level: 2, text: 'Original heading' } as HeadingBlock],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName,
+  }
+}
+
+// createSnapshot: no-op when there's no manuscript yet.
+const vhNoManuscriptProjectId = 'version-history-no-manuscript-project'
+useProjectStore.setState((state) => ({
+  projects: [
+    ...state.projects,
+    {
+      id: vhNoManuscriptProjectId,
+      name: 'No Manuscript Project',
+      category: 'other',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
+    },
+  ],
+}))
+await useVersionStore.getState().createSnapshot(vhNoManuscriptProjectId, 'manual', 'Should not be created')
+check(
+  'createSnapshot: no-op when the project has no manuscript yet',
+  (await listSnapshotsFromDb(vhNoManuscriptProjectId)).length === 0,
+)
+
+// createSnapshot: writes correctly (manual, explicit label + auto, default label).
+const vhProjectId = 'version-history-test-project'
+useProjectStore.setState((state) => ({
+  projects: [
+    ...state.projects,
+    {
+      id: vhProjectId,
+      name: 'Version History Project',
+      category: 'other',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: { ...DEFAULT_PROJECT_SETTINGS, themeId: 'original-theme' },
+    },
+  ],
+}))
+useContentStore.getState().setManuscript(vhProjectId, makeVersionTestManuscript('version-history-fixture.md'))
+
+await useVersionStore.getState().createSnapshot(vhProjectId, 'manual', 'My named save')
+await useVersionStore.getState().listSnapshots(vhProjectId)
+const vhSnapshotsAfterManual = useVersionStore.getState().getSnapshots(vhProjectId)
+check('createSnapshot (manual): writes a snapshot with the given label', vhSnapshotsAfterManual.some((s) => s.label === 'My named save'))
+check('createSnapshot (manual): kind is "manual"', vhSnapshotsAfterManual.find((s) => s.label === 'My named save')?.kind === 'manual')
+check(
+  'createSnapshot (manual): captures the current manuscript',
+  vhSnapshotsAfterManual.find((s) => s.label === 'My named save')?.manuscript.sourceFileName === 'version-history-fixture.md',
+)
+check(
+  'createSnapshot (manual): captures the current project settings',
+  vhSnapshotsAfterManual.find((s) => s.label === 'My named save')?.settings.themeId === 'original-theme',
+)
+
+await useVersionStore.getState().createSnapshot(vhProjectId, 'auto')
+await useVersionStore.getState().listSnapshots(vhProjectId)
+const vhSnapshotsAfterAuto = useVersionStore.getState().getSnapshots(vhProjectId)
+check(
+  'createSnapshot (auto, no label given): defaults to an "Autosave — <timestamp>" label',
+  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label.startsWith('Autosave — ')),
+)
+
+// listSnapshots: newest-first ordering — write two snapshots directly via
+// putSnapshot with explicit, deliberately out-of-insertion-order createdAt
+// values so the sort is actually exercised rather than coincidentally
+// matching wall-clock insertion order.
+const { putSnapshot: putSnapshotDirect } = await import('../src/store/snapshotDb')
+const vhOrderingProjectId = 'version-history-ordering-test-project'
+await putSnapshotDirect({
+  id: 'vh-order-older',
+  projectId: vhOrderingProjectId,
+  createdAt: '2020-01-01T00:00:00.000Z',
+  label: 'Older',
+  kind: 'manual',
+  manuscript: makeVersionTestManuscript('older.md'),
+  settings: { ...DEFAULT_PROJECT_SETTINGS },
+})
+await putSnapshotDirect({
+  id: 'vh-order-newer',
+  projectId: vhOrderingProjectId,
+  createdAt: '2024-06-01T00:00:00.000Z',
+  label: 'Newer',
+  kind: 'manual',
+  manuscript: makeVersionTestManuscript('newer.md'),
+  settings: { ...DEFAULT_PROJECT_SETTINGS },
+})
+await useVersionStore.getState().listSnapshots(vhOrderingProjectId)
+const vhOrdered = useVersionStore.getState().getSnapshots(vhOrderingProjectId)
+check('listSnapshots: newest-first ordering', vhOrdered.map((s) => s.id).join(',') === 'vh-order-newer,vh-order-older')
+
+// createSnapshot: prunes beyond the 20-most-recent-per-project cap.
+const vhPruneProjectId = 'version-history-prune-test-project'
+useProjectStore.setState((state) => ({
+  projects: [
+    ...state.projects,
+    {
+      id: vhPruneProjectId,
+      name: 'Prune Test Project',
+      category: 'other',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
+    },
+  ],
+}))
+useContentStore.getState().setManuscript(vhPruneProjectId, makeVersionTestManuscript('prune-fixture.md'))
+for (let i = 0; i < 25; i++) {
+  await useVersionStore.getState().createSnapshot(vhPruneProjectId, 'manual', `save-${i}`)
+}
+const vhPruned = await listSnapshotsFromDb(vhPruneProjectId)
+check('createSnapshot: prunes down to at most 20 snapshots per project after 25 creations', vhPruned.length === 20)
+check('createSnapshot: pruning keeps the most recent ones (save-24 survives)', vhPruned.some((s) => s.label === 'save-24'))
+check('createSnapshot: pruning drops the oldest ones (save-0 is gone)', !vhPruned.some((s) => s.label === 'save-0'))
+
+// deleteSnapshot: manual cleanup.
+const vhDeleteProjectId = 'version-history-delete-test-project'
+useProjectStore.setState((state) => ({
+  projects: [
+    ...state.projects,
+    {
+      id: vhDeleteProjectId,
+      name: 'Delete Test Project',
+      category: 'other',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
+    },
+  ],
+}))
+useContentStore.getState().setManuscript(vhDeleteProjectId, makeVersionTestManuscript('delete-fixture.md'))
+await useVersionStore.getState().createSnapshot(vhDeleteProjectId, 'manual', 'To be deleted')
+await useVersionStore.getState().listSnapshots(vhDeleteProjectId)
+const vhSnapshotToDelete = useVersionStore.getState().getSnapshots(vhDeleteProjectId)[0]
+await useVersionStore.getState().deleteSnapshot(vhDeleteProjectId, vhSnapshotToDelete.id)
+check(
+  'deleteSnapshot: removes it from versionStore state',
+  !useVersionStore.getState().getSnapshots(vhDeleteProjectId).some((s) => s.id === vhSnapshotToDelete.id),
+)
+check(
+  'deleteSnapshot: removes it from IndexedDB',
+  !(await listSnapshotsFromDb(vhDeleteProjectId)).some((s) => s.id === vhSnapshotToDelete.id),
+)
+
+// restoreSnapshot: calls setManuscript/updateProjectSettings with the
+// snapshot's data, and itself creates a pre-restore safety snapshot first.
+const vhRestoreProjectId = 'version-history-restore-test-project'
+useProjectStore.setState((state) => ({
+  projects: [
+    ...state.projects,
+    {
+      id: vhRestoreProjectId,
+      name: 'Restore Test Project',
+      category: 'other',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: { ...DEFAULT_PROJECT_SETTINGS, themeId: 'theme-to-be-restored' },
+    },
+  ],
+}))
+useContentStore.getState().setManuscript(vhRestoreProjectId, makeVersionTestManuscript('to-be-restored.md'))
+await useVersionStore.getState().createSnapshot(vhRestoreProjectId, 'manual', 'Good version')
+await useVersionStore.getState().listSnapshots(vhRestoreProjectId)
+const vhGoodSnapshot = useVersionStore.getState().getSnapshots(vhRestoreProjectId).find((s) => s.label === 'Good version')!
+
+// Now diverge: a bad edit to the manuscript and settings, as if the user
+// had a rough editing session since the good snapshot was taken.
+useContentStore.getState().setManuscript(vhRestoreProjectId, makeVersionTestManuscript('bad-edit.md'))
+useProjectStore.getState().updateProjectSettings(vhRestoreProjectId, { themeId: 'bad-theme' })
+
+await useVersionStore.getState().restoreSnapshot(vhRestoreProjectId, vhGoodSnapshot.id)
+check(
+  'restoreSnapshot: calls setManuscript with the snapshot\'s manuscript',
+  useContentStore.getState().getManuscript(vhRestoreProjectId)?.sourceFileName === 'to-be-restored.md',
+)
+check(
+  'restoreSnapshot: calls updateProjectSettings with the snapshot\'s settings',
+  useProjectStore.getState().getProject(vhRestoreProjectId)?.settings.themeId === 'theme-to-be-restored',
+)
+const vhSnapshotsAfterRestore = useVersionStore.getState().getSnapshots(vhRestoreProjectId)
+check(
+  'restoreSnapshot: creates a pre-restore safety snapshot of the about-to-be-overwritten state',
+  vhSnapshotsAfterRestore.some((s) => s.label === 'Before restoring an earlier version' && s.manuscript.sourceFileName === 'bad-edit.md'),
+)
+check(
+  'restoreSnapshot: the safety snapshot is kind "auto"',
+  vhSnapshotsAfterRestore.find((s) => s.label === 'Before restoring an earlier version')?.kind === 'auto',
+)
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

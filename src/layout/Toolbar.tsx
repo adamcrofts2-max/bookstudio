@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronsRight, Download, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sparkles, Sun, Undo2 } from 'lucide-react'
+import { ChevronsRight, Download, History, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sparkles, Sun, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -15,6 +15,7 @@ import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
+import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import type { Project } from '@/types'
 
 interface ToolbarProps {
@@ -48,6 +49,7 @@ function IconButton({
 export function Toolbar({ project }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const { resolved, setAppearance } = useTheme()
   const collapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -121,6 +123,10 @@ export function Toolbar({ project }: ToolbarProps) {
           </TooltipContent>
         </Tooltip>
 
+        <IconButton label="Version history" onClick={() => setVersionHistoryOpen(true)}>
+          <History className="size-4" />
+        </IconButton>
+
         <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
           Project Settings
         </Button>
@@ -159,6 +165,7 @@ export function Toolbar({ project }: ToolbarProps) {
 
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <VersionHistoryDialog projectId={project.id} open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen} />
     </header>
   )
 }

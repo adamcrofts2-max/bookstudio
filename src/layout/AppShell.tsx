@@ -3,6 +3,7 @@ import { Toolbar } from '@/layout/Toolbar'
 import { Workspace } from '@/layout/Workspace'
 import { Inspector } from '@/layout/Inspector'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
+import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
 import type { Project } from '@/types'
 
 interface AppShellProps {
@@ -16,6 +17,7 @@ interface AppShellProps {
  */
 export function AppShell({ project }: AppShellProps) {
   useKeyboardShortcuts(project.id)
+  useAutosaveSnapshots(project.id)
 
   return (
     <div className="flex h-dvh w-full bg-background">

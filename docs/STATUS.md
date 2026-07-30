@@ -643,22 +643,106 @@ stack.
   events but doesn't reproduce a real browser's native-undo-vs-`preventDefault`
   arbitration.
 
+## Phase 15 — Version History (2026-07-30)
+
+The PRD's "version history, backup and restore" requirement, never previously built.
+Phase 14's undo/redo is fine-grained and in-session — it resets on reload and can't
+reach back past the current editing session. This phase adds a coarse, periodic +
+manual safety net on top: named snapshots of the whole manuscript + settings, and a
+restore UI. Deliberately a separate system from `historyStore.ts`/`editorActions.ts`
+— nothing in Phase 14 was touched.
+
+- **`src/store/snapshotDb.ts`** — a new, separate IndexedDB database
+  (`book-studio-snapshots`, one `snapshots` object store with a `by-project` index),
+  mirroring `assetDb.ts`'s exact `openDB`/`upgrade` shape. Kept as its own database
+  rather than a new object store on `book-studio-assets`, per `CLAUDE.md`'s layer-
+  separation rule. A `Snapshot` is `{ id, projectId, createdAt, label, kind: 'auto' |
+  'manual', manuscript, settings }` — text-only JSON, no asset blobs. Illustrations
+  are already safely persisted separately in `book-studio-assets` and aren't
+  typically what a bad editing session breaks; duplicating potentially large binary
+  data into every snapshot would be wasteful and risk the "rendering must remain
+  responsive on thousand-illustration books" performance bar. `putSnapshot`,
+  `listSnapshotsForProject` (newest-first), `deleteSnapshot`.
+- **`src/store/versionStore.ts`** — `createSnapshot(projectId, kind, label?)` reads
+  the current manuscript/settings via `contentStore.getManuscript`/
+  `projectStore.getProject`, no-ops if there's no manuscript yet, writes via
+  `snapshotDb.putSnapshot`, then prunes down to the 20 most recent snapshots per
+  project (an explicit, adjustable default — not a hard requirement). Auto snapshots
+  default their label to `Autosave — <timestamp>` when none is given.
+  `listSnapshots`/`getSnapshots` mirror `assetStore`'s async-load-into-state pattern
+  (with an `EMPTY_SNAPSHOTS` stable-reference constant, same reasoning as
+  `assetStore.EMPTY_ASSETS`). `restoreSnapshot` calls `contentStore.setManuscript` +
+  `projectStore.updateProjectSettings` — the same public actions a live edit would
+  use, never reaching into their internals, following `virtualEditorStore.
+  restoreRevision`'s precedent — but first calls `createSnapshot(projectId, 'auto',
+  'Before restoring an earlier version')` on the *current* (about-to-be-overwritten)
+  state, so a restore is itself never destructive: a bad restore can be undone by
+  restoring again. `deleteSnapshot` mirrors `assetStore.removeAsset`'s delete-then-
+  update-state shape.
+- **`src/hooks/useAutosaveSnapshots.ts`** — mounted in `AppShell.tsx` alongside the
+  existing `useKeyboardShortcuts(project.id)`. Runs a real `setInterval` (default
+  5 minutes — again an adjustable default, not a hard requirement) that compares
+  `contentStore.revisionByProject[projectId]` against the revision last snapshotted;
+  if unchanged (the user hasn't touched anything since the last check), it skips —
+  no empty/duplicate autosaves. Baseline is seeded from the revision *at mount/
+  project-change time*, so the very first tick doesn't autosave just because no
+  snapshot has ever been taken. Resets its baseline and interval on project change
+  and cleans up on unmount.
+- **`src/components/common/VersionHistoryDialog.tsx`** — mirrors
+  `KeyboardShortcutsDialog.tsx`'s `Dialog`/`DialogContent`/`DialogHeader` structure.
+  A "Save a version now" row (optional label input, defaults to a timestamp if left
+  blank) at the top, then a `ScrollArea`-scrolled list of snapshots, each showing
+  label, absolute timestamp, a small `auto`/`manual` badge (styled like
+  `FindingRow.tsx`'s severity badges), a "Restore" button guarded by
+  `window.confirm` (matching `ImagePanel.tsx`'s image-delete precedent), and a
+  trash-icon delete button for manual cleanup. Empty state reuses
+  `EmptyState.tsx`.
+- **Toolbar**: a new `History`-icon `IconButton` next to "Project Settings", opening
+  the dialog via local `useState` — the exact pattern `ProjectSettingsDialog`/
+  `KeyboardShortcutsDialog` already use in `Toolbar.tsx`.
+- **Tests**: `scripts/smoke-test.ts` grew from 145 to 161 passing checks, all against
+  the **real** `snapshotDb.ts` IndexedDB code path via `fake-indexeddb` (same
+  approach Phase 14 established for `assetDb.ts`) — `createSnapshot` (no-ops with no
+  manuscript; writes the manual label/kind/manuscript/settings correctly; auto
+  snapshots default to an `Autosave — ` label; prunes down to 20 after 25 creations,
+  keeping the newest and dropping the oldest), `listSnapshots` (newest-first
+  ordering, verified with explicit out-of-insertion-order `createdAt` values so the
+  sort is actually exercised), `deleteSnapshot` (removed from both store state and
+  IndexedDB), and `restoreSnapshot` (calls `setManuscript`/`updateProjectSettings`
+  with the snapshot's exact data, and itself creates a pre-restore safety snapshot
+  of the state it's about to overwrite).
+
+### Explicitly deferred / not practically verifiable this session
+- **Real-world autosave interval timing** — that a real `setInterval` actually fires
+  reliably every 5 minutes across a long-lived browser tab (backgrounded tabs,
+  system sleep, etc.) was not and cannot practically be verified in jsdom smoke
+  tests; the interval *logic* (change-detection, baseline-seeding, skip-when-
+  unchanged, cleanup-on-unmount/project-change) is unit-testable and was reasoned
+  through, but the real-browser long-session behavior is a live-browser follow-up.
+- **Snapshotting asset blobs/illustrations** — explicitly out of scope per this
+  phase's spec; a snapshot is manuscript + settings only.
+- **Cloud sync / multi-device backup** — local IndexedDB only, matching how the rest
+  of the app persists today.
+- **Unifying with Phase 14's undo/redo** — left completely separate on purpose; see
+  above.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
 end-to-end, the Virtual Editor has a real foundation (Phase 9) with reliable
 navigation and bulk-fix actions (Phase 13), the manuscript is no longer read-only
 (Phase 10), the image block feature set (Phase 11 + 12) is now fully WYSIWYG
-between screen and PDF, and undo/redo (Phase 14) closes the biggest remaining trust
-gap for direct editing and destructive asset/image deletion. Good next steps in
-priority order: (1) autosave / periodic version-snapshot history — explicitly
-deferred by Phase 14 as its own follow-on milestone, and now unblocked, (2) a second
-real checker engine on top of the existing `Checker` pattern — Consistency
-(terminology/units/spelling-variant matching) is the best next candidate since it's
-still fully deterministic, (3) manually verify the Phase 13 scroll-to-block flow in a
-real browser (force-mount + smooth-scroll + auto-edit across a multi-page chapter)
-since jsdom couldn't exercise it — and, while in a real browser, also do the Phase 14
-Ctrl/Cmd+Z-vs-native-undo spot check noted above, (4) line-level text flow so
-paragraphs can split across pages like a real book, (5) justified text and image
-rotation in the PDF exporter, (6) proper glyph subsetting once the fontkit bug is
-understood, (7) the first real `AiReviewer` (readability is the most self-contained
-candidate — no layout/print context needed), (8) EPUB/Kindle export.
+between screen and PDF, undo/redo (Phase 14) closes the biggest remaining trust gap
+for direct editing and destructive asset/image deletion, and version history
+(Phase 15) adds the coarse, periodic + manual safety net the PRD always called for.
+Good next steps in priority order: (1) a second real checker engine on top of the
+existing `Checker` pattern — Consistency (terminology/units/spelling-variant
+matching) is the best next candidate since it's still fully deterministic,
+(2) manually verify the Phase 13 scroll-to-block flow in a real browser (force-mount
++ smooth-scroll + auto-edit across a multi-page chapter) since jsdom couldn't
+exercise it — and, while in a real browser, also do the Phase 14 Ctrl/Cmd+Z-vs-
+native-undo spot check and the Phase 15 real-world autosave-interval check noted
+above, (3) line-level text flow so paragraphs can split across pages like a real
+book, (4) justified text and image rotation in the PDF exporter, (5) proper glyph
+subsetting once the fontkit bug is understood, (6) the first real `AiReviewer`
+(readability is the most self-contained candidate — no layout/print context
+needed), (7) EPUB/Kindle export.
