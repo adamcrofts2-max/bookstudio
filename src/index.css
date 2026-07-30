@@ -192,3 +192,16 @@
     background-clip: padding-box;
   }
 }
+
+@layer components {
+  /* Drop caps: applied via BlockContent when the active theme enables them
+   * on a chapter's first paragraph. */
+  .book-drop-cap::first-letter {
+    float: left;
+    font-size: 3.1em;
+    line-height: 0.8;
+    padding-right: 0.08em;
+    padding-top: 0.04em;
+    font-weight: 600;
+  }
+}

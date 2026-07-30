@@ -4,10 +4,6 @@
  * Pure manuscript content: chapters, paragraphs, tables, lists, images
  * and captions. No styling ever lives here — presentation is entirely
  * the responsibility of the Theme (Layer 3) and Layout Engine (Layer 4).
- *
- * These shapes are intentionally minimal placeholders for the
- * foundation milestone. The manuscript importer (Phase 2) will expand
- * on them without needing to change Layers 1, 3, 4 or 5.
  */
 
 export type ContentBlockType =
@@ -17,13 +13,58 @@ export type ContentBlockType =
   | 'list'
   | 'table'
   | 'quote'
-  | 'caption'
 
-export interface ContentBlock {
+export interface HeadingBlock {
   id: string
-  type: ContentBlockType
-  text?: string
+  type: 'heading'
+  level: 1 | 2 | 3
+  text: string
 }
+
+export interface ParagraphBlock {
+  id: string
+  type: 'paragraph'
+  /** Inline HTML fragment: only <strong>, <em>, <a> survive import. */
+  html: string
+}
+
+export interface ImageBlock {
+  id: string
+  type: 'image'
+  assetId: string
+  caption?: string
+  /** 0 | 90 | 180 | 270 */
+  rotation: 0 | 90 | 180 | 270
+}
+
+export interface ListBlock {
+  id: string
+  type: 'list'
+  ordered: boolean
+  items: string[]
+}
+
+export interface TableBlock {
+  id: string
+  type: 'table'
+  header: string[]
+  rows: string[][]
+}
+
+export interface QuoteBlock {
+  id: string
+  type: 'quote'
+  text: string
+  attribution?: string
+}
+
+export type ContentBlock =
+  | HeadingBlock
+  | ParagraphBlock
+  | ImageBlock
+  | ListBlock
+  | TableBlock
+  | QuoteBlock
 
 export interface Chapter {
   id: string
@@ -34,4 +75,6 @@ export interface Chapter {
 
 export interface Manuscript {
   chapters: Chapter[]
+  importedAt: string
+  sourceFileName: string
 }
