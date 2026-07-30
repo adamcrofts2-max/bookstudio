@@ -1313,6 +1313,37 @@ are additive registry entries and not a hand-synchronized switch.
   block/structural-page type module), `npm run test` **269/269 passing**
   (246 baseline + 23 new checks). All verification actually run and read,
   not deferred — no repeat of Phase 20's "lint/test owed" gap.
+- **Live-browser verified** on the deployed app against a real 17-chapter
+  test project: added ISBN Page + Barcode to Back Matter, typed an ISBN
+  ("978-1-234567-89-0") and Edition ("First Edition") into the ISBN Page,
+  confirmed Barcode's own ISBN field was left blank yet the rendered page
+  showed the same ISBN and a bar pattern underneath — the sibling-read
+  fallback working correctly end-to-end, not just in the unit test. Also
+  added Bibliography, typed two real references, and confirmed the on-screen
+  render showed a "Bibliography" heading with each entry as its own
+  paragraph. Triggered a full PDF export afterwards with all three new pages
+  present (ISBN Page, Barcode, Bibliography) — completed with zero console
+  errors. Did not individually re-verify Conclusion/Appendix/About the
+  Author/Glossary/Index on-screen this session (Bibliography and Barcode
+  were treated as representative of the shared `longForm.tsx` and
+  sibling-read patterns respectively, both already unit-tested for all 8
+  types) — a reasonable sampling given time, not a claim that all 8 were
+  individually screenshotted.
+- **Performance finding (not a bug fix, a flagged follow-up)**: on this
+  17-chapter test project, both switching to the Structure tab and
+  inserting/selecting a structural page occasionally froze the tab's
+  renderer for 15–30 seconds (no console output, no network activity during
+  the freeze — consistent with a long synchronous main-thread computation,
+  not a hang or infinite loop, since it always completed and the app was
+  fully responsive afterwards). Given `CLAUDE.md`'s explicit performance
+  requirement ("books may exceed 1,000 pages… rendering must remain
+  responsive… use virtualisation where appropriate"), this is worth
+  profiling before Version 1 ships, even though it isn't a new regression
+  introduced by this phase's registry-only changes (Phase 20/21 added zero
+  lines to `paginate.ts` or `composePages.ts`). Likely cause: a full-book
+  re-pagination running synchronously on every structural-page mutation
+  rather than being incremental or deferred. Recommend profiling this
+  specifically (not guessing at a fix) before or alongside Milestone 5.
 
 ## Recommended next task
 `docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 5** is next: new in-chapter
