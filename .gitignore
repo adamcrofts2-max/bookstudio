@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Stray sandbox test artifacts (harmless, can be deleted locally)
+test_delete_me.txt
+mv_test_b.txt
+dirtest_b/
+.git/*.stale-*
