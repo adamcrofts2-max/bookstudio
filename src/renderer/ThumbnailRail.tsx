@@ -3,6 +3,7 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
+import { useSelectionStore } from '@/store/selectionStore'
 
 interface ThumbnailRailProps {
   pages: LaidOutPage[]
@@ -15,10 +16,7 @@ const THUMB_WIDTH = 68
 /** Left-hand page-thumbnail rail for quick navigation through a long book. */
 export function ThumbnailRail({ pages, pageBox, theme }: ThumbnailRailProps) {
   const thumbHeight = THUMB_WIDTH * (pageBox.heightPx / pageBox.widthPx)
-
-  const scrollToPage = (pageId: string) => {
-    document.getElementById(`page-${pageId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-  }
+  const requestScrollToPage = useSelectionStore((s) => s.requestScrollToPage)
 
   return (
     <ScrollArea className="h-full w-[104px] shrink-0 border-r border-border bg-panel">
@@ -27,7 +25,7 @@ export function ThumbnailRail({ pages, pageBox, theme }: ThumbnailRailProps) {
           <button
             key={page.id}
             type="button"
-            onClick={() => scrollToPage(page.id)}
+            onClick={() => requestScrollToPage(page.id)}
             className="group flex flex-col items-center gap-1"
             title={page.kind === 'chapter-start' ? page.chapterTitle : `Page ${page.number}`}
           >

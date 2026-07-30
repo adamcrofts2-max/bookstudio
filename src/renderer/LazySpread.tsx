@@ -14,6 +14,14 @@ interface LazySpreadProps {
   toc: TocEntry[]
   bookTitle: string
   language?: string
+  /**
+   * Mount this spread's real pages immediately, skipping the
+   * IntersectionObserver wait — used to jump straight to a chapter that
+   * hasn't scrolled into view yet (see `BookRenderer`'s scroll-request
+   * handling). Once true, behaves exactly like organic visibility: it
+   * never un-mounts again.
+   */
+  forceVisible?: boolean
 }
 
 /**
@@ -25,12 +33,13 @@ interface LazySpreadProps {
  * (no unmount-on-scroll-away) to avoid re-triggering the height
  * measurement pass and to keep scrolling smooth.
  */
-export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds, toc, bookTitle, language }: LazySpreadProps) {
+export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds, toc, bookTitle, language, forceVisible }: LazySpreadProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
+  const isVisible = visible || Boolean(forceVisible)
 
   useEffect(() => {
-    if (visible) return
+    if (isVisible) return
     const el = ref.current
     if (!el) return
     const observer = new IntersectionObserver(
@@ -41,12 +50,12 @@ export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds,
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [visible])
+  }, [isVisible])
 
   return (
     <div ref={ref} className="flex gap-px">
       {spread.map((page) =>
-        visible ? (
+        isVisible ? (
           <Page
             key={page.id}
             projectId={projectId}

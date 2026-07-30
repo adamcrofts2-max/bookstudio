@@ -27,6 +27,7 @@ export function Sidebar({ project }: SidebarProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
   const renameChapter = useContentStore((s) => s.renameChapter)
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
+  const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
 
   const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
@@ -53,10 +54,6 @@ export function Sidebar({ project }: SidebarProps) {
   }, [project.id, loadAssets])
 
   if (collapsed) return null
-
-  const scrollToChapter = (chapterId: string) => {
-    document.querySelector(`[data-chapter-start="${chapterId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
 
   return (
     <aside className="flex h-full w-[264px] shrink-0 flex-col border-r border-border bg-sidebar">
@@ -120,7 +117,7 @@ export function Sidebar({ project }: SidebarProps) {
                     >
                       <button
                         type="button"
-                        onClick={() => scrollToChapter(chapter.id)}
+                        onClick={() => requestScrollToChapter(chapter.id)}
                         onDoubleClick={() => startRename(chapter.id, chapter.title)}
                         className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                       >

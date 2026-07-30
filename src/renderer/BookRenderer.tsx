@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import type { Project } from '@/types'
@@ -12,6 +12,7 @@ import { LazySpread } from '@/renderer/LazySpread'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
 import { useExportStore } from '@/store/exportStore'
 import { useContentStore } from '@/store/contentStore'
+import { useSelectionStore } from '@/store/selectionStore'
 
 interface BookRendererProps {
   project: Project
@@ -65,6 +66,54 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
     if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
   }, [pages, toc, pageBox, theme, project.id, setExportLayout])
 
+  // Sidebar's chapter nav can't just scrollIntoView `[data-chapter-start]`
+  // directly: LazySpread doesn't mount a spread's real pages until it's
+  // scrolled near the viewport, so a chapter further down the book may have
+  // no such DOM node yet — that's why chapter clicks used to silently do
+  // nothing some of the time. Force-mount the target spread first, then
+  // scroll once it's actually in the DOM.
+  const [forcedSpreadIndices, setForcedSpreadIndices] = useState<Set<number>>(() => new Set())
+  const scrollRequest = useSelectionStore((s) => s.scrollRequest)
+  const consumeScrollRequest = useSelectionStore((s) => s.consumeScrollRequest)
+  const scrollRequestRef = useRef(scrollRequest)
+  scrollRequestRef.current = scrollRequest
+
+  useEffect(() => {
+    if (!scrollRequest) return
+    const { target } = scrollRequest
+    const spreadIndex = spreads.findIndex((spread) =>
+      spread.some((page) =>
+        target.type === 'chapter'
+          ? page.kind === 'chapter-start' && page.chapterId === target.chapterId
+          : page.id === target.pageId,
+      ),
+    )
+    if (spreadIndex === -1) {
+      consumeScrollRequest()
+      return
+    }
+    setForcedSpreadIndices((prev) => (prev.has(spreadIndex) ? prev : new Set(prev).add(spreadIndex)))
+
+    // Wait a couple of paints so the forced spread's real <Page> (and the
+    // DOM node we're about to look up) actually exists before we scroll.
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el =
+          target.type === 'chapter'
+            ? document.querySelector(`[data-chapter-start="${target.chapterId}"]`)
+            : document.getElementById(`page-${target.pageId}`)
+        el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' ? 'start' : 'center' })
+        // Only clear the request if nothing newer has come in while we waited.
+        if (scrollRequestRef.current?.requestId === scrollRequest.requestId) consumeScrollRequest()
+      })
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [scrollRequest, spreads, consumeScrollRequest])
+
   return (
     <div className="flex min-h-0 flex-1">
       <HeightMeasurer
@@ -99,6 +148,7 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
                 toc={toc}
                 bookTitle={project.name}
                 language={project.settings.language}
+                forceVisible={forcedSpreadIndices.has(i)}
               />
             ))}
           </div>
