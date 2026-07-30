@@ -4,6 +4,12 @@ import { persist } from 'zustand/middleware'
 export type AppearanceMode = 'light' | 'dark' | 'system'
 export type InspectorTab = 'typography' | 'image' | 'page' | 'theme' | 'export' | 'book'
 export type BookViewMode = 'single' | 'spread'
+/** Which workspace the centre column shows. `manuscript` is the existing
+ * book preview; `virtualEditor` is the new Editorial Dashboard — see
+ * `src/layout/virtualEditor/VirtualEditorWorkspace.tsx`. Per the fixed
+ * three-column shell in docs/UI_DESIGN_SYSTEM.md, this only swaps the
+ * centre column's contents, never the shell itself. */
+export type WorkspaceMode = 'manuscript' | 'virtualEditor'
 
 interface UiStoreState {
   appearance: AppearanceMode
@@ -13,6 +19,7 @@ interface UiStoreState {
   viewMode: BookViewMode
   zoom: number
   showThumbnails: boolean
+  workspaceMode: WorkspaceMode
 }
 
 interface UiStoreActions {
@@ -23,6 +30,7 @@ interface UiStoreActions {
   setViewMode: (mode: BookViewMode) => void
   setZoom: (zoom: number) => void
   toggleThumbnails: () => void
+  setWorkspaceMode: (mode: WorkspaceMode) => void
 }
 
 /**
@@ -40,6 +48,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       viewMode: 'spread',
       zoom: 1,
       showThumbnails: true,
+      workspaceMode: 'manuscript',
 
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -48,6 +57,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       setViewMode: (mode) => set({ viewMode: mode }),
       setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)) }),
       toggleThumbnails: () => set((state) => ({ showThumbnails: !state.showThumbnails })),
+      setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
     }),
     {
       name: 'book-studio.ui',

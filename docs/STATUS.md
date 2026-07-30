@@ -80,6 +80,68 @@ text wrapper used by the PDF exporter, and a full end-to-end PDF export integrat
 test (pagination → font embedding → valid PDF bytes). All passing. `npm run build`
 (typecheck + bundle) and `npm run lint` (oxlint) are clean.
 
+## Phase 9 — Virtual Editor foundation
+
+The first slice of the AI-powered editorial assistant described in
+`docs/VIRTUAL_EDITOR.md` (read that document for the full architecture, hybrid
+AI workflow, issue taxonomy, and an honest "what's real vs. designed" table —
+this entry is the short version).
+
+- **New, independent layer**: `src/virtualEditor/` (types, pure `Checker`
+  interface, a synchronous `runPipeline` orchestrator, category/overall score
+  aggregation) plus `src/store/virtualEditorStore.ts`. Checkers only ever read
+  a `Manuscript` and return `Finding[]` — the store is the only thing that
+  turns a finding into a real edit, and it does that exclusively through
+  `contentStore.updateBlock`, exactly like `TypographyPanel`/`ImagePanel` do.
+- **6 real, deterministic proofreading checkers**: double spaces, repeated
+  adjacent words, unmatched quotation marks, unmatched brackets/parentheses,
+  missing terminal punctuation, straight-vs-curly quote consistency. All
+  produce genuine `Finding`s (location, message, why-it-matters, severity,
+  confidence) against the real `Manuscript` shape; three are mechanically
+  fixable and carry a `suggestedFix`.
+- **Editorial Dashboard**: a new workspace reached via a "Virtual Editor"
+  toggle in the Toolbar (the three-column shell never moves — only the centre
+  column's contents swap, via `uiStore.workspaceMode`). Shows all 11 named
+  scores from the product spec; only Proofreading and an honest Overall show a
+  real number today, the other 9 tiles say "Not yet analysed" rather than
+  fabricating one. "Review Entire Book" runs the pipeline; findings show
+  severity/confidence/location/explanation and working Accept / Reject /
+  Ignore / Ignore Similar actions (Edit / Apply to Chapter / Apply to Book are
+  visibly present but disabled, with a tooltip saying so).
+- **Non-destructive revisions**: accepting a fixable finding snapshots the
+  block into a revision log in `virtualEditorStore` (never in `contentStore` —
+  the manuscript carries no edit-history baggage) before applying the change;
+  a simple list with one-click "Restore original" is provided.
+- **Tests**: `scripts/smoke-test.ts` gained real coverage — each checker
+  against a fixture with a known issue (asserts it's found) and a clean
+  fixture (asserts it isn't, including verifying the exact patched text for
+  the two fixable checkers), plus pipeline/score-aggregation checks (dirty
+  manuscript scores below 100, clean manuscript scores exactly 100,
+  unanalysed categories stay `null`, overall score matches the mean of
+  analysed categories).
+
+### Explicitly deferred (see docs/VIRTUAL_EDITOR.md for the full table)
+- Every other engine from the product spec — copy editing, developmental,
+  publishing-standards, readability, consistency, field-guide, layout,
+  typography, accessibility, print, commercial — is designed (types, taxonomy,
+  dashboard tile, `NullAiReviewer` stub) but has no real checker yet.
+- `AiReviewer` is a real interface with only a null implementation — no LLM
+  call happens anywhere in this milestone, by design (hybrid approach: real
+  AI review is a future, isolated addition to `runPipeline`).
+- Style Guide (`StyleGuide` type + `CheckerContext.styleGuide` plumbing exists)
+  isn't enforced by any checker yet, and there's no UI to edit one.
+- AI Learning / a personal editorial profile is designed in the doc, not built.
+- Apply to Chapter / Apply to Book batch-apply, an Edit-in-place flow, and the
+  Original/RevA/RevB/RevC side-by-side compare UI are all deferred — the
+  current revision UI is a flat list with restore, not a diff view.
+- The revision log and reports are in-memory only (not persisted across a
+  reload) — recomputing via "Review Entire Book" is cheap, and a
+  `SuggestedFix.apply` function value can't round-trip through
+  `localStorage`'s JSON persistence anyway.
+- Clicking a finding's location scrolls to its chapter's opening page, not the
+  exact block — there's no stable per-block DOM anchor yet (only chapter-start
+  pages have one), and `LazySpread` may not have mounted the target block.
+
 ## Known simplifications (documented, not hidden)
 - **Pagination is block-level.** A paragraph always moves to the next page as a whole
   rather than splitting mid-paragraph. This avoids widows/orphans by construction but
@@ -142,9 +204,13 @@ project renders the editor shell with no console errors, and a hard reload on
 `/project/:id` loads the app directly instead of Vercel's 404 page.
 
 ## Recommended next task
-Everything in the Development Plan's "Definition of Version 1 Complete" now works
-end-to-end. From here, good next steps in priority order: (1) line-level text flow so
-paragraphs can split across pages like a real book, (2) justified text and image
-rotation in the PDF exporter, (3) proper glyph subsetting once the fontkit bug is
-understood, (4) an AI layout/critique pass per the PRD's "Future" AI features, (5) EPUB/
+Everything in the Development Plan's "Definition of Version 1 Complete" works
+end-to-end, and the Virtual Editor now has a real, working foundation (Phase 9).
+Good next steps in priority order: (1) a second real checker engine on top of the
+existing `Checker` pattern — Consistency (terminology/units/spelling-variant
+matching) is the best next candidate since it's still fully deterministic, (2)
+line-level text flow so paragraphs can split across pages like a real book, (3)
+justified text and image rotation in the PDF exporter, (4) proper glyph subsetting
+once the fontkit bug is understood, (5) the first real `AiReviewer` (readability is
+the most self-contained candidate — no layout/print context needed), (6) EPUB/
 Kindle export.

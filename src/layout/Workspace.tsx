@@ -5,6 +5,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ImportManuscriptButton } from '@/editor/ImportManuscriptButton'
 import { BookRenderer } from '@/renderer/BookRenderer'
+import { VirtualEditorWorkspace } from '@/layout/virtualEditor/VirtualEditorWorkspace'
 import { useContentStore } from '@/store/contentStore'
 import { useUiStore } from '@/store/uiStore'
 import type { Project } from '@/types'
@@ -68,6 +69,11 @@ function ViewControls() {
  */
 export function Workspace({ project }: WorkspaceProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
+  const workspaceMode = useUiStore((s) => s.workspaceMode)
+
+  if (workspaceMode === 'virtualEditor') {
+    return <VirtualEditorWorkspace project={project} />
+  }
 
   if (!manuscript) {
     return (

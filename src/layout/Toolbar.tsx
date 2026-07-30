@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronsRight, Download, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sun, Undo2 } from 'lucide-react'
+import { ChevronsRight, Download, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sparkles, Sun, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -52,6 +52,8 @@ export function Toolbar({ project }: ToolbarProps) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const inspectorCollapsed = useUiStore((s) => s.inspectorCollapsed)
   const toggleInspector = useUiStore((s) => s.toggleInspector)
+  const workspaceMode = useUiStore((s) => s.workspaceMode)
+  const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
 
   return (
@@ -86,6 +88,23 @@ export function Toolbar({ project }: ToolbarProps) {
         >
           {resolved === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </IconButton>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={workspaceMode === 'virtualEditor' ? 'primary' : 'secondary'}
+              size="sm"
+              className="gap-1.5"
+              onClick={() => setWorkspaceMode(workspaceMode === 'virtualEditor' ? 'manuscript' : 'virtualEditor')}
+            >
+              <Sparkles className="size-3.5" />
+              Virtual Editor
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {workspaceMode === 'virtualEditor' ? 'Back to the manuscript preview' : 'Open the Editorial Dashboard'}
+          </TooltipContent>
+        </Tooltip>
 
         <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
           Project Settings

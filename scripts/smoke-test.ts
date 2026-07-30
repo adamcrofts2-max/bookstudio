@@ -135,5 +135,89 @@ try {
   check('pdf export: completes without throwing', false)
 }
 
+// --- Virtual Editor: proofreading checkers + pipeline scoring ---
+import { runPipeline } from '../src/virtualEditor/pipeline'
+import {
+  doubleSpaceChecker,
+  repeatedWordChecker,
+  unmatchedQuotesChecker,
+  unmatchedBracketsChecker,
+  missingTerminalPunctuationChecker,
+  quoteStyleConsistencyChecker,
+} from '../src/virtualEditor/checkers/proofreading'
+import type { Manuscript, ParagraphBlock } from '../src/types/content'
+
+function makeSingleParagraphManuscript(html: string): Manuscript {
+  return {
+    chapters: [
+      {
+        id: 've-chapter',
+        title: 'Chapter One',
+        order: 0,
+        blocks: [{ id: 've-block', type: 'paragraph', html } as ParagraphBlock],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'virtual-editor-fixture.md',
+  }
+}
+
+// Double spaces
+const doubleSpaceDirty = doubleSpaceChecker.run({ manuscript: makeSingleParagraphManuscript('This has  a double space.') })
+check('VE proofreading: double space detected', doubleSpaceDirty.length === 1)
+check('VE proofreading: no false positive on clean text (double space)',
+  doubleSpaceChecker.run({ manuscript: makeSingleParagraphManuscript('This has a clean sentence.') }).length === 0)
+if (doubleSpaceDirty[0]?.suggestedFix) {
+  const block = makeSingleParagraphManuscript('This has  a double space.').chapters[0].blocks[0] as ParagraphBlock
+  const patch = doubleSpaceDirty[0].suggestedFix.apply(block) as Partial<ParagraphBlock>
+  check('VE proofreading: double-space fix collapses to a single space', patch.html === 'This has a double space.')
+}
+
+// Repeated adjacent words
+const repeatedWordDirty = repeatedWordChecker.run({ manuscript: makeSingleParagraphManuscript('This is the the answer.') })
+check('VE proofreading: repeated word detected', repeatedWordDirty.length === 1)
+check('VE proofreading: no false positive on clean text (repeated word)',
+  repeatedWordChecker.run({ manuscript: makeSingleParagraphManuscript('This is the answer.') }).length === 0)
+if (repeatedWordDirty[0]?.suggestedFix) {
+  const block = makeSingleParagraphManuscript('This is the the answer.').chapters[0].blocks[0] as ParagraphBlock
+  const patch = repeatedWordDirty[0].suggestedFix.apply(block) as Partial<ParagraphBlock>
+  check('VE proofreading: repeated-word fix removes the duplicate', patch.html === 'This is the answer.')
+}
+
+// Unmatched quotation marks
+check('VE proofreading: unmatched quote detected',
+  unmatchedQuotesChecker.run({ manuscript: makeSingleParagraphManuscript('She said "hello and walked away.') }).length === 1)
+check('VE proofreading: no false positive on balanced quotes',
+  unmatchedQuotesChecker.run({ manuscript: makeSingleParagraphManuscript('She said "hello" and walked away.') }).length === 0)
+
+// Unmatched brackets/parentheses
+check('VE proofreading: unmatched bracket detected',
+  unmatchedBracketsChecker.run({ manuscript: makeSingleParagraphManuscript('This (is broken.') }).length === 1)
+check('VE proofreading: no false positive on balanced brackets',
+  unmatchedBracketsChecker.run({ manuscript: makeSingleParagraphManuscript('This (is fine).') }).length === 0)
+
+// Missing terminal punctuation
+check('VE proofreading: missing terminal punctuation detected',
+  missingTerminalPunctuationChecker.run({ manuscript: makeSingleParagraphManuscript('This paragraph has no ending') }).length === 1)
+check('VE proofreading: no false positive when punctuation is present',
+  missingTerminalPunctuationChecker.run({ manuscript: makeSingleParagraphManuscript('This paragraph ends properly.') }).length === 0)
+
+// Straight vs curly quote consistency
+check('VE proofreading: mixed quote styles flagged',
+  quoteStyleConsistencyChecker.run({ manuscript: makeSingleParagraphManuscript('He said "hi" and she said “hello”.') }).length === 1)
+check('VE proofreading: no false positive on a single quote style',
+  quoteStyleConsistencyChecker.run({ manuscript: makeSingleParagraphManuscript('He said “hi” and she said “hello”.') }).length === 0)
+
+// Pipeline + score aggregation
+const dirtyReport = runPipeline('ve-test-project', makeSingleParagraphManuscript('This  has a double space and the the repeated word'))
+check('VE pipeline: dirty manuscript scores below 100 on proofreading', (dirtyReport.categoryScores.proofreading?.score ?? 100) < 100)
+check('VE pipeline: overall score is computed once at least one category is analysed', dirtyReport.overallScore !== null)
+check('VE pipeline: categories with no checker registered stay null (honest "not yet analysed")', dirtyReport.categoryScores.readability === null)
+check('VE pipeline: overall score equals the mean of analysed categories only', dirtyReport.overallScore === dirtyReport.categoryScores.proofreading?.score)
+
+const cleanReport = runPipeline('ve-test-project', makeSingleParagraphManuscript('This is a perfectly clean sentence.'))
+check('VE pipeline: clean manuscript scores a perfect 100 on proofreading', cleanReport.categoryScores.proofreading?.score === 100)
+check('VE pipeline: clean manuscript has zero findings', cleanReport.findings.length === 0)
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)
