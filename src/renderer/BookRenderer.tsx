@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 
 import type { Project } from '@/types'
@@ -10,6 +10,7 @@ import { paginate, type LaidOutPage } from '@/renderer/paginate'
 import { HeightMeasurer } from '@/renderer/HeightMeasurer'
 import { Page } from '@/renderer/Page'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
+import { useExportStore } from '@/store/exportStore'
 
 interface BookRendererProps {
   project: Project
@@ -51,6 +52,11 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
   }, [heights, manuscript, pageBox.contentHeightPx, theme.chapterOpener.topSpacer])
 
   const spreads = useMemo(() => (viewMode === 'spread' ? groupIntoSpreads(pages) : pages.map((p) => [p])), [pages, viewMode])
+
+  const setExportLayout = useExportStore((s) => s.setLayout)
+  useEffect(() => {
+    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
+  }, [pages, toc, pageBox, theme, project.id, setExportLayout])
 
   return (
     <div className="flex min-h-0 flex-1">

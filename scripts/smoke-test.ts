@@ -65,5 +65,75 @@ const overflow = pages.some((p) => {
 })
 check('paginate: no page grossly overflows content height', !overflow)
 
+// --- Inline run parsing (used by the PDF exporter) ---
+import { parseInlineRuns } from '../src/pdf/htmlRuns'
+import { wrapRuns } from '../src/pdf/textWrap'
+
+const runs = parseInlineRuns('Hello <strong>bold world</strong> and plain')
+check('inline runs: bold run flagged', runs.some((r) => r.bold && r.text.includes('bold world')))
+check('inline runs: plain run not flagged', runs.some((r) => !r.bold && r.text.includes('plain')))
+
+const fakeFont = { widthOfTextAtSize: (text: string, size: number) => text.length * size * 0.6 }
+const wrapped = wrapRuns(
+  [{ text: 'The quick brown fox jumps over the lazy dog and keeps running', bold: false }],
+  fakeFont,
+  fakeFont,
+  12,
+  100,
+)
+check('text wrap: produces multiple lines when text exceeds width', wrapped.length > 1)
+check('text wrap: no line exceeds max width', wrapped.every((l) => l.width <= 100 + 0.001))
+const rewordedText = wrapped.flatMap((l) => l.fragments.map((f) => f.text)).join(' ')
+check('text wrap: all words preserved in order', rewordedText === 'The quick brown fox jumps over the lazy dog and keeps running')
+
+// --- Full PDF export integration test (exercises pdf-lib + fontkit + our
+// drawing pipeline end-to-end, minus image embedding which needs a real
+// browser canvas) ---
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const originalFetch = globalThis.fetch
+// @ts-expect-error -- test shim: serve /fonts/*.woff2 from the local public/ dir
+globalThis.fetch = async (url: string) => {
+  if (typeof url === 'string' && url.startsWith('/fonts/')) {
+    const filePath = path.join(__dirname, '..', 'public', url)
+    const buf = fs.readFileSync(filePath)
+    return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+  }
+  return originalFetch(url)
+}
+
+const { exportBookToPdf } = await import('../src/pdf/exportPdf')
+const { computePageBox } = await import('../src/renderer/pageGeometry')
+const { resolveTheme } = await import('../src/theme/presets')
+const { DEFAULT_PROJECT_SETTINGS } = await import('../src/types/project')
+
+const testManuscriptChapters = parseMarkdown(
+  '# Test Chapter\n\nA paragraph with **bold** text to exercise the exporter end-to-end.\n\n## A heading\n\n- one\n- two\n\n> A quote for good measure\n',
+  'Test',
+)
+const testPageBox = computePageBox(DEFAULT_PROJECT_SETTINGS)
+const testTheme = resolveTheme(DEFAULT_PROJECT_SETTINGS.themeId)
+const { pages: exportPages, toc: exportToc } = paginate(testManuscriptChapters, () => 40, testPageBox.contentHeightPx, testTheme.chapterOpener.topSpacer)
+
+try {
+  const blob = await exportBookToPdf(
+    { pages: exportPages, toc: exportToc, pageBox: testPageBox, theme: testTheme },
+    'Test Book',
+    DEFAULT_PROJECT_SETTINGS,
+  )
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const header = new TextDecoder().decode(bytes.slice(0, 5))
+  check('pdf export: produces a Blob', blob instanceof Blob)
+  check('pdf export: has a valid %PDF- header', header === '%PDF-')
+  check('pdf export: non-trivial size (fonts embedded)', bytes.length > 50_000)
+  console.log(`    (pdf size: ${(bytes.length / 1024).toFixed(0)} KB for a 1-chapter test book)`)
+} catch (err) {
+  console.error(err)
+  check('pdf export: completes without throwing', false)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

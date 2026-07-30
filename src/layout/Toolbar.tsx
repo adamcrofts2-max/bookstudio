@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronsRight, Download, Moon, PanelLeft, Redo2, Sun, Undo2 } from 'lucide-react'
+import { ChevronsRight, Download, Loader2, Moon, PanelLeft, Redo2, Sun, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -12,6 +12,7 @@ import { useTheme } from '@/hooks/useTheme'
 import { useUiStore } from '@/store/uiStore'
 import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
+import { useExportPdf } from '@/pdf/useExportPdf'
 import type { Project } from '@/types'
 
 interface ToolbarProps {
@@ -49,6 +50,7 @@ export function Toolbar({ project }: ToolbarProps) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
   const inspectorCollapsed = useUiStore((s) => s.inspectorCollapsed)
   const toggleInspector = useUiStore((s) => s.toggleInspector)
+  const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-panel px-3">
@@ -90,13 +92,21 @@ export function Toolbar({ project }: ToolbarProps) {
         <Tooltip>
           <TooltipTrigger asChild>
             <span>
-              <Button variant="primary" size="sm" disabled className="gap-1.5">
-                <Download className="size-3.5" />
-                Export PDF
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={!canExport || exporting}
+                className="gap-1.5"
+                onClick={runExport}
+              >
+                {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                {exporting ? 'Exporting…' : 'Export PDF'}
               </Button>
             </span>
           </TooltipTrigger>
-          <TooltipContent>Arrives in Phase 7 — PDF Export</TooltipContent>
+          <TooltipContent>
+            {canExport ? (exportError ?? 'Export a print-ready PDF — bleed, crop marks, embedded fonts') : 'Import a manuscript first'}
+          </TooltipContent>
         </Tooltip>
 
         <IconButton

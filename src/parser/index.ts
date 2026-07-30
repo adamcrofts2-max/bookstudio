@@ -2,7 +2,6 @@ import type { Manuscript } from '@/types/content'
 import { parseMarkdown } from '@/parser/markdown'
 import { parseText } from '@/parser/text'
 import { parseHtmlDocument } from '@/parser/html'
-import { parseDocx } from '@/parser/docx'
 
 export class UnsupportedManuscriptFormatError extends Error {
   constructor(extension: string) {
@@ -31,8 +30,10 @@ export async function importManuscript(file: File, projectId: string): Promise<M
       case 'html':
       case 'htm':
         return parseHtmlDocument(await file.text(), fallbackTitle)
-      case 'docx':
+      case 'docx': {
+        const { parseDocx } = await import('@/parser/docx')
         return parseDocx(file, fallbackTitle, projectId)
+      }
       default:
         throw new UnsupportedManuscriptFormatError(extension)
     }
