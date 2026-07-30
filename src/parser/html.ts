@@ -4,8 +4,12 @@ import { generateId } from '@/utils'
 const ALLOWED_INLINE_TAGS = new Set(['STRONG', 'B', 'EM', 'I', 'A', 'BR'])
 
 /** Rebuilds an element's inner HTML keeping only a safe inline subset
- * (bold, italic, links, line breaks) — never trusts imported markup as-is. */
-function sanitiseInline(node: Node): string {
+ * (bold, italic, links, line breaks) — never trusts imported markup as-is.
+ * Exported so the Virtual Editor's inline text-editing commit path
+ * (`BlockContent.tsx`) can sanitise whatever the browser's `contentEditable`
+ * produces back down to the exact same allowed-tag set import-time HTML
+ * goes through, instead of maintaining a second sanitiser. */
+export function sanitiseInline(node: Node): string {
   let out = ''
   node.childNodes.forEach((child) => {
     if (child.nodeType === Node.TEXT_NODE) {

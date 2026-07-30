@@ -11,6 +11,7 @@ import { HeightMeasurer } from '@/renderer/HeightMeasurer'
 import { LazySpread } from '@/renderer/LazySpread'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
 import { useExportStore } from '@/store/exportStore'
+import { useContentStore } from '@/store/contentStore'
 
 interface BookRendererProps {
   project: Project
@@ -43,8 +44,14 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
     return ids
   }, [manuscript, theme.typography.dropCap])
 
+  // Bumped by contentStore on every updateBlock/renameChapter/setManuscript
+  // call for this project — folding it into measureKey is what makes an
+  // inline text edit actually trigger remeasurement + repagination instead
+  // of silently keeping a block's stale cached height (see contentStore.ts).
+  const contentRevision = useContentStore((s) => s.revisionByProject[project.id] ?? 0)
+
   const [heights, setHeights] = useState<Record<string, number> | null>(null)
-  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}`
+  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}-${contentRevision}`
 
   const { pages, toc } = useMemo(() => {
     if (!heights) return { pages: [] as LaidOutPage[], toc: [] }
@@ -84,6 +91,7 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
             {spreads.map((spread, i) => (
               <LazySpread
                 key={i}
+                projectId={project.id}
                 spread={spread}
                 pageBox={pageBox}
                 theme={theme}

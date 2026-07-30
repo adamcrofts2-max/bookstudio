@@ -203,14 +203,93 @@ Both fixes verified live (not just build-clean) via a real browser: opening the 
 project renders the editor shell with no console errors, and a hard reload on
 `/project/:id` loads the app directly instead of Vercel's 404 page.
 
+## Phase 10 — Inline manuscript text editing
+
+Closed the gap called out at the end of Phase 9: until now, Book Studio had zero
+manuscript text-editing capability — a typo could only be fixed by re-importing the
+whole manuscript, destroying layout/theme decisions. This also blocked the Virtual
+Editor's own "Edit" action, which was visibly disabled.
+
+- **Inline, click-to-edit text on the rendered page**, reusing the single shared
+  `BlockContent` component per its own doc comment ("the two must stay pixel-identical,
+  so there is exactly one implementation"). New opt-in `editable`/`onCommit` props are
+  wired *only* in `Page.tsx`'s real rendering path — `HeightMeasurer.tsx` is untouched
+  and never passes them, so off-screen measurement instances stay inert. Covers every
+  block type's text: heading text, paragraph HTML (bold/italic/link preserved), quote
+  text + attribution, list items (existing items only), table header/cell text
+  (existing cells only).
+  - Interaction: select (unchanged, `selectionStore`), double-click to enter edit mode
+    — a distinct amber (`--color-warning`) focus ring separates "editing" from the
+    existing green (`--color-accent`) "selected" ring. Enter commits (blurs the field);
+    Escape cancels without committing; blur commits. List items and table cells are
+    editable individually (their own small `ListItemField`/`TableCellField`
+    components, so each keeps its own edit state without violating Rules of Hooks
+    across a variable-length `.map()`).
+  - Paragraph HTML is sanitised back down to the same allowed-tag set on commit by
+    **reusing** `sanitiseInline` from `src/parser/html.ts` (now exported) — no second
+    sanitiser was written, per the project's own "avoid duplicate code" rule.
+- **Chapter title renaming**, wired to the existing `contentStore.renameChapter`: a
+  hover-revealed pencil icon (and double-click) in `Sidebar.tsx`'s chapter list, and
+  double-click on the chapter-opener `<h1>` itself on the rendered page
+  (`Page.tsx`) — both commit on Enter/blur, cancel on Escape.
+- **Fixed the `measureKey` staleness bug**: `contentStore` now tracks a cheap
+  per-project `revisionByProject` counter (state, `getRevision` selector), bumped on
+  every `updateBlock`/`renameChapter`/`setManuscript` call. `BookRenderer.tsx` folds
+  `contentStore.revisionByProject[project.id]` into `measureKey`, so any content edit
+  reliably triggers `HeightMeasurer` remeasurement and repagination — previously an
+  edited block silently kept its old (possibly now-wrong) cached height until an
+  unrelated full remeasure (theme change, reopening the project) happened to occur.
+  This bug quietly affected the Virtual Editor's "Accept fix" action too, so this is
+  the same fix for both paths.
+- **Reconnected the Virtual Editor's "Edit" action**: `FindingRow.tsx`'s Edit button
+  is no longer permanently disabled — it's active whenever a finding has a
+  `location.blockId` (true for all six proofreading checkers today) and calls a new
+  `selectionStore.selectForEdit`, which flags the selection with a one-shot
+  `editRequestId`. `VirtualEditorWorkspace.tsx`'s new `handleEdit` switches back to the
+  manuscript workspace, selects the block, and scrolls to its chapter — exactly like
+  "Locate" already did — and `Page.tsx`/`BlockContent.tsx` see the pending edit
+  request and auto-enter inline edit mode on that exact block, consuming the request
+  so it doesn't refire. The stale "not yet implemented" tooltip is gone; a finding with
+  no single-block location (a whole-book pattern) still shows Edit disabled, now with
+  an honest tooltip explaining why rather than "not yet implemented."
+- **Tests**: `scripts/smoke-test.ts` gained coverage for (1) the paragraph
+  sanitise-on-commit path — a deliberately messy contentEditable-style HTML fragment
+  (unknown wrapper tag with an inline event handler, `<script>`-adjacent content,
+  `<b>`/`<i>`, an `<a>` with a stray attribute) asserted down to the exact allowed
+  output, reusing `sanitiseInline` directly — and (2) `contentStore`'s new revision
+  signal: bumps on `updateBlock`/`renameChapter`, stays stable when nothing has
+  changed, and is per-project (editing one project's manuscript never bumps another's
+  revision). The jsdom shim at the top of the file also now sets a `url` (so
+  `localStorage` isn't on an opaque origin) and `globalThis.window` (zustand's
+  `persist` middleware reads `window.localStorage`, not `globalThis.localStorage`) —
+  needed once a real `persist`-backed store (`contentStore`) was exercised directly
+  for the first time in this test suite.
+
+### Explicitly deferred (scoped out up front, not discovered late)
+- Adding, deleting, reordering, splitting or merging blocks/chapters — only editing
+  the text of existing ones is in scope this phase.
+- A rich-formatting toolbar beyond bold/italic/link — no new inline styles are
+  representable; contentEditable can only preserve what's already there.
+- Undo/redo — the Toolbar's buttons stay disabled, as before; this is unrelated
+  future work.
+- Any change to the Virtual Editor's non-destructive revision log/accept-fix
+  mechanics, or persisting edit history beyond what `contentStore` already does.
+- The Virtual Editor's "Edit" action enters edit mode directly for heading/paragraph/
+  quote findings (the common case for today's six proofreading checkers). For a
+  finding located on a list or table block, Edit selects and scrolls to the block
+  (same as Locate) but doesn't auto-enter edit mode on one specific item/cell, since
+  there's no single unambiguous field to jump into for a multi-field block — a
+  double-click on the specific item/cell still works immediately once there.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
-end-to-end, and the Virtual Editor now has a real, working foundation (Phase 9).
-Good next steps in priority order: (1) a second real checker engine on top of the
-existing `Checker` pattern — Consistency (terminology/units/spelling-variant
-matching) is the best next candidate since it's still fully deterministic, (2)
-line-level text flow so paragraphs can split across pages like a real book, (3)
-justified text and image rotation in the PDF exporter, (4) proper glyph subsetting
-once the fontkit bug is understood, (5) the first real `AiReviewer` (readability is
-the most self-contained candidate — no layout/print context needed), (6) EPUB/
-Kindle export.
+end-to-end, the Virtual Editor has a real foundation (Phase 9), and the manuscript is
+no longer read-only (Phase 10). Good next steps in priority order: (1) a second real
+checker engine on top of the existing `Checker` pattern — Consistency
+(terminology/units/spelling-variant matching) is the best next candidate since it's
+still fully deterministic, (2) line-level text flow so paragraphs can split across
+pages like a real book, (3) justified text and image rotation in the PDF exporter, (4)
+proper glyph subsetting once the fontkit bug is understood, (5) the first real
+`AiReviewer` (readability is the most self-contained candidate — no layout/print
+context needed), (6) EPUB/Kindle export, (7) undo/redo — now that direct editing
+exists, this is a more pressing gap than before.

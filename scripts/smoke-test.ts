@@ -1,14 +1,24 @@
 import { JSDOM } from 'jsdom'
 
-const dom = new JSDOM('<!doctype html><html><body></body></html>')
+// `url` is required so `localStorage` isn't on an opaque origin — needed by
+// the zustand `persist` middleware (contentStore) exercised further below.
+const dom = new JSDOM('<!doctype html><html><body></body></html>', { url: 'http://localhost/' })
 // @ts-expect-error -- test shim
 globalThis.DOMParser = dom.window.DOMParser
 // @ts-expect-error -- test shim
 globalThis.Node = dom.window.Node
+// @ts-expect-error -- test shim
+globalThis.localStorage = dom.window.localStorage
+// zustand's `persist` middleware defaults to `window.localStorage` (not
+// `globalThis.localStorage`) — without this, storage silently "fails" and
+// persist logs a console warning on every write, even though state updates
+// still work in-memory.
+// @ts-expect-error -- test shim
+globalThis.window = dom.window
 
 import { parseMarkdown } from '../src/parser/markdown'
 import { parseText } from '../src/parser/text'
-import { parseHtmlDocument } from '../src/parser/html'
+import { parseHtmlDocument, sanitiseInline } from '../src/parser/html'
 import { paginate } from '../src/renderer/paginate'
 import type { ContentBlock } from '../src/types/content'
 
@@ -218,6 +228,66 @@ check('VE pipeline: overall score equals the mean of analysed categories only', 
 const cleanReport = runPipeline('ve-test-project', makeSingleParagraphManuscript('This is a perfectly clean sentence.'))
 check('VE pipeline: clean manuscript scores a perfect 100 on proofreading', cleanReport.categoryScores.proofreading?.score === 100)
 check('VE pipeline: clean manuscript has zero findings', cleanReport.findings.length === 0)
+
+// --- Inline editing: sanitise-on-commit reuses the import-time sanitiser ---
+// BlockContent.tsx feeds whatever a contentEditable paragraph produced back
+// through this exact function (see src/renderer/BlockContent.tsx's
+// `useEditableField` with mode 'html') rather than maintaining a second
+// sanitiser. Simulate a deliberately messy contentEditable-style fragment:
+// an unknown wrapper tag with an inline event handler, a <script>, <b>/<i>
+// needing conversion to <strong>/<em>, and an <a> with a stray attribute.
+const messyHtml =
+  '<div>Hello <span onclick="evil()">world</span> and <b>bold</b> <i>ital</i> <a href="https://example.com" onclick="steal()">a link</a>.</div>'
+const messyDoc = new DOMParser().parseFromString(messyHtml, 'text/html')
+const sanitisedOnCommit = sanitiseInline(messyDoc.body.firstElementChild as unknown as Node)
+check('sanitise-on-commit: unknown wrapper tag (<span>) stripped but its text kept', sanitisedOnCommit.includes('world') && !sanitisedOnCommit.includes('<span'))
+check('sanitise-on-commit: inline event handlers never survive', !sanitisedOnCommit.includes('onclick'))
+check('sanitise-on-commit: <b>/<i> normalised to <strong>/<em>', sanitisedOnCommit.includes('<strong>bold</strong>') && sanitisedOnCommit.includes('<em>ital</em>'))
+check(
+  'sanitise-on-commit: safe <a href> preserved with target/rel added, no stray attributes',
+  sanitisedOnCommit.includes('<a href="https://example.com" target="_blank" rel="noopener noreferrer">a link</a>'),
+)
+
+// --- measureKey staleness fix: contentStore's per-project revision signal ---
+// `BookRenderer.tsx` folds `contentStore.revisionByProject[projectId]` into
+// its `measureKey` so an edited block's stale cached height is always
+// invalidated (see contentStore.ts's `revisionByProject`/`getRevision`).
+// Exercised here at the store level rather than through a full React render.
+const { useContentStore } = await import('../src/store/contentStore')
+const revisionTestProjectId = 've-revision-test-project'
+const revisionManuscript: Manuscript = {
+  chapters: [
+    {
+      id: 'rev-chapter',
+      title: 'Chapter One',
+      order: 0,
+      blocks: [{ id: 'rev-block', type: 'heading', level: 2, text: 'Original heading' }],
+    },
+  ],
+  importedAt: new Date().toISOString(),
+  sourceFileName: 'revision-fixture.md',
+}
+const contentStoreApi = useContentStore.getState()
+contentStoreApi.setManuscript(revisionTestProjectId, revisionManuscript)
+const revisionAfterImport = useContentStore.getState().getRevision(revisionTestProjectId)
+
+const revisionBeforeEdit = useContentStore.getState().getRevision(revisionTestProjectId)
+check('contentStore: revision unchanged when nothing has edited the project', revisionBeforeEdit === revisionAfterImport)
+
+useContentStore.getState().updateBlock(revisionTestProjectId, 'rev-chapter', 'rev-block', { text: 'Edited heading' })
+const revisionAfterUpdateBlock = useContentStore.getState().getRevision(revisionTestProjectId)
+check('contentStore: revision bumps on updateBlock (fixes the measureKey staleness bug)', revisionAfterUpdateBlock > revisionBeforeEdit)
+
+const revisionBeforeRename = revisionAfterUpdateBlock
+useContentStore.getState().renameChapter(revisionTestProjectId, 'rev-chapter', 'Renamed Chapter')
+const revisionAfterRename = useContentStore.getState().getRevision(revisionTestProjectId)
+check('contentStore: revision bumps on renameChapter', revisionAfterRename > revisionBeforeRename)
+
+const revisionUnrelatedProjectId = 've-revision-test-project-unrelated'
+contentStoreApi.setManuscript(revisionUnrelatedProjectId, revisionManuscript)
+useContentStore.getState().updateBlock(revisionUnrelatedProjectId, 'rev-chapter', 'rev-block', { text: 'Different project' })
+const revisionAfterUnrelatedEdit = useContentStore.getState().getRevision(revisionTestProjectId)
+check('contentStore: editing a different project does not bump this project\'s revision', revisionAfterUnrelatedEdit === revisionAfterRename)
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

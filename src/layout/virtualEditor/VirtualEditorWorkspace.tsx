@@ -39,6 +39,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   const ignoreSimilar = useVirtualEditorStore((s) => s.ignoreSimilar)
   const restoreRevision = useVirtualEditorStore((s) => s.restoreRevision)
   const select = useSelectionStore((s) => s.select)
+  const selectForEdit = useSelectionStore((s) => s.selectForEdit)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
 
@@ -69,6 +70,20 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
     // The manuscript workspace re-mounts on this same tick; wait a frame
     // so `[data-chapter-start]` actually exists before we scroll to it —
     // same lookup Sidebar.tsx uses for chapter navigation.
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-chapter-start="${chapterId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
+
+  /** "Edit" on a finding: same navigation as "Locate", but flags the
+   * selection so `Page.tsx`/`BlockContent.tsx` enter inline edit mode on
+   * that exact block automatically instead of waiting for a double-click. */
+  const handleEdit = (chapterId: string, blockId?: string) => {
+    setWorkspaceMode('manuscript')
+    if (blockId) {
+      selectForEdit(chapterId, blockId)
+      setInspectorTab('typography')
+    }
     requestAnimationFrame(() => {
       document.querySelector(`[data-chapter-start="${chapterId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
@@ -139,6 +154,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                   chapterTitle={chapterTitleById.get(finding.location.chapterId) ?? 'Unknown chapter'}
                   onLocate={() => handleLocate(finding.location.chapterId, finding.location.blockId)}
                   onAccept={() => acceptFix(project.id, finding)}
+                  onEdit={() => handleEdit(finding.location.chapterId, finding.location.blockId)}
                   onStatus={(status: FindingStatus) => setFindingStatus(project.id, finding.id, status)}
                   onIgnoreSimilar={() => ignoreSimilar(project.id, finding)}
                 />

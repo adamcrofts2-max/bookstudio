@@ -6,6 +6,7 @@ import type { ResolvedBookTheme } from '@/theme/presets'
 import { Page } from '@/renderer/Page'
 
 interface LazySpreadProps {
+  projectId: string
   spread: LaidOutPage[]
   pageBox: PageBox
   theme: ResolvedBookTheme
@@ -24,7 +25,7 @@ interface LazySpreadProps {
  * (no unmount-on-scroll-away) to avoid re-triggering the height
  * measurement pass and to keep scrolling smooth.
  */
-export function LazySpread({ spread, pageBox, theme, dropCapBlockIds, toc, bookTitle, language }: LazySpreadProps) {
+export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds, toc, bookTitle, language }: LazySpreadProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
 
@@ -46,7 +47,17 @@ export function LazySpread({ spread, pageBox, theme, dropCapBlockIds, toc, bookT
     <div ref={ref} className="flex gap-px">
       {spread.map((page) =>
         visible ? (
-          <Page key={page.id} page={page} pageBox={pageBox} theme={theme} dropCapBlockIds={dropCapBlockIds} toc={toc} bookTitle={bookTitle} language={language} />
+          <Page
+            key={page.id}
+            projectId={projectId}
+            page={page}
+            pageBox={pageBox}
+            theme={theme}
+            dropCapBlockIds={dropCapBlockIds}
+            toc={toc}
+            bookTitle={bookTitle}
+            language={language}
+          />
         ) : (
           <div
             key={page.id}

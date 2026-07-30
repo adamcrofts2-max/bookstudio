@@ -18,6 +18,7 @@ interface FindingRowProps {
   chapterTitle: string
   onLocate: () => void
   onAccept: () => void
+  onEdit: () => void
   onStatus: (status: FindingStatus) => void
   onIgnoreSimilar: () => void
 }
@@ -28,7 +29,9 @@ interface FindingRowProps {
  * black box") and exposes the full action set: Accept / Reject / Edit /
  * Ignore / Ignore Similar / Apply to Chapter / Apply to Book. Apply to
  * Chapter/Book are visibly disabled — batch-apply isn't built yet, and
- * this milestone would rather say so than fake it.
+ * this milestone would rather say so than fake it. Edit switches back to
+ * the manuscript workspace, selects the finding's block and enters inline
+ * edit mode on it directly (see `BlockContent.tsx`'s `autoEdit` prop).
  */
 export function FindingRow({
   finding,
@@ -36,10 +39,12 @@ export function FindingRow({
   chapterTitle,
   onLocate,
   onAccept,
+  onEdit,
   onStatus,
   onIgnoreSimilar,
 }: FindingRowProps) {
   const resolved = status !== 'new'
+  const canEdit = Boolean(finding.location.blockId)
 
   return (
     <div
@@ -84,17 +89,24 @@ export function FindingRow({
             <XCircle className="size-3.5" />
             Reject
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button variant="ghost" size="sm" disabled className="gap-1.5">
-                  <Pencil className="size-3.5" />
-                  Edit
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Not yet implemented — edit the block directly in the manuscript view for now</TooltipContent>
-          </Tooltip>
+          {canEdit ? (
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={onEdit}>
+              <Pencil className="size-3.5" />
+              Edit
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Button variant="ghost" size="sm" disabled className="gap-1.5">
+                    <Pencil className="size-3.5" />
+                    Edit
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>This finding describes a book-wide pattern, not a single block — there's nothing to jump to directly</TooltipContent>
+            </Tooltip>
+          )}
           <Button variant="ghost" size="sm" className="gap-1.5" onClick={() => onStatus('ignored')}>
             <EyeOff className="size-3.5" />
             Ignore

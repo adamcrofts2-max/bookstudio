@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronsLeft, ImagePlus, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronsLeft, ImagePlus, Pencil, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
@@ -25,7 +25,21 @@ export function Sidebar({ project }: SidebarProps) {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
 
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
+  const renameChapter = useContentStore((s) => s.renameChapter)
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
+
+  const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
+  const [titleDraft, setTitleDraft] = useState('')
+
+  const startRename = (chapterId: string, currentTitle: string) => {
+    setTitleDraft(currentTitle)
+    setRenamingChapterId(chapterId)
+  }
+
+  const commitRename = (chapterId: string, fallback: string) => {
+    renameChapter(project.id, chapterId, titleDraft.trim() || fallback)
+    setRenamingChapterId(null)
+  }
 
   const assets = useAssetStore((s) => s.byProject[project.id] ?? EMPTY_ASSETS)
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
@@ -73,22 +87,57 @@ export function Sidebar({ project }: SidebarProps) {
               />
             ) : (
               <nav className="flex flex-col gap-0.5 py-1">
-                {manuscript.chapters.map((chapter, i) => (
-                  <button
-                    key={chapter.id}
-                    type="button"
-                    onClick={() => scrollToChapter(chapter.id)}
-                    className={cn(
-                      'flex items-center gap-2.5 rounded-[var(--radius-button)] px-2.5 py-2 text-left text-sm font-medium transition-colors duration-150',
-                      selectedChapterId === chapter.id
-                        ? 'bg-selection text-text-primary'
-                        : 'text-text-secondary hover:bg-hover hover:text-text-primary',
-                    )}
-                  >
-                    <span className="text-xs tabular-nums text-text-muted">{i + 1}</span>
-                    <span className="truncate">{chapter.title}</span>
-                  </button>
-                ))}
+                {manuscript.chapters.map((chapter, i) =>
+                  renamingChapterId === chapter.id ? (
+                    <div key={chapter.id} className="flex items-center gap-2.5 px-2.5 py-1.5">
+                      <span className="text-xs tabular-nums text-text-muted">{i + 1}</span>
+                      <input
+                        autoFocus
+                        value={titleDraft}
+                        onChange={(e) => setTitleDraft(e.target.value)}
+                        onBlur={() => commitRename(chapter.id, chapter.title)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            ;(e.currentTarget as HTMLInputElement).blur()
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault()
+                            setRenamingChapterId(null)
+                          }
+                        }}
+                        className="min-w-0 flex-1 rounded-[var(--radius-button)] border border-[var(--color-warning)] bg-panel px-1.5 py-0.5 text-sm text-text-primary outline-none"
+                      />
+                    </div>
+                  ) : (
+                    <div
+                      key={chapter.id}
+                      className={cn(
+                        'group flex items-center gap-2.5 rounded-[var(--radius-button)] px-2.5 py-2 text-left text-sm font-medium transition-colors duration-150',
+                        selectedChapterId === chapter.id
+                          ? 'bg-selection text-text-primary'
+                          : 'text-text-secondary hover:bg-hover hover:text-text-primary',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => scrollToChapter(chapter.id)}
+                        onDoubleClick={() => startRename(chapter.id, chapter.title)}
+                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                      >
+                        <span className="text-xs tabular-nums text-text-muted">{i + 1}</span>
+                        <span className="truncate">{chapter.title}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => startRename(chapter.id, chapter.title)}
+                        aria-label={`Rename ${chapter.title}`}
+                        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+                      >
+                        <Pencil className="size-3" />
+                      </button>
+                    </div>
+                  ),
+                )}
               </nav>
             )}
           </ScrollArea>
