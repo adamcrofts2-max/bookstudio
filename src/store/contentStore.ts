@@ -42,6 +42,16 @@ interface ContentStoreActions {
    * Bumps `revisionByProject` exactly like `updateBlock`/`renameChapter`.
    */
   insertBlock: (projectId: string, chapterId: string, afterBlockId: string | null, block: ContentBlock) => void
+  /**
+   * Removes the block with id `blockId` from `chapterId`'s block list. The
+   * only sanctioned way anything removes a block from the manuscript — no
+   * other layer reaches into `chapter.blocks` directly. Only the named
+   * chapter is touched; every other chapter/project is left byte-for-byte
+   * alone. Bumps `revisionByProject` exactly like `updateBlock`/
+   * `insertBlock`. There is no undo system yet, so callers (`ImagePanel.tsx`)
+   * are expected to confirm with the user before calling this.
+   */
+  deleteBlock: (projectId: string, chapterId: string, blockId: string) => void
 }
 
 export const useContentStore = create<ContentStoreState & ContentStoreActions>()(
@@ -110,6 +120,21 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
             const blocks = chapter.blocks.slice()
             blocks.splice(insertAt, 0, block)
             return { ...chapter, blocks }
+          })
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      deleteBlock: (projectId, chapterId, blockId) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const chapters: Chapter[] = manuscript.chapters.map((chapter) => {
+            if (chapter.id !== chapterId) return chapter
+            return { ...chapter, blocks: chapter.blocks.filter((b) => b.id !== blockId) }
           })
           return {
             byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },

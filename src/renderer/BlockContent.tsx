@@ -3,6 +3,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ContentBlock } from '@/types/content'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import { useAssetStore } from '@/store/assetStore'
+import { useDragStore } from '@/store/dragStore'
+import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
+import { PX_PER_MM } from '@/renderer/pageGeometry'
 import { sanitiseInline } from '@/parser/html'
 import { cn } from '@/lib/utils'
 
@@ -89,6 +92,15 @@ function useEditableField(options: { mode: 'text' | 'html'; initialValue: string
   return { ref, isEditing, startEditing, handleBlur, handleKeyDown }
 }
 
+/** Tailwind margin classes for `ImageBlock.align` — 'center' (the default
+ * when the field is absent) reproduces the always-`mx-auto` behaviour that
+ * existed before this field was introduced. */
+function imageAlignClass(align: 'left' | 'center' | 'right') {
+  if (align === 'left') return 'ml-0 mr-auto'
+  if (align === 'right') return 'ml-auto mr-0'
+  return 'mx-auto'
+}
+
 function outlineClass(selected: boolean, editing: boolean) {
   if (editing) return 'outline outline-2 outline-[var(--color-warning)] rounded-sm'
   if (selected) return 'outline outline-2 outline-[var(--color-accent)] rounded-sm'
@@ -164,6 +176,8 @@ function TableCellField({ as: Tag, text, editable, onCommit, className, style }:
  */
 export function BlockContent({ block, theme, dropCap, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled }: BlockContentProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+  const draggingAssetId = useDragStore((s) => s.draggingAssetId)
+  const [isImageDropTarget, setIsImageDropTarget] = useState(false)
 
   const primary = useEditableField({
     mode: block.type === 'paragraph' ? 'html' : 'text',
@@ -404,18 +418,56 @@ export function BlockContent({ block, theme, dropCap, selected, onSelect, editab
       // Optional field — manuscripts persisted before `widthPercent` existed
       // don't have it; always default to 100 here rather than migrating.
       const widthPercent = block.widthPercent ?? 100
+      // `widthMm` (set via ImagePanel's "Custom" size option) takes
+      // precedence over `widthPercent` when present — same PX_PER_MM
+      // constant used everywhere else mm needs converting to on-screen px.
+      const widthStyle = block.widthMm != null ? `${block.widthMm * PX_PER_MM}px` : `${widthPercent}%`
+      const align = block.align ?? 'center'
+      const alignClass = imageAlignClass(align)
+
+      // Dropping an asset thumbnail directly onto an existing image block
+      // replaces its assetId instead of inserting a new block — a sibling
+      // interaction to `Page.tsx`'s between-block `ImageDropZone`, sharing
+      // the same `ASSET_DRAG_MIME` mechanism. Routed through `onCommit` (the
+      // same prop `Page.tsx` already wires to `contentStore.updateBlock`) so
+      // this component still never touches the store directly.
+      const handleDragOver = (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes(ASSET_DRAG_MIME)) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setIsImageDropTarget(true)
+      }
+      const handleDragLeave = () => setIsImageDropTarget(false)
+      const handleDrop = (e: React.DragEvent) => {
+        if (!e.dataTransfer.types.includes(ASSET_DRAG_MIME)) return
+        e.preventDefault()
+        setIsImageDropTarget(false)
+        const newAssetId = e.dataTransfer.getData(ASSET_DRAG_MIME) || draggingAssetId
+        if (newAssetId) onCommit?.({ assetId: newAssetId })
+      }
+
       return (
         <figure onClick={onSelect} className={cn(wrapperClass, 'cursor-pointer pb-5')}>
           <div
-            className="mx-auto overflow-hidden rounded-[var(--radius-image)]"
-            style={{ background: theme.page.ruleColor, width: `${widthPercent}%` }}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={cn(
+              'overflow-hidden rounded-[var(--radius-image)] outline-offset-2 transition-[outline-color] duration-150',
+              alignClass,
+              isImageDropTarget ? 'outline outline-2 outline-[var(--color-accent)]' : 'outline outline-2 outline-transparent',
+            )}
+            style={{ background: theme.page.ruleColor, width: widthStyle }}
           >
             {url ? (
               <img
                 src={url}
-                alt={block.caption ?? ''}
+                alt={block.altText ?? block.caption ?? ''}
                 className="w-full object-cover"
-                style={{ transform: `rotate(${block.rotation}deg)` }}
+                style={{
+                  transform: `rotate(${block.rotation}deg)`,
+                  filter: block.grayscale ? 'grayscale(100%)' : undefined,
+                }}
               />
             ) : (
               <div className="flex h-40 items-center justify-center text-xs" style={{ color: theme.page.mutedInk }}>
@@ -425,8 +477,8 @@ export function BlockContent({ block, theme, dropCap, selected, onSelect, editab
           </div>
           {block.caption && (
             <figcaption
-              className="mx-auto pt-2 text-[0.75em] italic"
-              style={{ fontFamily: theme.fonts.body, color: theme.page.mutedInk, width: `${widthPercent}%` }}
+              className={cn('pt-2 text-[0.75em] italic', alignClass)}
+              style={{ fontFamily: theme.fonts.body, color: theme.page.mutedInk, width: widthStyle }}
             >
               {block.caption}
             </figcaption>

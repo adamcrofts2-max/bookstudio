@@ -10,6 +10,7 @@ import { parseInlineRuns } from '@/pdf/htmlRuns'
 import { wrapRuns, type WrappedLine } from '@/pdf/textWrap'
 import { blobToPng } from '@/pdf/imageForPdf'
 import { getAssetBlob } from '@/store/assetDb'
+import { PX_PER_MM } from '@/renderer/pageGeometry'
 
 /** CSS px (96dpi) → PDF points (72dpi). */
 const PX_TO_PT = 72 / 96
@@ -137,17 +138,30 @@ async function drawBlock(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
     case 'image': {
       const blob = await getAssetBlob(block.assetId)
       if (!blob) break
-      const { bytes, width, height } = await blobToPng(blob)
+      const { bytes, width, height } = await blobToPng(blob, block.grayscale ?? false)
       const pdfImage = await ctx.page.doc.embedPng(bytes)
-      const displayWidth = ctx.contentWidthPt
+      // Priority order (matches BlockContent.tsx's on-screen logic so the
+      // PDF stays WYSIWYG): explicit mm size, then the percent preset, then
+      // full content width as the legacy default for blocks with neither
+      // field. mm -> px via PX_PER_MM, then px -> pt via PX_TO_PT, so the
+      // same physical size lands on screen and in the exported PDF.
+      const displayWidth =
+        block.widthMm != null ? block.widthMm * PX_PER_MM * PX_TO_PT
+        : block.widthPercent != null ? ctx.contentWidthPt * (block.widthPercent / 100)
+        : ctx.contentWidthPt
       const displayHeight = displayWidth * (height / width)
+      const align = block.align ?? 'center'
+      const imageX =
+        align === 'left' ? ctx.contentX
+        : align === 'right' ? ctx.contentX + (ctx.contentWidthPt - displayWidth)
+        : ctx.contentX + (ctx.contentWidthPt - displayWidth) / 2
       ctx.cursorY -= displayHeight
-      ctx.page.drawImage(pdfImage, { x: ctx.contentX, y: ctx.cursorY, width: displayWidth, height: displayHeight })
+      ctx.page.drawImage(pdfImage, { x: imageX, y: ctx.cursorY, width: displayWidth, height: displayHeight })
       if (block.caption) {
         ctx.cursorY -= 4
         const capSize = theme.typography.bodySize * 0.75 * PX_TO_PT
         ctx.cursorY -= capSize
-        ctx.page.drawText(block.caption, { x: ctx.contentX, y: ctx.cursorY, size: capSize, font: pickFont(ctx.fonts, theme.fonts.body, 400), color: muted })
+        ctx.page.drawText(block.caption, { x: imageX, y: ctx.cursorY, size: capSize, font: pickFont(ctx.fonts, theme.fonts.body, 400), color: muted })
       }
       ctx.cursorY -= 10
       break

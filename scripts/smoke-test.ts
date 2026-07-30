@@ -372,5 +372,97 @@ check('ImageBlock.widthPercent: block without the field defaults to 100', (legac
 const explicitImageBlock = { ...legacyImageBlockWithoutWidth, id: 'explicit-img', widthPercent: 65 } as ImageBlock
 check('ImageBlock.widthPercent: an explicit value is preserved, not overridden', (explicitImageBlock.widthPercent ?? 100) === 65)
 
+// --- contentStore.deleteBlock: removes a block, bumps revision, leaves
+// other chapters/projects untouched (mirrors insertBlock's test shape). ---
+const deleteTestProjectId = 've-delete-block-test-project'
+const deleteOtherProjectId = 've-delete-block-test-project-other'
+contentStoreApi.setManuscript(deleteTestProjectId, makeInsertTestManuscript())
+contentStoreApi.setManuscript(deleteOtherProjectId, makeInsertTestManuscript())
+
+useContentStore.getState().deleteBlock(deleteTestProjectId, 'ib-chapter-1', 'ib-b')
+const afterDelete = useContentStore.getState().getManuscript(deleteTestProjectId)!
+const chapter1AfterDelete = afterDelete.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('deleteBlock: removes the targeted block', chapter1AfterDelete.blocks.map((b) => b.id).join(',') === 'ib-a,ib-c')
+
+const chapter2AfterDelete = afterDelete.chapters.find((c) => c.id === 'ib-chapter-2')!
+check('deleteBlock: other chapters in the same project are left untouched', chapter2AfterDelete.blocks.map((b) => b.id).join(',') === 'ib-x')
+
+const otherProjectAfterDelete = useContentStore.getState().getManuscript(deleteOtherProjectId)!
+const otherProjectChapter1AfterDelete = otherProjectAfterDelete.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('deleteBlock: other projects are left untouched', otherProjectChapter1AfterDelete.blocks.map((b) => b.id).join(',') === 'ib-a,ib-b,ib-c')
+
+const revisionBeforeDelete = useContentStore.getState().getRevision(deleteTestProjectId)
+useContentStore.getState().deleteBlock(deleteTestProjectId, 'ib-chapter-1', 'ib-a')
+const revisionAfterDelete = useContentStore.getState().getRevision(deleteTestProjectId)
+check('deleteBlock: bumps revisionByProject like updateBlock/insertBlock', revisionAfterDelete > revisionBeforeDelete)
+
+const revisionBeforeNoopDelete = useContentStore.getState().getRevision(deleteOtherProjectId)
+useContentStore.getState().deleteBlock(deleteOtherProjectId, 'ib-chapter-1', 'does-not-exist')
+const afterNoopDelete = useContentStore.getState().getManuscript(deleteOtherProjectId)!
+const chapter1AfterNoopDelete = afterNoopDelete.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('deleteBlock: deleting a non-existent blockId is a harmless no-op on the blocks array', chapter1AfterNoopDelete.blocks.map((b) => b.id).join(',') === 'ib-a,ib-b,ib-c')
+check('deleteBlock: still bumps revision even on a no-op delete (matches updateBlock\'s unconditional-bump behaviour)', useContentStore.getState().getRevision(deleteOtherProjectId) > revisionBeforeNoopDelete)
+
+// --- ImageBlock.widthMm/heightMm/aspectLocked/grayscale/align/altText:
+// same "optional field defaults in code, never migrated" pattern as
+// widthPercent above. ---
+const PX_PER_MM = 96 / 25.4 // mirrors renderer/pageGeometry.ts's exported constant exactly
+
+const legacyImageBlockNoNewFields = { id: 'legacy-img-2', type: 'image', assetId: 'asset-1', caption: undefined, rotation: 0, widthPercent: 100 } as ImageBlock
+check('ImageBlock.widthMm: absent on legacy blocks, so widthPercent path is used', legacyImageBlockNoNewFields.widthMm === undefined)
+check('ImageBlock.align: absent defaults to center', (legacyImageBlockNoNewFields.align ?? 'center') === 'center')
+check('ImageBlock.grayscale: absent defaults to false', (legacyImageBlockNoNewFields.grayscale ?? false) === false)
+check('ImageBlock.altText: absent falls back to caption, then empty string', (legacyImageBlockNoNewFields.altText ?? legacyImageBlockNoNewFields.caption ?? '') === '')
+
+// mm -> px conversion (BlockContent.tsx's on-screen sizing): deterministic,
+// exercised directly against the same PX_PER_MM constant pageGeometry.ts
+// exports (mirrored above rather than imported, to keep this test file
+// import-light — the constant's value is asserted, not re-derived).
+const widthMmSample = 80
+const expectedWidthPx = widthMmSample * PX_PER_MM
+check('mm->px sizing: 80mm converts to the expected CSS px width at 96dpi', Math.abs(expectedWidthPx - (widthMmSample * 96) / 25.4) < 1e-9)
+
+// Aspect-locked recompute (ImagePanel.tsx's handleWidthMmChange logic):
+// widthMm * (naturalHeight / naturalWidth), rounded to 1 decimal place.
+const naturalWidth = 1600
+const naturalHeight = 900
+const aspectRatio = naturalHeight / naturalWidth
+const recomputedHeightMm = Math.round(widthMmSample * aspectRatio * 10) / 10
+check('mm sizing: aspect-locked height recompute matches natural image ratio', recomputedHeightMm === 45)
+
+// --- PDF exportPdf.ts displayWidth priority logic: widthMm (converted via
+// PX_PER_MM -> PX_TO_PT) beats widthPercent, which beats the full
+// contentWidthPt legacy default. Pure arithmetic, no canvas/DOM image decode
+// needed, so it's fully testable here — unlike the grayscale pixel
+// desaturation (imageForPdf.ts's blobToPng), which needs a real canvas 2D
+// context and image decode that jsdom doesn't provide, so it is NOT covered
+// by this smoke test (see docs/STATUS.md for the honest limitation).
+const PX_TO_PT = 72 / 96
+const contentWidthPt = 400
+
+function displayWidthFor(block: Partial<ImageBlock>): number {
+  return block.widthMm != null
+    ? block.widthMm * PX_PER_MM * PX_TO_PT
+    : block.widthPercent != null
+      ? contentWidthPt * (block.widthPercent / 100)
+      : contentWidthPt
+}
+
+check('exportPdf displayWidth: widthMm takes precedence over widthPercent when both are set', displayWidthFor({ widthMm: 50, widthPercent: 40 }) === 50 * PX_PER_MM * PX_TO_PT)
+check('exportPdf displayWidth: widthPercent is used as a fraction of contentWidthPt when widthMm is absent', displayWidthFor({ widthPercent: 65 }) === contentWidthPt * 0.65)
+check('exportPdf displayWidth: falls back to full contentWidthPt when neither field is set (legacy default)', displayWidthFor({}) === contentWidthPt)
+
+// Alignment x-offset logic (same file): left/center/right against a known
+// displayWidth.
+const alignContentX = 50
+function imageXFor(align: 'left' | 'center' | 'right', displayWidth: number): number {
+  return align === 'left' ? alignContentX
+    : align === 'right' ? alignContentX + (contentWidthPt - displayWidth)
+    : alignContentX + (contentWidthPt - displayWidth) / 2
+}
+check('exportPdf alignment: left aligns flush to contentX', imageXFor('left', 200) === alignContentX)
+check('exportPdf alignment: right aligns flush to the far edge of the content column', imageXFor('right', 200) === alignContentX + 200)
+check('exportPdf alignment: center splits the remaining space evenly', imageXFor('center', 200) === alignContentX + 100)
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

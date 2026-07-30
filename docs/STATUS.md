@@ -344,15 +344,129 @@ imported an image couldn't be resized (only rotated).
 - Multi-select or bulk image operations.
 - Undo/redo (still a pre-existing gap, unrelated to this phase).
 
+## Phase 12 — Image block: delete, custom mm sizing, grayscale, drop-to-replace, alignment, alt text
+
+Closed the remaining gaps in the image block feature set started in Phase 11:
+resizing only had percent presets, images couldn't be removed or replaced
+once placed, there was no grayscale/print option, no alignment control, no
+separate accessibility text, and — a real bug — the already-shipped
+`widthPercent` resize feature had **zero effect on the exported PDF** (the
+exporter's `drawBlock`'s `case 'image':` hardcoded `displayWidth =
+ctx.contentWidthPt`, ignoring the block entirely). All of the below is now
+consistent on-screen and in the exported PDF.
+
+- **`ImageBlock` gained six new optional fields** (`src/types/content.ts`):
+  `altText?`, `widthMm?`, `heightMm?`, `aspectLocked?`, `grayscale?`,
+  `align?: 'left' | 'center' | 'right'`. Same pattern as `widthPercent` in
+  Phase 11 — all optional, never migrated, always defaulted in code at the
+  read site (`?? 'center'`, `?? false`, etc.) so manuscripts persisted before
+  this phase keep working unchanged.
+- **Delete** — `contentStore.deleteBlock(projectId, chapterId, blockId)`,
+  mirroring `insertBlock`'s shape exactly (touches only the named chapter,
+  bumps `revisionByProject`). `ImagePanel.tsx` gained a destructive "Delete
+  image" button gated behind `window.confirm()` (there's still no undo
+  system, so this is the intentional stopgap, same rationale as documented
+  for direct text editing in Phase 10) and clears `useSelectionStore` on
+  confirm so the Inspector doesn't keep pointing at a block that no longer
+  exists.
+- **Custom mm sizing with aspect lock** — `ImagePanel.tsx`'s Size `Select`
+  gained a 5th "Custom" option alongside the four percent presets. Picking it
+  the first time seeds `widthMm`/`heightMm` from a sensible default (80mm
+  wide, height derived from the asset's natural aspect ratio) rather than
+  leaving the block in an undefined state. Width/height number inputs plus a
+  `Lock`/`LockOpen` toggle (default locked) recompute the paired dimension
+  from the asset's natural pixel aspect ratio whenever aspect is locked.
+  Switching back to a percent preset explicitly clears `widthMm`/`heightMm`,
+  since `widthMm` takes precedence over `widthPercent` everywhere it's read
+  — leaving it set would make the preset silently do nothing.
+  `BlockContent.tsx`'s image case now computes width as `widthMm *
+  PX_PER_MM` (px) when `widthMm` is set, reusing the exact `PX_PER_MM`
+  constant from `pageGeometry.ts` rather than a second `96/25.4` literal.
+- **The PDF `widthPercent`/`widthMm` bug is fixed** — `exportPdf.ts`'s
+  `drawBlock`'s image case now computes `displayWidth` in the documented
+  priority order: `widthMm` (mm → px via `PX_PER_MM`, px → pt via
+  `PX_TO_PT`, so the same physical size lands on screen and in the PDF) →
+  `widthPercent` (as a fraction of `ctx.contentWidthPt`) → full
+  `ctx.contentWidthPt` as the legacy default for blocks with neither field.
+  Resizing an image (whether via the old percent presets or the new mm
+  inputs) now actually changes the exported PDF — it didn't at all before
+  this phase.
+- **Grayscale / black-and-white** — a `Switch` in `ImagePanel.tsx` toggles
+  `block.grayscale`. On-screen, `BlockContent.tsx` applies `filter:
+  grayscale(100%)` to the `<img>` — a CSS filter has no layout effect, so
+  it's safe to apply unconditionally in both the real render path and
+  `HeightMeasurer`'s off-screen measurement pass without breaking their
+  pixel-identical-height contract. In the PDF, `imageForPdf.ts`'s
+  `blobToPng` gained a `grayscale` parameter that sets the canvas 2D
+  context's `filter = 'grayscale(100%)'` before `drawImage`, since a CSS
+  filter has zero effect on an embedded PDF image — the desaturation has to
+  be baked into the rasterised pixels before `embedPng` reads them back.
+  Went with `ctx.filter` rather than a manual per-pixel
+  `getImageData`/`putImageData` luminance conversion: canvas `filter` is
+  broadly supported in Chromium, which this app targets, and the existing
+  `blobToPng` already routes every export through canvas regardless of
+  source format. **Honest limitation**: this couldn't be exercised in the
+  jsdom-based smoke tests — there's no real canvas 2D context or image
+  decode available there, so the grayscale-in-PDF path is verified by
+  build/typecheck only, not integration-tested. If `ctx.filter` ever proves
+  unreliable in a real deployed build, the fallback is a manual per-pixel
+  desaturation in the same function.
+- **Replace via drop** — dragging an asset thumbnail from the Sidebar's
+  Assets tab directly onto an *existing* image block (rather than between
+  blocks, which still inserts a new one via Phase 11's `ImageDropZone`) now
+  replaces that block's `assetId`. Implemented as `onDragOver`/`onDrop`
+  handlers on the image wrapper in `BlockContent.tsx`, guarded so they only
+  activate when `ASSET_DRAG_MIME` is present in `e.dataTransfer.types`, with
+  a visual affordance (an accent-coloured outline) consistent with
+  `ImageDropZone`'s existing hover treatment. Routed through the `onCommit`
+  prop `BlockContent` already exposes (the same one `Page.tsx` wires to
+  `contentStore.updateBlock`) rather than reaching into the store directly —
+  keeps the component's existing "never touches the store itself" contract
+  intact.
+- **Alignment** — `align?: 'left' | 'center' | 'right'` (default `'center'`
+  when absent, matching the prior always-`mx-auto` behaviour). Three icon
+  buttons (`AlignLeft`/`AlignCenter`/`AlignRight`) in `ImagePanel.tsx`.
+  `BlockContent.tsx` maps `align` to the appropriate margin classes on both
+  the image wrapper and its caption. `exportPdf.ts` computes the matching
+  x-offset for the image (and its caption, for visual consistency) from
+  `align` and the already-fixed `displayWidth`.
+- **Alt text** — a dedicated `altText?` field, separate from the visible
+  `caption`, with its own Inspector input and a hint that it's for screen
+  readers. `BlockContent.tsx`'s `<img alt>` now reads `block.altText ??
+  block.caption ?? ''`, so existing manuscripts with only a caption (or
+  neither) render exactly as before.
+- **Tests**: `scripts/smoke-test.ts` grew from 65 to 84 passing checks —
+  added coverage for `contentStore.deleteBlock` (removes the targeted block,
+  leaves other chapters/projects untouched, bumps `revisionByProject`, and a
+  no-op-blockId case), the mm→px sizing math and aspect-locked recompute
+  (deterministic, unit-tested directly), the `ImageBlock` new-field
+  defaulting pattern, and the PDF `displayWidth`/alignment priority logic
+  (pure arithmetic, no canvas needed). As noted above, the grayscale
+  pixel-desaturation path in `imageForPdf.ts` is the one piece that's
+  canvas-dependent and therefore not practically testable in jsdom — it's
+  verified by build/typecheck only, called out explicitly rather than
+  silently skipped.
+
+### Explicitly deferred
+- Undo/redo — still a pre-existing gap; the delete button's
+  `window.confirm()` remains the intentional stopgap, same as Phase 10.
+- Image-taller-than-a-page overflow policy — out of scope, unchanged from
+  Phase 11.
+- Multi-select or bulk image operations.
+- Any AI-powered features, and the Virtual Editor's Edit-navigation
+  bug/Fix/Fix-All buttons — both explicitly out of scope for this phase,
+  being handled independently.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
-end-to-end, the Virtual Editor has a real foundation (Phase 9), and the manuscript is
-no longer read-only (Phase 10). Good next steps in priority order: (1) a second real
-checker engine on top of the existing `Checker` pattern — Consistency
+end-to-end, the Virtual Editor has a real foundation (Phase 9), the manuscript is no
+longer read-only (Phase 10), and the image block feature set (Phase 11 + 12) is now
+fully WYSIWYG between screen and PDF. Good next steps in priority order: (1) a second
+real checker engine on top of the existing `Checker` pattern — Consistency
 (terminology/units/spelling-variant matching) is the best next candidate since it's
 still fully deterministic, (2) line-level text flow so paragraphs can split across
 pages like a real book, (3) justified text and image rotation in the PDF exporter, (4)
 proper glyph subsetting once the fontkit bug is understood, (5) the first real
 `AiReviewer` (readability is the most self-contained candidate — no layout/print
-context needed), (6) EPUB/Kindle export, (7) undo/redo — now that direct editing
-exists, this is a more pressing gap than before.
+context needed), (6) EPUB/Kindle export, (7) undo/redo — now that direct editing (and,
+as of this phase, image deletion) exists, this is a more pressing gap than before.
