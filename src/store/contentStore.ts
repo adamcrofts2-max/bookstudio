@@ -32,6 +32,16 @@ interface ContentStoreActions {
   getRevision: (projectId: string) => number
   updateBlock: (projectId: string, chapterId: string, blockId: string, updates: Partial<ContentBlock>) => void
   renameChapter: (projectId: string, chapterId: string, title: string) => void
+  /**
+   * Inserts `block` into `chapterId`'s block list, immediately after the
+   * block with id `afterBlockId` — or at index 0 if `afterBlockId` is
+   * `null`. The only sanctioned way anything (e.g. drag-and-drop image
+   * placement in `Page.tsx`) adds a new block to the manuscript; no other
+   * layer reaches into `chapter.blocks` directly. Only the named chapter is
+   * touched — every other chapter/project is left byte-for-byte alone.
+   * Bumps `revisionByProject` exactly like `updateBlock`/`renameChapter`.
+   */
+  insertBlock: (projectId: string, chapterId: string, afterBlockId: string | null, block: ContentBlock) => void
 }
 
 export const useContentStore = create<ContentStoreState & ContentStoreActions>()(
@@ -82,6 +92,25 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
           const manuscript = state.byProject[projectId]
           if (!manuscript) return state
           const chapters = manuscript.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c))
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      insertBlock: (projectId, chapterId, afterBlockId, block) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const chapters: Chapter[] = manuscript.chapters.map((chapter) => {
+            if (chapter.id !== chapterId) return chapter
+            const afterIndex = afterBlockId === null ? -1 : chapter.blocks.findIndex((b) => b.id === afterBlockId)
+            const insertAt = afterIndex === -1 ? 0 : afterIndex + 1
+            const blocks = chapter.blocks.slice()
+            blocks.splice(insertAt, 0, block)
+            return { ...chapter, blocks }
+          })
           return {
             byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
             revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },

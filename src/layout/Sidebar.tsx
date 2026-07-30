@@ -7,6 +7,8 @@ import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useDragStore } from '@/store/dragStore'
+import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -47,6 +49,8 @@ export function Sidebar({ project }: SidebarProps) {
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const importFiles = useAssetStore((s) => s.importFiles)
   const removeAsset = useAssetStore((s) => s.removeAsset)
+  const startDraggingAsset = useDragStore((s) => s.startDraggingAsset)
+  const stopDraggingAsset = useDragStore((s) => s.stopDraggingAsset)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -163,9 +167,20 @@ export function Sidebar({ project }: SidebarProps) {
             ) : (
               <div className="grid grid-cols-2 gap-2 pb-3">
                 {assets.map((asset) => (
-                  <div key={asset.id} className="group relative aspect-square overflow-hidden rounded-[var(--radius-image)] border border-border">
+                  <div
+                    key={asset.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData(ASSET_DRAG_MIME, asset.id)
+                      e.dataTransfer.effectAllowed = 'copy'
+                      startDraggingAsset(asset.id)
+                    }}
+                    onDragEnd={() => stopDraggingAsset()}
+                    className="group relative aspect-square cursor-grab overflow-hidden rounded-[var(--radius-image)] border border-border active:cursor-grabbing"
+                    title="Drag onto a page to place this image"
+                  >
                     {getObjectUrl(asset.id) && (
-                      <img src={getObjectUrl(asset.id)} alt={asset.name} className="size-full object-cover" />
+                      <img src={getObjectUrl(asset.id)} alt={asset.name} className="size-full object-cover" draggable={false} />
                     )}
                     <button
                       type="button"

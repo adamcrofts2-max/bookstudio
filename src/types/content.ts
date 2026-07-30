@@ -35,6 +35,14 @@ export interface ImageBlock {
   caption?: string
   /** 0 | 90 | 180 | 270 */
   rotation: 0 | 90 | 180 | 270
+  /**
+   * Percentage (of the content column width) to render the image at.
+   * Optional — manuscripts persisted before this field existed don't have
+   * it. Always read as `block.widthPercent ?? 100`, never migrated, per
+   * `contentStore`'s "no required migrations for new optional fields" rule.
+   * Discrete presets only (see `ImagePanel.tsx`): 40 / 65 / 85 / 100.
+   */
+  widthPercent?: number
 }
 
 export interface ListBlock {

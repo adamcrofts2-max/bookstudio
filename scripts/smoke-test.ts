@@ -289,5 +289,88 @@ useContentStore.getState().updateBlock(revisionUnrelatedProjectId, 'rev-chapter'
 const revisionAfterUnrelatedEdit = useContentStore.getState().getRevision(revisionTestProjectId)
 check('contentStore: editing a different project does not bump this project\'s revision', revisionAfterUnrelatedEdit === revisionAfterRename)
 
+// --- contentStore.insertBlock: the only sanctioned way to add a block ---
+// (image drag-and-drop placement in Page.tsx). Exercised at the store level;
+// the actual HTML5 drag-and-drop UI isn't meaningfully testable in jsdom.
+import type { HeadingBlock, ImageBlock } from '../src/types/content'
+
+function makeInsertTestManuscript(): Manuscript {
+  return {
+    chapters: [
+      {
+        id: 'ib-chapter-1',
+        title: 'Chapter One',
+        order: 0,
+        blocks: [
+          { id: 'ib-a', type: 'heading', level: 2, text: 'A' } as HeadingBlock,
+          { id: 'ib-b', type: 'paragraph', html: 'B' } as ParagraphBlock,
+          { id: 'ib-c', type: 'paragraph', html: 'C' } as ParagraphBlock,
+        ],
+      },
+      {
+        id: 'ib-chapter-2',
+        title: 'Chapter Two',
+        order: 1,
+        blocks: [{ id: 'ib-x', type: 'paragraph', html: 'X' } as ParagraphBlock],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'insert-block-fixture.md',
+  }
+}
+
+const makeTestImageBlock = (id: string): ImageBlock => ({ id, type: 'image', assetId: 'asset-1', caption: undefined, rotation: 0, widthPercent: 100 })
+
+const insertTestProjectId = 've-insert-block-test-project'
+const insertOtherProjectId = 've-insert-block-test-project-other'
+contentStoreApi.setManuscript(insertTestProjectId, makeInsertTestManuscript())
+contentStoreApi.setManuscript(insertOtherProjectId, makeInsertTestManuscript())
+
+// Insert at the start of a chapter (afterBlockId === null)
+useContentStore.getState().insertBlock(insertTestProjectId, 'ib-chapter-1', null, makeTestImageBlock('ib-new-start'))
+const afterInsertStart = useContentStore.getState().getManuscript(insertTestProjectId)!
+const chapter1AfterStart = afterInsertStart.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('insertBlock: null afterBlockId inserts at index 0', chapter1AfterStart.blocks[0].id === 'ib-new-start')
+check('insertBlock: existing blocks shifted right, order preserved', chapter1AfterStart.blocks.map((b) => b.id).join(',') === 'ib-new-start,ib-a,ib-b,ib-c')
+
+// Insert in the middle of a chapter (after 'ib-a', which is now index 1)
+useContentStore.getState().insertBlock(insertTestProjectId, 'ib-chapter-1', 'ib-a', makeTestImageBlock('ib-new-middle'))
+const afterInsertMiddle = useContentStore.getState().getManuscript(insertTestProjectId)!
+const chapter1AfterMiddle = afterInsertMiddle.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('insertBlock: inserts immediately after the given afterBlockId', chapter1AfterMiddle.blocks.map((b) => b.id).join(',') === 'ib-new-start,ib-a,ib-new-middle,ib-b,ib-c')
+
+// Insert at the end of a chapter (after the last block)
+useContentStore.getState().insertBlock(insertTestProjectId, 'ib-chapter-1', 'ib-c', makeTestImageBlock('ib-new-end'))
+const afterInsertEnd = useContentStore.getState().getManuscript(insertTestProjectId)!
+const chapter1AfterEnd = afterInsertEnd.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('insertBlock: inserting after the last block appends it', chapter1AfterEnd.blocks[chapter1AfterEnd.blocks.length - 1].id === 'ib-new-end')
+check('insertBlock: full expected order after start/middle/end inserts', chapter1AfterEnd.blocks.map((b) => b.id).join(',') === 'ib-new-start,ib-a,ib-new-middle,ib-b,ib-c,ib-new-end')
+
+// Other chapters in the same project are untouched
+const chapter2Untouched = afterInsertEnd.chapters.find((c) => c.id === 'ib-chapter-2')!
+check('insertBlock: other chapters in the same project are left untouched', chapter2Untouched.blocks.map((b) => b.id).join(',') === 'ib-x')
+
+// Other projects are untouched
+const otherProjectManuscript = useContentStore.getState().getManuscript(insertOtherProjectId)!
+const otherProjectChapter1 = otherProjectManuscript.chapters.find((c) => c.id === 'ib-chapter-1')!
+check('insertBlock: other projects are left untouched', otherProjectChapter1.blocks.map((b) => b.id).join(',') === 'ib-a,ib-b,ib-c')
+
+// Bumps the revision counter, exactly like updateBlock/renameChapter
+const revisionBeforeInsert = useContentStore.getState().getRevision(insertTestProjectId)
+useContentStore.getState().insertBlock(insertTestProjectId, 'ib-chapter-1', null, makeTestImageBlock('ib-new-revision-check'))
+const revisionAfterInsert = useContentStore.getState().getRevision(insertTestProjectId)
+check('insertBlock: bumps revisionByProject like updateBlock/renameChapter', revisionAfterInsert > revisionBeforeInsert)
+
+// --- ImageBlock.widthPercent defaulting: existing persisted manuscripts
+// (created before this field existed) don't have it — must read as 100
+// everywhere, never require a migration. BlockContent.tsx computes exactly
+// `block.widthPercent ?? 100`; assert that same expression here rather than
+// re-deriving separate logic. ---
+const legacyImageBlockWithoutWidth = { id: 'legacy-img', type: 'image', assetId: 'asset-1', caption: undefined, rotation: 0 } as ImageBlock
+check('ImageBlock.widthPercent: block without the field defaults to 100', (legacyImageBlockWithoutWidth.widthPercent ?? 100) === 100)
+
+const explicitImageBlock = { ...legacyImageBlockWithoutWidth, id: 'explicit-img', widthPercent: 65 } as ImageBlock
+check('ImageBlock.widthPercent: an explicit value is preserved, not overridden', (explicitImageBlock.widthPercent ?? 100) === 65)
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

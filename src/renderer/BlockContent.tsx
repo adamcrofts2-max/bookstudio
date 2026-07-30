@@ -401,9 +401,15 @@ export function BlockContent({ block, theme, dropCap, selected, onSelect, editab
       )
     case 'image': {
       const url = getObjectUrl(block.assetId)
+      // Optional field — manuscripts persisted before `widthPercent` existed
+      // don't have it; always default to 100 here rather than migrating.
+      const widthPercent = block.widthPercent ?? 100
       return (
         <figure onClick={onSelect} className={cn(wrapperClass, 'cursor-pointer pb-5')}>
-          <div className="overflow-hidden rounded-[var(--radius-image)]" style={{ background: theme.page.ruleColor }}>
+          <div
+            className="mx-auto overflow-hidden rounded-[var(--radius-image)]"
+            style={{ background: theme.page.ruleColor, width: `${widthPercent}%` }}
+          >
             {url ? (
               <img
                 src={url}
@@ -419,8 +425,8 @@ export function BlockContent({ block, theme, dropCap, selected, onSelect, editab
           </div>
           {block.caption && (
             <figcaption
-              className="pt-2 text-[0.75em] italic"
-              style={{ fontFamily: theme.fonts.body, color: theme.page.mutedInk }}
+              className="mx-auto pt-2 text-[0.75em] italic"
+              style={{ fontFamily: theme.fonts.body, color: theme.page.mutedInk, width: `${widthPercent}%` }}
             >
               {block.caption}
             </figcaption>

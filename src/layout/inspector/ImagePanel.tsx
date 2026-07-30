@@ -3,6 +3,7 @@ import { Image as ImageIcon, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
@@ -62,6 +63,24 @@ export function ImagePanel({ projectId }: ImagePanelProps) {
           value={block.caption ?? ''}
           onChange={(e) => updateBlock(projectId, chapter.id, block.id, { caption: e.target.value })}
         />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="image-size">Size</Label>
+        <Select
+          value={String(block.widthPercent ?? 100)}
+          onValueChange={(value) => updateBlock(projectId, chapter.id, block.id, { widthPercent: Number(value) })}
+        >
+          <SelectTrigger id="image-size">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="40">Small — 40%</SelectItem>
+            <SelectItem value="65">Medium — 65%</SelectItem>
+            <SelectItem value="85">Large — 85%</SelectItem>
+            <SelectItem value="100">Full — 100%</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex flex-col gap-1.5">

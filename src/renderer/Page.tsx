@@ -3,11 +3,52 @@ import { useState } from 'react'
 import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
-import type { ContentBlock } from '@/types/content'
+import type { ContentBlock, ImageBlock } from '@/types/content'
 import { BlockContent } from '@/renderer/BlockContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
+import { useDragStore } from '@/store/dragStore'
+import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
+import { generateId } from '@/utils'
+import { cn } from '@/lib/utils'
+
+/**
+ * Thin drop target rendered between two adjacent blocks (or before the
+ * first / after the last) so a dragged asset thumbnail can be placed there.
+ * Renders nothing at all — zero DOM — while no drag is in progress, so it
+ * has no effect on normal reading/pagination; it only occupies space during
+ * an actual image drag-and-drop.
+ */
+function ImageDropZone({ onDropAsset }: { onDropAsset: (assetId: string) => void }) {
+  const draggingAssetId = useDragStore((s) => s.draggingAssetId)
+  const [isOver, setIsOver] = useState(false)
+
+  if (!draggingAssetId) return null
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setIsOver(true)
+      }}
+      onDragLeave={() => setIsOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setIsOver(false)
+        const assetId = e.dataTransfer.getData(ASSET_DRAG_MIME) || draggingAssetId
+        if (assetId) onDropAsset(assetId)
+      }}
+      className={cn('rounded-sm transition-[height,background-color] duration-100', isOver ? 'my-1' : 'my-0.5')}
+      style={{
+        height: isOver ? 28 : 6,
+        background: isOver ? 'var(--color-accent)' : 'var(--color-selection)',
+        opacity: isOver ? 1 : 0.6,
+      }}
+    />
+  )
+}
 
 interface PageProps {
   projectId: string
@@ -33,6 +74,8 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
   const updateBlock = useContentStore((s) => s.updateBlock)
   const renameChapter = useContentStore((s) => s.renameChapter)
+  const insertBlock = useContentStore((s) => s.insertBlock)
+  const manuscript = useContentStore((s) => s.getManuscript(projectId))
 
   const [isRenamingTitle, setIsRenamingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -60,6 +103,57 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       onAutoEditHandled={consumeEditRequest}
     />
   )
+
+  // The chapter this page belongs to spans multiple pages via pagination, so
+  // "insert after block X" is chapter-level (chapterId + a block id within
+  // `chapter.blocks`), never page-scoped — see `contentStore.insertBlock`.
+  const chapter = page.chapterId ? manuscript?.chapters.find((c) => c.id === page.chapterId) : undefined
+
+  const handleDropAsset = (chapterId: string, afterBlockId: string | null, assetId: string) => {
+    const newBlock: ImageBlock = {
+      id: generateId('block'),
+      type: 'image',
+      assetId,
+      caption: undefined,
+      rotation: 0,
+      widthPercent: 100,
+    }
+    insertBlock(projectId, chapterId, afterBlockId, newBlock)
+    select(chapterId, newBlock.id)
+    setInspectorTab('image')
+  }
+
+  /** Interleaves a drop zone before the first block, between every adjacent
+   * pair, and after the last — only for chapter content, never TOC/blank
+   * pages (this is only ever called from those two page kinds below). */
+  const renderBlocksWithDropZones = (blocks: ContentBlock[]) => {
+    if (!page.chapterId) return blocks.map(renderBlock)
+    const chapterId = page.chapterId
+
+    // This page's first block may be a mid-chapter continuation (pagination
+    // split it across pages), not the chapter's actual first block — so the
+    // "before the first block on this page" drop zone needs the real
+    // preceding sibling from the full chapter, not just this page's slice.
+    const firstBlockPrevId = (): string | null => {
+      if (blocks.length === 0 || !chapter) return null
+      const idx = chapter.blocks.findIndex((b) => b.id === blocks[0].id)
+      return idx > 0 ? chapter.blocks[idx - 1].id : null
+    }
+
+    const nodes: React.ReactNode[] = []
+    blocks.forEach((block, i) => {
+      const afterId = i === 0 ? firstBlockPrevId() : blocks[i - 1].id
+      nodes.push(
+        <ImageDropZone key={`drop-${afterId ?? 'start'}`} onDropAsset={(assetId) => handleDropAsset(chapterId, afterId, assetId)} />,
+      )
+      nodes.push(renderBlock(block))
+    })
+    if (blocks.length > 0) {
+      const lastId = blocks[blocks.length - 1].id
+      nodes.push(<ImageDropZone key={`drop-end-${lastId}`} onDropAsset={(assetId) => handleDropAsset(chapterId, lastId, assetId)} />)
+    }
+    return nodes
+  }
 
   const startRenameTitle = () => {
     if (!page.chapterId) return
@@ -166,11 +260,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
                 {page.chapterTitle}
               </h1>
             )}
-            {page.blocks.map(renderBlock)}
+            {renderBlocksWithDropZones(page.blocks)}
           </div>
         )}
 
-        {page.kind === 'content' && page.blocks.map(renderBlock)}
+        {page.kind === 'content' && renderBlocksWithDropZones(page.blocks)}
       </div>
 
       {page.kind !== 'blank' && (

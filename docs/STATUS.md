@@ -281,6 +281,69 @@ Editor's own "Edit" action, which was visibly disabled.
   there's no single unambiguous field to jump into for a multi-field block — a
   double-click on the specific item/cell still works immediately once there.
 
+## Phase 11 — Placing and resizing images
+
+Closed the gap called out at the end of Phase 10 (and originally scoped in
+Phase 2): Book Studio could import images into a project's asset library, but
+`ImageBlock`s could only ever be created by the DOCX importer at import time
+— there was no way to actually put a new image onto a page, and once
+imported an image couldn't be resized (only rotated).
+
+- **`contentStore.insertBlock(projectId, chapterId, afterBlockId, block)`** —
+  a new published action, the only sanctioned way anything adds a block to
+  `chapter.blocks` (`afterBlockId: string | null`, `null` meaning "insert at
+  index 0"). Touches only the named chapter; every other chapter/project is
+  left untouched. Bumps `revisionByProject` exactly like `updateBlock`/
+  `renameChapter` so pagination reliably remeasures.
+- **Drag a thumbnail from the Sidebar's Assets tab onto the page** to place
+  it. Thumbnails are now `draggable`, putting the asset id in `DataTransfer`
+  (`src/layout/dragTypes.ts`'s `ASSET_DRAG_MIME` constant, shared by producer
+  and consumer so they can't drift apart) and flagging a new ephemeral,
+  never-persisted `dragStore` (`draggingAssetId`) so `Page.tsx` knows a drag
+  is in progress. `Page.tsx` renders a thin `ImageDropZone` before the first
+  block, between every adjacent pair, and after the last — for chapter
+  content only (`chapter-start`/`content` page kinds), never TOC/blank pages.
+  Each drop zone renders **nothing at all** (zero DOM) while no drag is in
+  progress, so normal reading and pagination are completely unaffected; it
+  only occupies a few pixels of space during an actual image drag. On drop,
+  a new `ImageBlock` is built and inserted via `contentStore.insertBlock`,
+  the new block is selected, and the Inspector switches to the Image tab —
+  mirroring `Page.tsx`'s existing `handleSelect` pattern. Because a chapter's
+  blocks are paginated across multiple pages, the very first drop zone on a
+  continuation page resolves its "insert after" anchor against the *full*
+  chapter (not just this page's slice of blocks), so it always lands in the
+  right place even when the block before it lives on the previous page.
+- **Resizing**: `ImageBlock` gained an optional `widthPercent?: number` —
+  existing persisted manuscripts don't have it and are never migrated;
+  everywhere it's read, it's `block.widthPercent ?? 100`.
+  `BlockContent.tsx`'s image case now sizes and centres the image (and its
+  caption) at that percentage of the content column width instead of always
+  `w-full`. `ImagePanel.tsx` gained a **Size** control — a `Select` with
+  discrete presets (Small 40% / Medium 65% / Large 85% / Full 100%), matching
+  the app's existing preference for discrete controls (trim size, theme)
+  over free-drag handles — wired straight through `contentStore.updateBlock`.
+- **Tests**: `scripts/smoke-test.ts` gained real coverage for `insertBlock`
+  (inserting at the start, in the middle, and at the end of a chapter, each
+  asserting the exact resulting block order; confirms other chapters in the
+  same project and other projects entirely are left untouched; confirms it
+  bumps `revisionByProject`) and for `widthPercent` defaulting (a block
+  without the field reads as 100; an explicit value is preserved).
+  **Honest limitation**: actual HTML5 drag-and-drop interaction isn't
+  meaningfully testable in jsdom (no real `DataTransfer`/drag event
+  sequence), so it isn't simulated — the drag-and-drop *UI* (`Sidebar.tsx`'s
+  draggable thumbnails, `Page.tsx`'s `ImageDropZone`) is verified by
+  build/typecheck only, not integration-tested. The underlying action it
+  calls (`insertBlock`) and the width-percent read/render logic are.
+
+### Explicitly deferred
+- Deleting, reordering, or moving existing blocks — only inserting a new
+  image block is in scope this phase.
+- Inserting any block type other than images via drag-and-drop.
+- A draggable on-canvas resize handle — discrete presets only this
+  milestone, per the app's existing preference for discrete controls.
+- Multi-select or bulk image operations.
+- Undo/redo (still a pre-existing gap, unrelated to this phase).
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
 end-to-end, the Virtual Editor has a real foundation (Phase 9), and the manuscript is
