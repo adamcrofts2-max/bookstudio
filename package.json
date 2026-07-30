@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "vite --config-loader runner",
+    "build": "tsc -b && vite build --config-loader runner",
     "lint": "oxlint",
-    "preview": "vite preview",
+    "preview": "vite preview --config-loader runner",
     "test": "tsx --tsconfig tsconfig.app.json scripts/smoke-test.ts"
   },
   "dependencies": {
