@@ -1087,6 +1087,7 @@ const {
   updatePageContentWithHistory,
 } = await import('../src/store/editorActions')
 const { useHistoryStore: useHistoryStoreForPages } = await import('../src/store/historyStore')
+const { splitParagraphs } = await import('../src/structuralPages/longForm')
 import type { StructuralPageType } from '../src/types/structuralPage'
 import type { LaidOutPage } from '../src/renderer/paginate'
 
@@ -1306,6 +1307,101 @@ useHistoryStoreForPages.getState().undo(eaMoveProjectId)
 check(
   'movePageWithHistory -> undo: restores the original order',
   useStructuralPageStore.getState().getPages(eaMoveProjectId)[0].id === moveIdA,
+)
+
+// --- Phase 20: 5 new front-matter structural page types (Milestone 4,
+// first batch) — Half Title, Dedication, Foreword, Preface, Acknowledgements.
+// Same registry-lookup + editorActions coverage pattern Phase 19 established
+// for the original 4 types.
+const NEW_STRUCTURAL_TYPES: StructuralPageType[] = ['half-title', 'dedication', 'foreword', 'preface', 'acknowledgements']
+for (const type of NEW_STRUCTURAL_TYPES) {
+  const def = getStructuralPageTypeDefinition(type)
+  check(
+    `structural page registry (Phase 20): has a complete definition for "${type}"`,
+    !!def && def.id === type && typeof def.Render === 'function' && typeof def.drawPdf === 'function' && typeof def.defaultContent === 'function',
+  )
+  check(`structural page registry (Phase 20): "${type}" is category "front-matter"`, def?.category === 'front-matter')
+}
+
+const eaNewTypesProjectId = 'ea-structural-pages-new-types-project'
+
+// Half Title: insertPageWithHistory + undo.
+const halfTitleId = insertPageWithHistory(eaNewTypesProjectId, 'front-matter', 'half-title', null)
+check(
+  'insertPageWithHistory (Phase 20): creates a Half Title page',
+  useStructuralPageStore.getState().getPages(eaNewTypesProjectId).some((p) => p.id === halfTitleId && p.type === 'half-title'),
+)
+useHistoryStoreForPages.getState().undo(eaNewTypesProjectId)
+check(
+  'insertPageWithHistory (Phase 20) -> undo: removes the just-created Half Title page',
+  !useStructuralPageStore.getState().getPages(eaNewTypesProjectId).some((p) => p.id === halfTitleId),
+)
+useHistoryStoreForPages.getState().redo(eaNewTypesProjectId)
+check(
+  'insertPageWithHistory (Phase 20) -> undo -> redo: re-creates the exact same Half Title page id',
+  useStructuralPageStore.getState().getPages(eaNewTypesProjectId).some((p) => p.id === halfTitleId),
+)
+
+// Foreword: insertPageWithHistory + undo, plus its two-field content shape.
+const forewordId = insertPageWithHistory(eaNewTypesProjectId, 'front-matter', 'foreword', halfTitleId)
+check(
+  'insertPageWithHistory (Phase 20): creates a Foreword page',
+  useStructuralPageStore.getState().getPages(eaNewTypesProjectId).some((p) => p.id === forewordId && p.type === 'foreword'),
+)
+check(
+  'insertPageWithHistory (Phase 20): Foreword is inserted after the given afterPageId',
+  useStructuralPageStore.getState().getPages(eaNewTypesProjectId).findIndex((p) => p.id === forewordId)
+    === useStructuralPageStore.getState().getPages(eaNewTypesProjectId).findIndex((p) => p.id === halfTitleId) + 1,
+)
+updatePageContentWithHistory(eaNewTypesProjectId, forewordId, { text: 'Paragraph one.\n\nParagraph two.', authorName: 'A. Reviewer' })
+check(
+  'updatePageContentWithHistory (Phase 20): applies Foreword text + authorName',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaNewTypesProjectId).find((pg) => pg.id === forewordId)
+    return p?.type === 'foreword' && p.content.text === 'Paragraph one.\n\nParagraph two.' && p.content.authorName === 'A. Reviewer'
+  })(),
+)
+useHistoryStoreForPages.getState().undo(eaNewTypesProjectId)
+check(
+  'updatePageContentWithHistory (Phase 20) -> undo: restores Foreword content to empty',
+  (() => {
+    const p = useStructuralPageStore.getState().getPages(eaNewTypesProjectId).find((pg) => pg.id === forewordId)
+    return p?.type === 'foreword' && p.content.text === undefined && p.content.authorName === undefined
+  })(),
+)
+useHistoryStoreForPages.getState().undo(eaNewTypesProjectId)
+check(
+  'insertPageWithHistory (Phase 20) -> undo: removes the just-created Foreword page',
+  !useStructuralPageStore.getState().getPages(eaNewTypesProjectId).some((p) => p.id === forewordId),
+)
+
+// splitParagraphs — the paragraph-splitting helper shared by Foreword/
+// Preface/Acknowledgements' rendering and PDF drawing.
+check('splitParagraphs (Phase 20): splits on a blank-line boundary into 2 paragraphs', splitParagraphs('First paragraph.\n\nSecond paragraph.').length === 2)
+check('splitParagraphs (Phase 20): a single paragraph with no blank line stays 1 paragraph', splitParagraphs('Just one paragraph, no breaks.').length === 1)
+check('splitParagraphs (Phase 20): empty text yields zero paragraphs', splitParagraphs('').length === 0)
+check(
+  'splitParagraphs (Phase 20): trims each paragraph and drops empty ones from extra blank lines',
+  JSON.stringify(splitParagraphs('  First.  \n\n\n\n  Second.  ')) === JSON.stringify(['First.', 'Second.']),
+)
+
+// Regression test for a real bug caught by the check above's sibling
+// ('updatePageContentWithHistory (Phase 20) -> undo: restores Foreword content
+// to empty'): `updatePageContent`'s shallow merge can never clear a field that
+// went from absent to present, since merging `{}` into `{ text: 'x' }` leaves
+// `text: 'x'` untouched. `replacePageContent` (a full, non-merging replace) is
+// the fix — verified directly here, not just indirectly via the history wrapper.
+const rpcProjectId = 'rpc-project'
+const rpcHalfTitleId = useStructuralPageStore.getState().insertPage(rpcProjectId, 'front-matter', 'half-title', null)
+useStructuralPageStore.getState().updatePageContent(rpcProjectId, rpcHalfTitleId, { title: 'Something' })
+check(
+  'replacePageContent: sanity — updatePageContent merge actually set the field first',
+  useStructuralPageStore.getState().getPages(rpcProjectId).find((p) => p.id === rpcHalfTitleId)?.content.title === 'Something',
+)
+useStructuralPageStore.getState().replacePageContent(rpcProjectId, rpcHalfTitleId, {})
+check(
+  'replacePageContent: fully replaces content, clearing a previously-set field (the bug updatePageContent has)',
+  useStructuralPageStore.getState().getPages(rpcProjectId).find((p) => p.id === rpcHalfTitleId)?.content.title === undefined,
 )
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)

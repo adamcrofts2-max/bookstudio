@@ -97,6 +97,82 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
         </div>
       )}
 
+      {page.type === 'half-title' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="structural-half-title">Title</Label>
+          <Input
+            id="structural-half-title"
+            placeholder="Leave blank to reuse the Title Page's title…"
+            value={page.content.title ?? ''}
+            onChange={(e) => patch({ title: e.target.value })}
+          />
+          <p className="text-xs text-text-secondary">Left blank, this shows the Title Page's title if one exists.</p>
+        </div>
+      )}
+
+      {page.type === 'dedication' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="structural-dedication-text">Dedication</Label>
+          <Textarea
+            id="structural-dedication-text"
+            rows={3}
+            placeholder="For someone special."
+            value={page.content.text ?? ''}
+            onChange={(e) => patch({ text: e.target.value })}
+          />
+        </div>
+      )}
+
+      {page.type === 'foreword' && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="structural-foreword-text">Foreword text</Label>
+            <Textarea
+              id="structural-foreword-text"
+              rows={10}
+              placeholder="Written by someone other than the author. Separate paragraphs with a blank line…"
+              value={page.content.text ?? ''}
+              onChange={(e) => patch({ text: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="structural-foreword-author">Signed by</Label>
+            <Input
+              id="structural-foreword-author"
+              placeholder="Attribution name…"
+              value={page.content.authorName ?? ''}
+              onChange={(e) => patch({ authorName: e.target.value })}
+            />
+          </div>
+        </>
+      )}
+
+      {page.type === 'preface' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="structural-preface-text">Preface text</Label>
+          <Textarea
+            id="structural-preface-text"
+            rows={10}
+            placeholder="Written by the author. Separate paragraphs with a blank line…"
+            value={page.content.text ?? ''}
+            onChange={(e) => patch({ text: e.target.value })}
+          />
+        </div>
+      )}
+
+      {page.type === 'acknowledgements' && (
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="structural-acknowledgements-text">Acknowledgements text</Label>
+          <Textarea
+            id="structural-acknowledgements-text"
+            rows={10}
+            placeholder="Separate paragraphs with a blank line…"
+            value={page.content.text ?? ''}
+            onChange={(e) => patch({ text: e.target.value })}
+          />
+        </div>
+      )}
+
       {page.type === 'blank' && (
         <p className="text-sm text-text-secondary">A blank page has no editable content — only its position in the book.</p>
       )}

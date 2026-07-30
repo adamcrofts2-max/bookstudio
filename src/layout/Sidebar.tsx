@@ -21,11 +21,27 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { BookOpen, Image as ImageIcon } from 'lucide-react'
 import type { Project } from '@/types'
 
-/** Types offered by the "Add Page" picker per category, for this milestone
- * (see docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2 — the remaining ~30
- * types are batched into a later milestone). Cover/Title Page/Copyright
- * don't make sense as back matter, so only Blank Page is offered there. */
-const FRONT_MATTER_ADDABLE_TYPES: StructuralPageType[] = ['cover', 'title-page', 'copyright', 'blank']
+/** Types offered by the "Add Page" picker per category. Phase 20 (Milestone
+ * 4, first batch) added Half Title/Dedication/Foreword/Preface/
+ * Acknowledgements alongside Phase 19's original 4 — order here is cosmetic
+ * only (roughly matching real front-matter convention: Half Title before
+ * Title Page, Dedication/Foreword/Preface/Acknowledgements after Copyright)
+ * and doesn't enforce anything once a page is actually inserted; users can
+ * still freely reorder with the up/down buttons. The remaining ~25 back-
+ * matter-heavy types are batched into a later milestone — see
+ * docs/MODULAR_PAGE_SYSTEM_PLAN.md. None of these five make sense as back
+ * matter, so Back Matter's list is unchanged (Blank Page only). */
+const FRONT_MATTER_ADDABLE_TYPES: StructuralPageType[] = [
+  'cover',
+  'half-title',
+  'title-page',
+  'copyright',
+  'dedication',
+  'foreword',
+  'preface',
+  'acknowledgements',
+  'blank',
+]
 const BACK_MATTER_ADDABLE_TYPES: StructuralPageType[] = ['blank']
 
 interface StructuralPageRowProps {

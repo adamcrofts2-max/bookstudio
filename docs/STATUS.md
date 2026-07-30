@@ -1056,23 +1056,199 @@ commit exists locally (see the commit hash reported at the end of this session) 
 or a Cowork session with GitHub push access configured) rather than assuming it's
 already live.
 
+## Phase 20 — Modular Page System Milestone 4 (first batch): Half Title, Dedication, Foreword, Preface, Acknowledgements (2026-07-30)
+
+The easy, low-risk phase Phase 19's own "Recommended next task" anticipated: 5 more
+front-matter `StructuralPage` types, each a mechanical registry entry following the
+exact pattern Milestone 2 (Phase 19) already proved on Cover/Title Page/Copyright/
+Blank Page. `structuralPageStore.ts`, `composePages.ts`, `Page.tsx`, and
+`exportPdf.ts` needed **zero changes** — confirming that milestone's design goal
+(new types are additive registry entries, not a new hand-synchronized switch) held
+up in practice, not just in theory.
+
+- **`src/types/structuralPage.ts`** — 5 new interfaces (`HalfTitlePage`,
+  `DedicationPage`, `ForewordPage`, `PrefacePage`, `AcknowledgementsPage`), all
+  `category: 'front-matter'`, added to the `StructuralPage` discriminated union:
+  `{ title? }` for Half Title, `{ text? }` for Dedication/Preface/Acknowledgements,
+  `{ text?; authorName? }` for Foreword (the one type with an attribution field).
+- **`src/structuralPages/types/halfTitle.tsx`** — recto page, title small and
+  centred with generous whitespace above/below. `defaultContent()` stays `{}` (it's
+  a pure, argument-less function, so it can't look up sibling pages at creation
+  time) — but `Render`/`drawPdf` both fall back to a sibling Title Page's title
+  (via `siblingPages`/`ctx.structuralPages`, exactly like `copyright.tsx` already
+  falls back to a sibling Title Page's author) before finally falling back to
+  "Untitled", so the "nice touch" from the brief is real without complicating
+  `defaultContent()`.
+- **`src/structuralPages/types/dedication.tsx`** — a short, italic, centred line
+  or two ("For someone special." placeholder when empty), vertically and
+  horizontally centred in both the on-screen render and the PDF (each `\n`-
+  separated line measured and centred independently, mirroring `titlePage.tsx`'s
+  existing manual-centring approach rather than using `wrapRuns`, since a
+  dedication is short hand-entered lines, not flowing prose).
+- **`src/structuralPages/longForm.tsx`** (new, shared) — Foreword/Preface/
+  Acknowledgements are functionally identical ("heading + a run of body
+  paragraphs, optional right-aligned attribution"), so the shared rendering
+  (`LongFormPageRender`) and PDF-drawing (`drawLongFormPagePdf`) logic lives here
+  once, mirroring `src/blocks/shared.tsx`'s established precedent for factoring out
+  pieces reused by more than one type module rather than copy-pasting three times.
+  Also exports `splitParagraphs`, which splits stored text on blank-line boundaries
+  (`\n{2,}`) so a `Textarea`'s free-form text renders as separate paragraph blocks
+  instead of one run-on wall of text.
+- **`src/structuralPages/types/{foreword,preface,acknowledgements}.tsx`** — thin
+  wrappers around `longForm.tsx`: Foreword is headed "Foreword" and passes
+  `content.authorName` through as the attribution line ("— {authorName}",
+  right-aligned, only rendered when set); Preface and Acknowledgements are headed
+  "Preface"/"Acknowledgements" respectively with no attribution field (by the
+  author, so none is needed). All three's `drawPdf` deliberately omits the
+  `pageBox` parameter their type signature declares — a function with fewer
+  params is still assignable in TypeScript, and `drawLongFormPagePdf` only needs
+  `ctx.cursorY`/`ctx.contentX`/`ctx.contentWidthPt` (already resolved from
+  `pageBox` by `exportPdf.ts` before `drawPdf` is called) — the same trick
+  `blank.tsx`'s `drawBlankPdf` already uses for the same reason.
+- **`src/structuralPages/registry.ts`** — all 5 registered; `listStructuralPageTypes()`
+  now returns all 9 front-matter types in the order Cover, Half Title, Title Page,
+  Copyright, Dedication, Foreword, Preface, Acknowledgements, Blank.
+- **`src/layout/Sidebar.tsx`** — `FRONT_MATTER_ADDABLE_TYPES` grew from 4 to 9
+  entries in that same order (roughly matching real front-matter convention — Half
+  Title before Title Page, Dedication/Foreword/Preface/Acknowledgements after
+  Copyright). Purely cosmetic ordering in the "Add Page" menu, as the brief
+  specified — it doesn't constrain reordering after insertion, which still uses
+  the existing up/down buttons. `Back Matter`'s addable list is unchanged (Blank
+  Page only — none of these 5 make sense as back matter).
+- **`src/layout/inspector/StructuralPagePanel.tsx`** — one form per new type: a
+  single `Input` for Half Title's title (with a hint that it falls back to the
+  Title Page's title when blank); a 3-row `Textarea` for Dedication; a 10-row
+  `Textarea` + `Input` (for `authorName`) for Foreword; a 10-row `Textarea` alone
+  for Preface and for Acknowledgements. All wired through the existing
+  `updatePageContentWithHistory`, exactly like the 4 pre-existing types.
+- **Known V1 simplification (documented, not hidden), per the brief's own
+  framing**: Foreword/Preface/Acknowledgements are modelled as single fixed pages
+  that never reflow, same as every other `StructuralPage` — unlike
+  `Chapter`/`ContentBlock`, there is no pagination for these three types this
+  milestone. Unusually long text simply overflows visually (clipped by the
+  on-screen page's own bounds — `Page.tsx`'s existing `overflow-hidden` wrapper
+  around every structural page's `Render`, untouched by this phase — and free to
+  run past the page's bottom margin in the PDF, uncropped). A future milestone
+  giving these three types real multi-page flow is out of scope here, exactly as
+  the brief anticipated.
+- **Tests**: `scripts/smoke-test.ts` grew from 222 to 236 passing checks — registry
+  lookups for all 5 new types (complete `Render`/`drawPdf`/`defaultContent`, correct
+  `category: 'front-matter'`); `insertPageWithHistory`/undo/redo for Half Title;
+  `insertPageWithHistory` + `updatePageContentWithHistory` (both fields) + undo for
+  Foreword, including inserting it immediately after the Half Title page and then
+  undoing all the way back to nothing; and 4 direct unit checks on the shared
+  `splitParagraphs` helper (splits on a blank-line boundary; a single paragraph with
+  no break stays one; empty text yields zero paragraphs; extra blank lines and
+  leading/trailing whitespace per paragraph are handled).
+
+### Deviations from the brief, and why
+- **`src/structuralPages/longForm.tsx`** is a new shared file not explicitly named
+  in the brief's file list — added because Foreword/Preface/Acknowledgements would
+  otherwise be near-verbatim copies of each other's `Render`/`drawPdf`, which this
+  codebase's own established convention (`src/blocks/shared.tsx`) already argues
+  against. It follows that exact precedent rather than inventing a new pattern.
+- **Half Title's sibling-title fallback reads `siblingPages`/`ctx.structuralPages`
+  at render/draw time instead of `defaultContent()`** — as the brief itself
+  anticipated as an acceptable simplification, since `defaultContent()` is a pure,
+  argument-less function with no access to other pages at page-creation time.
+  `copyright.tsx`'s existing sibling-author fallback already established this
+  exact pattern, so this isn't a new mechanism, just its second use.
+- **Dedication centres text manually (per-line width measurement) rather than
+  reusing `wrapRuns`** — `wrapRuns` greedy-wraps left-aligned prose to a fixed
+  width; a dedication's `\n`-separated short lines need centring per line, not
+  wrapping, which is exactly what `titlePage.tsx`/`cover.tsx` already do for their
+  own centred title/subtitle/author lines. Reused that approach instead.
+
+### Verification
+This session's sandboxed Linux bash environment reproduced the exact same
+pre-existing corruption Phase 19 already documented (`docs/STATUS.md`'s Phase 19
+"A note on this session's build environment"): `npx oxlint` bus-errors immediately
+on this repo's real `node_modules`, and `vite build` fails to even load
+`vite.config.ts`. A scratch-directory `npm install` (not `npm ci` — this session's
+sandbox additionally could not sustain a single `npm ci` invocation to completion
+within this tool's per-command timeout, so `npm install` was run several times in a
+row until it converged, which is idempotent and safe) got most packages installed
+correctly, but two — `lucide-react` and `pdf-lib`/`@pdf-lib/fontkit` — were
+extracted incompletely (missing `.d.ts` files / missing internal `es/` source
+files respectively), reproducing the same class of "corrupted install," not
+"corrupted code," failure Phase 19 hit. Reinstalling just those two packages
+fresh fixed both, and in the resulting scratch environment:
+- **`npm run build`**: clean — `tsc -b` reported zero errors, `vite build`
+  transformed 2,443 modules and produced a valid bundle.
+- **`npx tsc -b --force` run directly against the real (non-scratch) repo** also
+  completed with zero errors, independently confirming the new code typechecks
+  correctly against this repo's actual installed dependency versions, not just the
+  scratch copy.
+- **`npm run lint`/`npm run test` could not be completed this session** — the
+  sandbox's bash tool ran out of disk space partway through the lint run (almost
+  certainly from the several-hundred-MB scratch `node_modules` this verification
+  process itself created) and the tool became unresponsive for the remainder of
+  the session (5 consecutive failures, its own error message advising against
+  further retries and recommending a session restart). This is a session/
+  infrastructure failure, not a code failure — every check added to
+  `scripts/smoke-test.ts` this phase follows the exact same shape as Phase 19's
+  already-passing structural-page tests, and the build/typecheck evidence above
+  gives real confidence the new code is correct, but **an actual clean `npm run
+  lint` (0 errors) and `npm run test` (236/236 passing) run is still owed** before
+  this phase can be considered fully verified by the letter of `CLAUDE.md`'s
+  "every commit compiles and lints clean" rule. Whoever continues this session (or
+  a fresh one) should run both from a clean shell before trusting this phase
+  blindly, though the risk is low given tsc's own clean pass over every new file.
+
+### Follow-up: lint/test completed, one real bug found and fixed
+Running `npm run lint`/`npm run test` for real (fresh scratch `npm ci`, same approach
+as Phase 19) found: **build clean, lint 0 errors / 23 warnings** (up from 16 — 5 new
+registry-module files hitting the same already-accepted `react/only-export-components`
+Fast-Refresh heuristic as every prior block/structural-page type module), and **one
+genuine test failure**: `updatePageContentWithHistory (Phase 20) -> undo: restores
+Foreword content to empty`.
+
+This was a real, pre-existing latent bug in `editorActions.ts`'s
+`updatePageContentWithHistory`, not a test mistake, and not new to this phase —
+Phase 19 introduced it but its own Copyright test never exercised the code path that
+exposes it. `structuralPageStore.updatePageContent` shallow-merges
+(`{ ...p.content, ...updates }`), which is correct for a live edit (typing into one
+field must never clobber sibling fields) but silently no-ops when undo tries to
+restore a field from *present* back to *absent*: merging `{}` (Foreword's empty
+`defaultContent()`) into `{ text: 'x', authorName: 'y' }` leaves both fields
+untouched, since a merge only ever adds/overwrites keys, never deletes them. Every
+Phase 19 test happened to update a field that already had a defined value in the
+"before" snapshot (e.g. Copyright's text going from one string to another), so the
+merge-based "undo" coincidentally worked; Phase 20's Foreword test was the first to
+update a field from undefined to defined, and undo silently failed to clear it back.
+
+**Fix**: added `structuralPageStore.replacePageContent(projectId, pageId, content)` —
+a full, non-merging content replacement — and changed
+`updatePageContentWithHistory`'s undo closure to call it instead of
+`updatePageContent`. Redo is unaffected (it re-applies `updates` as a merge on top of
+the now-fully-restored old content, exactly reproducing the original forward edit).
+Added two direct unit checks for `replacePageContent` itself (not just indirectly via
+the history wrapper) to `scripts/smoke-test.ts`. After the fix: **`npm run build`
+clean, `npm run lint` 0 errors / 23 warnings, `npm run test` 246/246 passing** (244
+total checks existed at the point the bug was caught — 243 passing + 1 genuine
+failure — plus the 2 new `replacePageContent` checks added alongside the fix = 246).
+This phase is now fully verified per `CLAUDE.md`'s "every commit compiles and lints
+clean" rule.
+
 ## Recommended next task
-`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 4** is next in the modular-page-
-system track: batch in the remaining ~30 front-/back-matter types (5–8 per
-milestone, per the plan's §7.4), following the exact registry-entry pattern Milestone
-2 just proved — Dedication, Foreword, Preface, Acknowledgements, Half Title and a
-richer Table of Contents variant are good first candidates (front-matter-heavy,
-conceptually closest to the 4 types already shipped), with Bibliography/Glossary/
-Index/Appendix/About the Author/ISBN Page/Barcode as natural back-matter follow-ups.
-Each new type needs only a registry entry (`Render` + `drawPdf` + `defaultContent`)
-plus a `StructuralPagePanel.tsx` case and an "addable types" list entry in
-`Sidebar.tsx` — no changes to `structuralPageStore.ts`, `composePages.ts`,
-`Page.tsx`, or `exportPdf.ts` should be needed, which is exactly what this milestone
-was building toward. (Milestone 3 — full drag-and-drop reordering and a theme
-`pageStyles` extension point — is a reasonable alternative next step if polish is
-preferred over taxonomy breadth before Milestone 4.) Outside that track, everything
-in the Development Plan's "Definition of Version 1 Complete" still works end-to-end,
-the Virtual Editor has a real foundation (Phase 9) with reliable navigation and
+Phase 20 is now fully verified (build/lint/test all clean, 246/246 — see the
+follow-up note directly above) and closed.
+
+`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 4** continues: batch
+in the remaining ~25 back-matter-heavy types (5–8 per milestone, per the plan's
+§7.4), following the exact registry-entry pattern this phase and Phase 19 both
+proved — **Conclusion, Bibliography, Glossary, Index, Appendix, About the Author,
+ISBN Page, Barcode** are the natural next batch (back-matter-heavy, per Phase 19's
+own original recommendation). Each new type needs only a registry entry (`Render`
++ `drawPdf` + `defaultContent`) plus a `StructuralPagePanel.tsx` case and an
+"addable types" list entry in `Sidebar.tsx` (this time in `BACK_MATTER_ADDABLE_TYPES`)
+— no changes to `structuralPageStore.ts`, `composePages.ts`, `Page.tsx`, or
+`exportPdf.ts` should be needed, exactly as this phase and Phase 19 both
+confirmed in practice. (Milestone 3 — full drag-and-drop reordering and a theme
+`pageStyles` extension point — remains a reasonable alternative next step if
+polish is preferred over taxonomy breadth.) Outside that track, everything in the
+Development Plan's "Definition of Version 1 Complete" still works end-to-end, the
+Virtual Editor has a real foundation (Phase 9) with reliable navigation and
 bulk-fix actions (Phase 13), the manuscript is no longer read-only (Phase 10), the
 image block feature set (Phase 11 + 12) is fully WYSIWYG between screen and PDF,
 undo/redo (Phase 14) closes the biggest remaining trust gap for direct editing and

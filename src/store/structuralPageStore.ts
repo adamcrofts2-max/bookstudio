@@ -60,6 +60,17 @@ interface StructuralPageStoreActions {
    * category. */
   movePage: (projectId: string, pageId: string, direction: 'up' | 'down') => void
   updatePageContent: (projectId: string, pageId: string, updates: Partial<StructuralPage['content']>) => void
+  /**
+   * Full (non-merging) content replacement — the undo half of
+   * `editorActions.ts`'s `updatePageContentWithHistory`. `updatePageContent`'s
+   * shallow merge is correct for a live edit (typing into one field must
+   * never clobber sibling fields), but that same merge silently no-ops when
+   * undo tries to restore a field from present back to absent: merging `{}`
+   * into `{ text: 'x' }` leaves `text: 'x'` untouched, since a merge only
+   * ever adds/overwrites keys, never deletes them. Undo needs the exact
+   * prior `content` object restored wholesale, not merged — this is that.
+   */
+  replacePageContent: (projectId: string, pageId: string, content: StructuralPage['content']) => void
 }
 
 function bumpRevision(state: StructuralPageStoreState, projectId: string): Record<string, number> {
@@ -197,6 +208,26 @@ export const useStructuralPageStore = create<StructuralPageStoreState & Structur
               return { ...merged, assets: imageAssetId ? [imageAssetId] : [] }
             }
             return merged
+          })
+          return {
+            byProject: { ...state.byProject, [projectId]: next },
+            revisionByProject: bumpRevision(state, projectId),
+          }
+        })
+      },
+
+      replacePageContent: (projectId, pageId, content) => {
+        set((state) => {
+          const pages = state.byProject[projectId]
+          if (!pages) return state
+          const next = pages.map((p) => {
+            if (p.id !== pageId) return p
+            const replaced = { ...p, content } as StructuralPage
+            if (replaced.type === 'cover') {
+              const imageAssetId = (content as Partial<CoverPage['content']>).imageAssetId
+              return { ...replaced, assets: imageAssetId ? [imageAssetId] : [] }
+            }
+            return replaced
           })
           return {
             byProject: { ...state.byProject, [projectId]: next },

@@ -58,5 +58,45 @@ export interface BlankStructuralPage extends BaseStructuralPage {
   content: Record<string, never>
 }
 
-export type StructuralPage = CoverPage | TitlePage | CopyrightPage | BlankStructuralPage
+/**
+ * Phase 20 (Milestone 4, first batch of 5): five more front-matter types,
+ * following the exact same discriminated-union shape as the 4 above — see
+ * `src/structuralPages/types/{halfTitle,dedication,foreword,preface,
+ * acknowledgements}.tsx` and `docs/STATUS.md`'s Phase 20 entry.
+ */
+export interface HalfTitlePage extends BaseStructuralPage {
+  type: 'half-title'
+  content: { title?: string }
+}
+
+export interface DedicationPage extends BaseStructuralPage {
+  type: 'dedication'
+  content: { text?: string }
+}
+
+export interface ForewordPage extends BaseStructuralPage {
+  type: 'foreword'
+  content: { text?: string; authorName?: string }
+}
+
+export interface PrefacePage extends BaseStructuralPage {
+  type: 'preface'
+  content: { text?: string }
+}
+
+export interface AcknowledgementsPage extends BaseStructuralPage {
+  type: 'acknowledgements'
+  content: { text?: string }
+}
+
+export type StructuralPage =
+  | CoverPage
+  | TitlePage
+  | CopyrightPage
+  | BlankStructuralPage
+  | HalfTitlePage
+  | DedicationPage
+  | ForewordPage
+  | PrefacePage
+  | AcknowledgementsPage
 export type StructuralPageType = StructuralPage['type']

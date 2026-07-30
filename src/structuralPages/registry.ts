@@ -7,8 +7,13 @@ import type { ResolvedBookTheme } from '@/theme/presets'
 import type { PageBox } from '@/renderer/pageGeometry'
 
 import { coverPageType } from '@/structuralPages/types/cover'
+import { halfTitlePageType } from '@/structuralPages/types/halfTitle'
 import { titlePageType } from '@/structuralPages/types/titlePage'
 import { copyrightPageType } from '@/structuralPages/types/copyright'
+import { dedicationPageType } from '@/structuralPages/types/dedication'
+import { forewordPageType } from '@/structuralPages/types/foreword'
+import { prefacePageType } from '@/structuralPages/types/preface'
+import { acknowledgementsPageType } from '@/structuralPages/types/acknowledgements'
 import { blankPageType } from '@/structuralPages/types/blank'
 
 /**
@@ -65,8 +70,13 @@ export interface StructuralPageTypeDefinition {
 
 const STRUCTURAL_PAGE_REGISTRY: Record<StructuralPageType, StructuralPageTypeDefinition> = {
   cover: coverPageType,
+  'half-title': halfTitlePageType,
   'title-page': titlePageType,
   copyright: copyrightPageType,
+  dedication: dedicationPageType,
+  foreword: forewordPageType,
+  preface: prefacePageType,
+  acknowledgements: acknowledgementsPageType,
   blank: blankPageType,
 }
 
@@ -77,5 +87,15 @@ export function getStructuralPageTypeDefinition(type: StructuralPageType): Struc
 /** All registered structural page types, in a stable display order — used
  * by the Sidebar's "Add Page" picker. */
 export function listStructuralPageTypes(): StructuralPageTypeDefinition[] {
-  return [coverPageType, titlePageType, copyrightPageType, blankPageType]
+  return [
+    coverPageType,
+    halfTitlePageType,
+    titlePageType,
+    copyrightPageType,
+    dedicationPageType,
+    forewordPageType,
+    prefacePageType,
+    acknowledgementsPageType,
+    blankPageType,
+  ]
 }

@@ -255,8 +255,14 @@ export function movePageWithHistory(projectId: string, pageId: string, direction
 /**
  * History-aware replacement for `structuralPageStore.updatePageContent`.
  * Same shape as `editBlock` above: snapshots the full old `content` object
- * before mutating (since `updatePageContent` shallow-merges), so undo can
- * restore it exactly by re-merging the entire old content back in.
+ * before mutating, so undo can restore it exactly. Undo deliberately calls
+ * `replacePageContent` (a full, non-merging replacement), not
+ * `updatePageContent` — merging the old content back in would silently fail
+ * to clear any field that the edit had newly *set* (merging `{}` into
+ * `{ text: 'x' }` leaves `text: 'x'` untouched, since a merge only ever
+ * adds/overwrites keys, never deletes them). Redo re-applies `updates` as a
+ * merge on top of that now-restored old content, exactly reproducing the
+ * original forward edit.
  */
 export function updatePageContentWithHistory(
   projectId: string,
@@ -272,7 +278,7 @@ export function updatePageContentWithHistory(
   useHistoryStore.getState().record(
     projectId,
     'Edit page',
-    () => useStructuralPageStore.getState().updatePageContent(projectId, pageId, oldPage.content),
+    () => useStructuralPageStore.getState().replacePageContent(projectId, pageId, oldPage.content),
     () => useStructuralPageStore.getState().updatePageContent(projectId, pageId, updates),
   )
 }
