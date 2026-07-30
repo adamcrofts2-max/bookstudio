@@ -122,18 +122,58 @@ export const unmatchedQuotesChecker: Checker = {
           }),
         )
       } else if (curlyOpen !== curlyClose) {
-        findings.push(
-          makeFinding({
-            checkerId: unmatchedQuotesChecker.id,
-            issueType: 'unmatched-quote',
-            severity: 'major',
-            confidence: 0.6,
-            location: { chapterId: span.chapterId, blockId: span.blockId },
-            message: `Unbalanced curly quotation marks (${curlyOpen} opening vs ${curlyClose} closing) in "${excerpt(span.text)}".`,
-            whyItMatters:
-              "An unmatched quotation mark leaves the reader unsure where a quoted phrase ends, and it's a hallmark of an unproofread manuscript.",
-          }),
-        )
+        // Common false-positive, discovered against a real manuscript: a
+        // single stray closing curly quote (”) directly after a letter, with
+        // no matching opener anywhere in this span, is almost always a
+        // misplaced apostrophe from an import/autocorrect artifact (e.g.
+        // "moments”" instead of "moments’") — not a genuinely unmatched
+        // quotation. That distinction matters because it's the difference
+        // between a safe, mechanical fix and a judgment call: only this
+        // narrow, high-confidence shape gets a `suggestedFix` (so Fix/Fix All
+        // has something real to do); anything less clear-cut stays
+        // informational-only, exactly as before.
+        const strayApostrophePattern = /\w”/
+        const looksLikeStrayApostrophe =
+          Math.abs(curlyOpen - curlyClose) === 1 && curlyClose > curlyOpen && strayApostrophePattern.test(span.text)
+
+        if (looksLikeStrayApostrophe) {
+          findings.push(
+            makeFinding({
+              checkerId: unmatchedQuotesChecker.id,
+              issueType: 'quote-mark-as-apostrophe',
+              severity: 'minor',
+              confidence: 0.75,
+              location: { chapterId: span.chapterId, blockId: span.blockId },
+              message: `A closing curly quotation mark is likely being used as an apostrophe in "${excerpt(span.text)}".`,
+              whyItMatters:
+                'A right double quotation mark (”) standing in for an apostrophe (’) is a common import artifact — it reads as a typo and creates false "unmatched quote" alarms throughout the manuscript.',
+              suggestedFix: {
+                summary: 'Replace with an apostrophe (’)',
+                apply: (block) =>
+                  patchTextField(block, span.field, (text) => {
+                    const matches = [...text.matchAll(/\w”/g)]
+                    if (matches.length === 0) return text
+                    const last = matches[matches.length - 1]
+                    const idx = last.index ?? 0
+                    return `${text.slice(0, idx)}${last[0][0]}’${text.slice(idx + last[0].length)}`
+                  }),
+              },
+            }),
+          )
+        } else {
+          findings.push(
+            makeFinding({
+              checkerId: unmatchedQuotesChecker.id,
+              issueType: 'unmatched-quote',
+              severity: 'major',
+              confidence: 0.6,
+              location: { chapterId: span.chapterId, blockId: span.blockId },
+              message: `Unbalanced curly quotation marks (${curlyOpen} opening vs ${curlyClose} closing) in "${excerpt(span.text)}".`,
+              whyItMatters:
+                "An unmatched quotation mark leaves the reader unsure where a quoted phrase ends, and it's a hallmark of an unproofread manuscript.",
+            }),
+          )
+        }
       }
     }
     return findings

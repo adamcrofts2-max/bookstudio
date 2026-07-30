@@ -1,12 +1,16 @@
 # Book Studio — Product Requirements Document
 
 ## Vision
-Book Studio is an AI-first professional publishing application designed to make creating
-beautiful books dramatically easier than Adobe InDesign. The software should enable
-anyone — from self-publishing authors to small publishers — to create print-ready books
-with minimal design knowledge. The core philosophy is that content and design are
-separate: users should never have to manually redesign an entire book after changing its
-appearance.
+Book Studio is the Canva for book publishing — software designed to make creating
+beautiful, professional-quality books dramatically easier than Adobe InDesign, without
+ever feeling like an AI application. The software should enable anyone — from
+self-publishing authors to small publishers — to create print-ready books with minimal
+design knowledge. AI works quietly in the background to remove complexity and automate
+repetitive work; it is never the headline feature. See `docs/VISION.md` for the full
+mission and `docs/DESIGN_PRINCIPLES.md`/`docs/ARCHITECTURE_PRINCIPLES.md` for the
+principles every feature is measured against. The core philosophy is that content and
+design are separate: users should never have to manually redesign an entire book after
+changing its appearance.
 
 ## Primary Goal
 Create a professional-quality book in minutes rather than days.

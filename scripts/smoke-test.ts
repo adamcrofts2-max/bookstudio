@@ -208,6 +208,32 @@ check('VE proofreading: unmatched quote detected',
 check('VE proofreading: no false positive on balanced quotes',
   unmatchedQuotesChecker.run({ manuscript: makeSingleParagraphManuscript('She said "hello" and walked away.') }).length === 0)
 
+// Stray closing curly quote used as an apostrophe (discovered against a real
+// manuscript: this used to be reported as a plain, unfixable "unmatched
+// quote" — it now gets its own issueType, a suggestedFix, and doesn't inflate
+// the same bucket as a genuinely ambiguous mismatch).
+const strayApostropheFindings = unmatchedQuotesChecker.run({
+  manuscript: makeSingleParagraphManuscript('In the first two years, young trees and shrubs are asking for four moments” of attention.'),
+})
+check('VE proofreading: stray closing curly quote after a letter is detected', strayApostropheFindings.length === 1)
+check('VE proofreading: stray apostrophe case gets its own issueType', strayApostropheFindings[0]?.issueType === 'quote-mark-as-apostrophe')
+check('VE proofreading: stray apostrophe case is minor severity, not major', strayApostropheFindings[0]?.severity === 'minor')
+check('VE proofreading: stray apostrophe case has a suggestedFix (Fix/Fix All now has something real to do)',
+  strayApostropheFindings[0]?.suggestedFix !== undefined)
+if (strayApostropheFindings[0]?.suggestedFix) {
+  const block = makeSingleParagraphManuscript('In the first two years, young trees and shrubs are asking for four moments” of attention.').chapters[0].blocks[0] as ParagraphBlock
+  const patch = strayApostropheFindings[0].suggestedFix.apply(block) as Partial<ParagraphBlock>
+  check('VE proofreading: stray-apostrophe fix replaces ” with ’ in place',
+    patch.html === 'In the first two years, young trees and shrubs are asking for four moments’ of attention.')
+}
+const ambiguousMismatchFindings = unmatchedQuotesChecker.run({
+  manuscript: makeSingleParagraphManuscript('She trailed off mid-thought, then oddly a stray mark appeared: ”'),
+})
+check('VE proofreading: a genuinely ambiguous curly-quote mismatch (no letter directly before the extra mark) is still flagged',
+  ambiguousMismatchFindings.length === 1)
+check('VE proofreading: that ambiguous case keeps issueType "unmatched-quote" and gets no fix',
+  ambiguousMismatchFindings[0]?.issueType === 'unmatched-quote' && ambiguousMismatchFindings[0]?.suggestedFix === undefined)
+
 // Unmatched brackets/parentheses
 check('VE proofreading: unmatched bracket detected',
   unmatchedBracketsChecker.run({ manuscript: makeSingleParagraphManuscript('This (is broken.') }).length === 1)

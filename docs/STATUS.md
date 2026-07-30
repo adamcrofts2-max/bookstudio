@@ -726,6 +726,38 @@ restore UI. Deliberately a separate system from `historyStore.ts`/`editorActions
 - **Unifying with Phase 14's undo/redo** — left completely separate on purpose; see
   above.
 
+## Phase 16 — Proofreading: fixed a real false-positive (2026-07-30)
+
+Found by running a live review against a real manuscript in production, not by unit
+testing: every one of a book's 47 flagged issues was `unmatchedQuotesChecker`, and
+because that checker never had a `suggestedFix` (correctly — guessing the right
+correction for a genuinely ambiguous quote mismatch isn't a call a deterministic rule
+should make), both the per-finding Fix button and the Fix/Fix All bulk actions were
+correctly disabled for all 47 — which reads exactly like "Fix doesn't work" even
+though the feature itself (built in Phase 13) is fine.
+
+Looking at the actual flagged excerpts showed the real cause: a large share of the 47
+were a single stray closing curly quote (`”`) directly after a letter, with no
+opening `“` anywhere in the span — the classic signature of a misplaced apostrophe
+(`moments”` instead of `moments’`), most likely from a DOCX/autocorrect import
+artifact, not 47 independent proofreading mistakes.
+
+- `src/virtualEditor/checkers/proofreading.ts`'s `unmatchedQuotesChecker` now
+  distinguishes this specific, high-confidence shape (exactly one extra closing
+  curly quote, directly following a word character) from a genuinely ambiguous
+  mismatch. The narrow case gets its own `issueType` (`quote-mark-as-apostrophe`),
+  `minor` severity, and a real `suggestedFix` that replaces the stray `”` with `’` —
+  so Fix and Fix All finally have something to do for the single most common
+  real-world case. Anything less clear-cut (bigger imbalances, or the extra mark not
+  directly after a letter) still gets no fix, exactly as before — this is additive,
+  not a loosening of the checker's honesty about what it can safely automate.
+- `scripts/smoke-test.ts`: added cases for the stray-apostrophe detection, its
+  `issueType`/severity/fix, the fix's exact text output, and confirmation that a
+  genuinely ambiguous mismatch still gets no fix.
+- `docs/PRD.md`'s Vision section updated to match the new `docs/VISION.md` framing
+  ("Canva for book publishing," AI invisible rather than "AI-first") — the two
+  documents were saying subtly different things.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
 end-to-end, the Virtual Editor has a real foundation (Phase 9) with reliable
