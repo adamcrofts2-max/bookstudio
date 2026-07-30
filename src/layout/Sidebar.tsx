@@ -5,7 +5,7 @@ import { ArrowLeft, ChevronsLeft, ImagePlus, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
-import { useAssetStore } from '@/store/assetStore'
+import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
@@ -27,7 +27,7 @@ export function Sidebar({ project }: SidebarProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
 
-  const assets = useAssetStore((s) => s.byProject[project.id] ?? [])
+  const assets = useAssetStore((s) => s.byProject[project.id] ?? EMPTY_ASSETS)
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const importFiles = useAssetStore((s) => s.importFiles)

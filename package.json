@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --config-loader runner",
-    "build": "tsc -b && vite build --config-loader runner --mode development",
+    "build": "tsc -b && vite build --config-loader runner",
     "lint": "oxlint",
     "preview": "vite preview --config-loader runner",
     "test": "tsx --tsconfig tsconfig.app.json scripts/smoke-test.ts"

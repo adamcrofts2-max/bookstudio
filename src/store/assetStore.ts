@@ -4,6 +4,14 @@ import type { ImageAsset } from '@/types/asset'
 import { generateId } from '@/utils'
 import { deleteAsset, getAssetBlob, listAssetsForProject, putAsset } from '@/store/assetDb'
 
+/**
+ * Stable reference for "no assets loaded yet". Selectors must return this
+ * instead of a fresh `[]` literal — with Zustand v5's useSyncExternalStore,
+ * a selector that returns a new array identity on every call never settles,
+ * which trips React's "Maximum update depth exceeded" (#185).
+ */
+export const EMPTY_ASSETS: readonly ImageAsset[] = []
+
 interface AssetStoreState {
   /** Assets currently loaded, keyed by project id. */
   byProject: Record<string, ImageAsset[]>
