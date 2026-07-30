@@ -27,4 +27,5 @@ dist-ssr
 test_delete_me.txt
 mv_test_b.txt
 dirtest_b/
+gittest_probe.txt
 .git/*.stale-*

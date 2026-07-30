@@ -28,11 +28,26 @@ function labelForBlock(block: ContentBlock): string {
 
 /**
  * History-aware replacement for `contentStore.updateBlock`. Reads the full
- * current block before mutating so undo can restore it exactly — relies on
- * `updateBlock` shallow-merging its `updates` argument into the existing
- * block, so spreading the *entire* old block back in as the "updates"
- * fully restores every field, not just the ones this particular edit
- * touched.
+ * current block before mutating so undo can restore it exactly.
+ *
+ * Undo calls `contentStore.replaceBlock` (a full, non-merging replacement),
+ * NOT `updateBlock` — mirroring `updatePageContentWithHistory`'s
+ * `replacePageContent` fix (see docs/STATUS.md's Phase 20 entry) exactly,
+ * for the identical reason: `updateBlock`'s shallow merge is correct for a
+ * live edit (typing into one field must never clobber sibling fields), but
+ * that same merge silently fails to restore a field from present back to
+ * *absent* on undo — spreading `oldBlock` back in as `updates` only
+ * "restores" keys `oldBlock` actually has; an optional field `oldBlock`
+ * never had at all (e.g. a Gallery's `caption`, or a Pull Quote's
+ * `attribution`, before either was ever set) can't be cleared by a merge,
+ * since a merge only ever adds/overwrites keys, never deletes them. This
+ * was a real latent bug (present since Phase 17, for every optional field
+ * on every block type, not just the 8 new Milestone 5 types) — found while
+ * verifying Milestone 5's new array-shaped fields per the milestone's own
+ * brief, fixed here the same way Phase 20 fixed the structural-page
+ * equivalent. Redo is unaffected: it re-applies `updates` as a merge on top
+ * of the now-fully-restored old block, exactly reproducing the original
+ * forward edit.
  */
 export function editBlock(
   projectId: string,
@@ -55,7 +70,7 @@ export function editBlock(
   useHistoryStore.getState().record(
     projectId,
     labelForBlock(oldBlock),
-    () => useContentStore.getState().updateBlock(projectId, chapterId, blockId, oldBlock),
+    () => useContentStore.getState().replaceBlock(projectId, chapterId, blockId, oldBlock),
     () => useContentStore.getState().updateBlock(projectId, chapterId, blockId, updates),
   )
 }

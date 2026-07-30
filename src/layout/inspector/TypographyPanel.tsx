@@ -17,10 +17,23 @@ interface TypographyPanelProps {
 const BLOCK_LABELS: Record<ContentBlock['type'], string> = {
   heading: 'Heading',
   paragraph: 'Paragraph',
-  quote: 'Pull quote',
+  // Renamed from this file's old "Pull quote" — Modular Page System
+  // Milestone 5 introduced a genuinely distinct `pull-quote` block type (the
+  // large magazine-style extracted quote), so the pre-existing `quote` type
+  // (a small left-ruled blockquote/citation) needed a label that no longer
+  // collides with it. See docs/STATUS.md's Phase 22 entry.
+  quote: 'Quote',
   list: 'List',
   table: 'Table',
   image: 'Image',
+  'pull-quote': 'Pull Quote',
+  callout: 'Callout',
+  'case-study': 'Case Study',
+  timeline: 'Timeline',
+  gallery: 'Gallery',
+  faq: 'FAQ',
+  statistics: 'Statistics',
+  checklist: 'Checklist',
 }
 
 function findBlock(chapters: Chapter[], chapterId: string, blockId: string) {
@@ -44,6 +57,22 @@ function blockPlainText(block: ContentBlock): string {
       return [...block.header, ...block.rows.flat()].join(' ')
     case 'image':
       return ''
+    case 'pull-quote':
+      return block.text
+    case 'callout':
+      return block.text
+    case 'case-study':
+      return `${block.title} ${block.text}`.trim()
+    case 'timeline':
+      return block.entries.map((e) => `${e.label} ${e.text}`).join(' ')
+    case 'gallery':
+      return block.caption ?? ''
+    case 'faq':
+      return block.entries.map((e) => `${e.question} ${e.answer}`).join(' ')
+    case 'statistics':
+      return block.entries.map((e) => `${e.value} ${e.label}`).join(' ')
+    case 'checklist':
+      return block.items.map((i) => i.text).join(' ')
   }
 }
 
@@ -65,7 +94,9 @@ export function TypographyPanel({ projectId }: TypographyPanelProps) {
       ? findBlock(manuscript.chapters, selectedChapterId, selectedBlockId)
       : { chapter: undefined, block: undefined }
 
-  if (!chapter || !block || block.type === 'image') {
+  // Gallery gets the same treatment as Image — it's images-only (plus an
+  // optional whole-gallery caption), not a text block to inspect here.
+  if (!chapter || !block || block.type === 'image' || block.type === 'gallery') {
     return (
       <EmptyState
         icon={Type}

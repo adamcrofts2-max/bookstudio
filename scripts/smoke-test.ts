@@ -1070,6 +1070,40 @@ check(
   getBlockTypeDefinition('not-a-real-type' as ContentBlockType) === undefined,
 )
 
+// --- Modular Page System Milestone 5 (Phase 22): 8 new in-chapter content
+// block types — Pull Quote, Callout, Case Study, Timeline, Gallery, FAQ,
+// Statistics, Checklist. Same registry-lookup pattern as the 6 pre-existing
+// types above, proving BlockContent.tsx/exportPdf.ts/paginate.ts needed zero
+// changes (they all dispatch purely through getBlockTypeDefinition), plus
+// the new optional label/icon fields (forward groundwork for a future "Add
+// Block" picker — see docs/STATUS.md's Phase 22 entry).
+const MILESTONE_5_BLOCK_TYPES: ContentBlockType[] = ['pull-quote', 'callout', 'case-study', 'timeline', 'gallery', 'faq', 'statistics', 'checklist']
+for (const type of MILESTONE_5_BLOCK_TYPES) {
+  const def = getBlockTypeDefinition(type)
+  check(
+    `block registry (Phase 22): has a complete definition for "${type}"`,
+    !!def && def.id === type && typeof def.Render === 'function' && typeof def.drawPdf === 'function',
+  )
+  check(
+    `block registry (Phase 22): "${type}" has a label and icon (forward groundwork for a future Add Block picker)`,
+    typeof def?.label === 'string' && def.label.length > 0 && !!def?.icon,
+  )
+}
+check(
+  'block registry (Phase 22): pull-quote/callout/case-study/timeline/gallery/faq/statistics all have a blockSpacing entry',
+  getBlockTypeDefinition('pull-quote')?.blockSpacing?.({ id: 'x', type: 'pull-quote', text: '' }) === 8
+    && getBlockTypeDefinition('callout')?.blockSpacing?.({ id: 'x', type: 'callout', variant: 'tip', text: '' }) === 8
+    && getBlockTypeDefinition('case-study')?.blockSpacing?.({ id: 'x', type: 'case-study', title: '', text: '' }) === 8
+    && getBlockTypeDefinition('timeline')?.blockSpacing?.({ id: 'x', type: 'timeline', entries: [] }) === 8
+    && getBlockTypeDefinition('gallery')?.blockSpacing?.({ id: 'x', type: 'gallery', assetIds: [] }) === 6
+    && getBlockTypeDefinition('faq')?.blockSpacing?.({ id: 'x', type: 'faq', entries: [] }) === 8
+    && getBlockTypeDefinition('statistics')?.blockSpacing?.({ id: 'x', type: 'statistics', entries: [] }) === 8,
+)
+check(
+  'block registry (Phase 22): checklist deliberately has no blockSpacing entry (matches list/table/paragraph having none)',
+  getBlockTypeDefinition('checklist')?.blockSpacing === undefined,
+)
+
 // --- Structural pages (Milestone 2 of docs/MODULAR_PAGE_SYSTEM_PLAN.md) ---
 // New, additive StructuralPage data layer proven on 4 types (Cover, Title
 // Page, Copyright, Blank Page): structuralPageStore CRUD, composeBookPages
@@ -1499,6 +1533,127 @@ check(
     const barcode = pages.find((p) => p.id === barcodeId)
     return isbnPage?.type === 'isbn-page' && isbnPage.content.isbn === '978-1-234567-89-0' && barcode?.type === 'barcode' && barcode.content.isbn === undefined
   })(),
+)
+
+// --- Modular Page System Milestone 5 (Phase 22): insert/undo/redo coverage
+// for Timeline (array-of-objects `entries`) and Gallery (array-of-strings
+// `assetIds`) — the two new field shapes most likely to re-trigger the
+// exact class of shallow-merge undo bug fixed in Phase 20
+// (`replacePageContent`), this time for `contentStore`/`editBlock` rather
+// than `structuralPageStore`/`updatePageContentWithHistory`. See
+// contentStore.ts's `replaceBlock` and editorActions.ts's `editBlock` doc
+// comments for the real, previously-latent bug this investigation found
+// (present since Phase 17, for any optional field on any block type) and
+// its fix.
+import type { TimelineBlock, GalleryBlock } from '../src/types/content'
+
+const m5ProjectId = 'milestone-5-blocks-project'
+const m5Manuscript: Manuscript = {
+  chapters: [
+    {
+      id: 'm5-chapter',
+      title: 'Chapter One',
+      order: 0,
+      blocks: [{ id: 'm5-block-a', type: 'paragraph', html: 'Paragraph A' } as ParagraphBlock],
+    },
+  ],
+  importedAt: new Date().toISOString(),
+  sourceFileName: 'milestone-5-fixture.md',
+}
+useContentStore.getState().setManuscript(m5ProjectId, m5Manuscript)
+const m5BlockIds = () => useContentStore.getState().getManuscript(m5ProjectId)!.chapters[0].blocks.map((b) => b.id)
+const m5Block = (id: string) => useContentStore.getState().getManuscript(m5ProjectId)!.chapters[0].blocks.find((b) => b.id === id)
+
+// Timeline: insertBlockWithHistory + undo/redo (array-of-objects `entries`).
+const m5TimelineBlock: TimelineBlock = { id: 'm5-timeline', type: 'timeline', entries: [{ label: '1900', text: 'Founded' }] }
+insertBlockWithHistory(m5ProjectId, 'm5-chapter', null, m5TimelineBlock)
+check('insertBlockWithHistory (Phase 22): inserts a Timeline block at the start', m5BlockIds().join(',') === 'm5-timeline,m5-block-a')
+check(
+  'insertBlockWithHistory (Phase 22): Timeline block carries its full entries array',
+  (m5Block('m5-timeline') as TimelineBlock).entries.length === 1 && (m5Block('m5-timeline') as TimelineBlock).entries[0].label === '1900',
+)
+useHistoryStore.getState().undo(m5ProjectId)
+check('insertBlockWithHistory (Phase 22) -> undo: removes the just-inserted Timeline block', !m5BlockIds().includes('m5-timeline'))
+useHistoryStore.getState().redo(m5ProjectId)
+check(
+  'insertBlockWithHistory (Phase 22) -> undo -> redo: Timeline block and its entries array come back intact',
+  m5BlockIds().includes('m5-timeline') && (m5Block('m5-timeline') as TimelineBlock).entries[0].text === 'Founded',
+)
+
+// Timeline: editBlock + undo — replacing the WHOLE `entries` array (not
+// mutating one entry's field in place) round-trips correctly through the
+// new contentStore.replaceBlock: growing it to 2 entries, then undoing back
+// to exactly 1, not left at 2 by a merge.
+editBlock(m5ProjectId, 'm5-chapter', 'm5-timeline', {
+  entries: [
+    { label: '1900', text: 'Founded' },
+    { label: '1950', text: 'Expanded' },
+  ],
+})
+check('editBlock (Phase 22): Timeline entries array grows to 2', (m5Block('m5-timeline') as TimelineBlock).entries.length === 2)
+useHistoryStore.getState().undo(m5ProjectId)
+check(
+  'editBlock (Phase 22) -> undo: Timeline entries array restored to exactly 1 (not left with 2 from a merge)',
+  (m5Block('m5-timeline') as TimelineBlock).entries.length === 1,
+)
+
+// Gallery: insertBlockWithHistory + undo/redo (array-of-strings `assetIds`).
+const m5GalleryBlock: GalleryBlock = { id: 'm5-gallery', type: 'gallery', assetIds: ['asset-1', 'asset-2'] }
+insertBlockWithHistory(m5ProjectId, 'm5-chapter', 'm5-timeline', m5GalleryBlock)
+check('insertBlockWithHistory (Phase 22): inserts a Gallery block after the Timeline block', m5BlockIds().join(',') === 'm5-timeline,m5-gallery,m5-block-a')
+check(
+  'insertBlockWithHistory (Phase 22): Gallery block carries its full assetIds array',
+  (m5Block('m5-gallery') as GalleryBlock).assetIds.join(',') === 'asset-1,asset-2',
+)
+useHistoryStore.getState().undo(m5ProjectId)
+check('insertBlockWithHistory (Phase 22) -> undo: removes the just-inserted Gallery block', !m5BlockIds().includes('m5-gallery'))
+useHistoryStore.getState().redo(m5ProjectId)
+check(
+  'insertBlockWithHistory (Phase 22) -> undo -> redo: Gallery block and its assetIds array come back intact',
+  (m5Block('m5-gallery') as GalleryBlock | undefined)?.assetIds.join(',') === 'asset-1,asset-2',
+)
+
+// Gallery: editBlock + undo — the real bug this investigation found: an
+// optional field (`caption`) going from absent to present via a live edit,
+// then undo needing to clear it back to absent. Before the
+// `contentStore.replaceBlock` fix, `editBlock`'s undo called `updateBlock`
+// with the full old-block snapshot as `updates` — a merge that can only
+// add/overwrite keys, never delete one the old snapshot never had at all,
+// so undo silently left `caption` set. Same bug class Phase 20 found in
+// `updatePageContentWithHistory`, just in contentStore instead of
+// structuralPageStore.
+editBlock(m5ProjectId, 'm5-chapter', 'm5-gallery', { caption: 'A gallery of photos' })
+check(
+  'editBlock (Phase 22): sets Gallery caption (previously absent, now present)',
+  (m5Block('m5-gallery') as GalleryBlock).caption === 'A gallery of photos',
+)
+useHistoryStore.getState().undo(m5ProjectId)
+check(
+  "editBlock (Phase 22) -> undo: clears Gallery caption back to absent (the bug contentStore.replaceBlock fixes — updateBlock's merge could not)",
+  (m5Block('m5-gallery') as GalleryBlock).caption === undefined,
+)
+useHistoryStore.getState().redo(m5ProjectId)
+check('editBlock (Phase 22) -> undo -> redo: Gallery caption reapplied', (m5Block('m5-gallery') as GalleryBlock).caption === 'A gallery of photos')
+
+// Direct regression check for contentStore.replaceBlock itself (not just
+// indirectly via editBlock's undo) — mirrors Phase 20's direct
+// `replacePageContent` unit checks exactly.
+const rbProjectId = 'replace-block-project'
+const rbManuscript: Manuscript = {
+  chapters: [{ id: 'rb-chapter', title: 'Chapter', order: 0, blocks: [{ id: 'rb-block', type: 'quote', text: 'Hi' } as ContentBlock] }],
+  importedAt: new Date().toISOString(),
+  sourceFileName: 'replace-block-fixture.md',
+}
+useContentStore.getState().setManuscript(rbProjectId, rbManuscript)
+useContentStore.getState().updateBlock(rbProjectId, 'rb-chapter', 'rb-block', { attribution: 'Someone' })
+check(
+  'replaceBlock: sanity — updateBlock merge actually set the field first',
+  (useContentStore.getState().getManuscript(rbProjectId)!.chapters[0].blocks[0] as ContentBlock & { attribution?: string }).attribution === 'Someone',
+)
+useContentStore.getState().replaceBlock(rbProjectId, 'rb-chapter', 'rb-block', { id: 'rb-block', type: 'quote', text: 'Hi' } as ContentBlock)
+check(
+  'replaceBlock: fully replaces the block, clearing a previously-set optional field (the bug updateBlock-as-merge has)',
+  (useContentStore.getState().getManuscript(rbProjectId)!.chapters[0].blocks[0] as ContentBlock & { attribution?: string }).attribution === undefined,
 )
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)

@@ -1,4 +1,5 @@
 import type { ComponentType } from 'react'
+import type { LucideIcon } from 'lucide-react'
 
 import type { ContentBlock, ContentBlockType } from '@/types/content'
 import type { DrawCtx } from '@/pdf/exportPdf'
@@ -10,6 +11,14 @@ import { quoteBlockType } from '@/blocks/types/quote'
 import { listBlockType } from '@/blocks/types/list'
 import { tableBlockType } from '@/blocks/types/table'
 import { imageBlockType } from '@/blocks/types/image'
+import { pullQuoteBlockType } from '@/blocks/types/pullQuote'
+import { calloutBlockType } from '@/blocks/types/callout'
+import { caseStudyBlockType } from '@/blocks/types/caseStudy'
+import { timelineBlockType } from '@/blocks/types/timeline'
+import { galleryBlockType } from '@/blocks/types/gallery'
+import { faqBlockType } from '@/blocks/types/faq'
+import { statisticsBlockType } from '@/blocks/types/statistics'
+import { checklistBlockType } from '@/blocks/types/checklist'
 
 /**
  * Props every block type's `Render` component receives. This is the exact
@@ -38,6 +47,20 @@ export interface BlockTypeDefinition {
    * (defaults to 0 via `getBlockTypeDefinition`'s consumer) for types that
    * had no entry in the old switch's non-default cases. */
   blockSpacing?: (block: ContentBlock) => number
+  /**
+   * Optional — added in Modular Page System Milestone 5 as forward-looking
+   * groundwork for a future "Add Block" UI picker (out of scope this
+   * milestone; there is currently no UI to manually insert ANY block type,
+   * old or new — blocks only arise from manuscript import parsing today).
+   * Optional so the 6 pre-existing types compile unchanged; only the 8 new
+   * Milestone 5 types populate them for now. Mirrors
+   * `StructuralPageTypeDefinition.label`/`.icon` in
+   * `src/structuralPages/registry.ts`, which already ships this exact shape
+   * for its own "Add Page" picker.
+   */
+  label?: string
+  /** See `label` above. */
+  icon?: LucideIcon
 }
 
 const BLOCK_REGISTRY: Record<ContentBlockType, BlockTypeDefinition> = {
@@ -47,6 +70,14 @@ const BLOCK_REGISTRY: Record<ContentBlockType, BlockTypeDefinition> = {
   list: listBlockType,
   table: tableBlockType,
   image: imageBlockType,
+  'pull-quote': pullQuoteBlockType,
+  callout: calloutBlockType,
+  'case-study': caseStudyBlockType,
+  timeline: timelineBlockType,
+  gallery: galleryBlockType,
+  faq: faqBlockType,
+  statistics: statisticsBlockType,
+  checklist: checklistBlockType,
 }
 
 export function getBlockTypeDefinition(type: ContentBlockType): BlockTypeDefinition | undefined {

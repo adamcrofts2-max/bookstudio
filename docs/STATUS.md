@@ -1345,36 +1345,215 @@ are additive registry entries and not a hand-synchronized switch.
   rather than being incremental or deferred. Recommend profiling this
   specifically (not guessing at a fix) before or alongside Milestone 5.
 
+## Phase 22 — Modular Page System Milestone 5: 8 new in-chapter content block types (2026-07-31)
+
+Milestone 5 of `docs/MODULAR_PAGE_SYSTEM_PLAN.md`, per Phase 21's own
+"Recommended next task": Pull Quote, Callout, Case Study, Timeline, Gallery,
+FAQ, Statistics, Checklist — new `ContentBlock` types that flow through the
+existing, proven `paginate.ts` auto-flow engine exactly like a paragraph or
+image does today, added purely as registry entries. `BlockContent.tsx`,
+`exportPdf.ts`'s `drawBlock`, and `paginate.ts`'s `blockSpacing` needed
+**zero changes** — confirming, in the block-type registry's first real use
+since Phase 17 shipped it, that the "new types are additive registry
+entries, not a hand-synchronized switch" design goal holds for in-chapter
+content exactly as it already did for structural pages (Phases 19–21).
+
+- **`src/types/content.ts`** — 8 new interfaces (`PullQuoteBlock`,
+  `CalloutBlock`, `CaseStudyBlock`, `TimelineBlock`, `GalleryBlock`,
+  `FaqBlock`, `StatisticsBlock`, `ChecklistBlock`) added to the
+  `ContentBlockType` union and `ContentBlock` discriminated union, each
+  following the project's "optional field, default in code, never migrate"
+  rule. **`Callout` is one type with a `variant: 'tip' | 'warning' | 'info'`
+  field**, not three near-identical block types, per the plan's own §7.5
+  guidance and Phase 21's Glossary/Bibliography precedent for generalizing
+  instead of taxonomy-bloating. **`GalleryBlock.assetIds: string[]`** is this
+  codebase's first multi-asset field — every prior asset reference
+  (`ImageBlock.assetId`, `CoverPage.content.imageAssetId`) was singular.
+- **`src/blocks/registry.ts`** — `BlockTypeDefinition` gained two new
+  **optional** fields, `label?: string` and `icon?: LucideIcon`, so the 6
+  pre-existing types compile unchanged. All 8 new types populate them; this
+  is deliberate forward-looking groundwork for a future "Add Block" UI
+  picker (out of scope this milestone — see "Deviations" below) — mirrors
+  `StructuralPageTypeDefinition.label`/`.icon` in
+  `src/structuralPages/registry.ts`, which already ships this exact shape
+  for its own "Add Page" picker.
+- **`src/blocks/types/{pullQuote,callout,caseStudy,timeline,gallery,faq,
+  statistics,checklist}.tsx`** — one module per type, each with a required
+  `Render` (on-screen, inline-editable via `useEditableField`, exactly like
+  `quote.tsx`/`list.tsx`/`table.tsx` today — no separate Inspector panel) and
+  `drawPdf` (visually matching PDF output — the plan's one non-negotiable
+  "WYSIWYG drift" rule). Notable implementation details:
+  - **Pull Quote** is visually distinct from the pre-existing `quote` block
+    on purpose: large centred display type with flanking horizontal rule
+    marks above/below and no left rule, vs. `quote.tsx`'s small left-ruled
+    blockquote citation style.
+  - **Callout**'s per-variant accent colour/icon (tip = green/`Lightbulb`,
+    warning = amber/`TriangleAlert`, info = blue/`Info`) are fixed, hardcoded
+    values, not read from `ResolvedBookTheme` — `theme.page` has no
+    per-block-type accent extension point yet (that's `pageStyles`,
+    explicitly deferred to Milestone 6 per the plan's own §7). Documented as
+    a deliberate simplification, same honesty as this project's other
+    "known simplification" notes (e.g. Barcode's placeholder bars).
+  - **Case Study** reuses `splitParagraphs` from `src/structuralPages/
+    longForm.tsx` (a pure, stateless helper with no store coupling) rather
+    than duplicating blank-line paragraph splitting a third time — the first
+    time a `src/blocks/types/*` module has imported from
+    `src/structuralPages/*`; verified this creates no import cycle
+    (`longForm.tsx` only imports `outlineClass` from `src/blocks/shared.tsx`,
+    never anything from `src/blocks/types/*`).
+  - **Timeline**'s vertical connecting rule + dot markers use `pdf-lib`'s
+    `drawLine`/`drawCircle` (confirmed available on `PDFPage` before use);
+    on-screen the same look is a CSS-positioned line + rounded dot per row.
+  - **Gallery** reuses `image.tsx`'s exact asset-embedding pipeline
+    (on-screen: `useAssetStore.getObjectUrl`; PDF: `getAssetBlob` +
+    `blobToPng` + `doc.embedPng`), looped per `assetId` — 0/1/many images are
+    handled explicitly (placeholder text / single full-width image / a
+    2-column grid). The PDF drawer embeds every image first (`Promise.all`),
+    then lays out rows synchronously, avoiding interleaved awaits mid-layout.
+  - **FAQ** draws each question (bold) and its answer (regular) as two
+    separate wrapped text blocks (not one combined run like Glossary's
+    "term — definition" line), matching the brief's "bold question + regular
+    answer beneath it" literally.
+  - **Checklist**'s checkbox is a drawn glyph (`lucide-react`'s
+    `Square`/`SquareCheck`, a `<button>` calling `onCommit` to toggle
+    `checked`) — deliberately NOT a native `<input type="checkbox">`, which
+    would fight the inline-`contentEditable` editing pattern used everywhere
+    else in this codebase. Clicking the glyph toggles; double-clicking the
+    adjacent text edits its wording. The PDF drawer draws a bordered square
+    and, when checked, a small two-line checkmark inside it.
+  - None of the 4 "repeatable entries" types (Timeline, FAQ, Statistics,
+    Checklist) ship an add/remove-row UI — matching `list.tsx`/`table.tsx`'s
+    existing scope exactly (edit existing import-created items inline only).
+- **A real, latent bug found and fixed in `contentStore`/`editorActions.ts`**
+  (not scoped to the 8 new types — present since Phase 17, for every
+  optional field on every block type). While writing this milestone's own
+  brief-mandated insert/undo/redo coverage for Timeline's array-of-objects
+  `entries` and Gallery's array-of-strings `assetIds` (the field shapes
+  flagged as most likely to re-trigger the shallow-merge undo bug Phase 20
+  found and fixed in `structuralPageStore`), the array-replacement cases
+  themselves turned out fine (a required field is always keyed, even when
+  empty, so `editBlock`'s old "spread the full old block back in as
+  `updates`" undo trick correctly overwrites an array wholesale) — but the
+  investigation surfaced the real bug one level over: **any *optional*
+  scalar field that starts absent and is later set** (e.g. Gallery's
+  `caption`, Pull Quote's `attribution`) **could not be cleared by undo**.
+  `editBlock`'s undo called `contentStore.updateBlock(..., oldBlock)`,
+  which shallow-merges (`{ ...block, ...updates }`); merging a snapshot
+  object that never had a given key at all can't delete a key the current
+  block already has, since a merge only ever adds/overwrites keys, never
+  removes them — the exact same bug class as Phase 20's
+  `replacePageContent` fix, just in `contentStore` instead of
+  `structuralPageStore`. Verified empirically (not just asserted): reverting
+  the fix in a scratch copy and re-running the suite reproduces exactly one
+  failure, `editBlock (Phase 22) -> undo: clears Gallery caption back to
+  absent`, confirming this was a real, reachable bug (Page.tsx wires every
+  content-block edit through `editBlock`), not a hypothetical one.
+  **Fix**: added `contentStore.replaceBlock(projectId, chapterId, blockId,
+  block)` — a full, non-merging block replacement, mirroring
+  `replacePageContent` exactly — and changed `editBlock`'s undo closure to
+  call it instead of `updateBlock`. Redo is unaffected (it still re-applies
+  `updates` as a merge on top of the now-fully-restored old block,
+  reproducing the original forward edit).
+- **`src/layout/inspector/TypographyPanel.tsx`** — the one pre-existing file
+  outside "registry + rendering + PDF + tests" this milestone had to touch,
+  and unavoidably so: its `BLOCK_LABELS` map and `blockPlainText` switch are
+  both exhaustive over `ContentBlock['type']`, so extending the type union
+  without updating them would fail to compile. Added labels + plain-text
+  extraction for all 8 new types; extended the existing "no text to inspect"
+  empty state (previously `image`-only) to also cover `gallery`, for the
+  same reason (images-only content, not a text block). Also renamed this
+  panel's label for the pre-existing `quote` type from "Pull quote" to
+  "Quote" — the old label now collides in meaning with the genuinely new
+  `pull-quote` type, and "Quote" is a more accurate name for `quote.tsx`'s
+  actual small left-ruled blockquote/citation treatment.
+- **Tests**: `scripts/smoke-test.ts` grew from 269 to **302** passing checks
+  — registry lookups for all 8 new types (complete `Render`/`drawPdf`, the
+  new `label`/`icon` fields populated, correct `blockSpacing` including
+  Checklist's deliberate absence of one), plus dedicated insert/undo/redo
+  coverage for Timeline (array-of-objects `entries`, including a whole-array
+  replace-then-undo case) and Gallery (array-of-strings `assetIds`, plus the
+  `caption` absent→present→undo regression case that caught the real bug
+  above), and two direct unit checks on `contentStore.replaceBlock` itself
+  (mirroring Phase 20's direct `replacePageContent` checks).
+- **Verified**: `npx tsc -b --force` clean (run directly against the real
+  repo — 17s once filesystem caches were warm; this sandbox's mounted
+  working directory was, as in Phases 19–20, extremely slow on cold file
+  access, timing out repeatedly before warming up — not a code issue).
+  `npm run build` clean (2,459 modules, up from 2,451) and `npm run lint` (0
+  errors, 43 warnings, up from 31 — the 12 new ones are all the
+  already-accepted `react/only-export-components` Fast-Refresh heuristic
+  firing on the 8 new `src/blocks/types/*.tsx` files, exactly the same
+  precedent as every prior block/structural-page type module) — both run in
+  a scratch directory (fresh `npm install`'s `node_modules`, this repo's
+  exact `package.json`, source files synced in) after this sandbox's `vite
+  build` hit the same pre-existing ESM config-loader flakiness Phases
+  19–21's "note on this session's build environment" already documented
+  against this exact mount; not a regression, since `vite.config.ts` is
+  untouched by this phase and `tsc -b --force` already independently
+  confirmed every new/changed file typechecks correctly against the real,
+  non-scratch repo. `npm run test`: **302/302 passing** (269 baseline + 33
+  new checks).
+
+### Deviations from the brief, and why
+- **No "Add Block" UI was built** — there is still no way for a user to
+  manually insert ANY block type (old or new) via the UI; blocks only arise
+  from manuscript import parsing, exactly as before this milestone. This was
+  explicit in the brief and is a pre-existing limitation, not a gap this
+  milestone was asked to close.
+- **`BlockTypeDefinition.label`/`.icon`** were added as forward-looking
+  groundwork for that future picker, per the brief's explicit instruction —
+  populated for all 8 new types, not yet wired to any UI.
+- **`contentStore.replaceBlock` and the `editBlock` undo fix** are a real,
+  necessary addition beyond "registry + rendering + PDF + tests" — required
+  by the brief's own instruction to investigate and, if a real bug is found,
+  fix it properly rather than skip the test. See the writeup above.
+- **`TypographyPanel.tsx`** needed updating (exhaustive `Record`/`switch`
+  over `ContentBlock['type']`) — unavoidable, not scope creep; skipping it
+  would not compile.
+
+### Explicitly deferred (per the milestone's own scope)
+- Milestone 6 — page templates ("save as reusable template") and the theme
+  `pageStyles` extension point, which would let Callout's variant colours
+  (and future per-type styling) be theme-aware instead of hardcoded.
+- The `paginate.ts`/`composePages.ts` performance finding flagged at the end
+  of Phase 21 (15–30s main-thread freezes on structural-page mutations in a
+  17-chapter test project) — still unprofiled, still recommended before
+  Version 1 ships, not touched by this phase's registry-only changes.
+- Live-browser verification of the 8 new block types' on-screen rendering —
+  this sandbox session had no way to load the app in a real browser; the
+  jsdom smoke suite (same limitation this file has documented since Phase
+  17) covers registry shape and store/undo logic, not actual DOM rendering
+  or `pdf-lib` drawing calls. A real-browser pass (inserting each of the 8
+  types isn't possible without the deferred "Add Block" UI either, so this
+  would currently require manually crafting a manuscript fixture with these
+  block types and importing it) is a reasonable next independent-
+  verification step before treating this milestone as fully proven
+  end-to-end, mirroring Phase 17's own identical deferral for its six types.
+
 ## Recommended next task
-`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 5** is next: new in-chapter
-content block types via the existing block registry (`src/blocks/registry.ts`
-+ `src/blocks/types/*.tsx`, proven since Phase 17) — Pull Quote, Callout
-(Tip/Warning/Info as one block with a `variant` field rather than three
-near-identical types, to avoid taxonomy bloat per the plan's own §7.5
-guidance), Case Study, Timeline, Gallery, FAQ, Statistics, Checklist. Unlike
-structural pages, these are meant to sit *inside* a chapter's flowing
-narrative and reflow through the existing, proven `paginate.ts` auto-flow
-engine exactly like a paragraph or image does today — no new page-level
-plumbing needed, "just" new `ContentBlockType` union members plus registry
-entries. (Milestone 3 — full drag-and-drop reordering of structural pages
-and a theme `pageStyles` extension point — remains a reasonable alternative
-next step if polish is preferred over new taxonomy.) Outside that track,
-everything in the
-Development Plan's "Definition of Version 1 Complete" still works end-to-end, the
-Virtual Editor has a real foundation (Phase 9) with reliable navigation and
-bulk-fix actions (Phase 13), the manuscript is no longer read-only (Phase 10), the
-image block feature set (Phase 11 + 12) is fully WYSIWYG between screen and PDF,
-undo/redo (Phase 14) closes the biggest remaining trust gap for direct editing and
-destructive asset/image deletion, and version history (Phase 15) adds the coarse,
-periodic + manual safety net the PRD always called for. Other good next steps in
-priority order: (1) a second real checker engine on top of the existing `Checker`
-pattern — Consistency (terminology/units/spelling-variant matching) is the best next
-candidate since it's still fully deterministic, (2) manually verify the Phase 13
-scroll-to-block flow in a real browser (force-mount + smooth-scroll + auto-edit
-across a multi-page chapter) since jsdom couldn't exercise it — and, while in a real
-browser, also do the Phase 14 Ctrl/Cmd+Z-vs-native-undo spot check and the Phase 15
-real-world autosave-interval check noted above, (3) line-level text flow so
-paragraphs can split across pages like a real book, (4) justified text and image
-rotation in the PDF exporter, (5) proper glyph subsetting once the fontkit bug is
-understood, (6) the first real `AiReviewer` (readability is the most self-contained
-candidate — no layout/print context needed), (7) EPUB/Kindle export.
+`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 6** is next: page templates
+("save as reusable template" for `StructuralPage`s, mirroring `assetStore`'s
+persistence pattern via a new `pageTemplateStore.ts`) and the theme
+`pageStyles` extension point (`ResolvedBookTheme.pageStyles?: Record<string,
+PageTypeStyleTokens>`, optional with sane per-type fallback defaults baked
+into the registries themselves) — this would also let Phase 22's Callout
+variant colours become theme-aware instead of the fixed hardcoded values
+documented above. Milestone 3 (full drag-and-drop reordering of structural
+pages) remains a reasonable alternative if polish is preferred over new
+extension points. Outside that track, everything in the Development Plan's
+"Definition of Version 1 Complete" still works end-to-end. Other good next
+steps in priority order: (1) profile the Phase 21 structural-page mutation
+freeze (15–30s on a 17-chapter project) — flagged twice now, still
+unaddressed, (2) a second real checker engine on top of the existing
+`Checker` pattern — Consistency (terminology/units/spelling-variant
+matching) is the best next candidate since it's still fully deterministic,
+(3) manually verify the Phase 13 scroll-to-block flow in a real browser
+(force-mount + smooth-scroll + auto-edit across a multi-page chapter) since
+jsdom couldn't exercise it — and, while in a real browser, also do the Phase
+14 Ctrl/Cmd+Z-vs-native-undo spot check, the Phase 15 real-world autosave-
+interval check, and a live-browser pass on this phase's 8 new block types,
+(4) line-level text flow so paragraphs can split across pages like a real
+book, (5) justified text and image rotation in the PDF exporter, (6) proper
+glyph subsetting once the fontkit bug is understood, (7) the first real
+`AiReviewer` (readability is the most self-contained candidate — no
+layout/print context needed), (8) EPUB/Kindle export.

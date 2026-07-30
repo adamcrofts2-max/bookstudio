@@ -31,6 +31,21 @@ interface ContentStoreActions {
   /** The current content revision for a project — 0 if never touched. */
   getRevision: (projectId: string) => number
   updateBlock: (projectId: string, chapterId: string, blockId: string, updates: Partial<ContentBlock>) => void
+  /**
+   * Full (non-merging) block replacement — the undo half of
+   * `editorActions.ts`'s `editBlock`, mirroring
+   * `structuralPageStore.replacePageContent`'s fix exactly (see
+   * docs/STATUS.md's Phase 20 entry for the original bug/fix writeup).
+   * `updateBlock`'s shallow merge (`{ ...block, ...updates }`) is correct for
+   * a live edit, but the same merge silently no-ops when undo tries to
+   * restore a field from present back to *absent*: merging a snapshot
+   * object that never had a given optional key at all (e.g. a block created
+   * before that field was ever set) can't clear a key the current block
+   * already has, since a merge only ever adds/overwrites keys, never
+   * deletes them. `editBlock`'s undo needs the exact prior block object
+   * restored wholesale, not merged — this is that.
+   */
+  replaceBlock: (projectId: string, chapterId: string, blockId: string, block: ContentBlock) => void
   renameChapter: (projectId: string, chapterId: string, title: string) => void
   /**
    * Inserts `block` into `chapterId`'s block list, immediately after the
@@ -88,6 +103,24 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
               blocks: chapter.blocks.map((block) =>
                 block.id === blockId ? ({ ...block, ...updates } as ContentBlock) : block,
               ),
+            }
+          })
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      replaceBlock: (projectId, chapterId, blockId, block) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const chapters: Chapter[] = manuscript.chapters.map((chapter) => {
+            if (chapter.id !== chapterId) return chapter
+            return {
+              ...chapter,
+              blocks: chapter.blocks.map((b) => (b.id === blockId ? block : b)),
             }
           })
           return {
