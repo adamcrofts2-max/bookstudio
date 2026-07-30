@@ -1,4 +1,4 @@
-import { PDFDocument, type PDFFont, type PDFPage, rgb } from 'pdf-lib'
+import { PDFDocument, type PDFPage, rgb } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
 
 import type { ExportableLayout } from '@/store/exportStore'
@@ -6,16 +6,10 @@ import type { ContentBlock } from '@/types/content'
 import type { ProjectSettings } from '@/types/project'
 import { loadThemeFonts, pickFont, type ThemeFontSet } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
-import { parseInlineRuns } from '@/pdf/htmlRuns'
-import { wrapRuns, type WrappedLine } from '@/pdf/textWrap'
-import { blobToPng } from '@/pdf/imageForPdf'
-import { getAssetBlob } from '@/store/assetDb'
-import { PX_PER_MM } from '@/renderer/pageGeometry'
+import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
+import { getBlockTypeDefinition } from '@/blocks/registry'
 
-/** CSS px (96dpi) → PDF points (72dpi). */
-const PX_TO_PT = 72 / 96
-
-interface DrawCtx {
+export interface DrawCtx {
   page: PDFPage
   fonts: ThemeFontSet
   theme: ExportableLayout['theme']
@@ -24,151 +18,17 @@ interface DrawCtx {
   cursorY: number
 }
 
-function drawWrappedLines(ctx: DrawCtx, lines: WrappedLine[], sizePt: number, lineHeightPt: number, color: ReturnType<typeof rgb>, regularFont: PDFFont, boldFont: PDFFont) {
-  for (const line of lines) {
-    ctx.cursorY -= lineHeightPt
-    for (const fragment of line.fragments) {
-      ctx.page.drawText(fragment.text, {
-        x: ctx.contentX + fragment.x,
-        y: ctx.cursorY,
-        size: sizePt,
-        font: fragment.bold ? boldFont : regularFont,
-        color,
-      })
-    }
-  }
-}
-
+/**
+ * Draws one manuscript block's PDF representation. Each block type's actual
+ * drawing logic (byte-for-byte the same as this function's old switch
+ * cases) now lives in that type's own module under `src/blocks/types/` —
+ * see `BlockTypeDefinition.drawPdf` in `src/blocks/registry.ts` and
+ * docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 1.
+ */
 async function drawBlock(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
-  const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const muted = hexToPdfColor(theme.page.mutedInk)
-  const accent = hexToPdfColor(theme.page.accent)
-
-  switch (block.type) {
-    case 'heading': {
-      ctx.cursorY -= 20
-      const sizePt = (block.level === 2 ? theme.typography.bodySize * 1.5 : theme.typography.bodySize * 1.2) * PX_TO_PT
-      const font = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
-      const lines = wrapRuns([{ text: block.text, bold: false }], font, font, sizePt, ctx.contentWidthPt)
-      drawWrappedLines(ctx, lines, sizePt, sizePt * 1.25, ink, font, font)
-      ctx.cursorY -= 6
-      break
-    }
-    case 'paragraph': {
-      const sizePt = theme.typography.bodySize * PX_TO_PT
-      const regularFont = pickFont(ctx.fonts, theme.fonts.body, 400)
-      const boldFont = pickFont(ctx.fonts, theme.fonts.body, 700)
-      const runs = parseInlineRuns(block.html)
-      if (dropCap && runs.length > 0 && runs[0].text.length > 0) {
-        // Faux drop cap: draw the first letter oversized, offset the rest of
-        // the paragraph's first line to its right. Simplified vs. the CSS
-        // ::first-letter float used on screen.
-        const capLetter = runs[0].text[0]
-        runs[0] = { ...runs[0], text: runs[0].text.slice(1) }
-        const capSize = sizePt * 2.4
-        ctx.page.drawText(capLetter, { x: ctx.contentX, y: ctx.cursorY - capSize * 0.78, size: capSize, font: boldFont, color: ink })
-        const capWidth = boldFont.widthOfTextAtSize(capLetter, capSize) + 2
-        const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt - capWidth)
-        // Shift every fragment right by capWidth for this block's lines.
-        for (const line of lines) for (const f of line.fragments) f.x += capWidth
-        drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont)
-      } else {
-        const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt)
-        drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont)
-      }
-      ctx.cursorY -= 4
-      break
-    }
-    case 'quote': {
-      const sizePt = theme.typography.bodySize * 1.05 * PX_TO_PT
-      const font = pickFont(ctx.fonts, theme.fonts.heading, 400)
-      ctx.cursorY -= 8
-      const ruleTop = ctx.cursorY + sizePt
-      const lines = wrapRuns([{ text: `“${block.text}”`, bold: false }], font, font, sizePt, ctx.contentWidthPt - 16)
-      const startCtx = { ...ctx, contentX: ctx.contentX + 16 }
-      drawWrappedLines(startCtx, lines, sizePt, sizePt * 1.5, accent, font, font)
-      ctx.cursorY = startCtx.cursorY
-      ctx.page.drawRectangle({ x: ctx.contentX, y: ctx.cursorY, width: 2, height: ruleTop - ctx.cursorY, color: hexToPdfColor(theme.page.ruleColor) })
-      if (block.attribution) {
-        ctx.cursorY -= 4
-        const capSize = theme.typography.bodySize * 0.8 * PX_TO_PT
-        ctx.page.drawText(`— ${block.attribution}`, { x: ctx.contentX + 16, y: ctx.cursorY - capSize, size: capSize, font: pickFont(ctx.fonts, theme.fonts.body, 400), color: muted })
-        ctx.cursorY -= capSize + 4
-      }
-      ctx.cursorY -= 10
-      break
-    }
-    case 'list': {
-      const sizePt = theme.typography.bodySize * PX_TO_PT
-      const font = pickFont(ctx.fonts, theme.fonts.body, 400)
-      const indent = 16
-      block.items.forEach((item, i) => {
-        const prefix = block.ordered ? `${i + 1}.` : '•'
-        const lines = wrapRuns([{ text: item, bold: false }], font, font, sizePt, ctx.contentWidthPt - indent)
-        const startY = ctx.cursorY
-        const shifted = { ...ctx, contentX: ctx.contentX + indent }
-        drawWrappedLines(shifted, lines, sizePt, sizePt * theme.typography.lineHeight, ink, font, font)
-        ctx.page.drawText(prefix, { x: ctx.contentX, y: startY - sizePt * theme.typography.lineHeight, size: sizePt, font, color: ink })
-        ctx.cursorY = shifted.cursorY
-      })
-      ctx.cursorY -= 10
-      break
-    }
-    case 'table': {
-      const sizePt = theme.typography.bodySize * 0.85 * PX_TO_PT
-      const font = pickFont(ctx.fonts, theme.fonts.body, 400)
-      const boldFont = pickFont(ctx.fonts, theme.fonts.body, 600)
-      const colWidth = ctx.contentWidthPt / Math.max(1, block.header.length)
-      ctx.cursorY -= sizePt * 1.6
-      block.header.forEach((cell, i) => {
-        ctx.page.drawText(cell, { x: ctx.contentX + i * colWidth, y: ctx.cursorY, size: sizePt, font: boldFont, color: ink })
-      })
-      ctx.page.drawLine({ start: { x: ctx.contentX, y: ctx.cursorY - 4 }, end: { x: ctx.contentX + ctx.contentWidthPt, y: ctx.cursorY - 4 }, thickness: 0.75, color: hexToPdfColor(theme.page.ruleColor) })
-      ctx.cursorY -= 10
-      for (const row of block.rows) {
-        row.forEach((cell, i) => {
-          ctx.page.drawText(cell, { x: ctx.contentX + i * colWidth, y: ctx.cursorY, size: sizePt, font, color: ink })
-        })
-        ctx.cursorY -= sizePt * 1.6
-      }
-      ctx.cursorY -= 10
-      break
-    }
-    case 'image': {
-      const blob = await getAssetBlob(block.assetId)
-      if (!blob) break
-      const { bytes, width, height } = await blobToPng(blob, block.grayscale ?? false)
-      const pdfImage = await ctx.page.doc.embedPng(bytes)
-      // Priority order (matches BlockContent.tsx's on-screen logic so the
-      // PDF stays WYSIWYG): explicit mm size, then the percent preset, then
-      // full content width as the legacy default for blocks with neither
-      // field. mm -> px via PX_PER_MM, then px -> pt via PX_TO_PT, so the
-      // same physical size lands on screen and in the exported PDF.
-      const displayWidth =
-        block.widthMm != null ? block.widthMm * PX_PER_MM * PX_TO_PT
-        : block.widthPercent != null ? ctx.contentWidthPt * (block.widthPercent / 100)
-        : ctx.contentWidthPt
-      const displayHeight = displayWidth * (height / width)
-      const align = block.align ?? 'center'
-      const imageX =
-        align === 'left' ? ctx.contentX
-        : align === 'right' ? ctx.contentX + (ctx.contentWidthPt - displayWidth)
-        : ctx.contentX + (ctx.contentWidthPt - displayWidth) / 2
-      ctx.cursorY -= displayHeight
-      ctx.page.drawImage(pdfImage, { x: imageX, y: ctx.cursorY, width: displayWidth, height: displayHeight })
-      if (block.caption) {
-        ctx.cursorY -= 4
-        const capSize = theme.typography.bodySize * 0.75 * PX_TO_PT
-        ctx.cursorY -= capSize
-        ctx.page.drawText(block.caption, { x: imageX, y: ctx.cursorY, size: capSize, font: pickFont(ctx.fonts, theme.fonts.body, 400), color: muted })
-      }
-      ctx.cursorY -= 10
-      break
-    }
-    default:
-      break
-  }
+  const def = getBlockTypeDefinition(block.type)
+  if (!def) return
+  await def.drawPdf(ctx, block, dropCap)
 }
 
 function drawCropMarks(page: PDFPage, mediaWidth: number, mediaHeight: number, bleedPt: number) {

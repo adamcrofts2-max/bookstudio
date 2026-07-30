@@ -27,7 +27,8 @@ import { parseMarkdown } from '../src/parser/markdown'
 import { parseText } from '../src/parser/text'
 import { parseHtmlDocument, sanitiseInline } from '../src/parser/html'
 import { paginate } from '../src/renderer/paginate'
-import type { ContentBlock } from '../src/types/content'
+import { getBlockTypeDefinition } from '../src/blocks/registry'
+import type { ContentBlock, ContentBlockType } from '../src/types/content'
 import type { ImageAsset } from '../src/types/asset'
 
 let failures = 0
@@ -1036,6 +1037,37 @@ check(
 check(
   'restoreSnapshot: the safety snapshot is kind "auto"',
   vhSnapshotsAfterRestore.find((s) => s.label === 'Before restoring an earlier version')?.kind === 'auto',
+)
+
+// --- Block-type registry (Milestone 1 of docs/MODULAR_PAGE_SYSTEM_PLAN.md) ---
+// The registry replaced three parallel switches (BlockContent.tsx,
+// exportPdf.ts's drawBlock, paginate.ts's blockSpacing) with one lookup per
+// ContentBlockType. These checks lock in the registry's own shape — not a
+// re-test of rendering output itself, which the rest of this suite doesn't
+// exercise in jsdom either.
+const ALL_BLOCK_TYPES: ContentBlockType[] = ['heading', 'paragraph', 'image', 'list', 'table', 'quote']
+for (const type of ALL_BLOCK_TYPES) {
+  const def = getBlockTypeDefinition(type)
+  check(
+    `block registry: has a complete definition for "${type}"`,
+    !!def && def.id === type && typeof def.Render === 'function' && typeof def.drawPdf === 'function',
+  )
+}
+check(
+  'block registry: blockSpacing matches the pre-refactor blockSpacing switch for heading/image/quote (8/6/6)',
+  getBlockTypeDefinition('heading')?.blockSpacing?.({ id: 'x', type: 'heading', level: 1, text: '' }) === 8
+    && getBlockTypeDefinition('image')?.blockSpacing?.({ id: 'x', type: 'image', assetId: 'a', rotation: 0 }) === 6
+    && getBlockTypeDefinition('quote')?.blockSpacing?.({ id: 'x', type: 'quote', text: '' }) === 6,
+)
+check(
+  'block registry: paragraph/list/table have no blockSpacing entry (paginate.ts defaults them to 0)',
+  getBlockTypeDefinition('paragraph')?.blockSpacing === undefined
+    && getBlockTypeDefinition('list')?.blockSpacing === undefined
+    && getBlockTypeDefinition('table')?.blockSpacing === undefined,
+)
+check(
+  'block registry: getBlockTypeDefinition returns undefined for a made-up block type',
+  getBlockTypeDefinition('not-a-real-type' as ContentBlockType) === undefined,
 )
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)

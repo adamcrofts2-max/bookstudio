@@ -758,23 +758,109 @@ artifact, not 47 independent proofreading mistakes.
   ("Canva for book publishing," AI invisible rather than "AI-first") — the two
   documents were saying subtly different things.
 
+## Phase 17 — Block-type registry: Modular Page System, Milestone 1 (2026-07-30)
+
+Pure internal reorganization, zero user-visible change, per
+`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s Milestone 1 (confirmed in that document's
+"Recommended next step"). The plan's §3 identified a real scaling problem: adding one
+new block type meant hand-editing three separate parallel switches
+(`BlockContent.tsx`'s on-screen render, `exportPdf.ts`'s PDF `drawBlock`,
+`paginate.ts`'s `blockSpacing`) in lockstep, correctly, every time — exactly the kind
+of drift risk that could silently break the WYSIWYG guarantee between screen and PDF.
+This phase replaces all three switches with one registry, migrating the six existing
+block types (`heading`, `paragraph`, `image`, `list`, `table`, `quote`) into it
+verbatim — this unlocks Milestone 2 (`StructuralPage` front/back-matter types: Cover,
+Title Page, Copyright, Blank Page) without which that milestone would mean adding a
+seventh hand-synchronized switch case in three places.
+
+- **`src/blocks/registry.ts`** — the registry itself. `BlockTypeDefinition` (`id`,
+  `Render`, `drawPdf`, optional `blockSpacing`) keyed by `ContentBlockType`;
+  `getBlockTypeDefinition(type)` is the one lookup every consumer now calls.
+  `BlockRenderProps` is a type alias of `BlockContent.tsx`'s existing
+  `BlockContentProps` (not a duplicate interface) so the two can never drift.
+- **`src/blocks/types/{heading,paragraph,quote,list,table,image}.tsx`** — one module
+  per block type, each exporting one `BlockTypeDefinition`. Every switch case's JSX
+  and PDF-drawing code moved verbatim; each `Render` component now calls only the
+  hooks its own type actually needs, instead of the old monolithic
+  `BlockContent`'s "call `useEditableField` twice, plus `useAssetStore`/
+  `useDragStore`/`useState`, unconditionally for every block type" pattern.
+- **`src/blocks/shared.tsx`** — `useEditableField` (the Enter-commits/Escape-cancels
+  hook), `imageAlignClass`, `outlineClass`, and the `ListItemField`/`TableCellField`
+  components, all moved here verbatim since more than one type module uses them.
+- **`src/pdf/drawBlockHelpers.ts`** — `PX_TO_PT` and `drawWrappedLines` moved here
+  (not left in `exportPdf.ts`) specifically to avoid a runtime import cycle:
+  `exportPdf.ts` now imports the registry (for `getBlockTypeDefinition`), and the
+  registry imports the six type modules, so anything the type modules needed back
+  from `exportPdf.ts` had to live somewhere both sides could import without a cycle.
+  `DrawCtx` itself stays defined in `exportPdf.ts` as before (type modules import it
+  as a type only, which is erased at compile time and creates no runtime cycle).
+- **`src/renderer/BlockContent.tsx`**, **`src/pdf/exportPdf.ts`**'s `drawBlock`, and
+  **`src/renderer/paginate.ts`**'s `blockSpacing` are now thin dispatchers over the
+  registry — each is ~5–10 lines where it used to be a 100+/6-case switch.
+  `BlockContentProps` stays exported from `BlockContent.tsx` under its original name,
+  so `Page.tsx`/`HeightMeasurer.tsx` needed zero import or call-site changes.
+- **One deliberate, called-out behavioral nuance**: the old monolithic
+  `BlockContent` called its `autoEdit`-handling `useEffect` unconditionally for every
+  block type, even `list`/`table`/`image`, which don't render the `primary` editable
+  field it was built around — for those three types the effect's only externally
+  observable action was firing `onAutoEditHandled`, since `primary.startEditing()`
+  toggled state nothing ever consumed. The three type modules for those blocks
+  reproduce exactly that observable behavior (an effect that fires
+  `onAutoEditHandled` on `autoEdit`) without reconstructing the otherwise-unused
+  `primary` hook instance — same outward behavior, less dead state.
+- **Tests**: `scripts/smoke-test.ts` grew from 168 to 177 checks — new coverage locks
+  in the registry's own shape (a definition exists for all six real types with a
+  callable `Render`/`drawPdf`; `blockSpacing` returns 8/6/6 for heading/image/quote
+  and is absent for paragraph/list/table; `getBlockTypeDefinition` returns `undefined`
+  for a made-up type). Per this milestone's spec, rendering output itself isn't
+  re-tested in jsdom, matching how the rest of this suite already treats
+  `BlockContent`/PDF drawing (deterministic math is tested; DOM/pdf-lib drawing calls
+  are not) — a live-browser regression pass is the intended independent verification
+  step for this phase, given how central this file is to the whole rendering path.
+- Verified from a fresh `npm ci` scratch sync: `npm run build`, `npm run lint` (0
+  errors; 12 warnings vs. 3 pre-existing baseline warnings — the 9 new ones are all
+  oxlint's `react/only-export-components` Fast-Refresh heuristic firing on the new
+  `src/blocks/shared.tsx` and `src/blocks/types/*.tsx` files, which by design each
+  export one non-component `BlockTypeDefinition`/helper alongside a locally-defined
+  component; this is a warning, not an error, same severity the existing codebase
+  already carries in three other files for the same underlying reason), and
+  `npm run test` (all 177 checks pass).
+
+### Explicitly deferred / not practically verifiable this session
+- **Live-browser regression pass** — this refactor touches the single most central
+  rendering file in the app (`BlockContent.tsx`, shared identically by `Page.tsx` and
+  `HeightMeasurer.tsx`) and its PDF twin (`exportPdf.ts`'s `drawBlock`). The jsdom
+  smoke suite doesn't render React components or exercise `pdf-lib` drawing calls, so
+  it can't itself catch a pixel/point-level regression — a real-browser pass
+  (on-screen editing for all six block types, especially the image block's
+  drag-to-replace and `widthMm`/`widthPercent`/`align` priority logic, plus an actual
+  PDF export) is the load-bearing independent verification step for this phase.
+- **Milestone 2+ of `docs/MODULAR_PAGE_SYSTEM_PLAN.md`** — `StructuralPage` data
+  layer, front/back-matter page types, the theme `pageStyles` extension point, and
+  page templates are all still queued, unstarted. This phase is Milestone 1 only.
+
 ## Recommended next task
-Everything in the Development Plan's "Definition of Version 1 Complete" works
-end-to-end, the Virtual Editor has a real foundation (Phase 9) with reliable
-navigation and bulk-fix actions (Phase 13), the manuscript is no longer read-only
-(Phase 10), the image block feature set (Phase 11 + 12) is now fully WYSIWYG
-between screen and PDF, undo/redo (Phase 14) closes the biggest remaining trust gap
-for direct editing and destructive asset/image deletion, and version history
-(Phase 15) adds the coarse, periodic + manual safety net the PRD always called for.
-Good next steps in priority order: (1) a second real checker engine on top of the
-existing `Checker` pattern — Consistency (terminology/units/spelling-variant
-matching) is the best next candidate since it's still fully deterministic,
-(2) manually verify the Phase 13 scroll-to-block flow in a real browser (force-mount
-+ smooth-scroll + auto-edit across a multi-page chapter) since jsdom couldn't
-exercise it — and, while in a real browser, also do the Phase 14 Ctrl/Cmd+Z-vs-
-native-undo spot check and the Phase 15 real-world autosave-interval check noted
-above, (3) line-level text flow so paragraphs can split across pages like a real
-book, (4) justified text and image rotation in the PDF exporter, (5) proper glyph
-subsetting once the fontkit bug is understood, (6) the first real `AiReviewer`
-(readability is the most self-contained candidate — no layout/print context
-needed), (7) EPUB/Kindle export.
+`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s Milestone 2 is next in the modular-page-system
+track: a new, additive `StructuralPage` concept (separate from `Chapter`/
+`ContentBlock`) proven on 3–4 front/back-matter page types only (Cover, Title Page,
+Copyright, Blank Page) — insert/duplicate/delete/reorder, no rich per-type editors
+yet — to prove the full create → reorder → render-on-screen → render-in-PDF pipe end
+to end before scaling to the full ~35-type taxonomy. Outside that track, everything
+in the Development Plan's "Definition of Version 1 Complete" still works end-to-end,
+the Virtual Editor has a real foundation (Phase 9) with reliable navigation and
+bulk-fix actions (Phase 13), the manuscript is no longer read-only (Phase 10), the
+image block feature set (Phase 11 + 12) is fully WYSIWYG between screen and PDF,
+undo/redo (Phase 14) closes the biggest remaining trust gap for direct editing and
+destructive asset/image deletion, and version history (Phase 15) adds the coarse,
+periodic + manual safety net the PRD always called for. Other good next steps in
+priority order: (1) a second real checker engine on top of the existing `Checker`
+pattern — Consistency (terminology/units/spelling-variant matching) is the best next
+candidate since it's still fully deterministic, (2) manually verify the Phase 13
+scroll-to-block flow in a real browser (force-mount + smooth-scroll + auto-edit
+across a multi-page chapter) since jsdom couldn't exercise it — and, while in a real
+browser, also do the Phase 14 Ctrl/Cmd+Z-vs-native-undo spot check and the Phase 15
+real-world autosave-interval check noted above, (3) line-level text flow so
+paragraphs can split across pages like a real book, (4) justified text and image
+rotation in the PDF exporter, (5) proper glyph subsetting once the fontkit bug is
+understood, (6) the first real `AiReviewer` (readability is the most self-contained
+candidate — no layout/print context needed), (7) EPUB/Kindle export.

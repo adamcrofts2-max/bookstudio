@@ -1,4 +1,5 @@
 import type { Chapter, ContentBlock } from '@/types/content'
+import { getBlockTypeDefinition } from '@/blocks/registry'
 import { generateId } from '@/utils'
 
 export type PageKind = 'toc' | 'chapter-start' | 'content' | 'blank'
@@ -29,18 +30,12 @@ export interface PaginationResult {
  * content height — implements "spacing before headings should always
  * exceed spacing after" from docs/BOOK_LAYOUT_RULES.md. Kept here (not in
  * CSS margins) so the pagination math and the rendered page never disagree
- * about how tall a block "really" is. */
+ * about how tall a block "really" is. Looked up from the block-type
+ * registry (`src/blocks/registry.ts`) rather than a hardcoded switch, so a
+ * new block type only needs to touch the registry — see
+ * docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 1. */
 function blockSpacing(block: ContentBlock): number {
-  switch (block.type) {
-    case 'heading':
-      return 8
-    case 'image':
-      return 6
-    case 'quote':
-      return 6
-    default:
-      return 0
-  }
+  return getBlockTypeDefinition(block.type)?.blockSpacing?.(block) ?? 0
 }
 
 /**
