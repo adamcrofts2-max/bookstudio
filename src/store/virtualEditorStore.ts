@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 import type { ContentBlock, Manuscript } from '@/types/content'
-import type { EditorialReport, Finding, FindingStatus } from '@/virtualEditor/types'
+import type { EditorialReport, Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { runPipeline } from '@/virtualEditor/pipeline'
 import { useContentStore } from '@/store/contentStore'
 import { generateId } from '@/utils/id'
@@ -65,6 +65,11 @@ interface VirtualEditorActions {
   /** Marks every current finding that shares this finding's `issueType` as
    * ignored — the "Ignore Similar" action from the spec. */
   ignoreSimilar: (projectId: string, finding: Finding) => void
+  /** Applies every current 'new' finding that has a `suggestedFix`, across
+   * the whole report, via `acceptFix` (never duplicates its logic). */
+  fixAll: (projectId: string) => void
+  /** Same as `fixAll`, but scoped to a single category. */
+  fixCategory: (projectId: string, category: IssueCategory) => void
   getRevisions: (projectId: string) => readonly Revision[]
   /** Reverts the fields touched by a past revision back to their
    * pre-fix values, via `contentStore.updateBlock` — never edits history
@@ -146,6 +151,29 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
       }
       return { findingStatusByProject: { ...state.findingStatusByProject, [projectId]: next } }
     })
+  },
+
+  fixAll: (projectId) => {
+    const report = get().reportsByProject[projectId]
+    if (!report) return
+    const statuses = get().findingStatusByProject[projectId] ?? {}
+    for (const finding of report.findings) {
+      if (!finding.suggestedFix) continue
+      if ((statuses[finding.id] ?? 'new') !== 'new') continue
+      get().acceptFix(projectId, finding)
+    }
+  },
+
+  fixCategory: (projectId, category) => {
+    const report = get().reportsByProject[projectId]
+    if (!report) return
+    const statuses = get().findingStatusByProject[projectId] ?? {}
+    for (const finding of report.findings) {
+      if (finding.category !== category) continue
+      if (!finding.suggestedFix) continue
+      if ((statuses[finding.id] ?? 'new') !== 'new') continue
+      get().acceptFix(projectId, finding)
+    }
   },
 
   getRevisions: (projectId) => get().revisionsByProject[projectId] ?? EMPTY_REVISIONS,

@@ -26,12 +26,17 @@ interface FindingRowProps {
 /**
  * One finding in the Editorial Dashboard's review list. Every row states
  * what's wrong and why it matters (the spec's non-negotiable "never a
- * black box") and exposes the full action set: Accept / Reject / Edit /
- * Ignore / Ignore Similar / Apply to Chapter / Apply to Book. Apply to
- * Chapter/Book are visibly disabled — batch-apply isn't built yet, and
- * this milestone would rather say so than fake it. Edit switches back to
- * the manuscript workspace, selects the finding's block and enters inline
- * edit mode on it directly (see `BlockContent.tsx`'s `autoEdit` prop).
+ * black box") and exposes the per-row action set: Fix / Reject / Edit /
+ * Ignore / Ignore Similar. Fix routes through `virtualEditorStore.acceptFix`
+ * (the `onAccept` prop name is kept as-is — this is a label-only rename).
+ * Bulk fixing (the former "Apply to Chapter"/"Apply to Book" placeholders)
+ * now lives one level up, in `VirtualEditorWorkspace.tsx`'s dashboard-level
+ * "Fix All" and per-category "Fix all in [Category]" buttons — see that
+ * file and docs/STATUS.md's Phase 13 entry for why the per-row placeholders
+ * were removed rather than kept alongside the new bulk actions. Edit
+ * switches back to the manuscript workspace, selects the finding's block
+ * and enters inline edit mode on it directly (see `BlockContent.tsx`'s
+ * `autoEdit` prop).
  */
 export function FindingRow({
   finding,
@@ -82,7 +87,7 @@ export function FindingRow({
           {finding.suggestedFix && (
             <Button variant="primary" size="sm" className="gap-1.5" onClick={onAccept}>
               <CheckCircle2 className="size-3.5" />
-              Accept
+              Fix
             </Button>
           )}
           <Button variant="outline" size="sm" className="gap-1.5" onClick={() => onStatus('rejected')}>
@@ -115,26 +120,6 @@ export function FindingRow({
             <Layers className="size-3.5" />
             Ignore similar
           </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button variant="ghost" size="sm" disabled>
-                  Apply to chapter
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Not yet implemented — batch apply lands in a later milestone</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <Button variant="ghost" size="sm" disabled>
-                  Apply to book
-                </Button>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>Not yet implemented — batch apply lands in a later milestone</TooltipContent>
-          </Tooltip>
         </div>
       ) : (
         <p className="pt-1 text-xs font-medium capitalize text-text-muted">{formatStatus(status)}</p>
@@ -143,7 +128,7 @@ export function FindingRow({
   )
 }
 
-function formatCategory(category: string): string {
+export function formatCategory(category: string): string {
   return category.replace(/([a-z])([A-Z])/g, '$1 $2')
 }
 

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { RefreshCcw, Sparkles } from 'lucide-react'
+import { RefreshCcw, Sparkles, Wand2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -8,9 +8,9 @@ import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorSto
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { SCORE_TILES } from '@/virtualEditor/scoring'
-import type { FindingStatus } from '@/virtualEditor/types'
+import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
-import { FindingRow } from '@/layout/virtualEditor/FindingRow'
+import { FindingRow, formatCategory } from '@/layout/virtualEditor/FindingRow'
 import type { Project } from '@/types'
 
 interface VirtualEditorWorkspaceProps {
@@ -25,8 +25,10 @@ interface VirtualEditorWorkspaceProps {
  * `uiStore.workspaceMode`).
  *
  * Everything here is read-only against the manuscript except the explicit
- * "Accept" action on a finding, which routes through
- * `virtualEditorStore.acceptFix` — never directly through `contentStore`.
+ * "Fix" action on a finding (and the bulk "Fix All" / per-category "Fix all
+ * in [Category]" actions above the grouped findings list), all of which
+ * route through `virtualEditorStore.acceptFix`/`fixAll`/`fixCategory` —
+ * never directly through `contentStore`.
  */
 export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
@@ -37,9 +39,13 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   const acceptFix = useVirtualEditorStore((s) => s.acceptFix)
   const setFindingStatus = useVirtualEditorStore((s) => s.setFindingStatus)
   const ignoreSimilar = useVirtualEditorStore((s) => s.ignoreSimilar)
+  const fixAll = useVirtualEditorStore((s) => s.fixAll)
+  const fixCategory = useVirtualEditorStore((s) => s.fixCategory)
   const restoreRevision = useVirtualEditorStore((s) => s.restoreRevision)
   const select = useSelectionStore((s) => s.select)
   const selectForEdit = useSelectionStore((s) => s.selectForEdit)
+  const requestScrollToBlock = useSelectionStore((s) => s.requestScrollToBlock)
+  const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
 
@@ -48,6 +54,29 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
     manuscript?.chapters.forEach((c) => map.set(c.id, c.title))
     return map
   }, [manuscript])
+
+  const activeFindings = report?.findings.filter((f) => (findingStatuses?.[f.id] ?? 'new') !== 'ignoredSimilar') ?? []
+
+  const fixableCount = activeFindings.filter(
+    (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
+  ).length
+
+  // Group findings by category, preserving each category's first-seen
+  // relative order (matches the order findings already come back in from
+  // the pipeline) and only including categories that actually have
+  // findings — pairs naturally with SCORE_TILES/ScoreCard above. Computed
+  // unconditionally (before the `!manuscript` early return below) so this
+  // Hook is always called in the same order, per rules-of-hooks.
+  const findingsByCategory = useMemo(() => {
+    const groups = new Map<IssueCategory, Finding[]>()
+    for (const finding of activeFindings) {
+      const list = groups.get(finding.category)
+      if (list) list.push(finding)
+      else groups.set(finding.category, [finding])
+    }
+    return Array.from(groups.entries())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeFindings])
 
   if (!manuscript) {
     return (
@@ -61,18 +90,23 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
     )
   }
 
+  // Routed through `selectionStore.requestScrollToBlock`/`requestScrollToChapter`
+  // — the same force-mount-then-scroll mechanism Sidebar.tsx's chapter nav
+  // and ThumbnailRail.tsx's page-thumbnail clicks already use, instead of a
+  // raw `requestAnimationFrame` + `document.querySelector` a frame later
+  // (which could silently find nothing if the target page's spread hadn't
+  // been force-mounted by `LazySpread` yet — the exact bug this replaces).
   const handleLocate = (chapterId: string, blockId?: string) => {
     setWorkspaceMode('manuscript')
     if (blockId) {
       select(chapterId, blockId)
       setInspectorTab('typography')
+      requestScrollToBlock(chapterId, blockId)
+    } else {
+      // Book-wide findings (no single block location) fall back to
+      // chapter-level scroll, same as Sidebar.tsx's chapter clicks.
+      requestScrollToChapter(chapterId)
     }
-    // The manuscript workspace re-mounts on this same tick; wait a frame
-    // so `[data-chapter-start]` actually exists before we scroll to it —
-    // same lookup Sidebar.tsx uses for chapter navigation.
-    requestAnimationFrame(() => {
-      document.querySelector(`[data-chapter-start="${chapterId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
   }
 
   /** "Edit" on a finding: same navigation as "Locate", but flags the
@@ -83,13 +117,11 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
     if (blockId) {
       selectForEdit(chapterId, blockId)
       setInspectorTab('typography')
+      requestScrollToBlock(chapterId, blockId)
+    } else {
+      requestScrollToChapter(chapterId)
     }
-    requestAnimationFrame(() => {
-      document.querySelector(`[data-chapter-start="${chapterId}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    })
   }
-
-  const activeFindings = report?.findings.filter((f) => (findingStatuses?.[f.id] ?? 'new') !== 'ignoredSimilar') ?? []
 
   return (
     <main className="flex flex-1 flex-col overflow-y-auto bg-background-secondary">
@@ -121,13 +153,27 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
         </section>
 
         <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-h5 font-semibold text-text-primary">Findings</h2>
-            {report && (
-              <p className="text-xs text-text-secondary">
-                {activeFindings.length} shown · generated {new Date(report.generatedAt).toLocaleString()}
-              </p>
-            )}
+            <div className="flex items-center gap-3">
+              {report && (
+                <p className="text-xs text-text-secondary">
+                  {activeFindings.length} shown · generated {new Date(report.generatedAt).toLocaleString()}
+                </p>
+              )}
+              {report && activeFindings.length > 0 && (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  className="gap-1.5"
+                  disabled={fixableCount === 0}
+                  onClick={() => fixAll(project.id)}
+                >
+                  <Wand2 className="size-3.5" />
+                  Fix All
+                </Button>
+              )}
+            </div>
           </div>
 
           {!report ? (
@@ -145,20 +191,49 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               className="rounded-[var(--radius-card)] border border-dashed border-border"
             />
           ) : (
-            <div className="flex flex-col gap-3">
-              {activeFindings.map((finding) => (
-                <FindingRow
-                  key={finding.id}
-                  finding={finding}
-                  status={findingStatuses?.[finding.id] ?? 'new'}
-                  chapterTitle={chapterTitleById.get(finding.location.chapterId) ?? 'Unknown chapter'}
-                  onLocate={() => handleLocate(finding.location.chapterId, finding.location.blockId)}
-                  onAccept={() => acceptFix(project.id, finding)}
-                  onEdit={() => handleEdit(finding.location.chapterId, finding.location.blockId)}
-                  onStatus={(status: FindingStatus) => setFindingStatus(project.id, finding.id, status)}
-                  onIgnoreSimilar={() => ignoreSimilar(project.id, finding)}
-                />
-              ))}
+            <div className="flex flex-col gap-6">
+              {findingsByCategory.map(([category, findings]) => {
+                const categoryFixableCount = findings.filter(
+                  (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
+                ).length
+                return (
+                  <div key={category} className="flex flex-col gap-3">
+                    <div className="flex items-center justify-between gap-2 border-b border-border pb-1.5">
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                          {formatCategory(category)}
+                        </h3>
+                        <span className="text-xs text-text-muted">({findings.length})</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        disabled={categoryFixableCount === 0}
+                        onClick={() => fixCategory(project.id, category)}
+                      >
+                        <Wand2 className="size-3.5" />
+                        Fix all in {formatCategory(category)}
+                      </Button>
+                    </div>
+                    <div className="flex flex-col gap-3">
+                      {findings.map((finding) => (
+                        <FindingRow
+                          key={finding.id}
+                          finding={finding}
+                          status={findingStatuses?.[finding.id] ?? 'new'}
+                          chapterTitle={chapterTitleById.get(finding.location.chapterId) ?? 'Unknown chapter'}
+                          onLocate={() => handleLocate(finding.location.chapterId, finding.location.blockId)}
+                          onAccept={() => acceptFix(project.id, finding)}
+                          onEdit={() => handleEdit(finding.location.chapterId, finding.location.blockId)}
+                          onStatus={(status: FindingStatus) => setFindingStatus(project.id, finding.id, status)}
+                          onIgnoreSimilar={() => ignoreSimilar(project.id, finding)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </section>

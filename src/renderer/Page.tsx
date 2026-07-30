@@ -89,19 +89,27 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     setInspectorTab(block.type === 'image' ? 'image' : 'typography')
   }
 
+  // Wrapped in a stable `data-block-id` anchor so the Virtual Editor's
+  // Locate/Edit actions (via `selectionStore.requestScrollToBlock` /
+  // `BookRenderer`'s scroll effect) can scroll to this exact block once
+  // its spread is force-mounted, rather than only ever landing on the
+  // chapter's opening page. This wrapper is Page.tsx-only — HeightMeasurer
+  // renders blocks separately for off-screen measurement and must stay
+  // untouched.
   const renderBlock = (block: ContentBlock) => (
-    <BlockContent
-      key={block.id}
-      block={block}
-      theme={theme}
-      dropCap={dropCapBlockIds.has(block.id)}
-      selected={selectedBlockId === block.id}
-      onSelect={() => page.chapterId && handleSelect(page.chapterId, block)}
-      editable
-      onCommit={(updates) => page.chapterId && updateBlock(projectId, page.chapterId, block.id, updates)}
-      autoEdit={selectedBlockId === block.id && editRequestId !== null}
-      onAutoEditHandled={consumeEditRequest}
-    />
+    <div key={block.id} data-block-id={block.id}>
+      <BlockContent
+        block={block}
+        theme={theme}
+        dropCap={dropCapBlockIds.has(block.id)}
+        selected={selectedBlockId === block.id}
+        onSelect={() => page.chapterId && handleSelect(page.chapterId, block)}
+        editable
+        onCommit={(updates) => page.chapterId && updateBlock(projectId, page.chapterId, block.id, updates)}
+        autoEdit={selectedBlockId === block.id && editRequestId !== null}
+        onAutoEditHandled={consumeEditRequest}
+      />
+    </div>
   )
 
   // The chapter this page belongs to spans multiple pages via pagination, so

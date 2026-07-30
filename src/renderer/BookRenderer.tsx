@@ -19,6 +19,23 @@ interface BookRendererProps {
   manuscript: Manuscript
 }
 
+/**
+ * Pure predicate factored out of the scroll effect below so it's unit
+ * testable without mounting `BookRenderer` (see `scripts/smoke-test.ts`).
+ * Matches a spread against a `scrollRequest.target` of any of the three
+ * variants: chapter-opener, exact page, or exact block within a chapter.
+ */
+export function spreadMatchesScrollTarget(
+  spread: LaidOutPage[],
+  target: { type: 'chapter'; chapterId: string } | { type: 'page'; pageId: string } | { type: 'block'; chapterId: string; blockId: string },
+): boolean {
+  return spread.some((page) => {
+    if (target.type === 'chapter') return page.kind === 'chapter-start' && page.chapterId === target.chapterId
+    if (target.type === 'page') return page.id === target.pageId
+    return page.chapterId === target.chapterId && page.blocks.some((b) => b.id === target.blockId)
+  })
+}
+
 function groupIntoSpreads(pages: LaidOutPage[]): LaidOutPage[][] {
   if (pages.length === 0) return []
   const spreads: LaidOutPage[][] = [[pages[0]]]
@@ -81,13 +98,7 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
   useEffect(() => {
     if (!scrollRequest) return
     const { target } = scrollRequest
-    const spreadIndex = spreads.findIndex((spread) =>
-      spread.some((page) =>
-        target.type === 'chapter'
-          ? page.kind === 'chapter-start' && page.chapterId === target.chapterId
-          : page.id === target.pageId,
-      ),
-    )
+    const spreadIndex = spreads.findIndex((spread) => spreadMatchesScrollTarget(spread, target))
     if (spreadIndex === -1) {
       consumeScrollRequest()
       return
@@ -102,7 +113,9 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
         const el =
           target.type === 'chapter'
             ? document.querySelector(`[data-chapter-start="${target.chapterId}"]`)
-            : document.getElementById(`page-${target.pageId}`)
+            : target.type === 'block'
+              ? document.querySelector(`[data-block-id="${target.blockId}"]`)
+              : document.getElementById(`page-${target.pageId}`)
         el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' ? 'start' : 'center' })
         // Only clear the request if nothing newer has come in while we waited.
         if (scrollRequestRef.current?.requestId === scrollRequest.requestId) consumeScrollRequest()

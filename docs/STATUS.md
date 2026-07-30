@@ -457,16 +457,108 @@ consistent on-screen and in the exported PDF.
   bug/Fix/Fix-All buttons — both explicitly out of scope for this phase,
   being handled independently.
 
+### Phase 13 — Virtual Editor: reliable block-level navigation + bulk Fix/Fix All
+- **Bug fix: Locate/Edit now scroll to the finding's exact block, not just
+  the chapter's opening page.** `VirtualEditorWorkspace.tsx`'s `handleLocate`
+  and `handleEdit` used to do a raw `requestAnimationFrame` +
+  `document.querySelector('[data-chapter-start=...]')` — always landing on
+  the chapter's first page, and silently doing nothing at all if the target
+  page's spread hadn't been force-mounted yet by `LazySpread`'s
+  `IntersectionObserver` (the exact bug already fixed for Sidebar's chapter
+  nav and ThumbnailRail's page clicks in an earlier commit). Fixed by
+  extending that same established mechanism instead of inventing a second
+  one: `selectionStore.ts`'s `scrollRequest.target` union gained a third
+  `{ type: 'block'; chapterId; blockId }` variant alongside `'chapter'`/
+  `'page'`, with a new `requestScrollToBlock(chapterId, blockId)` action
+  mirroring `requestScrollToPage`'s shape. `Page.tsx`'s `renderBlock` now
+  wraps each block's `BlockContent` in a stable `<div data-block-id={block.id}>`
+  anchor (measurement-only `HeightMeasurer.tsx` is untouched — this wrapper
+  only exists in the real on-screen render path). `BookRenderer.tsx`'s
+  scroll effect now matches all three target variants; the matching logic
+  was extracted into an exported pure function, `spreadMatchesScrollTarget`,
+  specifically so it's unit-testable without mounting `BookRenderer` (jsdom
+  can't drive `IntersectionObserver`/real scrolling). `VirtualEditorWorkspace.tsx`'s
+  `handleLocate`/`handleEdit` now call `requestScrollToBlock` (paired with
+  the existing `select`/`selectForEdit` for selection state) when a finding
+  has a `blockId`, and fall back to `requestScrollToChapter` — exactly like
+  Sidebar's chapter clicks — for book-wide findings that don't (preserving
+  `FindingRow.tsx`'s existing behaviour where "Locate" stays enabled even
+  when "Edit" is disabled for those).
+  **Verification honesty**: build/typecheck confirms the wiring is correct
+  and `spreadMatchesScrollTarget`'s matching logic is unit-tested for all
+  three target variants (see `scripts/smoke-test.ts`), but the actual
+  scroll-then-enter-edit-mode behaviour in a live browser (force-mounting a
+  spread that's pages away, then scrolling smoothly to the exact block and
+  auto-focusing it for editing) was **not** exercised in a real browser this
+  session — jsdom can't drive `IntersectionObserver` or real layout/scroll.
+  This mirrors the same honest caveat the original chapter/page-nav fix
+  documented.
+- **Feature: Fix / Fix All.** `FindingRow.tsx`'s primary per-row action is
+  now labelled "Fix" instead of "Accept" (label-only change — the `onAccept`
+  prop name is unchanged, still routes through `virtualEditorStore.acceptFix`).
+  Two new bulk actions on `virtualEditorStore`: `fixAll(projectId)` applies
+  every current `'new'` finding that has a `suggestedFix` across the whole
+  report, and `fixCategory(projectId, category)` does the same scoped to one
+  `IssueCategory`. Both are thin loops over `acceptFix` — they never
+  duplicate its snapshot-then-`contentStore.updateBlock` logic, keeping
+  `virtualEditorStore.acceptFix` the sole place a `Finding` becomes a real
+  manuscript edit. `VirtualEditorWorkspace.tsx` now groups `activeFindings`
+  by category (`useMemo`, first-seen order preserved, empty categories
+  omitted) and renders a header per group with a finding count and a
+  "Fix all in [Category]" button (disabled when nothing in that group is
+  currently fixable), plus a single dashboard-level "Fix All" button next to
+  the existing "{count} shown · generated…" line (disabled when nothing in
+  the whole report is fixable). `formatCategory` (the existing label
+  formatter) was exported from `FindingRow.tsx` and reused rather than
+  duplicated.
+- **"Apply to Chapter"/"Apply to Book" placeholders removed, not kept
+  alongside the new buttons.** These two disabled per-row buttons in
+  `FindingRow.tsx` promised batch-apply at a *different* granularity (from
+  one finding, apply its fix's category across just that finding's chapter,
+  or across the whole book) than what got built (dashboard-level "Fix All"
+  across the whole report, and per-category-group "Fix all in [Category]"
+  across the whole book). Keeping both would mean three overlapping-but-
+  not-identical "batch apply" affordances visible on one row/screen at once
+  — net more confusing than useful, and the new buttons already fulfil the
+  "let me fix more than one finding at a time" need the placeholders were
+  standing in for. Removed them; the per-row action set is now Fix / Reject
+  / Edit / Ignore / Ignore Similar.
+- **Tests**: `scripts/smoke-test.ts` grew from 84 to 100 passing checks —
+  `fixCategory` (a non-matching category is a no-op; the matching category
+  fixes every fixable `'new'` finding in it and leaves an unfixable one
+  alone; status flips to `'accepted'` only for the fixed one), `fixAll`
+  (fixes a fresh fixable finding; skips one that's already been resolved,
+  e.g. `'rejected'`, even though it has a `suggestedFix`, without
+  overwriting that status; skips a finding with no `suggestedFix` entirely),
+  and all six branches of `spreadMatchesScrollTarget` (chapter/page/block
+  target variants, both matching and non-matching cases, including the
+  "block id matches but chapter id doesn't" edge case).
+
+### Explicitly deferred
+- Undo/redo — still a pre-existing gap; unchanged from Phase 12.
+- Image-taller-than-a-page overflow policy — out of scope, unchanged from
+  Phase 11.
+- Multi-select or bulk image operations.
+- Any AI-powered review features, the style guide, and AI learning — all
+  still just designed, not real, per `docs/VIRTUAL_EDITOR.md`; out of scope
+  for this phase.
+- Live-browser verification of the scroll-and-enter-edit-mode flow (see
+  above) — verified via code review/type-checking/unit tests only this
+  session.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" works
-end-to-end, the Virtual Editor has a real foundation (Phase 9), the manuscript is no
-longer read-only (Phase 10), and the image block feature set (Phase 11 + 12) is now
-fully WYSIWYG between screen and PDF. Good next steps in priority order: (1) a second
-real checker engine on top of the existing `Checker` pattern — Consistency
-(terminology/units/spelling-variant matching) is the best next candidate since it's
-still fully deterministic, (2) line-level text flow so paragraphs can split across
-pages like a real book, (3) justified text and image rotation in the PDF exporter, (4)
-proper glyph subsetting once the fontkit bug is understood, (5) the first real
+end-to-end, the Virtual Editor has a real foundation (Phase 9) with reliable
+navigation and bulk-fix actions (Phase 13), the manuscript is no longer read-only
+(Phase 10), and the image block feature set (Phase 11 + 12) is now fully WYSIWYG
+between screen and PDF. Good next steps in priority order: (1) a second real checker
+engine on top of the existing `Checker` pattern — Consistency (terminology/units/
+spelling-variant matching) is the best next candidate since it's still fully
+deterministic, (2) manually verify the Phase 13 scroll-to-block flow in a real browser
+(force-mount + smooth-scroll + auto-edit across a multi-page chapter) since jsdom
+couldn't exercise it, (3) line-level text flow so paragraphs can split across pages
+like a real book, (4) justified text and image rotation in the PDF exporter, (5)
+proper glyph subsetting once the fontkit bug is understood, (6) the first real
 `AiReviewer` (readability is the most self-contained candidate — no layout/print
-context needed), (6) EPUB/Kindle export, (7) undo/redo — now that direct editing (and,
-as of this phase, image deletion) exists, this is a more pressing gap than before.
+context needed), (7) EPUB/Kindle export, (8) undo/redo — now that direct editing (and,
+as of Phase 12, image deletion) exists, this is a more pressing gap than before.

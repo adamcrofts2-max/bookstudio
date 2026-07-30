@@ -229,6 +229,141 @@ const cleanReport = runPipeline('ve-test-project', makeSingleParagraphManuscript
 check('VE pipeline: clean manuscript scores a perfect 100 on proofreading', cleanReport.categoryScores.proofreading?.score === 100)
 check('VE pipeline: clean manuscript has zero findings', cleanReport.findings.length === 0)
 
+// --- virtualEditorStore.fixAll / fixCategory: bulk-apply wiring on top of
+// the existing acceptFix (never duplicates its snapshot-then-updateBlock
+// logic — just loops and calls it). ---
+const { useVirtualEditorStore } = await import('../src/store/virtualEditorStore')
+const { useContentStore: useContentStoreForFixAll } = await import('../src/store/contentStore')
+
+function makeFixAllTestManuscript(): Manuscript {
+  return {
+    chapters: [
+      {
+        id: 've-fixall-chapter',
+        title: 'Chapter One',
+        order: 0,
+        blocks: [
+          { id: 've-fixall-double-space', type: 'paragraph', html: 'This has  a double space here.' } as ParagraphBlock,
+          { id: 've-fixall-repeated-word', type: 'paragraph', html: 'This is the the answer given.' } as ParagraphBlock,
+          { id: 've-fixall-unfixable', type: 'paragraph', html: 'This has "an unmatched quote.' } as ParagraphBlock,
+        ],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'virtual-editor-fixall-fixture.md',
+  }
+}
+
+// fixCategory: scoped correctly (a category with no matching findings is a
+// no-op; the matching category applies every fixable 'new' finding in it
+// and leaves the unfixable one alone).
+const fixCategoryProjectId = 've-fixcategory-test-project'
+useContentStoreForFixAll.getState().setManuscript(fixCategoryProjectId, makeFixAllTestManuscript())
+useVirtualEditorStore.getState().runReview(fixCategoryProjectId, useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!)
+
+useVirtualEditorStore.getState().fixCategory(fixCategoryProjectId, 'readability')
+const afterWrongCategoryFix = useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!
+const chapterAfterWrongCategoryFix = afterWrongCategoryFix.chapters.find((c) => c.id === 've-fixall-chapter')!
+check(
+  'fixCategory: a category with no matching findings is a harmless no-op',
+  (chapterAfterWrongCategoryFix.blocks.find((b) => b.id === 've-fixall-double-space') as ParagraphBlock).html === 'This has  a double space here.',
+)
+
+useVirtualEditorStore.getState().fixCategory(fixCategoryProjectId, 'proofreading')
+const afterRightCategoryFix = useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!
+const chapterAfterRightCategoryFix = afterRightCategoryFix.chapters.find((c) => c.id === 've-fixall-chapter')!
+check(
+  'fixCategory: applies the fix for every fixable finding in the matching category (double space)',
+  (chapterAfterRightCategoryFix.blocks.find((b) => b.id === 've-fixall-double-space') as ParagraphBlock).html === 'This has a double space here.',
+)
+check(
+  'fixCategory: applies the fix for every fixable finding in the matching category (repeated word)',
+  (chapterAfterRightCategoryFix.blocks.find((b) => b.id === 've-fixall-repeated-word') as ParagraphBlock).html === 'This is the answer given.',
+)
+check(
+  'fixCategory: leaves a finding without a suggestedFix (unmatched quote) untouched',
+  (chapterAfterRightCategoryFix.blocks.find((b) => b.id === 've-fixall-unfixable') as ParagraphBlock).html === 'This has "an unmatched quote.',
+)
+const fixCategoryReport = useVirtualEditorStore.getState().reportsByProject[fixCategoryProjectId]!
+const fixCategoryStatuses = useVirtualEditorStore.getState().findingStatusByProject[fixCategoryProjectId] ?? {}
+const doubleSpaceFindingAfterCategoryFix = fixCategoryReport.findings.find((f) => f.issueType === 'double-space')!
+const unfixableFindingAfterCategoryFix = fixCategoryReport.findings.find((f) => f.issueType === 'unmatched-quote')!
+check('fixCategory: fixed finding is marked accepted', fixCategoryStatuses[doubleSpaceFindingAfterCategoryFix.id] === 'accepted')
+check('fixCategory: unfixable finding stays new (never touched)', (fixCategoryStatuses[unfixableFindingAfterCategoryFix.id] ?? 'new') === 'new')
+
+// fixAll: applies every fixable 'new' finding across the whole report,
+// skips a finding that's already been resolved (even though it has a
+// suggestedFix and would otherwise be fixable), and skips findings with no
+// suggestedFix entirely.
+const fixAllProjectId = 've-fixall-test-project'
+useContentStoreForFixAll.getState().setManuscript(fixAllProjectId, makeFixAllTestManuscript())
+useVirtualEditorStore.getState().runReview(fixAllProjectId, useContentStoreForFixAll.getState().getManuscript(fixAllProjectId)!)
+
+const fixAllReportBefore = useVirtualEditorStore.getState().reportsByProject[fixAllProjectId]!
+const repeatedWordFindingForFixAll = fixAllReportBefore.findings.find((f) => f.issueType === 'repeated-word')!
+// Pre-resolve the repeated-word finding (as if the user had already rejected it) before calling fixAll.
+useVirtualEditorStore.getState().setFindingStatus(fixAllProjectId, repeatedWordFindingForFixAll.id, 'rejected')
+
+useVirtualEditorStore.getState().fixAll(fixAllProjectId)
+const afterFixAll = useContentStoreForFixAll.getState().getManuscript(fixAllProjectId)!
+const chapterAfterFixAll = afterFixAll.chapters.find((c) => c.id === 've-fixall-chapter')!
+check(
+  'fixAll: applies the fix for a fresh fixable finding (double space)',
+  (chapterAfterFixAll.blocks.find((b) => b.id === 've-fixall-double-space') as ParagraphBlock).html === 'This has a double space here.',
+)
+check(
+  'fixAll: skips an already-resolved finding, even though it has a suggestedFix (repeated word stays untouched)',
+  (chapterAfterFixAll.blocks.find((b) => b.id === 've-fixall-repeated-word') as ParagraphBlock).html === 'This is the the answer given.',
+)
+check(
+  'fixAll: skips a finding with no suggestedFix (unmatched quote stays untouched)',
+  (chapterAfterFixAll.blocks.find((b) => b.id === 've-fixall-unfixable') as ParagraphBlock).html === 'This has "an unmatched quote.',
+)
+const fixAllStatuses = useVirtualEditorStore.getState().findingStatusByProject[fixAllProjectId] ?? {}
+check(
+  'fixAll: the pre-resolved finding\'s status is left exactly as it was (rejected), not overwritten to accepted',
+  fixAllStatuses[repeatedWordFindingForFixAll.id] === 'rejected',
+)
+
+// --- BookRenderer's scroll-target matching predicate (extracted as
+// `spreadMatchesScrollTarget` for testability, since mounting BookRenderer
+// itself needs a real IntersectionObserver/layout jsdom can't provide). ---
+const { spreadMatchesScrollTarget } = await import('../src/renderer/BookRenderer')
+
+function makeFakePage(overrides: Partial<import('../src/renderer/paginate').LaidOutPage>): import('../src/renderer/paginate').LaidOutPage {
+  return { id: 'page-x', number: 1, side: 'left', kind: 'content', blocks: [], ...overrides }
+}
+
+const chapterOpenerPage = makeFakePage({ id: 'page-1', kind: 'chapter-start', chapterId: 'chap-a' })
+const contentPage = makeFakePage({ id: 'page-2', chapterId: 'chap-a', blocks: [{ id: 'blk-1', type: 'paragraph', html: 'x' } as ContentBlock] })
+const otherChapterPage = makeFakePage({ id: 'page-3', kind: 'chapter-start', chapterId: 'chap-b' })
+
+check(
+  'spreadMatchesScrollTarget: chapter target matches the spread containing that chapter\'s opener page',
+  spreadMatchesScrollTarget([chapterOpenerPage], { type: 'chapter', chapterId: 'chap-a' }),
+)
+check(
+  'spreadMatchesScrollTarget: chapter target does not match a different chapter\'s opener',
+  !spreadMatchesScrollTarget([otherChapterPage], { type: 'chapter', chapterId: 'chap-a' }),
+)
+check(
+  'spreadMatchesScrollTarget: page target matches by exact page id regardless of chapter',
+  spreadMatchesScrollTarget([contentPage], { type: 'page', pageId: 'page-2' }),
+)
+check(
+  'spreadMatchesScrollTarget: block target matches the spread containing that exact block within the right chapter',
+  spreadMatchesScrollTarget([contentPage], { type: 'block', chapterId: 'chap-a', blockId: 'blk-1' }),
+)
+check(
+  'spreadMatchesScrollTarget: block target does not match if the block id is present but the chapter id is wrong',
+  !spreadMatchesScrollTarget([contentPage], { type: 'block', chapterId: 'chap-b', blockId: 'blk-1' }),
+)
+check(
+  'spreadMatchesScrollTarget: block target does not match a spread that lacks the block entirely',
+  !spreadMatchesScrollTarget([chapterOpenerPage], { type: 'block', chapterId: 'chap-a', blockId: 'blk-1' }),
+)
+
+
 // --- Inline editing: sanitise-on-commit reuses the import-time sanitiser ---
 // BlockContent.tsx feeds whatever a contentEditable paragraph produced back
 // through this exact function (see src/renderer/BlockContent.tsx's
