@@ -8,9 +8,11 @@ import { BlockContent } from '@/renderer/BlockContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
-import { editBlock, insertBlockWithHistory, renameChapterWithHistory } from '@/store/editorActions'
+import { editBlock, insertBlockWithHistory, renameChapterWithHistory, updatePageContentWithHistory } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
+import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
+import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { generateId } from '@/utils'
 import { cn } from '@/lib/utils'
 
@@ -72,8 +74,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const editRequestId = useSelectionStore((s) => s.editRequestId)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
+  const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
+  const selectStructuralPage = useSelectionStore((s) => s.selectStructuralPage)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
+  const structuralPages = useStructuralPageStore((s) => s.byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES)
 
   const [isRenamingTitle, setIsRenamingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
@@ -174,6 +179,16 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
   const chapterIndex = page.chapterId ? Math.max(0, toc?.findIndex((t) => t.chapterId === page.chapterId) ?? -1) : -1
 
+  // Structural pages (Cover/Title Page/Copyright/Blank Page — see
+  // docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2) are looked up by id from
+  // `structuralPageStore` rather than carried on `LaidOutPage` itself
+  // (which only has `structuralPageId`, populated by `composePages.ts`).
+  const structuralPage =
+    page.kind === 'structural' && page.structuralPageId
+      ? structuralPages.find((p) => p.id === page.structuralPageId)
+      : undefined
+  const structuralDef = structuralPage ? getStructuralPageTypeDefinition(structuralPage.type) : undefined
+
   return (
     <div
       id={`page-${page.id}`}
@@ -181,7 +196,25 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       className="relative shrink-0 shadow-[var(--shadow-md)]"
       style={{ width: pageBox.widthPx, height: pageBox.heightPx, background: theme.page.background }}
     >
-      {page.kind !== 'blank' && (
+      {page.kind === 'structural' && structuralPage && structuralDef && (
+        <div className="absolute inset-0 overflow-hidden">
+          <structuralDef.Render
+            page={structuralPage}
+            theme={theme}
+            pageBox={pageBox}
+            projectId={projectId}
+            siblingPages={structuralPages}
+            selected={selectedStructuralPageId === structuralPage.id}
+            onSelect={() => {
+              selectStructuralPage(structuralPage.id)
+              setInspectorTab('page')
+            }}
+            onCommit={(updates) => updatePageContentWithHistory(projectId, structuralPage.id, updates)}
+          />
+        </div>
+      )}
+
+      {page.kind !== 'blank' && page.kind !== 'structural' && (
         <div
           className="absolute text-center text-[10px] font-medium uppercase tracking-[0.12em]"
           style={{
@@ -273,7 +306,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
         {page.kind === 'content' && renderBlocksWithDropZones(page.blocks)}
       </div>
 
-      {page.kind !== 'blank' && (
+      {page.kind !== 'blank' && page.kind !== 'structural' && (
         <div
           className="absolute text-[11px]"
           style={{

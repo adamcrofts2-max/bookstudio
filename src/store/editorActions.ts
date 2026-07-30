@@ -2,7 +2,9 @@ import { useAssetStore } from '@/store/assetStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { useContentStore } from '@/store/contentStore'
 import { useHistoryStore } from '@/store/historyStore'
+import { useStructuralPageStore } from '@/store/structuralPageStore'
 import type { ContentBlock } from '@/types/content'
+import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 
 /**
  * History-aware wrapper functions around the real `contentStore`/
@@ -148,5 +150,129 @@ export async function removeAssetWithHistory(projectId: string, assetId: string)
     () => {
       void useAssetStore.getState().removeAsset(projectId, assetId)
     },
+  )
+}
+
+/**
+ * History-aware wrappers around `structuralPageStore`'s CRUD actions (see
+ * docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2). Same rationale as every
+ * wrapper above: never reach into `structuralPageStore`'s internals, always
+ * mutate via its own published actions, then `record` a command so
+ * Ctrl/Cmd+Z covers this new editing surface too — shipping a new mutable
+ * surface that undo silently doesn't cover would be a regression, not a
+ * missing nice-to-have.
+ */
+
+/**
+ * History-aware replacement for `structuralPageStore.insertPage`. Undo
+ * removes the just-created page; redo re-inserts the *exact same*
+ * (already-fresh-id'd) page object via `insertPageAt` rather than calling
+ * `insertPage` again — calling `insertPage` a second time would mint yet
+ * another new id and silently orphan the first undo/redo pairing.
+ */
+export function insertPageWithHistory(
+  projectId: string,
+  category: StructuralPageCategory,
+  type: StructuralPageType,
+  afterPageId: string | null,
+): string {
+  const newId = useStructuralPageStore.getState().insertPage(projectId, category, type, afterPageId)
+  const created = useStructuralPageStore.getState().getPages(projectId).find((p) => p.id === newId)
+
+  if (created) {
+    useHistoryStore.getState().record(
+      projectId,
+      'Insert page',
+      () => useStructuralPageStore.getState().deletePage(projectId, newId),
+      () => useStructuralPageStore.getState().insertPageAt(projectId, category, created, afterPageId),
+    )
+  }
+
+  return newId
+}
+
+/** History-aware replacement for `structuralPageStore.duplicatePage`. Same
+ * undo/redo shape as `insertPageWithHistory` above. */
+export function duplicatePageWithHistory(projectId: string, pageId: string): string | undefined {
+  const newId = useStructuralPageStore.getState().duplicatePage(projectId, pageId)
+  if (!newId) return undefined
+  const created = useStructuralPageStore.getState().getPages(projectId).find((p) => p.id === newId)
+
+  if (created) {
+    useHistoryStore.getState().record(
+      projectId,
+      'Duplicate page',
+      () => useStructuralPageStore.getState().deletePage(projectId, newId),
+      () => useStructuralPageStore.getState().insertPageAt(projectId, created.category, created, pageId),
+    )
+  }
+
+  return newId
+}
+
+/**
+ * History-aware replacement for `structuralPageStore.deletePage`. Captures
+ * the page's full snapshot and its immediate predecessor's id within its
+ * own category (or `null` if it was first) BEFORE deleting, so undo can
+ * re-`insertPageAt` it back in the exact same spot — mirrors
+ * `deleteBlockWithHistory`'s precedingBlockId approach exactly.
+ */
+export function deletePageWithHistory(projectId: string, pageId: string): void {
+  const pages = useStructuralPageStore.getState().getPages(projectId)
+  const page = pages.find((p) => p.id === pageId)
+  if (!page) return
+
+  const sameCategory = pages.filter((p) => p.category === page.category)
+  const idx = sameCategory.findIndex((p) => p.id === pageId)
+  const precedingPageId = idx > 0 ? sameCategory[idx - 1].id : null
+
+  useStructuralPageStore.getState().deletePage(projectId, pageId)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Delete page',
+    () => useStructuralPageStore.getState().insertPageAt(projectId, page.category, page, precedingPageId),
+    () => useStructuralPageStore.getState().deletePage(projectId, pageId),
+  )
+}
+
+/**
+ * History-aware replacement for `structuralPageStore.movePage`. A simple
+ * adjacent-swap reorder is its own inverse — undo just moves the same page
+ * one step the opposite direction.
+ */
+export function movePageWithHistory(projectId: string, pageId: string, direction: 'up' | 'down'): void {
+  useStructuralPageStore.getState().movePage(projectId, pageId, direction)
+  const opposite = direction === 'up' ? 'down' : 'up'
+  useHistoryStore.getState().record(
+    projectId,
+    'Reorder page',
+    () => useStructuralPageStore.getState().movePage(projectId, pageId, opposite),
+    () => useStructuralPageStore.getState().movePage(projectId, pageId, direction),
+  )
+}
+
+/**
+ * History-aware replacement for `structuralPageStore.updatePageContent`.
+ * Same shape as `editBlock` above: snapshots the full old `content` object
+ * before mutating (since `updatePageContent` shallow-merges), so undo can
+ * restore it exactly by re-merging the entire old content back in.
+ */
+export function updatePageContentWithHistory(
+  projectId: string,
+  pageId: string,
+  updates: Partial<StructuralPage['content']>,
+): void {
+  const oldPage = useStructuralPageStore.getState().getPages(projectId).find((p) => p.id === pageId)
+
+  useStructuralPageStore.getState().updatePageContent(projectId, pageId, updates)
+
+  if (!oldPage) return
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Edit page',
+    () => useStructuralPageStore.getState().updatePageContent(projectId, pageId, oldPage.content),
+    () => useStructuralPageStore.getState().updatePageContent(projectId, pageId, updates),
   )
 }

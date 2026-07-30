@@ -6,6 +6,16 @@ interface SelectionState {
   selectedBlockId: string | null
   selectedChapterId: string | null
   /**
+   * The currently selected `StructuralPage` id (Cover/Title Page/Copyright/
+   * Blank Page — see docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2), or
+   * `null`. Mutually exclusive with `selectedBlockId`/`selectedChapterId`:
+   * selecting a structural page clears the other two, and vice versa (see
+   * `selectStructuralPage`/`select`/`selectForEdit`/`requestScrollToChapter`
+   * below) — the Inspector's "Page" tab uses this to decide whether to show
+   * `StructuralPagePanel` or the existing read-only project settings.
+   */
+  selectedStructuralPageId: string | null
+  /**
    * Non-null means "the current selection was requested with an intent to
    * edit immediately" (e.g. the Virtual Editor's "Edit" action) — a fresh
    * id every time so `Page.tsx` can tell a brand-new edit request apart
@@ -33,6 +43,10 @@ interface SelectionState {
   select: (chapterId: string, blockId: string) => void
   /** Same as `select`, but also flags the selection for immediate editing. */
   selectForEdit: (chapterId: string, blockId: string) => void
+  /** Selects a structural page (clearing any block/chapter selection) —
+   * used by the Sidebar's Structure tab rows and by clicking a structural
+   * page directly in the on-screen preview. */
+  selectStructuralPage: (pageId: string) => void
   consumeEditRequest: () => void
   requestScrollToChapter: (chapterId: string) => void
   requestScrollToPage: (pageId: string) => void
@@ -51,15 +65,25 @@ interface SelectionState {
 export const useSelectionStore = create<SelectionState>()((set) => ({
   selectedBlockId: null,
   selectedChapterId: null,
+  selectedStructuralPageId: null,
   editRequestId: null,
   scrollRequest: null,
-  select: (chapterId, blockId) => set({ selectedChapterId: chapterId, selectedBlockId: blockId, editRequestId: null }),
+  select: (chapterId, blockId) =>
+    set({ selectedChapterId: chapterId, selectedBlockId: blockId, selectedStructuralPageId: null, editRequestId: null }),
   selectForEdit: (chapterId, blockId) =>
-    set({ selectedChapterId: chapterId, selectedBlockId: blockId, editRequestId: generateId('edit-request') }),
+    set({
+      selectedChapterId: chapterId,
+      selectedBlockId: blockId,
+      selectedStructuralPageId: null,
+      editRequestId: generateId('edit-request'),
+    }),
+  selectStructuralPage: (pageId) =>
+    set({ selectedStructuralPageId: pageId, selectedBlockId: null, selectedChapterId: null, editRequestId: null }),
   consumeEditRequest: () => set({ editRequestId: null }),
   requestScrollToChapter: (chapterId) =>
     set({
       selectedChapterId: chapterId,
+      selectedStructuralPageId: null,
       scrollRequest: { target: { type: 'chapter', chapterId }, requestId: generateId('scroll-request') },
     }),
   requestScrollToPage: (pageId) =>
@@ -67,5 +91,12 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
   requestScrollToBlock: (chapterId, blockId) =>
     set({ scrollRequest: { target: { type: 'block', chapterId, blockId }, requestId: generateId('scroll-request') } }),
   consumeScrollRequest: () => set({ scrollRequest: null }),
-  clear: () => set({ selectedBlockId: null, selectedChapterId: null, editRequestId: null, scrollRequest: null }),
+  clear: () =>
+    set({
+      selectedBlockId: null,
+      selectedChapterId: null,
+      selectedStructuralPageId: null,
+      editRequestId: null,
+      scrollRequest: null,
+    }),
 }))

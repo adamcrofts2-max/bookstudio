@@ -4,10 +4,13 @@ import fontkit from '@pdf-lib/fontkit'
 import type { ExportableLayout } from '@/store/exportStore'
 import type { ContentBlock } from '@/types/content'
 import type { ProjectSettings } from '@/types/project'
+import type { StructuralPage } from '@/types/structuralPage'
 import { loadThemeFonts, pickFont, type ThemeFontSet } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { getBlockTypeDefinition } from '@/blocks/registry'
+import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
+import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 
 export interface DrawCtx {
   page: PDFPage
@@ -16,6 +19,17 @@ export interface DrawCtx {
   contentX: number
   contentWidthPt: number
   cursorY: number
+  /**
+   * The active project id, plus every structural page in the project —
+   * added for structural-page `drawPdf` implementations (see
+   * `src/structuralPages/registry.ts`) that need sibling structural pages
+   * (e.g. Copyright's default boilerplate wants the Title Page's author)
+   * without importing `structuralPageStore` from a type module, which would
+   * create an import cycle (the store imports this registry). Ignored by
+   * every existing `ContentBlock` `drawPdf` — purely additive.
+   */
+  projectId: string
+  structuralPages: StructuralPage[]
 }
 
 /**
@@ -57,7 +71,7 @@ function drawCropMarks(page: PDFPage, mediaWidth: number, mediaHeight: number, b
  * self-hosted fonts, and page geometry all derived from the same
  * deterministic pagination the on-screen preview uses.
  */
-export async function exportBookToPdf(layout: ExportableLayout, bookTitle: string, settings: ProjectSettings): Promise<Blob> {
+export async function exportBookToPdf(layout: ExportableLayout, bookTitle: string, settings: ProjectSettings, projectId: string): Promise<Blob> {
   const { pageBox, theme, toc } = layout
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
@@ -66,6 +80,12 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
   doc.setCreator('Book Studio')
 
   const fonts = await loadThemeFonts(doc)
+  // Structural pages (Cover/Title Page/Copyright/Blank — see
+  // docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2) live in their own store,
+  // not in `layout`; `layout.pages` only carries each one's id
+  // (`structuralPageId`) via `composeBookPages`, so the full objects are
+  // read once here, outside the loop.
+  const structuralPages = useStructuralPageStore.getState().byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES
 
   const bleedPt = settings.bleed * (72 / 25.4) // mm -> pt
   const widthPt = pageBox.widthPx * PX_TO_PT
@@ -85,12 +105,35 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
 
     if (page.kind === 'blank') continue
 
+    if (page.kind === 'structural') {
+      // No running header / page-number footer for structural pages —
+      // mirrors Page.tsx's `page.kind !== 'blank' && page.kind !== 'structural'`
+      // chrome exclusion exactly, so `continue` here (skipping the footer
+      // drawn below) keeps the two renderers WYSIWYG.
+      const structuralPage = structuralPages.find((p) => p.id === page.structuralPageId)
+      const def = structuralPage ? getStructuralPageTypeDefinition(structuralPage.type) : undefined
+      if (structuralPage && def) {
+        const ctx: DrawCtx = {
+          page: pdfPage,
+          fonts,
+          theme,
+          contentX: bleedPt + marginOuterPt,
+          contentWidthPt,
+          cursorY: mediaHeight - bleedPt - marginTopPt,
+          projectId,
+          structuralPages,
+        }
+        await def.drawPdf(ctx, structuralPage, theme, pageBox)
+      }
+      continue
+    }
+
     const isRight = page.side === 'right'
     const marginLeft = bleedPt + (isRight ? marginInnerPt : marginOuterPt)
     const contentTop = mediaHeight - bleedPt - marginTopPt
     const contentBottom = bleedPt + marginBottomPt
 
-    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop }
+    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages }
 
     if (page.kind === 'toc') {
       const headingFont = pickFont(fonts, theme.fonts.heading, 600)

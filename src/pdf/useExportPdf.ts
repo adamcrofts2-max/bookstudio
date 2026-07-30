@@ -53,7 +53,7 @@ export function useExportPdf(project: Project) {
     setError(null)
     try {
       const { exportBookToPdf } = await import('@/pdf/exportPdf')
-      const blob = await exportBookToPdf(layout, project.name, project.settings)
+      const blob = await exportBookToPdf(layout, project.name, project.settings, project.id)
       const fileName = `${project.name.replace(/[\\/:*?"<>|]/g, '').trim() || 'book'}.pdf`
       await saveBlob(blob, fileName)
     } catch (err) {

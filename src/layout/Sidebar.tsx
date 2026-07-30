@@ -1,21 +1,157 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, ChevronsLeft, ImagePlus, Pencil, Trash2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ChevronsLeft, ChevronUp, Copy, ImagePlus, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
-import { removeAssetWithHistory, renameChapterWithHistory } from '@/store/editorActions'
+import { removeAssetWithHistory, renameChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
+import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
+import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
+import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/common/EmptyState'
 import { BookOpen, Image as ImageIcon } from 'lucide-react'
 import type { Project } from '@/types'
+
+/** Types offered by the "Add Page" picker per category, for this milestone
+ * (see docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2 — the remaining ~30
+ * types are batched into a later milestone). Cover/Title Page/Copyright
+ * don't make sense as back matter, so only Blank Page is offered there. */
+const FRONT_MATTER_ADDABLE_TYPES: StructuralPageType[] = ['cover', 'title-page', 'copyright', 'blank']
+const BACK_MATTER_ADDABLE_TYPES: StructuralPageType[] = ['blank']
+
+interface StructuralPageRowProps {
+  projectId: string
+  page: StructuralPage
+  selected: boolean
+}
+
+/** One row in the Structure tab's Front Matter / Back Matter list — icon +
+ * label, up/down reorder, duplicate, delete. No confirm dialog on delete:
+ * undo now covers structural pages too (see `editorActions.ts`), the same
+ * "no confirm needed, undo covers it" pattern this file's own asset-delete
+ * button below already established. */
+function StructuralPageRow({ projectId, page, selected }: StructuralPageRowProps) {
+  const selectStructuralPage = useSelectionStore((s) => s.selectStructuralPage)
+  const requestScrollToPage = useSelectionStore((s) => s.requestScrollToPage)
+  const setInspectorTab = useUiStore((s) => s.setInspectorTab)
+  const def = getStructuralPageTypeDefinition(page.type)
+  if (!def) return null
+  const Icon = def.icon
+
+  const handleClick = () => {
+    selectStructuralPage(page.id)
+    requestScrollToPage(page.id)
+    setInspectorTab('page')
+  }
+
+  return (
+    <div
+      className={cn(
+        'group flex items-center gap-1 rounded-[var(--radius-button)] px-2.5 py-1.5 text-sm font-medium transition-colors duration-150',
+        selected ? 'bg-selection text-text-primary' : 'text-text-secondary hover:bg-hover hover:text-text-primary',
+      )}
+    >
+      <button type="button" onClick={handleClick} className="flex min-w-0 flex-1 items-center gap-2 text-left">
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{def.label}</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => movePageWithHistory(projectId, page.id, 'up')}
+        aria-label={`Move ${def.label} up`}
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+      >
+        <ChevronUp className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => movePageWithHistory(projectId, page.id, 'down')}
+        aria-label={`Move ${def.label} down`}
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+      >
+        <ChevronDown className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => duplicatePageWithHistory(projectId, page.id)}
+        aria-label={`Duplicate ${def.label}`}
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+      >
+        <Copy className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        onClick={() => deletePageWithHistory(projectId, page.id)}
+        aria-label={`Delete ${def.label}`}
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+      >
+        <Trash2 className="size-3.5" />
+      </button>
+    </div>
+  )
+}
+
+interface StructuralSectionProps {
+  title: string
+  category: StructuralPageCategory
+  pages: StructuralPage[]
+  addableTypes: StructuralPageType[]
+  projectId: string
+  selectedStructuralPageId: string | null
+}
+
+function StructuralSection({ title, category, pages, addableTypes, projectId, selectedStructuralPageId }: StructuralSectionProps) {
+  const handleAdd = (type: StructuralPageType) => {
+    const lastId = pages.length > 0 ? pages[pages.length - 1].id : null
+    insertPageWithHistory(projectId, category, type, lastId)
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center justify-between px-1.5 py-1">
+        <span className="text-xs font-medium uppercase tracking-wide text-text-muted">{title}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="size-6" aria-label={`Add ${title.toLowerCase()} page`}>
+              <Plus className="size-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {addableTypes.map((type) => {
+              const def = getStructuralPageTypeDefinition(type)
+              if (!def) return null
+              const Icon = def.icon
+              return (
+                <DropdownMenuItem key={type} onClick={() => handleAdd(type)} className="gap-2">
+                  <Icon className="size-3.5" />
+                  {def.label}
+                </DropdownMenuItem>
+              )
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      {pages.length === 0 ? (
+        <p className="px-2 pb-2 text-xs text-text-secondary">No {title.toLowerCase()} pages yet.</p>
+      ) : (
+        <div className="flex flex-col gap-0.5 pb-1">
+          {pages.map((page) => (
+            <StructuralPageRow key={page.id} projectId={projectId} page={page} selected={selectedStructuralPageId === page.id} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 interface SidebarProps {
   project: Project
@@ -52,6 +188,11 @@ export function Sidebar({ project }: SidebarProps) {
   const stopDraggingAsset = useDragStore((s) => s.stopDraggingAsset)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const structuralPages = useStructuralPageStore((s) => s.byProject[project.id] ?? EMPTY_STRUCTURAL_PAGES)
+  const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
+  const frontMatterPages = structuralPages.filter((p) => p.category === 'front-matter').sort((a, b) => a.order - b.order)
+  const backMatterPages = structuralPages.filter((p) => p.category === 'back-matter').sort((a, b) => a.order - b.order)
+
   useEffect(() => {
     loadAssets(project.id)
   }, [project.id, loadAssets])
@@ -73,6 +214,7 @@ export function Sidebar({ project }: SidebarProps) {
       <Tabs defaultValue="chapters" className="flex min-h-0 flex-1 flex-col px-3">
         <TabsList className="w-full">
           <TabsTrigger value="chapters" className="flex-1">Chapters</TabsTrigger>
+          <TabsTrigger value="structure" className="flex-1">Structure</TabsTrigger>
           <TabsTrigger value="assets" className="flex-1">Assets</TabsTrigger>
         </TabsList>
 
@@ -140,6 +282,29 @@ export function Sidebar({ project }: SidebarProps) {
                 )}
               </nav>
             )}
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="structure" className="min-h-0 flex-1">
+          <ScrollArea className="h-full">
+            <div className="flex flex-col gap-3 py-1">
+              <StructuralSection
+                title="Front Matter"
+                category="front-matter"
+                pages={frontMatterPages}
+                addableTypes={FRONT_MATTER_ADDABLE_TYPES}
+                projectId={project.id}
+                selectedStructuralPageId={selectedStructuralPageId}
+              />
+              <StructuralSection
+                title="Back Matter"
+                category="back-matter"
+                pages={backMatterPages}
+                addableTypes={BACK_MATTER_ADDABLE_TYPES}
+                projectId={project.id}
+                selectedStructuralPageId={selectedStructuralPageId}
+              />
+            </div>
           </ScrollArea>
         </TabsContent>
 

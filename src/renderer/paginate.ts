@@ -2,7 +2,7 @@ import type { Chapter, ContentBlock } from '@/types/content'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { generateId } from '@/utils'
 
-export type PageKind = 'toc' | 'chapter-start' | 'content' | 'blank'
+export type PageKind = 'toc' | 'chapter-start' | 'content' | 'blank' | 'structural'
 export type PageSide = 'left' | 'right'
 
 export interface LaidOutPage {
@@ -13,6 +13,14 @@ export interface LaidOutPage {
   chapterId?: string
   chapterTitle?: string
   blocks: ContentBlock[]
+  /**
+   * Set only when `kind === 'structural'` — the id of the `StructuralPage`
+   * (see `src/types/structuralPage.ts`) this page renders. Populated by
+   * `src/renderer/composePages.ts`, which splices front-/back-matter
+   * structural pages around this file's own chapter-flow output; `paginate`
+   * itself never produces a `'structural'` page or touches this field.
+   */
+  structuralPageId?: string
 }
 
 export interface TocEntry {

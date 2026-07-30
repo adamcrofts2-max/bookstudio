@@ -869,13 +869,208 @@ away before pagination ever completed.
   in jsdom), so this fix's regression net is the live-browser check, same limitation
   noted (and now resolved) from Phase 13.
 
+## Phase 19 — Modular Page System Milestone 2: StructuralPage data layer (Cover/Title Page/Copyright/Blank) (2026-07-30)
+
+Milestone 2 of `docs/MODULAR_PAGE_SYSTEM_PLAN.md`: a new, additive `StructuralPage`
+concept — book-scoped front-/back-matter pages that don't reflow, unlike
+`Chapter`/`ContentBlock` — proven end to end (create → reorder → duplicate → delete →
+render on-screen → render in PDF) on exactly 4 types: Cover, Title Page, Copyright,
+Blank Page. `Manuscript.chapters`/`ContentBlock` are completely untouched; existing
+projects default to zero structural pages with no migration, per the same
+"optional field, default in code" rule proven six times already this project.
+
+- **`src/types/structuralPage.ts`** — a discriminated union (`CoverPage` |
+  `TitlePage` | `CopyrightPage` | `BlankStructuralPage`), exactly mirroring
+  `ContentBlock`'s pattern rather than a generic untyped content bag.
+- **`src/structuralPages/registry.ts` + `src/structuralPages/types/{cover,titlePage,
+  copyright,blank}.tsx`** — mirrors Phase 17's block-type registry exactly: one
+  module per type, each exporting a `StructuralPageTypeDefinition` with a required
+  `Render` (on-screen) and `drawPdf` (PDF), so no type ships half-WYSIWYG. Cover is
+  full-bleed (theme-tinted background, or a full-bleed cover image via the existing
+  `assetStore`/`imageForPdf.ts` pipeline, cover-fit scaled to the bleed box in the
+  PDF) with centred title/subtitle/author; Title Page is the same content, smaller
+  and whitespace-heavy, no image; Copyright is small body text near the bottom of
+  the page with a sensible default (`© <year> <author>. All rights reserved.`,
+  pulling the author from a sibling Title Page if one exists, degrading gracefully
+  otherwise); Blank renders nothing but the page background, identical to the
+  existing auto-inserted `blank` page kind.
+- **`src/store/structuralPageStore.ts`** — `byProject`/`revisionByProject`, mirroring
+  `contentStore`'s shape. `insertPage`/`duplicatePage`/`deletePage`/`movePage`/
+  `updatePageContent`, plus an internal `insertPageAt` primitive (insert an
+  already-fully-formed page object at an exact position) that only
+  `editorActions.ts`'s undo/redo wrappers and `insertPage`/`duplicatePage` use — it
+  exists because, unlike `contentStore.insertBlock`, the public `insertPage` mints a
+  fresh id every call, so undo of a delete / redo of an insert needs a way to
+  reinsert the *exact* previously-generated page rather than minting yet another
+  new one. Front-matter and back-matter are independently ordered slices of one flat
+  per-project array (`.order` recomputed after every mutation). `updatePageContent`
+  keeps `CoverPage.assets` in sync with `content.imageAssetId` when set/cleared,
+  mirroring `ImageBlock.assetId`'s reference-tracking for future asset-cleanup logic.
+  Exports `EMPTY_STRUCTURAL_PAGES`, the same stable-empty-array pattern as
+  `EMPTY_ASSETS`/`EMPTY_HISTORY` (Zustand v5 + `useSyncExternalStore` infinite-loops
+  on a selector returning a fresh `[]`).
+- **Undo/redo** — `editorActions.ts` gained `insertPageWithHistory`/
+  `duplicatePageWithHistory`/`deletePageWithHistory`/`movePageWithHistory`/
+  `updatePageContentWithHistory`, wired through exactly like every other
+  history-aware wrapper (snapshot enough state to invert, mutate via the store's own
+  published action, `record` a command). This is real, not deferred: shipping a new
+  mutable surface without undo coverage would be a regression, not a missing
+  nice-to-have.
+- **Rendering integration** — `paginate.ts` gained a `'structural'` `PageKind` and an
+  optional `LaidOutPage.structuralPageId`, with its own core flow algorithm and
+  `.number`/`.side` numbering left completely untouched (front matter is
+  conventionally unnumbered/separately numbered; main-body numbering starts fresh at
+  the first chapter — a deliberately lower-risk choice than renumbering
+  `paginate.ts`'s best-tested loop). A new pure `src/renderer/composePages.ts`
+  (`composeBookPages(frontMatter, paginated, backMatter)`) splices structural pages
+  around `paginate()`'s own output — reusing each `StructuralPage`'s own `id` as the
+  composed `LaidOutPage.id` (deliberate: it makes `requestScrollToPage` work with zero
+  further changes, since `BookRenderer`'s scroll-matching already keys on `page.id`).
+  `BookRenderer.tsx` reads `structuralPageStore` directly (its live array reference
+  changes on every real mutation, so downstream `useMemo`s recompute without a
+  separate revision counter needing to be threaded in) and publishes the composed,
+  structural-pages-inclusive `pages` array to `exportStore` — so PDF export gets
+  the exact sequence the screen shows, same WYSIWYG guarantee as everything else.
+  `Page.tsx` gained a `page.kind === 'structural'` branch that looks up the real
+  `StructuralPage` by id and renders it full-bleed via the registry's `Render`, and
+  both the running-header and page-number footer conditionals were extended from
+  `page.kind !== 'blank'` to also exclude `'structural'` — structural pages get no
+  chrome, exactly like blank pages today. `exportPdf.ts` mirrors this precisely: a
+  `page.kind === 'structural'` branch calls the registry's `drawPdf` (with a new
+  `DrawCtx.projectId`/`.structuralPages` so a type's PDF drawing can look up sibling
+  pages — Copyright's default text needs the Title Page's author — without
+  `structuralPageStore` importing this registry and the registry importing back,
+  which would be a real import cycle) and then `continue`s, skipping the page-number
+  footer for that page exactly like `Page.tsx` does on screen.
+- **Selection** — `selectionStore` gained `selectedStructuralPageId`/
+  `selectStructuralPage`, mutually exclusive with block/chapter selection in both
+  directions (selecting one clears the other). Scrolling to a structural page from
+  the Sidebar reuses `requestScrollToPage` completely unchanged — no new
+  scroll-target variant needed, per the `composeBookPages` id-reuse decision above.
+- **UI** — a third "Structure" tab in `Sidebar.tsx` (next to Chapters/Assets),
+  listing Front Matter and Back Matter as two independently-ordered sections, each
+  with icon + label rows (up/down reorder, duplicate, delete — no confirm dialog,
+  since undo now covers this) and an "Add Page" `DropdownMenu` (Front Matter offers
+  Cover/Title Page/Copyright/Blank; Back Matter offers Blank only this milestone —
+  the other three are conceptually front-matter-only). `Inspector.tsx`'s existing
+  "Page" tab is now conditional: a structural page selection shows the new
+  `StructuralPagePanel.tsx` (plain title/subtitle/author inputs for Cover/Title Page,
+  a textarea for Copyright's text, nothing for Blank) instead of the read-only
+  project-settings view, which is otherwise completely unchanged.
+- **New UI primitive**: `src/components/ui/textarea.tsx`, mirroring `input.tsx`'s
+  exact styling conventions — needed for Copyright's text field and not previously
+  in this shadcn-style primitive set.
+- **Tests**: `scripts/smoke-test.ts` grew from 177 to 222 passing checks — registry
+  lookups (all 4 types have both `Render`/`drawPdf`/`defaultContent`;
+  `getStructuralPageTypeDefinition` returns `undefined` for a made-up type),
+  `structuralPageStore` CRUD (insert/duplicate/delete/move all bump
+  `revisionByProject` and leave other projects/categories untouched; the
+  `imageAssetId` → `assets` sync; a genuine no-op move at a category boundary
+  deliberately does *not* bump revision, unlike `deleteBlock`'s always-bump
+  precedent — nothing changed, so no signal should fire), `composeBookPages` (0/1/2
+  front-matter pages + a paginated fixture + 0/1 back-matter pages: concatenation
+  order, `side` parity at each position, `paginated`'s own `number`/`side` never
+  mutated, `structuralPageId` correctly reused as the composed `id`), and all 5
+  `editorActions.ts` history wrappers exercised end-to-end (undo/redo restoring
+  exact ids/positions/content).
+
+### Deviations from the brief, and why
+- **`StructuralPageRenderProps`/`DrawCtx` gained a `siblingPages`/`structuralPages`
+  field** (not specified in the brief's exact registry interface) — needed once
+  Copyright's default-text-uses-the-Title-Page's-author requirement collided with a
+  real import cycle: `structuralPageStore` must import the registry (to resolve
+  `defaultContent()` inside `insertPage`), so no type module under
+  `src/structuralPages/types/*` can import `structuralPageStore` back to look up a
+  sibling page itself. Threading the already-available sibling array through props/
+  `DrawCtx` (both `Page.tsx` and `exportPdf.ts` already have to read
+  `structuralPageStore` once anyway, to resolve which page to render) avoids the
+  cycle with no new plumbing.
+- **`structuralPageStore` gained one extra primitive, `insertPageAt`**, beyond the
+  brief's 5 named actions — required for `insertPageWithHistory`/
+  `duplicatePageWithHistory`'s redo and `deletePageWithHistory`'s undo to reinsert
+  the *exact* previously-generated page (same id, same content) rather than minting
+  a new one, mirroring `contentStore.insertBlock`'s "insert this exact object"
+  contract. Without it, undo/redo on structural pages would silently orphan ids.
+- **A new `Textarea` UI primitive** was added (not in the existing `src/components/
+  ui/*` set) since Copyright's multi-line text field had no existing primitive to
+  extend — built to match `Input`'s exact styling tokens rather than reaching for a
+  new dependency, per `CLAUDE.md`.
+- **Sidebar's per-section empty state** uses a small muted text line ("No front
+  matter pages yet.") rather than the full `EmptyState` component per section, since
+  stacking two large icon-based empty states would be heavier than useful when only
+  one category is actually empty; a top-level `EmptyState` is used nowhere in this
+  tab since the "Add Page" affordance must always be reachable to add the very first
+  page, and gating it behind an empty-state view would remove that path entirely.
+- **PDF vertical centring for Cover/Title Page is approximate**, not derived from the
+  same CSS flexbox centring the on-screen preview uses (there's no flexbox in
+  `pdf-lib`) — text is centred using a fixed proportion of line-height per element,
+  visually close but not pixel-identical to the screen. Documented here rather than
+  silently accepted, same honesty as the project's existing "PDF export is
+  left-aligned even for justified themes" simplification.
+
+### Explicitly deferred (per the milestone's own scope)
+- The remaining ~30 front-/back-matter types (Dedication, Foreword, Preface, Table of
+  Contents variants, Bibliography, Glossary, Index, Appendix, About the Author, ISBN
+  Page, Barcode, ...) — batched into Milestone 4, see below.
+- Full drag-and-drop reordering of structural pages — only simple up/down
+  adjacent-swap buttons this milestone, per the plan's own explicit deferral.
+- A rich per-type visual editor (e.g. a cover image picker/cropper in the Inspector)
+  — `StructuralPagePanel.tsx` is plain form fields only; `CoverPage.content.
+  imageAssetId` exists in the data model and renders correctly on screen and in the
+  PDF when set, but this milestone ships no UI path to set it (drag-and-drop-onto-
+  cover, matching `ImageBlock`'s existing replace-via-drop pattern, is a natural
+  candidate for a future milestone).
+- Roman-numeral or otherwise separate front-matter page numbering — explicitly out
+  of scope; structural pages carry `number: 0` (unused/undisplayed) in
+  `composeBookPages`.
+- Page templates ("save as reusable template") and the theme `pageStyles` extension
+  point — Milestone 2 targets the data layer + minimal UI only, per the plan's §7.
+
+### A note on this session's build environment
+This session's sandboxed Linux environment (bash tool) had a **severely broken
+`node_modules`** unrelated to any code in this repo — dozens of packages
+(`zustand`, `@radix-ui/react-dropdown-menu`'s transitive deps, `@radix-ui/react-
+scroll-area`, `@radix-ui/react-select`, `tailwind-merge`, and, worse, the native
+`esbuild`/`rolldown`/`lightningcss` binaries) were missing their type declarations,
+missing their ESM build artifacts, or outright corrupted (segfaulting/bus-erroring
+on load), and `npm ci`/`rm -rf node_modules` couldn't run because the filesystem
+backing this particular mount refuses to unlink files already on disk. None of this
+was caused by this phase's changes — the same failures reproduced on completely
+unmodified pre-existing files. Verification for this phase was therefore done by
+`npm ci`-installing a clean `node_modules` in a scratch directory and copying just
+this repo's source files (not `node_modules`) into it, where `npm run build`/`lint`/
+`test` all ran clean. If a future session hits the same "Bus error (core dumped)" /
+missing-`.d.ts` symptoms in this sandbox, that's the same pre-existing environment
+defect, not a regression — reproduce the scratch-directory approach above rather
+than assuming the codebase itself is broken.
+
+### GitHub push
+This session's bash tool had **no GitHub push credentials at all** (no SSH key, no
+HTTPS token, no credential helper) — `git remote -v` was empty on arrival and
+`git push` fails with "could not read Username." The repo's commit history and a
+read-only HTTPS remote (`https://github.com/adamcrofts2-max/bookstudio.git`, branch
+`main`) were confirmed reachable and matching this session's starting point
+(`2ae82ce`, Phase 18), but nothing could be pushed from this sandbox. This phase's
+commit exists locally (see the commit hash reported at the end of this session) —
+**push it from an environment with real write credentials** (the user's own machine,
+or a Cowork session with GitHub push access configured) rather than assuming it's
+already live.
+
 ## Recommended next task
-`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s Milestone 2 is next in the modular-page-system
-track: a new, additive `StructuralPage` concept (separate from `Chapter`/
-`ContentBlock`) proven on 3–4 front/back-matter page types only (Cover, Title Page,
-Copyright, Blank Page) — insert/duplicate/delete/reorder, no rich per-type editors
-yet — to prove the full create → reorder → render-on-screen → render-in-PDF pipe end
-to end before scaling to the full ~35-type taxonomy. Outside that track, everything
+`docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s **Milestone 4** is next in the modular-page-
+system track: batch in the remaining ~30 front-/back-matter types (5–8 per
+milestone, per the plan's §7.4), following the exact registry-entry pattern Milestone
+2 just proved — Dedication, Foreword, Preface, Acknowledgements, Half Title and a
+richer Table of Contents variant are good first candidates (front-matter-heavy,
+conceptually closest to the 4 types already shipped), with Bibliography/Glossary/
+Index/Appendix/About the Author/ISBN Page/Barcode as natural back-matter follow-ups.
+Each new type needs only a registry entry (`Render` + `drawPdf` + `defaultContent`)
+plus a `StructuralPagePanel.tsx` case and an "addable types" list entry in
+`Sidebar.tsx` — no changes to `structuralPageStore.ts`, `composePages.ts`,
+`Page.tsx`, or `exportPdf.ts` should be needed, which is exactly what this milestone
+was building toward. (Milestone 3 — full drag-and-drop reordering and a theme
+`pageStyles` extension point — is a reasonable alternative next step if polish is
+preferred over taxonomy breadth before Milestone 4.) Outside that track, everything
 in the Development Plan's "Definition of Version 1 Complete" still works end-to-end,
 the Virtual Editor has a real foundation (Phase 9) with reliable navigation and
 bulk-fix actions (Phase 13), the manuscript is no longer read-only (Phase 10), the

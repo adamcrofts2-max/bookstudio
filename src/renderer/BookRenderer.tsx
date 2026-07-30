@@ -7,12 +7,14 @@ import { useUiStore } from '@/store/uiStore'
 import { computePageBox } from '@/renderer/pageGeometry'
 import { resolveTheme } from '@/theme/presets'
 import { paginate, type LaidOutPage } from '@/renderer/paginate'
+import { composeBookPages } from '@/renderer/composePages'
 import { HeightMeasurer } from '@/renderer/HeightMeasurer'
 import { LazySpread } from '@/renderer/LazySpread'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
 import { useExportStore } from '@/store/exportStore'
 import { useContentStore } from '@/store/contentStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 
 interface BookRendererProps {
   project: Project
@@ -71,10 +73,39 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
   const [heights, setHeights] = useState<Record<string, number> | null>(null)
   const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}-${contentRevision}`
 
-  const { pages, toc } = useMemo(() => {
+  const { pages: paginatedPages, toc } = useMemo(() => {
     if (!heights) return { pages: [] as LaidOutPage[], toc: [] }
     return paginate(manuscript.chapters, (b) => heights[b.id] ?? 24, pageBox.contentHeightPx, theme.chapterOpener.topSpacer)
   }, [heights, manuscript, pageBox.contentHeightPx, theme.chapterOpener.topSpacer])
+
+  // Front-/back-matter structural pages (Cover/Title Page/Copyright/Blank —
+  // see docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2), spliced around the
+  // chapter-flow output below. Reading the live array directly from the
+  // store (rather than folding a separate revision counter into a memo key)
+  // is enough to keep this reactive: every structuralPageStore mutation
+  // (insert/duplicate/delete/move/update) constructs a brand-new array, so
+  // this selector's return identity changes on every real edit, and the
+  // `useMemo`s below that depend on it recompute immediately.
+  const structuralPages = useStructuralPageStore((s) => s.byProject[project.id] ?? EMPTY_STRUCTURAL_PAGES)
+  const frontMatter = useMemo(
+    () => structuralPages.filter((p) => p.category === 'front-matter').sort((a, b) => a.order - b.order),
+    [structuralPages],
+  )
+  const backMatter = useMemo(
+    () => structuralPages.filter((p) => p.category === 'back-matter').sort((a, b) => a.order - b.order),
+    [structuralPages],
+  )
+
+  // The final, structural-pages-inclusive sequence — this (not the raw
+  // `paginatedPages`) is what feeds spreads, the thumbnail rail, and
+  // `exportStore` below, so PDF export gets the exact same sequence
+  // on-screen preview shows (same WYSIWYG guarantee already used for
+  // everything else). `paginatedPages`'s own `.number`/`.side` are never
+  // touched by this — see `composeBookPages`'s own doc comment.
+  const pages = useMemo(
+    () => composeBookPages(frontMatter, paginatedPages, backMatter),
+    [frontMatter, paginatedPages, backMatter],
+  )
 
   const spreads = useMemo(() => (viewMode === 'spread' ? groupIntoSpreads(pages) : pages.map((p) => [p])), [pages, viewMode])
 

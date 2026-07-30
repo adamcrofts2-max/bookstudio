@@ -1070,5 +1070,243 @@ check(
   getBlockTypeDefinition('not-a-real-type' as ContentBlockType) === undefined,
 )
 
+// --- Structural pages (Milestone 2 of docs/MODULAR_PAGE_SYSTEM_PLAN.md) ---
+// New, additive StructuralPage data layer proven on 4 types (Cover, Title
+// Page, Copyright, Blank Page): structuralPageStore CRUD, composeBookPages
+// (pure splicing of front-/back-matter around paginate.ts's own output),
+// registry lookups, and the editorActions.ts history wrappers that make
+// this new surface undoable.
+const { getStructuralPageTypeDefinition } = await import('../src/structuralPages/registry')
+const { useStructuralPageStore } = await import('../src/store/structuralPageStore')
+const { composeBookPages } = await import('../src/renderer/composePages')
+const {
+  insertPageWithHistory,
+  duplicatePageWithHistory,
+  deletePageWithHistory,
+  movePageWithHistory,
+  updatePageContentWithHistory,
+} = await import('../src/store/editorActions')
+const { useHistoryStore: useHistoryStoreForPages } = await import('../src/store/historyStore')
+import type { StructuralPageType } from '../src/types/structuralPage'
+import type { LaidOutPage } from '../src/renderer/paginate'
+
+// Registry lookups — every one of the 4 shipped types has both Render and drawPdf.
+const ALL_STRUCTURAL_TYPES: StructuralPageType[] = ['cover', 'title-page', 'copyright', 'blank']
+for (const type of ALL_STRUCTURAL_TYPES) {
+  const def = getStructuralPageTypeDefinition(type)
+  check(
+    `structural page registry: has a complete definition for "${type}"`,
+    !!def && def.id === type && typeof def.Render === 'function' && typeof def.drawPdf === 'function' && typeof def.defaultContent === 'function',
+  )
+}
+check(
+  'structural page registry: getStructuralPageTypeDefinition returns undefined for a made-up type',
+  getStructuralPageTypeDefinition('not-a-real-type' as StructuralPageType) === undefined,
+)
+
+// structuralPageStore CRUD
+const spProjectA = 'sp-project-a'
+const spProjectB = 'sp-project-b' // used to prove cross-project isolation
+
+const spStore = useStructuralPageStore.getState()
+const revBefore = spStore.getRevision(spProjectA)
+const coverId = spStore.insertPage(spProjectA, 'front-matter', 'cover', null)
+check('structuralPageStore.insertPage: bumps revisionByProject', useStructuralPageStore.getState().getRevision(spProjectA) > revBefore)
+check(
+  'structuralPageStore.insertPage: inserted page has the right type/category',
+  useStructuralPageStore.getState().getPages(spProjectA).some((p) => p.id === coverId && p.type === 'cover' && p.category === 'front-matter'),
+)
+const titleId = spStore.insertPage(spProjectA, 'front-matter', 'title-page', coverId)
+check(
+  'structuralPageStore.insertPage: inserts after the given afterPageId',
+  useStructuralPageStore.getState().getPages(spProjectA).findIndex((p) => p.id === titleId)
+    === useStructuralPageStore.getState().getPages(spProjectA).findIndex((p) => p.id === coverId) + 1,
+)
+const backBlankId = spStore.insertPage(spProjectA, 'back-matter', 'blank', null)
+check(
+  'structuralPageStore.insertPage: front-matter and back-matter are independently ordered',
+  useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'front-matter').length === 2
+    && useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'back-matter').length === 1
+    && useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'back-matter')[0].id === backBlankId,
+)
+
+// Cross-project isolation: mutating project A never touches project B.
+useStructuralPageStore.getState().insertPage(spProjectB, 'front-matter', 'copyright', null)
+const revBBefore = useStructuralPageStore.getState().getRevision(spProjectB)
+useStructuralPageStore.getState().insertPage(spProjectA, 'front-matter', 'blank', null)
+check(
+  'structuralPageStore: mutating one project never touches another project\'s pages or revision',
+  useStructuralPageStore.getState().getPages(spProjectB).length === 1
+    && useStructuralPageStore.getState().getRevision(spProjectB) === revBBefore,
+)
+
+// duplicatePage
+const revBeforeDup = useStructuralPageStore.getState().getRevision(spProjectA)
+const dupId = useStructuralPageStore.getState().duplicatePage(spProjectA, coverId)
+check('structuralPageStore.duplicatePage: returns a fresh id', !!dupId && dupId !== coverId)
+check('structuralPageStore.duplicatePage: bumps revisionByProject', useStructuralPageStore.getState().getRevision(spProjectA) > revBeforeDup)
+check(
+  'structuralPageStore.duplicatePage: clone is inserted immediately after the original, same category',
+  useStructuralPageStore.getState().getPages(spProjectA).findIndex((p) => p.id === dupId)
+    === useStructuralPageStore.getState().getPages(spProjectA).findIndex((p) => p.id === coverId) + 1,
+)
+check(
+  'structuralPageStore.duplicatePage: returns undefined for a non-existent page id',
+  useStructuralPageStore.getState().duplicatePage(spProjectA, 'does-not-exist') === undefined,
+)
+
+// movePage
+const beforeMoveOrder = useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'front-matter').map((p) => p.id)
+useStructuralPageStore.getState().movePage(spProjectA, beforeMoveOrder[1], 'up')
+const afterMoveOrder = useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'front-matter').map((p) => p.id)
+check(
+  'structuralPageStore.movePage: swaps with the previous page in the same category',
+  afterMoveOrder[0] === beforeMoveOrder[1] && afterMoveOrder[1] === beforeMoveOrder[0],
+)
+const revBeforeNoopMove = useStructuralPageStore.getState().getRevision(spProjectA)
+const topId = useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'front-matter')[0].id
+useStructuralPageStore.getState().movePage(spProjectA, topId, 'up')
+check(
+  'structuralPageStore.movePage: no-ops (order unchanged) when already at the top of its category',
+  useStructuralPageStore.getState().getPagesByCategory(spProjectA, 'front-matter')[0].id === topId,
+)
+check(
+  'structuralPageStore.movePage: does NOT bump revision on a genuine no-op move at a category boundary (unlike deleteBlock\'s always-bump precedent — here nothing at all changed, so no revision bump is the more correct behaviour)',
+  useStructuralPageStore.getState().getRevision(spProjectA) === revBeforeNoopMove,
+)
+
+// deletePage
+const revBeforeDelete = useStructuralPageStore.getState().getRevision(spProjectA)
+const countBeforeDelete = useStructuralPageStore.getState().getPages(spProjectA).length
+useStructuralPageStore.getState().deletePage(spProjectA, dupId!)
+check('structuralPageStore.deletePage: removes the page', useStructuralPageStore.getState().getPages(spProjectA).length === countBeforeDelete - 1)
+check('structuralPageStore.deletePage: bumps revisionByProject', useStructuralPageStore.getState().getRevision(spProjectA) > revBeforeDelete)
+check(
+  'structuralPageStore.deletePage: leaves project B untouched',
+  useStructuralPageStore.getState().getPages(spProjectB).length === 1,
+)
+
+// updatePageContent, including the imageAssetId -> assets sync for Cover pages
+useStructuralPageStore.getState().updatePageContent(spProjectA, coverId, { title: 'My Book', imageAssetId: 'asset-123' })
+const updatedCover = useStructuralPageStore.getState().getPages(spProjectA).find((p) => p.id === coverId)
+check('structuralPageStore.updatePageContent: applies the update', updatedCover?.type === 'cover' && updatedCover.content.title === 'My Book')
+check(
+  'structuralPageStore.updatePageContent: syncs CoverPage.assets from imageAssetId (mirrors ImageBlock.assetId tracking)',
+  JSON.stringify(updatedCover?.assets) === JSON.stringify(['asset-123']),
+)
+useStructuralPageStore.getState().updatePageContent(spProjectA, coverId, { imageAssetId: undefined })
+check(
+  'structuralPageStore.updatePageContent: clearing imageAssetId clears assets too',
+  JSON.stringify(useStructuralPageStore.getState().getPages(spProjectA).find((p) => p.id === coverId)?.assets) === JSON.stringify([]),
+)
+
+// --- composeBookPages (pure function) ---
+function makeStructuralFixture(id: string, category: 'front-matter' | 'back-matter', order: number) {
+  return { id, category, order, type: 'blank' as const, content: {} }
+}
+function makePaginatedFixture(count: number): LaidOutPage[] {
+  return Array.from({ length: count }, (_, i) => ({
+    id: `paginated-${i}`,
+    number: i + 1,
+    side: (i % 2 === 0 ? 'right' : 'left') as 'left' | 'right',
+    kind: 'content' as const,
+    blocks: [],
+  }))
+}
+
+const paginatedFixture = makePaginatedFixture(3)
+const composedNone = composeBookPages([], paginatedFixture, [])
+check('composeBookPages: 0 front/back matter returns paginated pages unchanged (same length)', composedNone.length === paginatedFixture.length)
+check(
+  'composeBookPages: 0 front/back matter never mutates paginated pages\' own number/side',
+  JSON.stringify(composedNone.map((p) => [p.number, p.side])) === JSON.stringify(paginatedFixture.map((p) => [p.number, p.side])),
+)
+
+const oneFront = [makeStructuralFixture('front-1', 'front-matter', 0)]
+const composedOneFront = composeBookPages(oneFront, paginatedFixture, [])
+check('composeBookPages: 1 front-matter page is prepended', composedOneFront[0].id === 'front-1' && composedOneFront[0].kind === 'structural')
+check('composeBookPages: 1 front-matter page — total length is front + paginated', composedOneFront.length === 1 + paginatedFixture.length)
+check('composeBookPages: 1 front-matter page at position 1 gets side "right"', composedOneFront[0].side === 'right')
+check(
+  'composeBookPages: paginated pages\' own number/side still untouched with front matter present',
+  JSON.stringify(composedOneFront.slice(1).map((p) => [p.number, p.side])) === JSON.stringify(paginatedFixture.map((p) => [p.number, p.side])),
+)
+
+const twoFront = [makeStructuralFixture('front-1', 'front-matter', 0), makeStructuralFixture('front-2', 'front-matter', 1)]
+const oneBack = [makeStructuralFixture('back-1', 'back-matter', 0)]
+const composedFull = composeBookPages(twoFront, paginatedFixture, oneBack)
+check(
+  'composeBookPages: 2 front-matter + paginated + 1 back-matter — correct concatenation order',
+  composedFull.map((p) => p.id).join(',') === ['front-1', 'front-2', ...paginatedFixture.map((p) => p.id), 'back-1'].join(','),
+)
+check('composeBookPages: front-matter positions 1/2 get right/left side', composedFull[0].side === 'right' && composedFull[1].side === 'left')
+check(
+  'composeBookPages: back-matter page position (6th overall — 2 front + 3 paginated before it) gets side "left"',
+  composedFull[composedFull.length - 1].side === 'left',
+)
+check(
+  'composeBookPages: structuralPageId is set to the structural page\'s own id (reused, not regenerated — needed for requestScrollToPage)',
+  composedFull[0].structuralPageId === 'front-1' && composedFull[composedFull.length - 1].structuralPageId === 'back-1',
+)
+check('composeBookPages: structural pages carry no blocks', composedFull[0].blocks.length === 0)
+
+// --- editorActions.ts history wrappers for structural pages ---
+const eaPagesProjectId = 'ea-structural-pages-project'
+const newPageId = insertPageWithHistory(eaPagesProjectId, 'front-matter', 'title-page', null)
+check('insertPageWithHistory: creates the page', useStructuralPageStore.getState().getPages(eaPagesProjectId).some((p) => p.id === newPageId))
+useHistoryStoreForPages.getState().undo(eaPagesProjectId)
+check('insertPageWithHistory -> undo: removes the just-created page', !useStructuralPageStore.getState().getPages(eaPagesProjectId).some((p) => p.id === newPageId))
+useHistoryStoreForPages.getState().redo(eaPagesProjectId)
+check(
+  'insertPageWithHistory -> undo -> redo: re-creates the exact same page id (not a new one)',
+  useStructuralPageStore.getState().getPages(eaPagesProjectId).some((p) => p.id === newPageId),
+)
+
+const eaDupId = duplicatePageWithHistory(eaPagesProjectId, newPageId)
+check('duplicatePageWithHistory: creates a clone', !!eaDupId && useStructuralPageStore.getState().getPages(eaPagesProjectId).some((p) => p.id === eaDupId))
+useHistoryStoreForPages.getState().undo(eaPagesProjectId)
+check('duplicatePageWithHistory -> undo: removes the clone', !useStructuralPageStore.getState().getPages(eaPagesProjectId).some((p) => p.id === eaDupId))
+
+const eaCountBeforeDelete = useStructuralPageStore.getState().getPages(eaPagesProjectId).length
+deletePageWithHistory(eaPagesProjectId, newPageId)
+check('deletePageWithHistory: removes the page', useStructuralPageStore.getState().getPages(eaPagesProjectId).length === eaCountBeforeDelete - 1)
+useHistoryStoreForPages.getState().undo(eaPagesProjectId)
+check(
+  'deletePageWithHistory -> undo: restores the page at its original position/id',
+  useStructuralPageStore.getState().getPages(eaPagesProjectId).some((p) => p.id === newPageId),
+)
+
+// Seed an initial, explicit title first (via the plain, non-history action)
+// so the "old snapshot" undo restores has a real value to come back to —
+// a freshly-created page's `content.title` key is simply absent, and
+// merging an old snapshot that never had the key back in can't "unset" a
+// key the same way `editBlock`'s always-fully-populated `ContentBlock`
+// fields can, so this exercises the realistic edit-an-existing-value case.
+useStructuralPageStore.getState().updatePageContent(eaPagesProjectId, newPageId, { title: 'Original Title' })
+updatePageContentWithHistory(eaPagesProjectId, newPageId, { title: 'Edited Title' })
+check(
+  'updatePageContentWithHistory: applies the edit',
+  (useStructuralPageStore.getState().getPages(eaPagesProjectId).find((p) => p.id === newPageId)?.content as { title?: string })?.title === 'Edited Title',
+)
+useHistoryStoreForPages.getState().undo(eaPagesProjectId)
+check(
+  'updatePageContentWithHistory -> undo: restores the prior content exactly',
+  (useStructuralPageStore.getState().getPages(eaPagesProjectId).find((p) => p.id === newPageId)?.content as { title?: string })?.title === 'Original Title',
+)
+
+const eaMoveProjectId = 'ea-structural-pages-move-project'
+const moveIdA = insertPageWithHistory(eaMoveProjectId, 'front-matter', 'blank', null)
+const moveIdB = insertPageWithHistory(eaMoveProjectId, 'front-matter', 'blank', moveIdA)
+movePageWithHistory(eaMoveProjectId, moveIdB, 'up')
+check(
+  'movePageWithHistory: reorders (moveIdB now first)',
+  useStructuralPageStore.getState().getPages(eaMoveProjectId)[0].id === moveIdB,
+)
+useHistoryStoreForPages.getState().undo(eaMoveProjectId)
+check(
+  'movePageWithHistory -> undo: restores the original order',
+  useStructuralPageStore.getState().getPages(eaMoveProjectId)[0].id === moveIdA,
+)
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

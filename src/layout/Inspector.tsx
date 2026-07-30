@@ -1,10 +1,12 @@
 import { Palette } from 'lucide-react'
 
 import { useUiStore, type InspectorTab } from '@/store/uiStore'
+import { useSelectionStore } from '@/store/selectionStore'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/common/EmptyState'
 import { TypographyPanel } from '@/layout/inspector/TypographyPanel'
 import { ImagePanel } from '@/layout/inspector/ImagePanel'
+import { StructuralPagePanel } from '@/layout/inspector/StructuralPagePanel'
 import type { Project } from '@/types'
 
 interface InspectorProps {
@@ -32,6 +34,7 @@ export function Inspector({ project }: InspectorProps) {
   const collapsed = useUiStore((s) => s.inspectorCollapsed)
   const activeTab = useUiStore((s) => s.inspectorTab)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
+  const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
 
   if (collapsed) return null
 
@@ -50,12 +53,16 @@ export function Inspector({ project }: InspectorProps) {
           </TabsList>
 
           <TabsContent value="page" className="px-1">
-            <div className="flex flex-col divide-y divide-border">
-              <SettingRow label="Trim size" value={settings.trimSize.replace('x', ' × ')} />
-              <SettingRow label="Margins (in)" value={`${settings.margins.inner}mm inner`} />
-              <SettingRow label="Bleed" value={`${settings.bleed}mm`} />
-              <SettingRow label="Language" value={settings.language.toUpperCase()} />
-            </div>
+            {selectedStructuralPageId ? (
+              <StructuralPagePanel projectId={project.id} />
+            ) : (
+              <div className="flex flex-col divide-y divide-border">
+                <SettingRow label="Trim size" value={settings.trimSize.replace('x', ' × ')} />
+                <SettingRow label="Margins (in)" value={`${settings.margins.inner}mm inner`} />
+                <SettingRow label="Bleed" value={`${settings.bleed}mm`} />
+                <SettingRow label="Language" value={settings.language.toUpperCase()} />
+              </div>
+            )}
           </TabsContent>
 
           <TabsContent value="typography">
