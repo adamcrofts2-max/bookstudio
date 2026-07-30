@@ -12,4 +12,9 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
+  build: {
+    // Temporary while stabilising post-deploy issues — makes production
+    // stack traces readable. Turn off once the app is settled.
+    sourcemap: true,
+  },
 })
