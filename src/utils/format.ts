@@ -24,3 +24,15 @@ export function formatRelativeTime(isoDate: string): string {
 export function formatDate(isoDate: string): string {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(isoDate))
 }
+
+/** Strips HTML tags from a sanitised inline fragment, returning plain text. */
+export function stripHtml(html: string): string {
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  return doc.body.textContent ?? ''
+}
+
+/** Counts words in plain text, collapsing runs of whitespace. */
+export function wordCount(text: string): number {
+  const trimmed = text.trim()
+  return trimmed ? trimmed.split(/\s+/).length : 0
+}

@@ -1,8 +1,10 @@
-import { Image as ImageIcon, MousePointerClick, Palette, Type } from 'lucide-react'
+import { Palette } from 'lucide-react'
 
 import { useUiStore, type InspectorTab } from '@/store/uiStore'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { EmptyState } from '@/components/common/EmptyState'
+import { TypographyPanel } from '@/layout/inspector/TypographyPanel'
+import { ImagePanel } from '@/layout/inspector/ImagePanel'
 import type { Project } from '@/types'
 
 interface InspectorProps {
@@ -57,19 +59,11 @@ export function Inspector({ project }: InspectorProps) {
           </TabsContent>
 
           <TabsContent value="typography">
-            <EmptyState
-              icon={Type}
-              title="No text selected"
-              description="Select a paragraph or heading to edit its typography."
-            />
+            <TypographyPanel projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="image">
-            <EmptyState
-              icon={ImageIcon}
-              title="No image selected"
-              description="Select an image on the page to crop, scale or caption it."
-            />
+            <ImagePanel projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="theme">
@@ -80,15 +74,6 @@ export function Inspector({ project }: InspectorProps) {
             />
           </TabsContent>
         </Tabs>
-      </div>
-
-      <div className="mt-auto border-t border-border p-4">
-        <EmptyState
-          icon={MousePointerClick}
-          title="Nothing selected"
-          description="Click any element in the preview to inspect it here."
-          className="py-4"
-        />
       </div>
     </aside>
   )
