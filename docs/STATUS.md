@@ -112,6 +112,35 @@ test (pagination → font embedding → valid PDF bytes). All passing. `npm run 
   overlapping/synthetic advisory data rather than a real actionable CVE for this
   client-only SPA (no RSC/SSR in use). Worth a real second look before shipping.
 
+## Deployment
+
+Live at https://bookstudio-rose.vercel.app/ — Vercel project `bookstudio`, auto-deploys
+from GitHub (`adamcrofts2-max/bookstudio`, `main`) on every push. `vercel.json` carries
+the SPA rewrite (`/(.*) → /index.html`) required for React Router's client-side routes
+to survive a hard reload/direct navigation.
+
+### Post-deploy incident: blank page opening any project (fixed)
+Opening any project crashed immediately with React error #185 ("Maximum update depth
+exceeded"). Root cause: `Sidebar.tsx` selected assets from Zustand with
+`s.byProject[project.id] ?? []`. Zustand v5 selectors run through React's
+`useSyncExternalStore`, which decides whether to re-render by comparing the selector's
+return value across calls — a fresh `[]` literal is a new reference every time, so the
+comparison never settles and React re-renders forever. Fix: `assetStore.ts` now exports
+a shared `EMPTY_ASSETS` constant, and the selector returns that instead of a new array.
+**Any Zustand selector using `?? []` or `?? {}` (or otherwise constructing a literal in
+the selector body) has the same bug — grep for `\?\? \[\]|\?\? \{\}` before adding new
+selectors.**
+
+A second, unrelated bug was found and fixed in the same pass: hard-navigating to a
+nested route (e.g. `/project/:id`) 404'd on Vercel. `vercel.json` had only ever been
+created in a scratch directory during earlier debugging and was never actually
+committed to this repo, so the deployed app never had the SPA rewrite. It's committed
+now.
+
+Both fixes verified live (not just build-clean) via a real browser: opening the "test"
+project renders the editor shell with no console errors, and a hard reload on
+`/project/:id` loads the app directly instead of Vercel's 404 page.
+
 ## Recommended next task
 Everything in the Development Plan's "Definition of Version 1 Complete" now works
 end-to-end. From here, good next steps in priority order: (1) line-level text flow so
