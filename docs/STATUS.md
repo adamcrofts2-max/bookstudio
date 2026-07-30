@@ -839,6 +839,36 @@ seventh hand-synchronized switch case in three places.
   layer, front/back-matter page types, the theme `pageStyles` extension point, and
   page templates are all still queued, unstarted. This phase is Milestone 1 only.
 
+## Phase 18 — Fixed: Virtual Editor's "Edit" silently failing to scroll (2026-07-30)
+
+Found by live-browser testing the Phase 17 refactor (not by unit tests — this bug
+predates Phase 17 and was already flagged as unverified when Phase 13 shipped it).
+Clicking "Edit" on a finding correctly selected the block and updated the Inspector
+every time, but the manuscript view never scrolled to it — reproduced twice, cleanly,
+with no console errors, ruling out browser-automation flakiness.
+
+Root cause, in `src/renderer/BookRenderer.tsx`'s scroll-consuming effect: it searched
+`spreads` for the target and permanently gave up (`consumeScrollRequest()`) the moment
+it wasn't found — with no allowance for "pagination hasn't finished yet." Sidebar's
+chapter nav and `ThumbnailRail`'s page clicks never hit this, because by the time a
+user can click them the manuscript view is already mounted with `HeightMeasurer`
+already having reported real heights. But the Virtual Editor's "Edit"/"Locate" switch
+*into* the manuscript view and request a scroll in the very same click — so
+`BookRenderer` is mounting fresh, `heights` is still `null`, `pages`/`spreads` are
+still `[]`, and the very first run of the effect found nothing and threw the request
+away before pagination ever completed.
+
+- Fix: the effect now returns early (without consuming the request) while
+  `heights === null`, and re-runs automatically once `HeightMeasurer` reports real
+  heights (`heights` is a dependency), since `spreads` only becomes accurate at that
+  point. One line of new logic, no change to `spreadMatchesScrollTarget` itself (still
+  covered by its existing unit tests).
+- Verified live in the browser against the real deployed manuscript: Edit now scrolls
+  to the exact block reliably. Not independently unit-testable — this project's smoke
+  tests deliberately don't mount `BookRenderer` (no real `IntersectionObserver`/layout
+  in jsdom), so this fix's regression net is the live-browser check, same limitation
+  noted (and now resolved) from Phase 13.
+
 ## Recommended next task
 `docs/MODULAR_PAGE_SYSTEM_PLAN.md`'s Milestone 2 is next in the modular-page-system
 track: a new, additive `StructuralPage` concept (separate from `Chapter`/

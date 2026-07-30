@@ -97,6 +97,19 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
 
   useEffect(() => {
     if (!scrollRequest) return
+    // Pagination hasn't run yet — this happens whenever a scroll request
+    // arrives in the same tick as `BookRenderer` itself first mounting (e.g.
+    // the Virtual Editor's "Edit"/"Locate" switching from the Editorial
+    // Dashboard into this view and requesting a scroll in one click): `pages`
+    // is still `[]` because `HeightMeasurer` hasn't reported real heights
+    // yet, so every spread search would find nothing and give up for good
+    // before pagination ever finishes. Wait for the next run instead of
+    // consuming the request — `heights`/`spreads` are both dependencies
+    // below, so this effect re-runs automatically once measurement
+    // completes. (This is exactly why Sidebar's chapter nav and
+    // ThumbnailRail's page clicks never hit this: the manuscript view is
+    // already mounted with heights already computed by the time those fire.)
+    if (heights === null) return
     const { target } = scrollRequest
     const spreadIndex = spreads.findIndex((spread) => spreadMatchesScrollTarget(spread, target))
     if (spreadIndex === -1) {
@@ -125,7 +138,7 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
     }
-  }, [scrollRequest, spreads, consumeScrollRequest])
+  }, [scrollRequest, spreads, heights, consumeScrollRequest])
 
   return (
     <div className="flex min-h-0 flex-1">
