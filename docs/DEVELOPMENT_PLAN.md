@@ -3,38 +3,38 @@
 The application is built in stable milestones. Every milestone ends with a fully
 working application. The project is never left in a broken state.
 
-## Phase 1 — Foundation ✅ (this milestone)
+## Phase 1 — Foundation ✅
 React, TypeScript, Vite, Tailwind, shadcn/ui, routing, project structure, local
 storage, settings, dark mode.
 **Deliverable:** Professional application shell. See `STATUS.md` for what shipped.
 
-## Phase 2 — Editor
+## Phase 2 — Editor ✅
 Import manuscript, import images, chapter navigation, asset manager, inspector panel.
 **Deliverable:** Users can build projects.
 
-## Phase 3 — Layout Engine
+## Phase 3 — Layout Engine ✅
 Automatic pagination, text flow, headers, footers, TOC, chapter openers, whitespace
 balancing.
 **Deliverable:** Automatically generated books.
 
-## Phase 4 — Themes
+## Phase 4 — Themes ✅
 Premium Nature, Classic Novel, Coffee Table, Educational, Children's, Minimal.
 **Deliverable:** One-click theme switching.
 
-## Phase 5 — Typography
+## Phase 5 — Typography ✅
 Ligatures, hyphenation, paragraph styles, character styles, baseline grid,
 widow/orphan control.
 **Deliverable:** Publication-quality text.
 
-## Phase 6 — Preview
+## Phase 6 — Preview ✅
 Two-page spreads, page thumbnails, zoom, search, smooth rendering.
 **Deliverable:** Professional reading experience.
 
-## Phase 7 — PDF Export
+## Phase 7 — PDF Export ✅
 Bleed, crop marks, embedded fonts, print-ready PDF.
 **Deliverable:** Books ready for commercial printing.
 
-## Phase 8 — Optimisation
+## Phase 8 — Optimisation ✅
 Speed, memory usage, accessibility, keyboard shortcuts, responsiveness.
 **Deliverable:** Commercial-quality Version 1.
 

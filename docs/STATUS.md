@@ -1,59 +1,121 @@
 # Status
 
-## Phase 1 — Foundation: complete
+## Version 1 — all eight phases complete
 
-### What was built
-- Vite + React 19 + TypeScript app, strict compiler settings, `@/*` path alias.
-- Tailwind CSS v4 (CSS-first config) with the full Book Studio design token set: colour
-  palette (light + dark), type scale, 8pt spacing (Tailwind's default scale already
-  matches), radius tokens per component type, subtle shadow tokens, motion easing.
-  Source of truth: `src/index.css`.
-- shadcn/ui-style component primitives (hand-built on Radix + CVA, no CLI dependency):
-  Button, Input, Label, Separator, Switch, Tooltip, Dialog, Dropdown Menu, Tabs, Scroll
-  Area, Select, Progress — `src/components/ui/`.
-- Application shell: `AppShell` composing `Sidebar` · `Toolbar` · `Workspace` ·
-  `Inspector` in the fixed three-column layout the design system specifies
-  (`src/layout/`).
-- Dark mode: `useTheme` hook resolves `light | dark | system`, persists via
-  `uiStore`, reflected as a `.dark` class on `<html>`; toggle lives in the Toolbar and
-  on the Projects home screen.
-- Project Settings dialog: name, trim size, margins (top/bottom/inner/outer), bleed,
-  theme selection — writes to `projectStore` only, never touches manuscript content.
-- Local persistence: `projectStore` (project list, active project, settings) and
-  `uiStore` (appearance, panel collapse, inspector tab) persisted to `localStorage` via
-  Zustand's `persist` middleware.
-- Routing: `/` → Projects home (library grid, empty state, create/delete), `/project/
-  :id` → editor shell.
-- Folder structure mirrors the five architecture layers, with placeholder READMEs in
-  `editor/`, `parser/`, `theme/`, `renderer/`, `pdf/` documenting what each will hold
-  and in which phase.
-- `docs/` now holds Markdown versions of all five source documents (the original
-  `.docx` files remain untouched at the project root).
+Book Studio now covers the full Development Plan loop: create a project, import a
+manuscript, import illustrations, choose a theme, get an automatically generated
+professional layout, make adjustments, and export a print-ready PDF.
 
-### Verified
-- `npx tsc -b` — clean, no errors.
-- `npm run build` — succeeds (Vite production bundle).
-- `npx oxlint src` — 0 errors, 1 acceptable warning (shadcn's standard
-  `button.tsx` dual-export pattern).
-- `vite preview` served the build and all assets returned 200.
+### Phase 1 — Foundation
+React 19 + TypeScript + Vite, Tailwind v4 design tokens (colour/type/spacing/radius/
+shadow/motion, see `docs/UI_DESIGN_SYSTEM.md`), hand-built shadcn/ui-style primitives
+(Radix + CVA), the three-column app shell, dark mode, Project Settings, and per-layer
+Zustand stores persisted to `localStorage`.
 
-### Known issues
-- A handful of unused Vite scaffold files (`src/App.css`,
-  `src/assets/{react,vite}.svg`, `src/assets/hero.png`) could not be deleted from this
-  session's sandboxed view of the project folder (delete/rename is blocked on this
-  mount). They are inert and unreferenced. Feel free to delete them locally — Explorer
-  on your own machine has no such restriction.
-- `node_modules/` inside this folder may be in a partially-installed state left over
-  from an npm run that hit filesystem errors on this synced folder (classic cloud-sync
-  + `node_modules` friction). It's git-ignored either way — delete the folder locally
-  and run `npm install` fresh before your first `npm run dev`.
-- `react-router-dom` is pinned to the latest `7.18.2`; `npm audit` still reports two
-  high-severity advisories against `react-router` whose "fixed" ranges contradict each
-  other (upgrading and downgrading are both flagged) — looks like overlapping/synthetic
-  advisory data rather than a real, actionable CVE for this SPA (no RSC/SSR is used
-  here). Worth a real second look before shipping, not urgent for the foundation.
+### Phase 2 — Editor
+- `src/parser/`: Markdown, TXT, HTML and DOCX (via `mammoth`, dynamically imported)
+  importers, all producing the same `Chapter[]` shape. DOCX images are extracted
+  straight into the asset library instead of staying inline as base64.
+- `contentStore` (manuscript per project) and `assetStore` (image library, backed by
+  IndexedDB via `src/store/assetDb.ts` — not `localStorage`, which caps out around
+  5–10MB and can't hold "thousands of illustrations").
+- Sidebar shows real chapter navigation and an asset grid with upload/delete.
 
-### Recommended next task
-Phase 2 — Editor: manuscript importer (DOCX/Markdown/TXT/HTML → `src/types/content.ts`
-shapes, in `src/parser/`), image library / asset manager, chapter navigation in the
-Sidebar, and wiring the Inspector's Typography/Image tabs to real selections.
+### Phase 3 — Layout Engine
+- `src/renderer/pageGeometry.ts` turns trim size + margins + bleed into real pixel
+  page geometry.
+- `src/renderer/HeightMeasurer.tsx` renders every block off-screen at the true page
+  width/theme typography to get its real rendered height; `src/renderer/paginate.ts`
+  greedily flows blocks into pages from those measurements: chapters always start on
+  a recto (right-hand) page, headings never get stranded alone at a page bottom, and
+  a table of contents is generated from the real resulting page numbers.
+- Pagination is block-level (a paragraph never splits mid-way across a page — see
+  "Known simplifications" below).
+
+### Phase 4 — Themes
+Five resolved presets in `src/theme/presets.ts` (Classic Novel, Premium Nature, Coffee
+Table, Educational, Children's), each controlling page background/ink/accent colours,
+heading/body fonts, justification, drop caps, and chapter-opener style. Switching
+themes in Project Settings re-renders instantly — no re-import, per the non-negotiable
+in `CLAUDE.md`.
+
+### Phase 5 — Typography
+Hyphenation (`hyphens: auto` + `lang` attribute), ligatures, drop caps
+(`.book-drop-cap::first-letter`), justified vs. ragged-right per theme, language-aware
+line breaking.
+
+### Phase 6 — Preview
+Two-page spread / single-page toggle, zoom, and a page-thumbnail rail
+(`src/renderer/ThumbnailRail.tsx`) with click-to-navigate, all in `Workspace`'s view
+controls bar.
+
+### Phase 7 — PDF Export
+- Self-hosted Inter + Source Serif 4 (`public/fonts/*.woff2`, extracted from
+  `@fontsource` — no external font CDN at runtime).
+- `src/pdf/exportPdf.ts` renders the *exact* pagination currently on screen (published
+  by `BookRenderer` into the ephemeral `exportStore`, guaranteeing WYSIWYG) to a real
+  PDF via `pdf-lib` + `@pdf-lib/fontkit`: bleed, crop marks, embedded fonts, manual
+  text-flow with bold inline runs, and images rasterised to PNG via canvas so any
+  source format embeds cleanly.
+- The Export PDF button saves via the File System Access API where available, falling
+  back to a plain download.
+- `pdf-lib`/`@pdf-lib/fontkit` and `mammoth` are dynamically imported so they only
+  load when actually used — the initial JS bundle is ~484KB (was 2.1MB before
+  splitting).
+
+### Phase 8 — Optimisation
+- `src/renderer/LazySpread.tsx` defers mounting a spread's real pages until it
+  scrolls near the viewport (IntersectionObserver, 1200px margin), so books with
+  hundreds/thousands of pages stay responsive on initial load and scroll.
+- `useKeyboardShortcuts` (`[` `]` toggle panels, `v` spread/single, `+`/`-`/`0` zoom,
+  `Esc` deselect) with a discoverable shortcuts reference dialog in the Toolbar.
+- Radix primitives (used throughout `src/components/ui`) give focus management,
+  keyboard navigation and ARIA semantics for dialogs/tabs/menus for free.
+
+### Testing
+`npm run test` (`scripts/smoke-test.ts`, jsdom) covers: all four manuscript parsers,
+the paginator's invariants (no lost/duplicated/reordered blocks, chapters start recto,
+TOC matches real page numbers), the inline-HTML-to-styled-runs conversion and greedy
+text wrapper used by the PDF exporter, and a full end-to-end PDF export integration
+test (pagination → font embedding → valid PDF bytes). All passing. `npm run build`
+(typecheck + bundle) and `npm run lint` (oxlint) are clean.
+
+## Known simplifications (documented, not hidden)
+- **Pagination is block-level.** A paragraph always moves to the next page as a whole
+  rather than splitting mid-paragraph. This avoids widows/orphans by construction but
+  isn't how real DTP software flows text; line-level flow would be the natural next
+  step if tighter page-fill is wanted.
+- **PDF export is left-aligned even for "justified" themes.** True justification (even
+  word spacing) is implemented on screen via CSS but not yet in the PDF text-wrapper.
+- **PDF export doesn't apply per-image rotation** (screen preview does). Table cells
+  don't wrap long text in the PDF (screen preview does, via CSS).
+- **Italic emphasis (`<em>`) and hyperlink styling aren't distinguished in the
+  exported PDF** — only bold is. On screen both render correctly.
+- **Font embedding is unsubsetted** (full font files embedded, ~170KB overhead per
+  export) after `scripts/smoke-test.ts`'s integration test caught a real
+  `@pdf-lib/fontkit` subsetting crash (`RangeError` in `TTFSubset._addGlyph`) on these
+  particular font files. Worth revisiting once that's understood upstream.
+- **`LazySpread` is "lazy mount," not full virtualisation** — once a spread has been
+  visible, it stays mounted rather than unmounting again when scrolled away. This
+  keeps scrolling smooth but means a full read-through of an extremely long book will
+  eventually have every page mounted. A true windowed list would unmount off-screen
+  content too, at the cost of more complex scroll-position bookkeeping.
+- **Tables/images/very large blocks can slightly overflow their page** if a single
+  block is taller than a full page's content box — the paginator doesn't split
+  individual blocks.
+- A handful of unused Vite scaffold files and a stray partially-installed
+  `node_modules/` may still be sitting in this folder from the very first session (this
+  sandbox can't delete files here — see git history). Harmless; delete locally if you
+  want a clean tree, then `npm install` again.
+- `npm audit` reports two `react-router` advisories whose "fixed" version ranges
+  contradict each other (upgrading *and* downgrading both get flagged) — looks like
+  overlapping/synthetic advisory data rather than a real actionable CVE for this
+  client-only SPA (no RSC/SSR in use). Worth a real second look before shipping.
+
+## Recommended next task
+Everything in the Development Plan's "Definition of Version 1 Complete" now works
+end-to-end. From here, good next steps in priority order: (1) line-level text flow so
+paragraphs can split across pages like a real book, (2) justified text and image
+rotation in the PDF exporter, (3) proper glyph subsetting once the fontkit bug is
+understood, (4) an AI layout/critique pass per the PRD's "Future" AI features, (5) EPUB/
+Kindle export.

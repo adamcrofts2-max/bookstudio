@@ -8,7 +8,7 @@ import { computePageBox } from '@/renderer/pageGeometry'
 import { resolveTheme } from '@/theme/presets'
 import { paginate, type LaidOutPage } from '@/renderer/paginate'
 import { HeightMeasurer } from '@/renderer/HeightMeasurer'
-import { Page } from '@/renderer/Page'
+import { LazySpread } from '@/renderer/LazySpread'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
 import { useExportStore } from '@/store/exportStore'
 
@@ -82,11 +82,16 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
         ) : (
           <div style={{ zoom }} className="flex flex-col items-center gap-10">
             {spreads.map((spread, i) => (
-              <div key={i} className="flex gap-px">
-                {spread.map((page) => (
-                  <Page key={page.id} page={page} pageBox={pageBox} theme={theme} dropCapBlockIds={dropCapBlockIds} toc={toc} bookTitle={project.name} language={project.settings.language} />
-                ))}
-              </div>
+              <LazySpread
+                key={i}
+                spread={spread}
+                pageBox={pageBox}
+                theme={theme}
+                dropCapBlockIds={dropCapBlockIds}
+                toc={toc}
+                bookTitle={project.name}
+                language={project.settings.language}
+              />
             ))}
           </div>
         )}

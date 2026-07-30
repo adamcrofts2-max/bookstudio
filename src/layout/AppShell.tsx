@@ -2,6 +2,7 @@ import { Sidebar } from '@/layout/Sidebar'
 import { Toolbar } from '@/layout/Toolbar'
 import { Workspace } from '@/layout/Workspace'
 import { Inspector } from '@/layout/Inspector'
+import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import type { Project } from '@/types'
 
 interface AppShellProps {
@@ -14,6 +15,8 @@ interface AppShellProps {
  * contents change as features (editor, layout engine, themes) land.
  */
 export function AppShell({ project }: AppShellProps) {
+  useKeyboardShortcuts()
+
   return (
     <div className="flex h-dvh w-full bg-background">
       <Sidebar project={project} />

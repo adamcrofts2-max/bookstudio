@@ -24,5 +24,7 @@ React 19 · TypeScript · Vite · Tailwind CSS v4 · shadcn/ui-style components 
 CVA) · Zustand · React Router.
 
 ## Status
-Phase 1 (Foundation) is complete — see [`docs/STATUS.md`](./docs/STATUS.md) for
-details and the recommended next task.
+All 8 phases of the Development Plan are complete — Book Studio can take a manuscript
+from import through to a print-ready PDF end to end. See
+[`docs/STATUS.md`](./docs/STATUS.md) for what shipped in each phase and its
+documented simplifications.

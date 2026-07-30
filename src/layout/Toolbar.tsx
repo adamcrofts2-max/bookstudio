@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronsRight, Download, Loader2, Moon, PanelLeft, Redo2, Sun, Undo2 } from 'lucide-react'
+import { ChevronsRight, Download, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sun, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -13,6 +13,7 @@ import { useUiStore } from '@/store/uiStore'
 import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { useExportPdf } from '@/pdf/useExportPdf'
+import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import type { Project } from '@/types'
 
 interface ToolbarProps {
@@ -45,6 +46,7 @@ function IconButton({
 /** Fixed top toolbar: project identity, editing controls, appearance, export. */
 export function Toolbar({ project }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const { resolved, setAppearance } = useTheme()
   const collapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -115,9 +117,14 @@ export function Toolbar({ project }: ToolbarProps) {
         >
           <ChevronsRight className={inspectorCollapsed ? 'size-4' : 'size-4 rotate-180'} />
         </IconButton>
+
+        <IconButton label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
+          <Keyboard className="size-4" />
+        </IconButton>
       </div>
 
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </header>
   )
 }
