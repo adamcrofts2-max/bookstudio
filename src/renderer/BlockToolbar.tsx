@@ -24,19 +24,29 @@ const iconButtonClass =
  * gets this — previously only image blocks had any delete action at all
  * (`ImagePanel.tsx`'s "Delete image" button), see docs/ROADMAP.md Phase B.
  *
- * Always mounted but invisible (`opacity-0`) until the parent `.group`
+ * Always mounted but invisible (`opacity-0`) until the parent `.group/block`
  * wrapper is hovered/focused or `selected` is true — a pure CSS reveal, not
  * a conditional mount, so hovering feels instant. `Page.tsx` is the only
- * real rendering path that gives its block wrapper the `group` class;
+ * real rendering path that gives its block wrapper the `group/block` class;
  * `HeightMeasurer.tsx`'s off-screen pass never does, so this never affects
  * measured block height there.
+ *
+ * Uses a *named* Tailwind group (`group/block` / `group-hover/block:`) —
+ * not the plain unnamed `group`/`group-hover:` — because `Page.tsx`'s outer
+ * page container also carries a group class (for `PageToolbar`'s reveal).
+ * Tailwind's unnamed `group-hover:` matches ANY hovered ancestor with class
+ * `group`, not just the nearest one, so with two unnamed groups nested
+ * (page container + this block wrapper) hovering anywhere on the page used
+ * to reveal *every* block's toolbar at once instead of just the hovered
+ * block's (caught by manually testing the deployed app, 2026-07-31 — see
+ * docs/STATUS.md). Named groups scope the match to that specific name only.
  */
 export function BlockToolbar({ onDuplicate, onMoveUp, onMoveDown, onDelete, canMoveUp, canMoveDown, selected }: BlockToolbarProps) {
   return (
     <div
       className={cn(
         'absolute -top-3 right-2 z-10 flex items-center gap-0.5 rounded-[var(--radius-button)] border border-border bg-background-secondary p-0.5 shadow-[var(--shadow-md)]',
-        'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100',
+        'opacity-0 transition-opacity duration-150 group-hover/block:opacity-100 group-focus-within/block:opacity-100',
         selected && 'opacity-100',
       )}
       onClick={(e) => e.stopPropagation()}

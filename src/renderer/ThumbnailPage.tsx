@@ -67,14 +67,27 @@ export function ThumbnailPage({ projectId, page, pageBox, theme, dropCapBlockIds
     <div
       ref={ref}
       className={cn(
-        'flex items-center justify-center overflow-hidden rounded-[2px] border transition-colors duration-150 group-hover:border-[var(--color-accent)]',
+        'relative flex items-center justify-center overflow-hidden rounded-[2px] border transition-colors duration-150 group-hover:border-[var(--color-accent)]',
         page.kind === 'blank' ? 'border-dashed border-border' : 'border-border',
       )}
       style={{ width, height, background: page.kind === 'blank' ? 'transparent' : theme.page.background }}
     >
       {visible ? (
+        // `absolute left-0 top-0` is load-bearing, not cosmetic: this box's
+        // un-scaled layout size is the *real* page size (576x864-ish px),
+        // many times larger than the thumbnail. Left in normal flow, the
+        // parent's `flex items-center justify-center` centers that large
+        // layout box first and only *then* the `scale()` transform paints it
+        // — centering a huge box inside a tiny one pushes the rendered
+        // (scaled) content far outside the visible, clipped thumbnail
+        // entirely, which is why thumbnails initially shipped looking blank
+        // despite genuinely containing the right content underneath
+        // (confirmed via DOM inspection in a real browser, 2026-07-31).
+        // Taking this out of flow with `absolute` anchors its untransformed
+        // top-left corner at the parent's top-left corner instead, so
+        // `transform-origin: top left` scales it down exactly into place.
         <div
-          className="pointer-events-none origin-top-left"
+          className="pointer-events-none absolute left-0 top-0 origin-top-left"
           style={{ width: pageBox.widthPx, height: pageBox.heightPx, transform: `scale(${scale})` }}
         >
           <Page

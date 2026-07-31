@@ -39,13 +39,20 @@ const iconButtonClass =
  * single stored object with an id to delete — `BlockToolbar`'s per-block
  * delete already covers "remove content from this page" for that case. See
  * docs/STATUS.md for the full reasoning.
+ *
+ * Uses a *named* Tailwind group (`group/page` / `group-hover/page:`), paired
+ * with `Page.tsx`'s outer container carrying `group/page` — not the plain
+ * unnamed `group`, which would also match `BlockToolbar`'s per-block
+ * `group/block` wrapper nested inside it and reveal every block's toolbar
+ * whenever the page itself was hovered. See `BlockToolbar.tsx`'s doc comment
+ * for the bug this caused (caught by testing the deployed app, 2026-07-31).
  */
 export function PageToolbar({ onDuplicate, onMoveUp, onMoveDown, onDelete, canMoveUp, canMoveDown, selected }: PageToolbarProps) {
   return (
     <div
       className={cn(
         'absolute -top-3 right-3 z-20 flex items-center gap-0.5 rounded-[var(--radius-button)] border border-border bg-background-secondary p-0.5 shadow-[var(--shadow-md)]',
-        'opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100',
+        'opacity-0 transition-opacity duration-150 group-hover/page:opacity-100 group-focus-within/page:opacity-100',
         selected && 'opacity-100',
       )}
       onClick={(e) => e.stopPropagation()}

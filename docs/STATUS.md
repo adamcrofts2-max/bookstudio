@@ -2569,9 +2569,82 @@ short one-line titles too** — the measured height should exactly match what
 that already went wrong once (Phase 26's original heading-orphan guard, and
 now this).
 
-## Recommended next task
+## Recommended next task (Phase 31's own — superseded below by Phase 32)
 Manually verify Phase 31's fix (long/wrapping chapter titles, in a real
 browser) — pagination-affecting changes have twice now shipped with a subtle
 bug not visible to `tsc`. Otherwise: the cover/back-cover designer (Phase E),
 Phase C's remaining Virtual Editor checkers, Phase D (EPUB/Kindle, PDF
 fixes), and Phase G (accounts/cloud) as the biggest remaining structural gaps.
+
+## Phase 32 — Live-verified two real bugs in the deployed app (2026-07-31)
+
+The user asked directly: "try using it yourself on google chrome to check
+the latest updates." Every prior phase's "verification caveat" had been
+`tsc`-only, with a note asking for manual browser verification that hadn't
+actually happened yet. This phase is that verification — using the Claude in
+Chrome browser tools against the live deployment at
+https://bookstudio-rose.vercel.app/ (real user projects, not a fixture) — and
+it paid off: found two genuine regressions that `tsc` could never catch,
+both introduced earlier this session.
+
+- **Bug 1 — thumbnails rendered real content but were invisible.** Opened a
+  project with a Cover page and inspected the thumbnail rail's DOM directly
+  (`element.innerText`, `getBoundingClientRect()`) rather than trusting the
+  screenshot alone: the scaled `<Page>` copy's `innerText` correctly showed
+  "Untitled" / "Drop a cover image here" / etc. — Phase 30's measurement and
+  mounting logic worked. But its `getBoundingClientRect()` reported
+  `top: -265`, nowhere near the visible thumbnail box. Root cause:
+  `ThumbnailPage.tsx`'s scaled wrapper was a normal-flow child of a
+  `flex items-center justify-center` container. Flexbox centers a child
+  using its *layout* size, which for this wrapper is the full unscaled page
+  (~576×864px) — `transform: scale()` only affects painting, not layout size
+  — so the browser centered a huge box inside a tiny one *before* applying
+  the shrink, pushing the actually-rendered (scaled) pixels far outside the
+  clipped thumbnail. Fixed by making the wrapper `absolute left-0 top-0`
+  (removing it from flex layout entirely), so `transform-origin: top left`
+  scales it down exactly into the visible area. Every thumbnail on the live
+  site was affected, on every project checked.
+- **Bug 2 — hovering anywhere on a page revealed every block's toolbar at
+  once**, not just the hovered block's. Reproduced by hovering a single
+  paragraph in a real chapter and seeing four separate `BlockToolbar`
+  instances light up simultaneously. Root cause: Phase 29 added `group` to
+  `Page.tsx`'s outer page container (for `PageToolbar`'s reveal), and
+  `renderBlock`'s per-block wrapper already had its own separate `group`
+  (for `BlockToolbar`'s reveal, since Phase 26). Tailwind's *unnamed*
+  `group`/`group-hover:` isn't scoped to the nearest ancestor — the
+  generated selector matches when *any* ancestor with class `group` is
+  hovered — so nesting two unnamed groups made hovering the outer one also
+  satisfy the inner one's condition. `InsertBlockButton.tsx` had already
+  solved this correctly for its own case using a *named* group
+  (`group/insert`) — this phase applies the same fix consistently:
+  `Page.tsx`'s page container is now `group/page`, its per-block wrapper is
+  now `group/block`, and `PageToolbar`/`BlockToolbar` were updated to match
+  (`group-hover/page:`/`group-hover/block:`). Named groups only match their
+  own name, so the two reveals are now fully independent again.
+- **Confirmed still working correctly**: `PageToolbar` itself (move/
+  duplicate/delete on a Cover page, visible and positioned correctly),
+  Phase 27's Sidebar opacity fix (icons faintly visible without hover),
+  the `StructuralImageDropZone` hint text, and no console errors on load.
+- **Files touched**: `src/renderer/ThumbnailPage.tsx` (positioning fix),
+  `src/renderer/Page.tsx` (named groups, 2 spots), `src/renderer/BlockToolbar.tsx`
+  and `src/renderer/PageToolbar.tsx` (named group selectors + doc comments
+  explaining why, so this doesn't get silently reintroduced by a future
+  unnamed `group` added anywhere else in `Page.tsx`).
+
+### Verification note — different from every prior phase's caveat
+This phase's fixes were themselves found *by* manual browser verification,
+but the fixes haven't yet been re-verified live (would require the user to
+push this commit and wait for the Vercel auto-deploy, then re-check) — that
+loop wasn't closed within this session. **Re-run the same two checks
+(thumbnail visibility, single-block-only toolbar hover) once this is
+deployed.** Otherwise verified via `npx tsc -b --force` (clean) plus the DOM
+inspection described above.
+
+## Recommended next task
+Push this commit, wait for the Vercel auto-deploy, and re-verify both fixes
+live (thumbnails visible, only the hovered block's toolbar appears).
+Otherwise: real thumbnail previews and page-delete are now both genuinely
+confirmed working end-to-end for the first time this session — next up per
+the roadmap is the cover/back-cover designer (Phase E), Phase C's remaining
+Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and Phase G
+(accounts/cloud).

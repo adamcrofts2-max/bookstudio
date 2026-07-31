@@ -142,9 +142,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   // its spread is force-mounted, rather than only ever landing on the
   // chapter's opening page. This wrapper is Page.tsx-only — HeightMeasurer
   // renders blocks separately for off-screen measurement and must stay
-  // untouched. The `group relative` classes exist solely to host
-  // `BlockToolbar`'s hover reveal (`group-hover:opacity-100`) — see that
-  // file's doc comment.
+  // untouched. The `group/block relative` classes exist solely to host
+  // `BlockToolbar`'s hover reveal (`group-hover/block:opacity-100`) — a
+  // *named* group, not the outer page container's plain `group/page`, so
+  // hovering the page doesn't also reveal every block's toolbar at once —
+  // see `BlockToolbar.tsx`'s doc comment for the bug this fixes.
   const renderBlock = (block: ContentBlock) => {
     const chapterId = page.chapterId
     const indexInChapter = chapter ? chapter.blocks.findIndex((b) => b.id === block.id) : -1
@@ -153,7 +155,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const isSelected = !decorative && selectedBlockId === block.id
 
     return (
-      <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group relative">
+      <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group/block relative">
         <BlockContent
           block={block}
           theme={theme}
@@ -284,7 +286,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     <div
       id={decorative ? undefined : `page-${page.id}`}
       data-chapter-start={!decorative && page.kind === 'chapter-start' ? page.chapterId : undefined}
-      className="group relative shrink-0 shadow-[var(--shadow-md)]"
+      className="group/page relative shrink-0 shadow-[var(--shadow-md)]"
       style={{ width: pageBox.widthPx, height: pageBox.heightPx, background: theme.page.background }}
     >
       {page.kind === 'structural' && structuralPage && structuralDef && (

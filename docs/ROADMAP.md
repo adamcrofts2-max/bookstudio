@@ -70,14 +70,22 @@ daily use of everything built so far.)*
       pattern as `BlockToolbar`), not just in a separate sidebar tab. Sidebar
       controls kept as a second entry point. Regular chapter-content pages
       still have no page-level delete, correctly — they're computed
-      pagination output, not a stored object — see docs/STATUS.md Phase 29
+      pagination output, not a stored object — see docs/STATUS.md Phase 29.
+      **Live-verified in Phase 32** (toolbar appears correctly on a real
+      Cover page); also caught and fixed a related regression there — hovering
+      anywhere on the page revealed every block's own toolbar too, due to
+      Tailwind's unnamed `group` not being scoped to the nearest ancestor.
 - [x] Real thumbnail previews — shipped 2026-07-31 (Phase 30): `ThumbnailPage.tsx`
       renders a genuine, lazily-mounted, CSS-scaled miniature of the real `Page`
       component (not a text-density approximation) — true WYSIWYG, stays in
       sync with every block type/theme/structural page automatically. See
       docs/STATUS.md Phase 30 for the `decorative` prop that keeps this both
       correct (no duplicate DOM ids breaking scroll-to-block) and cheap across
-      long books (lazy-mounted, same IntersectionObserver pattern as `LazySpread`)
+      long books (lazy-mounted, same IntersectionObserver pattern as `LazySpread`).
+      **Live-verified and a real bug fixed in Phase 32**: shipped invisible —
+      flexbox centered the pre-scale page before the CSS transform painted it,
+      pushing the rendered content outside the clipped thumbnail. Fixed with
+      absolute positioning; see docs/STATUS.md Phase 32.
 - [x] Fix awkward heading placement from pagination — shipped 2026-07-31 (Phase 26):
       the orphan guard now reserves the *entire* following block's height, not a
       32px slice, closing the exact bug where a heading was kept on a page whose
