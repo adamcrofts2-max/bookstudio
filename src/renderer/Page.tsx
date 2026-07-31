@@ -77,6 +77,29 @@ interface PageProps {
   toc?: TocEntry[]
   bookTitle: string
   language?: string
+  /**
+   * True when this is a miniature, non-interactive copy of the page — used
+   * by `ThumbnailPage.tsx` to render the exact same components (true
+   * WYSIWYG, per `CLAUDE.md`'s Editor Philosophy) at a tiny CSS-transformed
+   * scale, instead of a fake placeholder box. Two correctness concerns this
+   * flag exists to prevent, not just cosmetic ones:
+   *   1. Duplicate DOM `id`/`data-block-id`/`data-chapter-start` — the real
+   *      page and its thumbnail render the same block/page ids
+   *      simultaneously; `BookRenderer`'s scroll-to-block/-page/-chapter
+   *      logic uses `getElementById`/`querySelector`, which would silently
+   *      grab whichever copy appears first in the DOM (the thumbnail rail
+   *      renders before the main content) and scroll the wrong one.
+   *   2. Stray interactivity in a 68px-wide copy — `editable={false}` keeps
+   *      contentEditable (and its keyboard-focus/tab path, which a
+   *      `pointer-events-none` wrapper alone doesn't block) out of
+   *      thumbnails entirely, and toolbars/drop-zones are skipped outright
+   *      rather than merely hidden, so hundreds of thumbnail pages across a
+   *      long book don't each mount their own drag-and-drop/selection
+   *      subscriptions for no benefit.
+   * `ThumbnailPage.tsx`'s wrapping `pointer-events-none` div is defense in
+   * depth on top of this, not a substitute for it.
+   */
+  decorative?: boolean
 }
 
 const CHAPTER_NUMBER_WORDS = [
@@ -84,7 +107,7 @@ const CHAPTER_NUMBER_WORDS = [
   'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty',
 ]
 
-export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bookTitle, language = 'en' }: PageProps) {
+export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bookTitle, language = 'en', decorative = false }: PageProps) {
   const select = useSelectionStore((s) => s.select)
   const clearSelection = useSelectionStore((s) => s.clear)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
@@ -130,22 +153,22 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const indexInChapter = chapter ? chapter.blocks.findIndex((b) => b.id === block.id) : -1
     const canMoveUp = indexInChapter > 0
     const canMoveDown = !!chapter && indexInChapter >= 0 && indexInChapter < chapter.blocks.length - 1
-    const isSelected = selectedBlockId === block.id
+    const isSelected = !decorative && selectedBlockId === block.id
 
     return (
-      <div key={block.id} data-block-id={block.id} className="group relative">
+      <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group relative">
         <BlockContent
           block={block}
           theme={theme}
           dropCap={dropCapBlockIds.has(block.id)}
           selected={isSelected}
-          onSelect={() => chapterId && handleSelect(chapterId, block)}
-          editable
-          onCommit={(updates) => chapterId && editBlock(projectId, chapterId, block.id, updates)}
+          onSelect={decorative ? undefined : () => chapterId && handleSelect(chapterId, block)}
+          editable={!decorative}
+          onCommit={decorative ? undefined : (updates) => chapterId && editBlock(projectId, chapterId, block.id, updates)}
           autoEdit={isSelected && editRequestId !== null}
           onAutoEditHandled={consumeEditRequest}
         />
-        {chapterId && (
+        {chapterId && !decorative && (
           <BlockToolbar
             selected={isSelected}
             canMoveUp={canMoveUp}
@@ -191,7 +214,9 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
    * content, never TOC/blank pages (this is only ever called from those two
    * page kinds below). */
   const renderBlocksWithDropZones = (blocks: ContentBlock[]) => {
-    if (!page.chapterId) return blocks.map(renderBlock)
+    // Thumbnails skip drop zones/insert buttons outright (not just visually
+    // hidden) — see `decorative`'s doc comment on why.
+    if (!page.chapterId || decorative) return blocks.map(renderBlock)
     const chapterId = page.chapterId
 
     // This page's first block may be a mid-chapter continuation (pagination
@@ -256,12 +281,12 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const structuralIndexInCategory = structuralPage
     ? structuralSiblingsInCategory.findIndex((p) => p.id === structuralPage.id)
     : -1
-  const isStructuralPageSelected = !!structuralPage && selectedStructuralPageId === structuralPage.id
+  const isStructuralPageSelected = !decorative && !!structuralPage && selectedStructuralPageId === structuralPage.id
 
   return (
     <div
-      id={`page-${page.id}`}
-      data-chapter-start={page.kind === 'chapter-start' ? page.chapterId : undefined}
+      id={decorative ? undefined : `page-${page.id}`}
+      data-chapter-start={!decorative && page.kind === 'chapter-start' ? page.chapterId : undefined}
       className="group relative shrink-0 shadow-[var(--shadow-md)]"
       style={{ width: pageBox.widthPx, height: pageBox.heightPx, background: theme.page.background }}
     >
@@ -275,31 +300,37 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               projectId={projectId}
               siblingPages={structuralPages}
               selected={isStructuralPageSelected}
-              onSelect={() => {
-                selectStructuralPage(structuralPage.id)
-                setInspectorTab('page')
-              }}
-              onCommit={(updates) => updatePageContentWithHistory(projectId, structuralPage.id, updates)}
+              onSelect={
+                decorative
+                  ? () => {}
+                  : () => {
+                      selectStructuralPage(structuralPage.id)
+                      setInspectorTab('page')
+                    }
+              }
+              onCommit={decorative ? () => {} : (updates) => updatePageContentWithHistory(projectId, structuralPage.id, updates)}
             />
           </div>
-          <PageToolbar
-            selected={isStructuralPageSelected}
-            canMoveUp={structuralIndexInCategory > 0}
-            canMoveDown={structuralIndexInCategory >= 0 && structuralIndexInCategory < structuralSiblingsInCategory.length - 1}
-            onMoveUp={() => movePageWithHistory(projectId, structuralPage.id, 'up')}
-            onMoveDown={() => movePageWithHistory(projectId, structuralPage.id, 'down')}
-            onDuplicate={() => {
-              const newId = duplicatePageWithHistory(projectId, structuralPage.id)
-              if (newId) {
-                selectStructuralPage(newId)
-                setInspectorTab('page')
-              }
-            }}
-            onDelete={() => {
-              deletePageWithHistory(projectId, structuralPage.id)
-              if (isStructuralPageSelected) clearSelection()
-            }}
-          />
+          {!decorative && (
+            <PageToolbar
+              selected={isStructuralPageSelected}
+              canMoveUp={structuralIndexInCategory > 0}
+              canMoveDown={structuralIndexInCategory >= 0 && structuralIndexInCategory < structuralSiblingsInCategory.length - 1}
+              onMoveUp={() => movePageWithHistory(projectId, structuralPage.id, 'up')}
+              onMoveDown={() => movePageWithHistory(projectId, structuralPage.id, 'down')}
+              onDuplicate={() => {
+                const newId = duplicatePageWithHistory(projectId, structuralPage.id)
+                if (newId) {
+                  selectStructuralPage(newId)
+                  setInspectorTab('page')
+                }
+              }}
+              onDelete={() => {
+                deletePageWithHistory(projectId, structuralPage.id)
+                if (isStructuralPageSelected) clearSelection()
+              }}
+            />
+          )}
         </>
       )}
 

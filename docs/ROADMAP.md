@@ -71,10 +71,13 @@ daily use of everything built so far.)*
       controls kept as a second entry point. Regular chapter-content pages
       still have no page-level delete, correctly — they're computed
       pagination output, not a stored object — see docs/STATUS.md Phase 29
-- [ ] Real thumbnail previews — `ThumbnailRail.tsx` currently renders a blank box
-      per page (only chapter-opener pages show 3 letters of the chapter title);
-      confirmed via user report 2026-07-31. Needs either genuine miniature page
-      rendering or a cheaper text-density approximation
+- [x] Real thumbnail previews — shipped 2026-07-31 (Phase 30): `ThumbnailPage.tsx`
+      renders a genuine, lazily-mounted, CSS-scaled miniature of the real `Page`
+      component (not a text-density approximation) — true WYSIWYG, stays in
+      sync with every block type/theme/structural page automatically. See
+      docs/STATUS.md Phase 30 for the `decorative` prop that keeps this both
+      correct (no duplicate DOM ids breaking scroll-to-block) and cheap across
+      long books (lazy-mounted, same IntersectionObserver pattern as `LazySpread`)
 - [x] Fix awkward heading placement from pagination — shipped 2026-07-31 (Phase 26):
       the orphan guard now reserves the *entire* following block's height, not a
       32px slice, closing the exact bug where a heading was kept on a page whose

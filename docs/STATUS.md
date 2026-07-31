@@ -2446,9 +2446,68 @@ the toolbar doesn't visually collide with anything the structural page's own
 `Render` draws near its top-right corner (Cover/Back Cover's centred text
 shouldn't, but check with a real image set).
 
-## Recommended next task
+## Recommended next task (Phase 29's own — superseded below by Phase 30)
 Real thumbnail previews (`ThumbnailRail.tsx` still renders blank boxes) is
 the last open item in Phase B — natural next pick. After that: the cover/
 back-cover designer (Phase E), Phase C's remaining Virtual Editor checkers,
 Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/cloud) as the
 biggest remaining structural gaps.
+
+## Phase 30 — Real thumbnail previews (2026-07-31)
+
+Closes the last open item in Phase B. `ThumbnailRail.tsx` previously rendered
+a plain bordered box per page — only chapter-opener pages showed the first 3
+letters of the chapter title; every other page (including every structural
+page) was blank. Confirmed via user report earlier this session.
+
+- **Approach: true miniatures, not an approximation.** Rather than a cheap
+  text-density/colour stand-in, thumbnails now render the exact same `Page`
+  component the main spread view uses, CSS-`transform: scale()`d down —
+  genuine WYSIWYG per `CLAUDE.md`'s Editor Philosophy ("the preview should
+  always represent the exported result as accurately as possible"), and
+  automatically stays in sync with every block type, theme, and structural
+  page — no second rendering path to maintain.
+- **`src/renderer/Page.tsx`**: added an optional `decorative` prop. When
+  true: omits `id`/`data-block-id`/`data-chapter-start` (prevents duplicate
+  DOM ids — the real page and its thumbnail render the same ids
+  simultaneously, which would break `BookRenderer`'s `getElementById`/
+  `querySelector`-based scroll-to-block/-page/-chapter, since the thumbnail
+  rail mounts before the main content in the DOM and those lookups return
+  the first match); forces `editable={false}` and skips `BlockToolbar`/
+  `PageToolbar`/drop-zones/insert-buttons entirely rather than just visually
+  hiding them (keeps contentEditable and its keyboard-focus path out of
+  thumbnails, and avoids mounting extra drag-and-drop/selection
+  subscriptions per thumbnail across a long book).
+- **`src/renderer/ThumbnailPage.tsx`** (new): one thumbnail — lazily mounts
+  the real (`decorative`) `<Page>` only once scrolled near the rail's
+  viewport via `IntersectionObserver`, the same pattern `LazySpread.tsx`
+  already uses for the main spread view (`rootMargin: 600px`); falls back to
+  the pre-existing placeholder box (with the chapter-opener 3-letter hint)
+  until then. Wraps the mounted `<Page>` in `pointer-events-none` as defense
+  in depth on top of `decorative`, not a substitute for it.
+- **`src/renderer/ThumbnailRail.tsx`**: now takes `projectId`/
+  `dropCapBlockIds`/`toc`/`bookTitle`/`language` (all already computed in
+  `BookRenderer.tsx`, just not previously threaded down) and renders
+  `ThumbnailPage` per page instead of the inline placeholder box.
+- **Performance**: bounded the same way `LazySpread` already bounds the main
+  view — only thumbnails near the visible scroll region ever mount real
+  content; a 1,000-page book still only pays for ~10–20 real thumbnail
+  renders at a time, per `CLAUDE.md`'s "remain responsive... exceeding 1,000
+  pages" / "virtualise long page lists" requirements.
+
+### Verification caveat — same as Phase 26/27/28/29
+No working `npm run build`/`lint`/`test` or GitHub/registry network access in
+this sandbox. Verified via `npx tsc -b --force` only (clean). **This is the
+riskiest change so far to verify by reading alone — manually confirm in a
+real browser**: thumbnails show real content and match the main view,
+scrolling a long book doesn't lag or double-render, clicking a chapter in
+the Sidebar still scrolls the *main* page (not a thumbnail copy — the
+duplicate-id concern `decorative` was built to prevent), and the Virtual
+Editor's "Locate" action still lands on the real block.
+
+## Recommended next task
+Manually verify the thumbnail rail in a real browser (per the caveat above)
+— this is the change most likely to have a subtle bug that only shows up at
+runtime. Otherwise: the cover/back-cover designer (Phase E), Phase C's
+remaining Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and
+Phase G (accounts/cloud) as the biggest remaining structural gaps.

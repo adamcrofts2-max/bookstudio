@@ -183,7 +183,16 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
       />
 
       {showThumbnails && pages.length > 0 && (
-        <ThumbnailRail pages={pages} pageBox={pageBox} theme={theme} />
+        <ThumbnailRail
+          projectId={project.id}
+          pages={pages}
+          pageBox={pageBox}
+          theme={theme}
+          dropCapBlockIds={dropCapBlockIds}
+          toc={toc}
+          bookTitle={project.name}
+          language={project.settings.language}
+        />
       )}
 
       <div className="flex flex-1 items-start justify-center overflow-auto px-10 py-10">
