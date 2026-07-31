@@ -2343,9 +2343,55 @@ field-for-field). **Manually exercise the image drag-and-drop and the new
 Back Cover type in a real browser, and run the full build/lint/test suite,
 before trusting this beyond a quick look.**
 
-## Recommended next task
+## Recommended next task (Phase 27's own — superseded below by Phase 28)
 Real thumbnail previews and the cover/back-cover designer are the two
 explicitly-deferred items above. Otherwise the same priority order as Phase
 26 still holds: verify + push this phase's changes, then Phase C (Virtual
 Editor categories), Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/
 cloud) as the biggest remaining structural gaps.
+
+## Phase 28 — Fix paragraphs clipped mid-page (font-swap pagination race) (2026-07-31)
+
+Triggered by real usage feedback: "some paragraphs are getting cut off at the
+bottom of pages half way through." Not a pagination math bug (Phase 26 already
+fixed the heading-orphan lookahead) — traced to a font-loading race between
+`HeightMeasurer.tsx` and `src/index.css`'s self-hosted `@font-face` rules.
+
+- **Root cause**: every self-hosted font (Inter, Source Serif 4) uses
+  `font-display: swap`. The browser paints an initial frame in a fallback
+  font while the real `.woff2` downloads, then swaps once it's ready.
+  `HeightMeasurer.tsx` measured each block's rendered height exactly once,
+  in a `useLayoutEffect` that fires before that swap has necessarily
+  happened — so `paginate.ts` was fed heights based on fallback-font line
+  spacing and character widths. Once the real font swapped in, text grew
+  taller than measured, and `Page.tsx`'s content container (`overflow:
+  hidden`, both the theme background layer and the block-content layer) has
+  no fallback but to clip whatever no longer fits — visually indistinguishable
+  from a paragraph being sliced off mid-way down the page.
+- **Fix** (`src/renderer/HeightMeasurer.tsx`): measure immediately as before
+  (so layout isn't blocked waiting on network fonts), then call
+  `document.fonts.ready.then(measure)` and re-report heights once real fonts
+  are confirmed loaded. This triggers a second, corrected pagination pass.
+  A no-op when fonts are already loaded/cached (both measurements agree, so
+  `heights` state doesn't meaningfully change) — no added latency in the
+  common case, no infinite loop (the promise resolves once per mount).
+- **Not fixed by this change**: mid-session font loading hiccups after the
+  book has already been paginated and scrolled (e.g. a very slow connection
+  where `document.fonts.ready` itself races the user scrolling) are still
+  theoretically possible but far rarer than the reliable every-load bug this
+  closes — not chasing further without a repro.
+
+### Verification caveat — same as Phase 26/27
+No working `npm run build`/`lint`/`test` or GitHub/registry network access in
+this sandbox. Verified via `npx tsc -b --force` only (clean). **This is a
+timing-sensitive rendering bug — manually reload the app on a cold cache
+(hard refresh, or throttle network in DevTools) and confirm no paragraph gets
+clipped, before trusting this beyond a quick look.**
+
+## Recommended next task
+Manually verify the font-swap fix in a real browser (cold cache reload,
+throttled network) since this class of bug is inherently hard to catch via
+`tsc` alone. Otherwise unchanged: real thumbnail previews and the cover/
+back-cover designer (Phase 27's deferred items), then Phase C (Virtual Editor
+categories), Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/cloud)
+as the biggest remaining structural gaps.

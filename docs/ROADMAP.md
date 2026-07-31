@@ -75,6 +75,13 @@ daily use of everything built so far.)*
       the orphan guard now reserves the *entire* following block's height, not a
       32px slice, closing the exact bug where a heading was kept on a page whose
       next block still got flushed away from it anyway
+- [x] Fix paragraphs getting clipped mid-page — shipped 2026-07-31 (Phase 28):
+      root cause was a font-loading race, not pagination math — `HeightMeasurer`
+      measured once before self-hosted fonts' `font-display: swap` finished, so
+      pagination used fallback-font metrics and the real (taller) font then
+      overflowed the page's clipped container. Fixed by re-measuring once
+      `document.fonts.ready` resolves. See docs/STATUS.md Phase 28 — flagged as
+      needing manual cold-cache verification since it's timing-sensitive.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 

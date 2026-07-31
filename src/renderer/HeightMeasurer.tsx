@@ -25,11 +25,35 @@ export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockId
   const refs = useRef(new Map<string, HTMLDivElement>())
 
   useLayoutEffect(() => {
-    const heights: Record<string, number> = {}
-    refs.current.forEach((el, id) => {
-      heights[id] = el.getBoundingClientRect().height
-    })
-    onMeasured(heights)
+    let cancelled = false
+    const measure = () => {
+      if (cancelled) return
+      const heights: Record<string, number> = {}
+      refs.current.forEach((el, id) => {
+        heights[id] = el.getBoundingClientRect().height
+      })
+      onMeasured(heights)
+    }
+
+    // Measure right away so layout isn't blocked on network fonts — but
+    // `index.css`'s self-hosted @font-face rules all use `font-display:
+    // swap`, meaning this first measurement can happen while the browser is
+    // still showing a fallback font. Once the real woff2 (Inter / Source
+    // Serif 4) finishes loading, every block's line-height and character
+    // width change, so its true height changes too — and since this first
+    // measurement already fed `paginate()`, more text was assigned to a page
+    // than the real font actually allows once it swaps in. Page.tsx's
+    // content container clips overflow, so the result was a paragraph
+    // silently cut off mid-way down a page (reported 2026-07-31). Waiting on
+    // `document.fonts.ready` and re-measuring closes that gap with a second,
+    // corrected pagination pass; it's a no-op if fonts were already
+    // loaded/cached, since the two measurements will just agree.
+    measure()
+    document.fonts?.ready?.then(measure).catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [measureKey, contentWidthPx])
 
