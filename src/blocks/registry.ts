@@ -19,6 +19,7 @@ import { galleryBlockType } from '@/blocks/types/gallery'
 import { faqBlockType } from '@/blocks/types/faq'
 import { statisticsBlockType } from '@/blocks/types/statistics'
 import { checklistBlockType } from '@/blocks/types/checklist'
+import { placeholderBlockType } from '@/blocks/types/placeholder'
 
 /**
  * Props every block type's `Render` component receives. This is the exact
@@ -78,6 +79,7 @@ const BLOCK_REGISTRY: Record<ContentBlockType, BlockTypeDefinition> = {
   faq: faqBlockType,
   statistics: statisticsBlockType,
   checklist: checklistBlockType,
+  placeholder: placeholderBlockType,
 }
 
 export function getBlockTypeDefinition(type: ContentBlockType): BlockTypeDefinition | undefined {

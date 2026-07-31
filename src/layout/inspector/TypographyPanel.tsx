@@ -3,12 +3,13 @@ import { Type } from 'lucide-react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
 import { editBlock } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { stripHtml, wordCount } from '@/utils'
-import type { Chapter, ContentBlock } from '@/types/content'
+import type { Chapter, ContentBlock, PlaceholderKind } from '@/types/content'
 
 interface TypographyPanelProps {
   projectId: string
@@ -34,7 +35,16 @@ const BLOCK_LABELS: Record<ContentBlock['type'], string> = {
   faq: 'FAQ',
   statistics: 'Statistics',
   checklist: 'Checklist',
+  placeholder: 'Placeholder',
 }
+
+const PLACEHOLDER_KIND_OPTIONS: { value: PlaceholderKind; label: string }[] = [
+  { value: 'image', label: 'Image' },
+  { value: 'chart', label: 'Chart' },
+  { value: 'table', label: 'Table' },
+  { value: 'diagram', label: 'Diagram' },
+  { value: 'generic', label: 'Other' },
+]
 
 function findBlock(chapters: Chapter[], chapterId: string, blockId: string) {
   const chapter = chapters.find((c) => c.id === chapterId)
@@ -73,6 +83,8 @@ function blockPlainText(block: ContentBlock): string {
       return block.entries.map((e) => `${e.value} ${e.label}`).join(' ')
     case 'checklist':
       return block.items.map((i) => i.text).join(' ')
+    case 'placeholder':
+      return `${block.label ?? ''} ${block.description ?? ''}`.trim()
   }
 }
 
@@ -155,6 +167,30 @@ export function TypographyPanel({ projectId }: TypographyPanelProps) {
 
       {block.type === 'quote' && block.attribution && (
         <p className="text-sm text-text-secondary">Attributed to {block.attribution}</p>
+      )}
+
+      {block.type === 'placeholder' && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label>Kind</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {PLACEHOLDER_KIND_OPTIONS.map((option) => (
+                <Button
+                  key={option.value}
+                  type="button"
+                  variant={block.kind === option.value ? 'primary' : 'secondary'}
+                  size="sm"
+                  onClick={() => editBlock(projectId, chapter.id, block.id, { kind: option.value })}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+          <p className="text-xs text-text-secondary">
+            Double-click the title or description in the preview to edit them directly.
+          </p>
+        </>
       )}
     </div>
   )

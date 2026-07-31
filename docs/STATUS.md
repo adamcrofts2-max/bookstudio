@@ -3558,17 +3558,71 @@ step reverses in exactly one step; reload the page and confirm notes
 persisted; add a note to a structural page (e.g. the Cover) and confirm
 the same flow works there.
 
+## Phase 48 — Placeholder content blocks (2026-07-31)
+
+The other half of the two-part request that also produced Phase 47's
+notes feature — "a way of adding placeholder elements like an image box
+with text describing what will be there." New `placeholder` content
+block, built with the same block-type-registry pattern every prior block
+type has used (see `src/blocks/registry.ts`), so it participates in
+on-screen rendering, PDF export, and the "+" inserter with the same
+mechanism as the other 13 types.
+
+- **`src/types/content.ts`**: `PlaceholderKind = 'image' | 'chart' |
+  'table' | 'diagram' | 'generic'`; `PlaceholderBlock { id, type:
+  'placeholder', kind, label?, description? }` added to the
+  `ContentBlock` union. Doc comment states the deliberate design decision
+  carried over from the original plan: placeholders stay **visibly
+  rendered in every exported format**, never hidden — a real, obvious
+  dashed box beats a silent missing-content gap in a shipped book.
+- **`src/blocks/types/placeholder.tsx`** (new): `PlaceholderRender`
+  mirrors `callout.tsx`'s editable-field pattern exactly (double-click to
+  edit label/description via `useEditableField`); renders a fixed-height
+  dashed box with a kind icon (`ImagePlus`/`BarChart3`/`Table2`/`Shapes`/
+  `Box`). `drawPlaceholderPdf` draws a real dashed rectangle using
+  pdf-lib's native `borderDashArray`, with label/description
+  vertically centred inside the box.
+- **`src/blocks/registry.ts`** / **`src/blocks/defaultContent.ts`**:
+  registered as `placeholder`; insertable via the "+" button (defaults to
+  `kind: 'image'`, the most common case — switch it afterward in the
+  Inspector).
+- **`src/layout/inspector/TypographyPanel.tsx`**: Type tab gets a Kind
+  picker (Image/Chart/Table/Diagram/Other button grid) plus a hint about
+  double-clicking the preview to edit label/description.
+- **`src/epub/blockToXhtml.ts`** / **`src/epub/stylesheet.ts`**: matching
+  dashed-box treatment in EPUB/HTML export (`div.bs-placeholder`) — same
+  "always visible" rule applies to every export format, not just PDF.
+- **`src/virtualEditor/checkers/commercialQuality.ts`**:
+  `remainingPlaceholdersChecker` — one `Finding` per remaining
+  placeholder block, `critical` severity, full confidence (this is a
+  literal content-completeness check, not an editorial judgement call
+  like the rest of this file). Added to `COMMERCIAL_QUALITY_CHECKERS`,
+  which `exportReadiness.ts` already folds into `READINESS_CHECKERS` —
+  `critical` severity already trips `hasBlockingReadinessIssues`, so the
+  existing Phase 41 pre-export dialog blocks on unresolved placeholders
+  with **zero new UI wiring**.
+
+### Verification caveat
+`npx tsc -b --force` clean. Manually verify once pushed: insert a
+placeholder block via "+", confirm the dashed box renders with the
+correct icon per kind; double-click and edit the label/description,
+confirm it saves; switch kind via the Inspector and confirm the icon/
+default label updates; export to PDF and confirm the same dashed box
+(with `borderDashArray`) appears in the same position as the on-screen
+preview; export to EPUB and open in a reader, confirming the dashed CSS
+box renders; open the pre-export readiness dialog with an unresolved
+placeholder in the manuscript and confirm it's listed as a blocking
+(critical) finding that links back to the exact block; resolve it (change
+the block to real content or delete it) and confirm the finding clears.
+
 ## Recommended next task
-Phase E is complete except three items needing infrastructure this
-client-only app doesn't have (documented as deliberately deferred in
-`docs/ROADMAP.md`, same treatment as the AI reviewer/CMYK items): stock
-image library integration, AI image generation, and a community template
-gallery — all three need a real backend/third-party API. The other half
-of Phase 47's original two-part request — placeholder content blocks
-("photo goes here" with a short description, so a draft can be laid out
-before every asset exists) — is still open and would be a natural next
-task, following the same block-type-registry pattern Phase 20's Milestone
-5 batch used. Per the user's "keep working until C, D, E are complete"
-directive, Phases C, D, and E remain complete or
-deliberately-deferred-with-reasoning; this Phase F work is additional,
-user-requested scope beyond that original directive.
+Both halves of the original "notes + placeholders" request (Phases 47–48)
+are now shipped. Phase E is complete except three items needing
+infrastructure this client-only app doesn't have (documented as
+deliberately deferred in `docs/ROADMAP.md`): stock image library
+integration, AI image generation, and a community template gallery — all
+three need a real backend/third-party API. The next natural task is
+Phase F's remaining items (project-creation wizard, outlining templates,
+word-count goals, distraction-free writing mode) or Phase G — check
+`docs/ROADMAP.md` for the current highest-priority unchecked phase before
+starting.

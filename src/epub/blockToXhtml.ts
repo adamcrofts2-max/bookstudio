@@ -102,6 +102,14 @@ export function blockToXhtml(block: ContentBlock, imageSrc: (assetId: string) =>
         .join('')
       return `<ul class="bs-checklist">${items}</ul>`
     }
+    case 'placeholder': {
+      // Same "obvious visible marker, never a silent gap" treatment as the
+      // PDF/on-screen renderer — see `types/content.ts`'s `PlaceholderBlock`
+      // doc comment.
+      const label = block.label || `${block.kind.charAt(0).toUpperCase()}${block.kind.slice(1)} placeholder`
+      const description = block.description ? `<p class="bs-placeholder-description">${escapeXmlText(block.description)}</p>` : ''
+      return `<div class="bs-placeholder"><p class="bs-placeholder-label">${escapeXmlText(label)}</p>${description}</div>`
+    }
     default:
       return ''
   }

@@ -88,5 +88,15 @@ p.bs-subtitle { font-size: 1.1em; color: ${theme.page.mutedInk}; }
 p.bs-author { margin-top: 1em; font-size: 1em; }
 p.bs-attribution { font-style: italic; color: ${theme.page.mutedInk}; }
 img.bs-author-image { max-width: 40%; height: auto; margin: 1em auto; display: block; }
+div.bs-placeholder {
+  border: 2px dashed ${theme.page.ruleColor};
+  border-radius: 0.4em;
+  padding: 2em 1.5em;
+  margin: 1.5em 0;
+  text-align: center;
+  color: ${theme.page.mutedInk};
+}
+p.bs-placeholder-label { font-weight: 600; color: ${theme.page.ink}; margin-bottom: 0.4em; }
+p.bs-placeholder-description { font-size: 0.9em; margin: 0; }
 `.trim()
 }

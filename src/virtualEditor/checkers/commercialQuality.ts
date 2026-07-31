@@ -221,10 +221,54 @@ export const missingAuthorBioChecker: Checker = {
   },
 }
 
+/**
+ * A `placeholder` block (see `types/content.ts`'s `PlaceholderBlock`) is a
+ * deliberate, visibly-marked stand-in for content the author hasn't
+ * produced yet — an image box, a chart, a table. That's exactly its point:
+ * unlike a silent gap, it can always be found and flagged. `critical`
+ * severity and full confidence: this isn't a style judgement call like the
+ * rest of this file, it's a literal "this page will ship with a dashed box
+ * on it" defect if the export goes out as-is — worse than a missing
+ * copyright page, since a reader sees it immediately on the affected page
+ * itself. One finding per remaining placeholder, each with a real
+ * `blockId` so the Virtual Editor's Locate/Edit actions can jump straight
+ * to it.
+ */
+export const remainingPlaceholdersChecker: Checker = {
+  id: 'commercial.remaining-placeholders',
+  category: 'commercial',
+  label: 'Unresolved placeholder blocks',
+  description: 'Flags every placeholder block (image/chart/table/diagram/other) still left in the manuscript.',
+  run(ctx: CheckerContext): Finding[] {
+    const findings: Finding[] = []
+    for (const chapter of ctx.manuscript.chapters) {
+      for (const block of chapter.blocks) {
+        if (block.type !== 'placeholder') continue
+        const kindLabel = block.kind.charAt(0).toUpperCase() + block.kind.slice(1)
+        const named = block.label?.trim() ? ` ("${block.label.trim()}")` : ''
+        findings.push(
+          makeFinding({
+            checkerId: remainingPlaceholdersChecker.id,
+            issueType: 'remaining-placeholder',
+            severity: 'critical',
+            confidence: 1,
+            location: { chapterId: chapter.id, blockId: block.id },
+            message: `${kindLabel} placeholder${named} in "${chapter.title}" hasn't been replaced with real content.`,
+            whyItMatters:
+              'Placeholder blocks are drawn as a visible dashed box in every exported format on purpose, so a gap is never silently missing — but that also means it will ship exactly as-is if left in place. Replace it with the real image, chart, table, or content before export.',
+          }),
+        )
+      }
+    }
+    return findings
+  },
+}
+
 export const COMMERCIAL_QUALITY_CHECKERS: Checker[] = [
   missingCopyrightPageChecker,
   missingIsbnChecker,
   missingBackCoverBlurbChecker,
   missingTitlePageChecker,
   missingAuthorBioChecker,
+  remainingPlaceholdersChecker,
 ]

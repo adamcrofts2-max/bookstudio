@@ -238,9 +238,15 @@ daily use of everything built so far.)*
       unresolved notes. Authoring-only — never exported to PDF/EPUB/HTML.
       Not the same feature as Phase G's real-time collaboration comments
       below (this is single-user, local, no sharing/permissions involved)
-- [ ] Placeholder content blocks ("photo goes here", with a short
+- [x] Placeholder content blocks ("photo goes here", with a short
       description) so a draft can be laid out before every asset exists —
-      discussed with the user, not yet built
+      shipped 2026-07-31 (Phase 48). New `placeholder` block type (image/
+      chart/table/diagram/other kinds), insertable via "+", rendered as a
+      real dashed box on-screen, in the exported PDF, and in EPUB/HTML —
+      deliberately never hidden, so a remaining placeholder is always an
+      obvious marker, never a silent gap. A `commercial` Virtual Editor
+      checker flags every unresolved placeholder as `critical`, which
+      auto-blocks the pre-export readiness dialog with zero extra UI wiring.
 - [ ] Project-creation wizard (genre/audience-driven starting template)
 - [ ] Outlining / story-structure templates
 - [ ] Word-count goals and writing-session tracking

@@ -24,6 +24,7 @@ export const INSERTABLE_BLOCK_TYPES: InsertableBlockType[] = [
   'faq',
   'statistics',
   'checklist',
+  'placeholder',
 ]
 
 /**
@@ -67,5 +68,10 @@ export function createDefaultBlock(type: InsertableBlockType): ContentBlock {
       return { id, type, entries: [] }
     case 'checklist':
       return { id, type, items: [] }
+    case 'placeholder':
+      // 'image' is the default kind since "photo goes here" is the most
+      // common placeholder use case — switch it via the block's Inspector
+      // panel afterward if the actual gap is a chart/table/diagram.
+      return { id, type, kind: 'image', label: '', description: '' }
   }
 }

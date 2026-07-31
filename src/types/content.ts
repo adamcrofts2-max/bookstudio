@@ -21,6 +21,7 @@ export type ContentBlockType =
   | 'faq'
   | 'statistics'
   | 'checklist'
+  | 'placeholder'
 
 export interface HeadingBlock {
   id: string
@@ -210,6 +211,31 @@ export interface ChecklistBlock {
   items: { text: string; checked: boolean }[]
 }
 
+export type PlaceholderKind = 'image' | 'chart' | 'table' | 'diagram' | 'generic'
+
+/**
+ * A visible stand-in for content that doesn't exist yet — "photo of the
+ * author goes here", "insert a sales chart", etc. — so a draft can be laid
+ * out and paginated before every real asset is ready, per the user's
+ * request (see docs/STATUS.md Phase 48). Deliberately renders (and
+ * exports) as an obvious dashed box with its `label`/`description`, never
+ * as invisible/blank space: a silent gap in an exported PDF/EPUB is a real
+ * defect a first-time author might not notice before printing, whereas an
+ * obvious placeholder box is an honest, visible reminder. See
+ * `virtualEditor/checkers/commercialQuality.ts`'s
+ * `remainingPlaceholdersChecker` for the matching pre-export warning.
+ */
+export interface PlaceholderBlock {
+  id: string
+  type: 'placeholder'
+  kind: PlaceholderKind
+  /** Short title, e.g. "Author photo". */
+  label?: string
+  /** Longer note on what should go here, e.g. "Full-bleed portrait,
+   * outdoors, high-res". */
+  description?: string
+}
+
 export type ContentBlock =
   | HeadingBlock
   | ParagraphBlock
@@ -225,6 +251,7 @@ export type ContentBlock =
   | FaqBlock
   | StatisticsBlock
   | ChecklistBlock
+  | PlaceholderBlock
 
 export interface Chapter {
   id: string
