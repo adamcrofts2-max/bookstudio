@@ -65,6 +65,8 @@ src/virtualEditor/
                         patch, used to build SuggestedFix.apply
   checkers/
     proofreading.ts      6 real, deterministic checkers (see below)
+    consistency.ts       2 real, deterministic checkers (term casing, unit style)
+    readability.ts       2 real, deterministic checkers (Flesch formulas, long sentences)
     index.ts             ALL_CHECKERS registry
   aiReviewer.ts          AiReviewer interface stub + NullAiReviewer instances for
                         every category that doesn't have a real checker yet
@@ -141,6 +143,11 @@ Every `Finding` carries a `confidence` (0–1) alongside its `severity`
 | Unmatched quotes | 0.6 | Straight-quote apostrophes inside contractions can throw off a naive count |
 | Missing terminal punctuation | 0.55 | Some short lines (labels, captions) legitimately have none |
 | Quote-style consistency | 0.5 | A heuristic pattern across the whole book, not a per-sentence fact |
+| Flesch Reading Ease / Grade Level | 0.7 | The formulas are exact and standard; the input syllable count is a vowel-group heuristic approximation, not a dictionary lookup |
+| Long average sentence length | 0.6 | Naive punctuation-based sentence splitting can misjudge boundaries around abbreviations |
+| Metric vs imperial unit mixing | 0.55 | Regex-based unit detection is reliable in aggregate, but a deliberate "give both" convention (e.g. "5 metres (16 feet)") would still count as a mix |
+| Term-casing consistency | 0.5 | A capitalisation heuristic with no dictionary of real proper nouns — same "book-wide pattern, not certainty" caveat as quote-style consistency |
+| Metric abbreviation-style consistency | 0.5 | Same heuristic caveat as term-casing — a style pattern across the book, not a per-instance fact |
 
 **Score formula** (`scoring.ts`): start at 100, subtract
 `SEVERITY_WEIGHT[severity] * confidence` for every finding in a category, floor at 0.
@@ -167,8 +174,8 @@ findings still show up in the Findings list under their own category label.
 | **Grammar** (`copyEditing`) | — | Grammar, sentence flow, awkward wording, passive voice, word repetition, overly long sentences, inconsistent terminology/abbreviations, capitalisation, number/bullet/table formatting, italic species names |
 | *(taxonomy only)* `developmental` | — | Weak intros/conclusions, out-of-place chapters, missing explanations/diagrams/examples, poor transitions, repetition, information overload, chapter length outliers, logical inconsistencies |
 | **Publishing Quality** (`publishingStandards`) | — | Stranded chapter titles, widows, orphans, images separated from captions, captions without images, bad table splits, bad page turns, crowded/sparse pages, isolated bullets, single-line paragraphs/headings, blank pages, missing folios, running-header errors, inconsistent margins/spacing |
-| **Readability** | — | Reading age, sentence complexity, paragraph density, passive-voice %, average sentence length, reading time, chapter difficulty, reading fatigue |
-| **Consistency** | — | Term-casing consistency ("Forest Garden" vs "forest garden"), "Figure 2" vs "Fig. 2", unit style ("5 metres" vs "5m"), British vs American spelling, italic scientific names, heading/caption spacing |
+| **Readability** | Book-wide Flesch Reading Ease + Flesch-Kincaid Grade Level (real word/sentence/syllable-count formulas, informational, always reported), per-paragraph unusually-long-average-sentence-length flag | Reading age (beyond Flesch-Kincaid), passive-voice %, reading time, chapter difficulty, reading fatigue |
+| **Consistency** | Term-casing consistency ("Forest Garden" vs "forest garden", two-word terms only), metric-vs-imperial unit mixing, abbreviated-vs-spelled-out metric unit style ("5m" vs "5 metres") | "Figure 2" vs "Fig. 2", British vs American spelling, italic scientific names, heading/caption spacing, three-plus-word term casing, imperial abbreviation style ("5ft" vs "5 feet") |
 | *(taxonomy only)* `fieldGuide` | — | Species-profile completeness: scientific name, common name, family, origin, uses, wildlife value, edibility, medicinal use, propagation, care, height/spread, hardiness, light, moisture, warnings, seasonality, illustrations, references |
 | **Layout** | — | Visual imbalance, poor image placement, weak chapter openers, inconsistent image sizes, poor whitespace/hierarchy, page density |
 | **Typography** | — | Font hierarchy, leading, tracking, kerning, hyphenation quality, line length, paragraph rhythm, heading hierarchy |
@@ -176,9 +183,9 @@ findings still show up in the Findings list under their own category label.
 | **Print Readiness** | — | Bleed, crop marks, embedded fonts, CMYK readiness, image resolution, trim, spine, page count, blank pages |
 | **Commercial Quality** | — | Professional appearance, educational quality, visual impact, reader engagement, market readiness, "does this feel like a £40–£60 book" |
 
-Only **Proofreading** and an honest **Overall** (currently identical to
-Proofreading, since it's the only analysed category) show a real number today.
-Every other tile renders "Not yet analysed."
+**Proofreading**, **Consistency**, **Readability**, and an honest **Overall**
+(the mean of those three analysed categories) show a real number today. Every
+other tile still renders "Not yet analysed."
 
 ## The suggestion engine & action verbs
 
@@ -276,23 +283,33 @@ tab set). `uiStore.workspaceMode` (`'manuscript' | 'virtualEditor'`) decides wha
 
 `VirtualEditorWorkspace.tsx` shows:
 - All 11 named scores (`SCORE_TILES` in `scoring.ts`) — real numbers for
-  Proofreading + Overall, "Not yet analysed" for the other 9.
+  Proofreading, Consistency, Readability + Overall, "Not yet analysed" for the
+  other 7.
 - A "Review Entire Book" button that runs the pipeline against the project's
   current manuscript.
-- The findings list: severity, category, confidence, a clickable chapter location
-  (switches back to the manuscript workspace, selects the block in
-  `selectionStore` so the Inspector's Type tab shows it, and scrolls to the
-  chapter's opening page via the same `[data-chapter-start]` lookup
-  `Sidebar.tsx` already uses for chapter navigation), the required
-  what's-wrong/why-it-matters text, and the action buttons described above.
+- The findings list: severity, category, confidence, a clickable location
+  (switches back to the manuscript workspace and scrolls to the finding via
+  `selectionStore.requestScrollToBlock`/`requestScrollToChapter` — the same
+  force-mount-then-scroll mechanism `Sidebar.tsx`'s chapter nav and
+  `ThumbnailRail.tsx`'s page clicks use), the required what's-wrong/why-it-
+  matters text, and the action buttons described above.
 - A revision history list with one-click restore.
 
-**Known simplification, documented not hidden:** clicking a finding's location
-scrolls to the *chapter's* opening page, not the exact block. Precise block-level
-scroll would need a DOM anchor on every rendered block; today only chapter-start
-pages carry one (`data-chapter-start`), and blocks deep in a long chapter may not
-even be mounted yet (`LazySpread` mounts spreads lazily). Giving every block a
-stable DOM id and scrolling to it directly is a natural near-term follow-up.
+**Block-level scroll-to-finding is real, not a simplification.** When a
+finding's `location` carries a `blockId` (most findings do — book-wide ones
+like quote-style/unit/term-casing consistency and the Flesch report
+deliberately omit it, per `FindingLocation`'s own doc comment), clicking it
+calls `selectionStore.requestScrollToBlock(chapterId, blockId)`, which
+`BookRenderer.tsx`'s `scrollRequest` effect resolves via a `{ type: 'block' }`
+target: it force-mounts the spread containing that exact block (matched by
+`spreadMatchesScrollTarget`, tested in `scripts/smoke-test.ts`) and then
+scrolls to the real `[data-block-id]` DOM node once mounted — not merely the
+chapter's opening page. Only findings with no single block location (the
+book-wide ones above) fall back to chapter-level scroll, which is the
+correct behaviour for a pattern that isn't about one block. An earlier
+version of this document described block-level scroll as a future
+follow-up; it was already implemented (Phase 13) by the time that paragraph
+was written and the paragraph was simply never corrected — fixed here.
 
 ## Future extensibility
 
@@ -328,15 +345,17 @@ revision log) generalise to them too.
 | Layer boundary (`src/virtualEditor/`, own store, never mutates Content directly) | **Real** |
 | `Checker` interface + registry | **Real** |
 | 6 deterministic proofreading checkers | **Real**, tested in `scripts/smoke-test.ts` |
+| 2 deterministic consistency checkers (term casing, unit style) | **Real**, tested in `scripts/smoke-test.ts` — no spell-check dictionary, no NLP-based term/proper-noun extraction, no British/American spelling check |
+| 2 deterministic readability checkers (Flesch Reading Ease/Grade Level, long sentences) | **Real**, tested in `scripts/smoke-test.ts` — heuristic vowel-group syllable counting (not a pronunciation dictionary), no reading-age estimate beyond Grade Level, no passive-voice/reading-time/fatigue metrics |
 | `AiReviewer` interface | **Real** (interface only — `NullAiReviewer` is the only implementation) |
 | Score aggregation (category + overall) | **Real** |
-| Editorial Dashboard UI, 11 score tiles | **Real** (2 of 11 show real numbers) |
+| Editorial Dashboard UI, 11 score tiles | **Real** (4 of 11 show real numbers: Proofreading, Consistency, Readability, Overall) |
 | Review Entire Book pipeline | **Real** (synchronous, deterministic-only) |
 | Accept / Reject / Ignore / Ignore Similar | **Real** |
 | Edit / Apply to Chapter / Apply to Book | **Designed, visibly disabled** |
 | Non-destructive revision log + restore | **Real** (linear list, in-memory only) |
 | Original/RevA/RevB/RevC side-by-side compare | **Designed, not built** |
-| Copy editing / developmental / publishing-standards / readability / consistency / field-guide / layout / typography / accessibility / print / commercial checkers | **Designed, not built** |
+| Copy editing / developmental / publishing-standards / field-guide / layout / typography / accessibility / print / commercial checkers | **Designed, not built** |
 | AI Learning / editorial profile | **Designed, not built** |
 | Style Guide enforcement | **Type + plumbing exist, not enforced by any checker yet** |
 | Future AI modules (fact-check, indexing, glossary, etc.) | **Named as extension points, not stubbed individually** |

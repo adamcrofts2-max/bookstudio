@@ -253,16 +253,181 @@ check('VE proofreading: mixed quote styles flagged',
 check('VE proofreading: no false positive on a single quote style',
   quoteStyleConsistencyChecker.run({ manuscript: makeSingleParagraphManuscript('He said “hi” and she said “hello”.') }).length === 0)
 
+// --- Virtual Editor: Consistency checkers (term-casing + measurement units) ---
+import { termCasingConsistencyChecker, measurementUnitConsistencyChecker } from '../src/virtualEditor/checkers/consistency'
+
+function makeMultiParagraphManuscript(paragraphs: string[]): Manuscript {
+  return {
+    chapters: [
+      {
+        id: 've-consistency-chapter',
+        title: 'Chapter One',
+        order: 0,
+        blocks: paragraphs.map((html, i) => ({ id: `ve-consistency-block-${i}`, type: 'paragraph', html }) as ParagraphBlock),
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'virtual-editor-consistency-fixture.md',
+  }
+}
+
+// Term casing: "Forest Garden" (Title Case, x2) vs "forest garden" (lowercase,
+// x1) — 3 total mentions clears the combined-frequency floor.
+const termCasingDirty = termCasingConsistencyChecker.run({
+  manuscript: makeMultiParagraphManuscript([
+    'Forest Garden design begins in spring.',
+    'Many gardeners visit the forest garden every year.',
+    'The Forest Garden thrives with native plants.',
+  ]),
+})
+const termCasingFinding = termCasingDirty.find((f) => f.issueType === 'term-casing-inconsistency' && f.message.includes('Forest Garden'))
+check('VE consistency: inconsistent term casing detected across the book', termCasingFinding !== undefined)
+check('VE consistency: term-casing finding has no suggestedFix (flag-only, per doc precedent)', termCasingFinding?.suggestedFix === undefined)
+check('VE consistency: term-casing finding is minor severity', termCasingFinding?.severity === 'minor')
+
+// No false positive when the term is used with one consistent casing throughout.
+const termCasingClean = termCasingConsistencyChecker.run({
+  manuscript: makeMultiParagraphManuscript([
+    'Forest Garden design begins in spring.',
+    'Every visitor loves the Forest Garden greatly.',
+    'The Forest Garden thrives with native plants.',
+  ]),
+})
+check(
+  'VE consistency: no false positive when a term is capitalised consistently every time',
+  termCasingClean.every((f) => f.issueType !== 'term-casing-inconsistency'),
+)
+
+// No false positive below the combined-frequency floor: exactly one of each
+// casing (2 total) is deliberately not enough to call it a genuine pattern.
+const termCasingBelowFloor = termCasingConsistencyChecker.run({
+  manuscript: makeMultiParagraphManuscript(['Rare Term appears once here.', 'Then rare term appears lowercase once.']),
+})
+check(
+  'VE consistency: no false positive below the combined-frequency floor (only 2 total mentions)',
+  termCasingBelowFloor.every((f) => f.issueType !== 'term-casing-inconsistency'),
+)
+
+// Sentence-initial article + proper noun ("The Forest Garden...") must not be
+// mistaken for a genuine "the forest" vs "the Forest" casing inconsistency —
+// the exact false-positive LEADING_STOPWORDS exists to prevent.
+const leadingArticleNoFalsePositive = termCasingConsistencyChecker.run({
+  manuscript: makeMultiParagraphManuscript([
+    'The Forest Garden is beautiful in every season of the year.',
+    'Visitors often admire the forest views from the upper path.',
+    'The Forest Garden welcomes new volunteers throughout the year.',
+  ]),
+})
+check(
+  'VE consistency: sentence-initial "The" before a proper noun does not falsely flag "the forest"/"the Forest" as inconsistent',
+  leadingArticleNoFalsePositive.every((f) => !(f.issueType === 'term-casing-inconsistency' && f.message.toLowerCase().includes('"the forest"'))),
+)
+
+// Measurement units: metric vs imperial mixing
+const unitMixManuscript = makeMultiParagraphManuscript([
+  'The raised bed measures 5 metres by 2 metres in the plan.',
+  'An older sketch shows the same bed as 16 feet by 6 feet.',
+])
+const unitMixFindings = measurementUnitConsistencyChecker.run({ manuscript: unitMixManuscript })
+check(
+  'VE consistency: metric vs imperial unit mixing detected',
+  unitMixFindings.some((f) => f.issueType === 'metric-imperial-mixing'),
+)
+check(
+  'VE consistency: metric/imperial finding has no suggestedFix (flag-only)',
+  unitMixFindings.find((f) => f.issueType === 'metric-imperial-mixing')?.suggestedFix === undefined,
+)
+check(
+  'VE consistency: no false positive on a metric-only manuscript',
+  measurementUnitConsistencyChecker
+    .run({ manuscript: makeMultiParagraphManuscript(['The bed measures 5 metres by 2 metres.', 'A path runs 10 metres further along.']) })
+    .every((f) => f.issueType !== 'metric-imperial-mixing'),
+)
+
+// Measurement units: abbreviated vs spelled-out metric style
+const unitStyleFindings = measurementUnitConsistencyChecker.run({
+  manuscript: makeMultiParagraphManuscript(['The bed is 5m wide and 2m deep.', 'The path beyond is 10 metres long.']),
+})
+check(
+  'VE consistency: abbreviated vs spelled-out metric unit style inconsistency detected',
+  unitStyleFindings.some((f) => f.issueType === 'unit-abbreviation-style-inconsistency'),
+)
+check(
+  'VE consistency: no false positive when metric units are always spelled out',
+  measurementUnitConsistencyChecker
+    .run({ manuscript: makeMultiParagraphManuscript(['The bed is 5 metres wide.', 'The path beyond is 10 metres long.']) })
+    .every((f) => f.issueType !== 'unit-abbreviation-style-inconsistency'),
+)
+
+// --- Virtual Editor: Readability checkers (Flesch Reading Ease / Grade
+// Level + long-sentence-paragraph flagging) ---
+import { fleschReadabilityChecker, longSentenceParagraphChecker, countSyllables } from '../src/virtualEditor/checkers/readability'
+
+check('VE readability: syllable heuristic gives a sane count for a simple word', countSyllables('garden') === 2)
+check('VE readability: syllable heuristic handles a silent trailing "e"', countSyllables('like') === 1)
+check('VE readability: syllable heuristic gives "-le" its own syllable after a consonant', countSyllables('table') === 2)
+check('VE readability: every word counts as at least one syllable', countSyllables('a') === 1)
+
+const readabilityManuscript = makeMultiParagraphManuscript([
+  'The garden is calm. Birds sing at dawn. Frost melts by noon.',
+  'Visitors walk the paths and rest under the old oak tree.',
+])
+const readabilityFindings = fleschReadabilityChecker.run({ manuscript: readabilityManuscript })
+check('VE readability: produces exactly one book-level Flesch finding', readabilityFindings.length === 1)
+check('VE readability: Flesch finding has no blockId (book-level, not per-block)', readabilityFindings[0]?.location.blockId === undefined)
+check('VE readability: Flesch finding has no suggestedFix (informational only)', readabilityFindings[0]?.suggestedFix === undefined)
+check('VE readability: Flesch finding message reports both the reading-ease score and grade level', /Reading Ease is -?\d/.test(readabilityFindings[0]?.message ?? '') && /Grade Level -?\d/.test(readabilityFindings[0]?.message ?? ''))
+check(
+  'VE readability: no finding at all when the manuscript has no paragraph prose',
+  fleschReadabilityChecker.run({
+    manuscript: { chapters: [{ id: 'c', title: 'C', order: 0, blocks: [{ id: 'h', type: 'heading', level: 1, text: 'Just a heading' }] }], importedAt: new Date().toISOString(), sourceFileName: 'x.md' },
+  }).length === 0,
+)
+
+// A deliberately dense, run-on paragraph (one very long sentence) vs a clean,
+// short-sentence paragraph in the same manuscript — only the long one should
+// be flagged, with a real per-block location.
+const longSentenceText =
+  'When the gardeners arrived early in the morning before the frost had fully lifted from the raised beds and the greenhouse glass was still fogged with condensation from the overnight chill, they began the long and careful process of turning the compost, checking the irrigation lines for blockages, and noting which seedlings had survived the unexpectedly cold snap that had settled over the whole valley the previous week.'
+const shortSentenceText = 'The gardeners arrived early. They checked the beds. Everything looked fine.'
+const longSentenceManuscript = makeMultiParagraphManuscript([longSentenceText, shortSentenceText])
+const longSentenceFindings = longSentenceParagraphChecker.run({ manuscript: longSentenceManuscript })
+check('VE readability: unusually long sentence paragraph flagged', longSentenceFindings.length === 1)
+check('VE readability: long-sentence finding points at the exact offending block', longSentenceFindings[0]?.location.blockId === 've-consistency-block-0')
+check('VE readability: long-sentence finding is minor severity, informational only', longSentenceFindings[0]?.severity === 'minor' && longSentenceFindings[0]?.suggestedFix === undefined)
+check(
+  'VE readability: no false positive on a paragraph of short, clean sentences',
+  longSentenceParagraphChecker.run({ manuscript: makeMultiParagraphManuscript([shortSentenceText]) }).length === 0,
+)
+
 // Pipeline + score aggregation
 const dirtyReport = runPipeline('ve-test-project', makeSingleParagraphManuscript('This  has a double space and the the repeated word'))
 check('VE pipeline: dirty manuscript scores below 100 on proofreading', (dirtyReport.categoryScores.proofreading?.score ?? 100) < 100)
 check('VE pipeline: overall score is computed once at least one category is analysed', dirtyReport.overallScore !== null)
-check('VE pipeline: categories with no checker registered stay null (honest "not yet analysed")', dirtyReport.categoryScores.readability === null)
-check('VE pipeline: overall score equals the mean of analysed categories only', dirtyReport.overallScore === dirtyReport.categoryScores.proofreading?.score)
+check(
+  'VE pipeline: a category with no checker registered at all still stays null (honest "not yet analysed") — copy editing has no checker yet',
+  dirtyReport.categoryScores.copyEditing === null,
+)
+check(
+  'VE pipeline: consistency and readability are no longer null now that real checkers are registered for them (Phase 23)',
+  dirtyReport.categoryScores.consistency !== null && dirtyReport.categoryScores.readability !== null,
+)
+const analysedDirtyScores = [dirtyReport.categoryScores.proofreading, dirtyReport.categoryScores.consistency, dirtyReport.categoryScores.readability].filter(
+  (c): c is NonNullable<typeof c> => c !== null,
+)
+check(
+  'VE pipeline: overall score equals the mean of every analysed category (proofreading + consistency + readability), not just proofreading alone',
+  dirtyReport.overallScore === Math.round(analysedDirtyScores.reduce((sum, c) => sum + c.score, 0) / analysedDirtyScores.length),
+)
 
 const cleanReport = runPipeline('ve-test-project', makeSingleParagraphManuscript('This is a perfectly clean sentence.'))
 check('VE pipeline: clean manuscript scores a perfect 100 on proofreading', cleanReport.categoryScores.proofreading?.score === 100)
-check('VE pipeline: clean manuscript has zero findings', cleanReport.findings.length === 0)
+check('VE pipeline: clean manuscript has zero proofreading findings', cleanReport.findings.filter((f) => f.category === 'proofreading').length === 0)
+check('VE pipeline: clean manuscript has zero consistency findings (too short for a real pattern)', cleanReport.findings.filter((f) => f.category === 'consistency').length === 0)
+check(
+  'VE pipeline: clean manuscript still gets exactly one informational readability finding — the book-level Flesch report is always produced when there is prose, not only when something is wrong',
+  cleanReport.findings.filter((f) => f.category === 'readability').length === 1,
+)
 
 // --- virtualEditorStore.fixAll / fixCategory: bulk-apply wiring on top of
 // the existing acceptFix (never duplicates its snapshot-then-updateBlock

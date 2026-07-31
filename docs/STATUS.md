@@ -1557,3 +1557,169 @@ book, (5) justified text and image rotation in the PDF exporter, (6) proper
 glyph subsetting once the fontkit bug is understood, (7) the first real
 `AiReviewer` (readability is the most self-contained candidate — no
 layout/print context needed), (8) EPUB/Kindle export.
+
+## Phase 23 — Virtual Editor: Consistency and Readability checkers (2026-07-31)
+
+Two new deterministic checker engines added to the Virtual Editor, per Phase
+22's own "Recommended next task" pointer (item 2: Consistency, the best
+next fully-deterministic candidate; item 7 named readability as the most
+self-contained future `AiReviewer` candidate, but since both formulas are
+pure arithmetic needing no model judgement at all, they're implemented here
+as real deterministic `Checker`s instead of waiting for an `AiReviewer`).
+`docs/VIRTUAL_EDITOR.md`'s hybrid Checker/AiReviewer architecture,
+`pipeline.ts`, and `scoring.ts` needed **zero changes** — exactly as
+designed: registering two new `Checker[]` arrays in `checkers/index.ts`'s
+`ALL_CHECKERS` was enough for `runPipeline`'s `analysedCategories` and the
+dashboard's Consistency/Readability score tiles to go from "Not yet
+analysed" to real numbers automatically.
+
+- **`src/virtualEditor/checkers/consistency.ts`** — 2 checkers:
+  - `termCasingConsistencyChecker` — tracks two-word phrases across the
+    whole book that appear both fully Title Case (e.g. "Forest Garden") and
+    fully lowercase (e.g. "forest garden"), using a sliding two-word window
+    over each text span's tokenised words (not a non-overlapping regex
+    `exec` loop — see "Deviations" below for why that distinction actually
+    mattered, not just stylistically). A small `LEADING_STOPWORDS` list
+    (the, a, an, this, ...) stops ordinary sentence-initial capitalisation
+    ("The Forest Garden...") from being mistaken for a genuine casing
+    variant, and a combined-frequency floor (>=3 total mentions of the same
+    pair) guards against a single coincidental match. Flag-only, no
+    `suggestedFix` — deciding which casing is "correct" needs an editor, not
+    a regex, matching `quoteStyleConsistencyChecker`'s exact precedent.
+  - `measurementUnitConsistencyChecker` — book-wide regex counts of metric
+    vs imperial unit mentions, producing two independent findings: metric-
+    vs-imperial mixing, and abbreviated-vs-spelled-out metric style (e.g.
+    "5m" vs "5 metres"). Deliberately excludes the abbreviation "in" for
+    inches (indistinguishable from the preposition without real sentence
+    parsing) and bare "g"/"l" (too ambiguous, e.g. "5G" networks) —
+    documented, not hidden, simplifications.
+- **`src/virtualEditor/checkers/readability.ts`** — 2 checkers:
+  - `fleschReadabilityChecker` — the standard, published Flesch Reading
+    Ease and Flesch-Kincaid Grade Level formulas, computed once across
+    every paragraph in the manuscript (word count, sentence count via naive
+    `.`/`!`/`?` splitting, syllable count via a documented vowel-group
+    heuristic in `countSyllables`). Produces exactly one book-level,
+    informational finding (no `suggestedFix`) whenever the manuscript has
+    any paragraph prose at all; severity scales with how far the score
+    falls outside a documented 50–70 "target band" for general-audience
+    nonfiction, capped at `major` (never `critical` — a readability
+    estimate isn't a manuscript-breaking defect the way a critical
+    proofreading error is).
+  - `longSentenceParagraphChecker` — per-paragraph, flags any paragraph
+    whose average words-per-sentence exceeds a documented threshold (30
+    words/sentence), with a real block-level `location` — the brief's own
+    "give the user something actionable at the block level, not just a
+    book-wide number" request.
+- **A real bug found and fixed during test-writing, before the first
+  commit**: the initial `termCasingConsistencyChecker` used a global regex
+  `exec` loop for bigram scanning, which consumes each match
+  non-overlapping — in "The Forest Garden thrives", matching "The Forest"
+  first (then discarded by `LEADING_STOPWORDS`) meant the scan resumed at
+  "Garden thrives", never re-examining "Forest Garden" as its own pair at
+  all in that sentence. Caught by this milestone's own true-positive test
+  (expecting `termCasingConsistencyChecker` to find "Forest Garden"/"forest
+  garden" as inconsistent) failing outright — not a hypothetical, an actual
+  reproduction. **Fix**: replaced the regex `exec` loop with tokenising each
+  span into words first and sliding a two-word window across the array —
+  every adjacent pair is now examined regardless of what the previous pair
+  consumed.
+- **A second, smaller bug caught the same way**: the initial `countSyllables`
+  heuristic added a redundant "+1 for -le endings" correction on top of the
+  existing silent-e exclusion, double-counting words like "table" (scored 3
+  syllables instead of 2). The vowel-group count already correctly gives 2
+  for "-le" words once the silent-e decrement is skipped for them (the
+  intervening consonant already splits the vowels into two separate groups
+  — "a" and "e" in "table" — so no further adjustment was needed). Caught by
+  `countSyllables('table') === 2` failing during test-writing; fixed by
+  removing the redundant correction.
+- **Tests**: `scripts/smoke-test.ts` grew from 302 to **329** passing checks
+  — true-positive and no-false-positive coverage for both new consistency
+  checkers (including the combined-frequency floor and the
+  `LEADING_STOPWORDS` false-positive it specifically guards against), both
+  new readability checkers (including a heading-only manuscript producing
+  zero readability findings, and a dedicated long-sentence-vs-short-sentence
+  paragraph pair), 4 direct `countSyllables` unit checks, and updated
+  pipeline assertions confirming `analysedCategories` now includes
+  `consistency`/`readability` (a still-unregistered category, `copyEditing`,
+  is used in place of the old `readability`-stays-null assertion, and the
+  "overall score equals proofreading alone" assertion was generalised to
+  "overall score equals the mean of every analysed category" now that there
+  are three analysed categories instead of one).
+- **Verified**: `npx tsc -b --force` clean, run directly against the real
+  repo (~22–27s). `npm run build`/`npm run lint`/`npm run test` were run in
+  a scratch directory (fresh `npm install`, source files synced in) after
+  this sandbox's `vite build` hit the same pre-existing ESM config-loader
+  flakiness against this exact mount that Phases 19–22 already
+  documented — not a regression, since `vite.config.ts` is untouched by
+  this phase and `tsc -b --force` already independently confirmed every
+  new/changed file typechecks correctly against the real, non-scratch repo.
+  `npm run build` clean, 2,461 modules (up from 2,459). `npm run lint`: 0
+  errors, 43 warnings (unchanged from the 43-warning baseline — both new
+  files are plain logic modules, not React components, so neither trips the
+  `react/only-export-components` heuristic that's been the source of every
+  new warning since Phase 17). `npm run test`: **329/329 passing** (302
+  baseline + 27 new checks).
+
+### Deviations from the brief, and why
+- **`textExtract.ts` was not touched.** Its `blockTextSpans`/`blockPlainText`
+  switches have a `default: return []`/`''` fallthrough for any block type
+  without an explicit case — meaning the 8 Phase 22 block types (Pull Quote,
+  Callout, Case Study, Timeline, Gallery, FAQ, Statistics, Checklist)
+  contribute no text to either new checker (or to the existing proofreading
+  checkers, for that matter). This is a pre-existing gap from Phase 22, not
+  something this milestone introduced or was asked to fix — flagging it
+  here because it's more visible now that readability computes a genuine
+  per-word/sentence read of the manuscript.
+- **Only two-word terms are checked for casing consistency.** Extending to
+  3+ word terms is possible but needs a longer sliding window and more
+  careful stopword handling to avoid a bigger false-positive surface; left
+  as a documented, honest scope boundary rather than half-implemented.
+- **Imperial abbreviation style ("5ft" vs "5 feet") isn't checked** — only
+  metric abbreviation style is, because no safe, unambiguous imperial
+  abbreviation for inches exists ("in" collides with the preposition).
+  Adding "ft"/"yd" abbreviation-style checking without "in" would be a
+  straightforward follow-up but wasn't asked for and would only cover part
+  of the imperial vocabulary, so it was left out entirely rather than
+  shipped half-covering the taxonomy's own example.
+- **`docs/VIRTUAL_EDITOR.md` correction, not new code**: its "Known
+  simplification" paragraph claimed finding-click only scrolls to a
+  chapter's opening page, never the exact block. Verified against
+  `BookRenderer.tsx`'s `scrollRequest` effect and `VirtualEditorWorkspace.
+  tsx`'s `handleLocate` that block-level scroll (`requestScrollToBlock` +
+  the `{ type: 'block' }` branch, force-mounting via `data-block-id`) has
+  been fully implemented since Phase 13 — the paragraph was simply never
+  corrected after that shipped. Fixed the documentation to match reality
+  rather than leaving a stale limitation on record; no code changed for
+  this.
+
+### Explicitly deferred (per the milestone's own scope)
+- Every other still-unbuilt checker category (copy editing, developmental,
+  publishing-standards, field-guide, layout, typography, accessibility,
+  print, commercial) — untouched, per `docs/VIRTUAL_EDITOR.md`'s own "What's
+  real" table.
+- Style Guide enforcement — neither new checker reads
+  `CheckerContext.styleGuide` (e.g. a project's declared
+  `measurementUnits: 'metric' | 'imperial'` preference could suppress the
+  metric-vs-imperial finding for a book that's deliberately single-system)
+  — same "designed, not built" status as before this milestone.
+
+## Recommended next task
+The next Virtual Editor batch, already queued per the product spec's action-
+verb list: wire up **Edit** (currently visibly disabled — "edit the block
+directly in the manuscript view for now") and the **Apply to Chapter**/
+**Apply to Book** batch actions on findings (currently visibly disabled
+placeholders in `FindingRow.tsx`). `virtualEditorStore.fixAll`/`fixCategory`
+already exist as the report-wide/category-wide batch-apply primitives (see
+Phase 13), so "Apply to Chapter" is mostly a matter of scoping that existing
+loop down to `finding.location.chapterId` rather than new logic from
+scratch. Outside the Virtual Editor track: (1) profile the Phase 21
+structural-page mutation freeze (15–30s on a 17-chapter project), still
+unaddressed, (2) manually verify the Phase 13 scroll-to-block flow and this
+phase's two new dashboard score tiles in a real browser (jsdom can't
+exercise either), (3) a third deterministic checker engine — Publishing
+Quality (widows/orphans/stranded titles) is a strong next candidate since
+`renderer/paginate.ts`'s layout output is already plain data a checker could
+read, read-only, per the layer boundary in `docs/VIRTUAL_EDITOR.md`, (4)
+line-level text flow so paragraphs can split across pages, (5) justified
+text and image rotation in the PDF exporter, (6) proper glyph subsetting
+once the fontkit bug is understood, (7) EPUB/Kindle export.
