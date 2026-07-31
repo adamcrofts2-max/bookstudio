@@ -1,53 +1,68 @@
 # Custom fonts
 
-Book Studio currently embeds exactly two font families everywhere — on
-screen, in exported PDFs, and as the two choices offered for a Cover/Back
-Cover's font override — because those are the only two font files actually
-shipped in `public/fonts/`: Inter and Source Serif 4. This folder is where
-you drop additional `.woff2` font files so a future session can wire up
-more choices, without needing live internet access to fetch them (this
-sandbox's outbound network is blocked, so an agent can't download new font
-files itself — see `docs/STATUS.md` Phase 46).
+Book Studio's interior theme system still embeds exactly two font
+families — Inter and Source Serif 4, from `public/fonts/` — used
+everywhere the book's own theme picks a heading/body font. As of Phase
+50, seven more families live here in `public/fonts/custom/` and are wired
+up as **Cover/Back Cover-only** typography choices (`CoverFontChoice` in
+`src/types/structuralPage.ts`): Anton, Bebas Neue, Oswald, Playfair
+Display, DM Serif Display, Abril Fatface, and Fraunces — all real Google
+Fonts `.ttf` files, downloaded and dropped in by hand (this sandbox's
+outbound network is blocked, so an agent can't fetch new font files
+itself — see `docs/STATUS.md` Phase 46).
 
-## What to drop in here
+These seven are deliberately **not** offered as whole-book interior
+fonts: Anton/Bebas Neue/Oswald are single-weight-or-condensed display
+faces that would be close to unreadable as running paragraph text, and
+Playfair Display/DM Serif Display/Abril Fatface/Fraunces are all
+display-weight serif faces meant for large cover titling rather than body
+copy. A family only belongs in the interior theme system
+(`CustomThemeEditorDialog.tsx`'s `FONT_OPTIONS`) if it's genuinely
+comfortable to read at book-paragraph sizes across an entire chapter.
 
-- Format: `.woff2` preferred (smallest, and it's what Inter/Source Serif 4
-  already use). `.ttf`/`.otf` also work — pdf-lib's font embedding (via
-  `fontkit` under the hood) accepts all four, and the browser's own
-  `@font-face` rule just needs a matching `format()` hint.
-- Naming convention, matching the existing files in `public/fonts/`:
-  `<family-slug>-<weight>.woff2`, e.g. `playfair-display-700.woff2`. Add
-  `-italic` before the extension for a true italic cut, e.g.
-  `playfair-display-700-italic.woff2` (optional — a family with no italic
-  file falls back to the standard-14 Helvetica/Times italic exactly the
-  way Inter/Source Serif 4 do today, per `pdf/fonts.ts`'s
-  `pickItalicFont`).
+## Dropping in more fonts later
+
+- Format: `.woff2` preferred for anything meant to also work as an
+  interior theme font (smallest, matches Inter/Source Serif 4). `.ttf`/
+  `.otf` are fine too — pdf-lib's font embedding (via `fontkit`) accepts
+  all four, and the browser's own `@font-face` rule just needs a matching
+  `format()` hint; the seven Phase 50 families are plain `.ttf` straight
+  from Google Fonts' own download, unconverted.
+- Keep each family in its own subfolder (matching Google Fonts' own zip
+  layout — `<Family_Name>/`, with a `static/` folder for fixed-weight
+  cuts if the family ships a variable font too). Prefer the `static/`
+  fixed-weight files over a variable font for embedding — pdf-lib embeds
+  a variable font as just its default instance, so a real static Bold/
+  Italic file looks correct where a variable font might not.
 - Only use font files you have the right to embed and redistribute (most
-  Google Fonts are OFL-licensed and fine for this; check the license of
-  anything else before dropping it in here).
+  Google Fonts are OFL-licensed and fine for this — every folder here
+  keeps its own `OFL.txt`; check the licence of anything else before
+  dropping it in).
 
-## Registering a new family once files are here
+## Registering a new family
 
-There's no dynamic/drag-and-drop font loader yet — with only two real
-families in the app so far, building one would be speculative. Once real
-files exist, wire them in by hand at these spots:
+There's still no dynamic/drag-and-drop font loader — wire a new family in
+by hand at these spots (mirrors exactly how the seven Phase 50 families
+were added; see each file's own Phase 50 comments for a worked example):
 
-1. **`src/index.css`** — add an `@font-face` block per weight/style, same
-   shape as the existing Inter/Source Serif 4 rules just above the design
-   system section, pointing at `/fonts/custom/<file>.woff2`.
-2. **`src/pdf/fonts.ts`** — add the new weights to `ThemeFontSet`, embed
-   them in `loadThemeFonts` (same `embed(doc, url)` pattern already used),
-   and extend `pickFont`/`pickItalicFont`'s family-matching logic.
+1. **`src/index.css`** — one `@font-face` block per real weight/style
+   file you have, pointing at `/fonts/custom/<Family>/<file>`.
+2. **`src/pdf/fonts.ts`** — add a `loadFamily(doc, { regular, medium?,
+   semiBold?, bold?, italic?, boldItalic? }, 'sans' | 'serif')` call in
+   `loadThemeFonts`, add the family's id to `CustomCoverFontId`, and add a
+   matching entry to `CUSTOM_FAMILY_MATCHERS`. Missing weights/styles are
+   fine — `loadFamily` reuses the nearest real file, and falls back to a
+   standard-14 italic if the family ships no italic cut at all.
 3. **`src/structuralPages/coverTypography.ts`** — add the new family's CSS
-   string as another option alongside `SERIF_FAMILY`/`SANS_FAMILY`.
+   string to `CUSTOM_FAMILY_CSS`.
 4. **`src/types/structuralPage.ts`** — extend the `CoverFontChoice` union
    with a new id for the family.
-5. **`src/layout/inspector/StructuralPagePanel.tsx`** — add it to the
-   cover font-choice picker's options.
+5. **`src/layout/inspector/StructuralPagePanel.tsx`** — add it to
+   `FONT_CHOICE_OPTIONS`.
 6. Optionally, **`src/components/settings/CustomThemeEditorDialog.tsx`**'s
-   `FONT_OPTIONS` too, if the family should also be choosable for a whole
-   book's interior theme, not just its cover.
+   `FONT_OPTIONS` too — only if the family is genuinely comfortable as
+   whole-book running body/heading text, not just a cover title (see
+   above).
 
-Move this file (or update it) if the process changes once a first real
-custom font actually gets wired up — this is a plan, not a guarantee the
-above stays accurate forever.
+Move this file (or update it) if the process changes further — this is a
+plan, not a guarantee the above stays accurate forever.

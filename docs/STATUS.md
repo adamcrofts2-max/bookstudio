@@ -3687,16 +3687,141 @@ text at all (no more literal "Untitled"); open a project saved before
 this phase and confirm its Cover/Back Cover render pixel-identical to
 before (no `hiddenFields`/`color`/`secondaryColor` in its stored content).
 
+## Phase 50 — Markdown import bug fix + cover font wiring (2026-07-31)
+
+The user uploaded a real 16-chapter manuscript ("The Forest Garden") and
+reported two symptoms on import: two visibly different "contents" pages,
+and chapters labelled with the wrong number. Also asked for the 7 Google
+Fonts families they'd downloaded (per the previous session's suggestion)
+to be wired into the cover designer, and for a review of everything
+shipped in Phases 45–49.
+
+### Root cause (confirmed by reading the manuscript + the parser, then
+### verified with an isolated script running the real fix against the
+### real file — see Verification below)
+The manuscript opens with a title-page-style `# The Forest Garden` H1 (a
+book-title heading, not a real chapter) followed by a hand-typed
+`## Contents` section — a heading plus a bullet list of links to each
+real chapter — before the real `# Chapter One: ...` heading. Two
+pre-existing, unrelated mechanisms combined badly with this common
+manuscript shape:
+
+- **`parser/markdown.ts`** splits a new chapter on every H1 with no
+  concept of "front matter" — so the title H1 became a bogus first
+  "chapter," and its manually-authored Contents list was imported as
+  literal body content: a heading block plus a list block whose items
+  were unresolved raw markdown link syntax (`plain()` strips
+  bold/italic/code markers but never touches `[text](#anchor)`).
+- **`renderer/paginate.ts`** already reserves page 1 for a real,
+  auto-generated Table of Contents built from every chapter's title —
+  correct in itself, but it now listed the bogus "The Forest Garden"
+  chapter as a fake first entry, sitting a few pages before the
+  manuscript's own broken, permanently-stale hand-typed list. Two
+  visibly different "contents" pages, exactly as reported.
+- **`renderer/chapterOpenerLabel.ts`** auto-numbers each chapter's opener
+  label from its array position, not from any number embedded in its own
+  title text — so the bogus leading chapter shifted every real chapter's
+  auto-generated label ("Chapter One"/"1", "Chapter Two"/"2", ...) one
+  higher than the number already written into that chapter's own title
+  (e.g. the real "Chapter One: The Living Garden" would have rendered
+  under an auto-generated "Chapter Two" label).
+
+### Fix
+- **`src/parser/markdown.ts`**: converted the token loop to index-based
+  so a heading handler can peek at (and skip) the very next token.
+  Any heading matching `/^(table of )?contents$/i` is now dropped along
+  with the list immediately following it, rather than imported as body
+  content — a manually-authored contents section is always redundant
+  with, and permanently out of sync with, this app's own real
+  auto-generated TOC page. After building chapters, any *leading* run of
+  chapters containing only heading-type blocks (no real paragraph/list/
+  table/quote content) is dropped too — the common "title-page H1 with
+  no real prose before Chapter One" shape. Deliberately scoped to the
+  front of the book only, not applied to every chapter, so an
+  intentional, real heading-only chapter elsewhere isn't silently
+  deleted.
+- This is a parser-level fix, so it benefits every future Markdown
+  import with this shape, not just this one manuscript.
+
+### Cover font wiring
+The user had already downloaded the 7 families suggested last session
+(Anton, Bebas Neue, Oswald, Playfair Display, DM Serif Display, Abril
+Fatface, Fraunces) into `public/fonts/custom/`.
+
+- **`src/index.css`**: one `@font-face` block per real weight/style file
+  actually present for each family.
+- **`src/types/structuralPage.ts`**: `CoverFontChoice` extended with the
+  7 new ids.
+- **`src/structuralPages/coverTypography.ts`**: `CUSTOM_FAMILY_CSS` maps
+  each new id to its `@font-face` CSS string.
+- **`src/pdf/fonts.ts`**: refactored from two hardcoded named families
+  (`interRegular`/`serifSemiBold`/etc.) to a generic `FontWeightSet` per
+  family plus a `loadFamily()` helper, so adding a family is now "one
+  `loadFamily()` call + one matcher regex," not touching `ThemeFontSet`'s
+  shape by hand. `loadFamily` cascades missing weights to the nearest
+  real one it has (bold → semiBold → medium → regular) rather than
+  jumping straight to regular, and reuses an already-embedded `PDFFont`
+  object for any fallback rather than re-embedding the same file bytes a
+  second time (an early draft of this function did exactly that —
+  caught and fixed during this session's own review, see Verification).
+  Families with no real italic cut (Anton, Bebas Neue, Oswald, Abril
+  Fatface) fall back to a standard-14 italic, matching the pre-existing
+  Inter/Source Serif 4 precedent.
+- **`src/layout/inspector/StructuralPagePanel.tsx`**: `FONT_CHOICE_OPTIONS`
+  extended; the picker grid changed from 3 to 2 columns since several of
+  the new labels ("Playfair Display", "DM Serif Display") are long.
+- **`public/fonts/custom/README.md`**: rewritten to describe the current,
+  real wiring (was previously a forward-looking plan for zero real
+  families).
+- Deliberately **not** added to `CustomThemeEditorDialog.tsx`'s interior
+  theme font options — these are all cover-title/display faces, several
+  unreadable as running body text (Anton, Bebas Neue), so offering them
+  for a whole book's interior typography would be a design mistake, not
+  useful choice.
+
+### Review of Phases 45–49
+Re-read the cover image/overlay/typography/visibility code end to end.
+Found and fixed one cosmetic issue: `cover.tsx`'s PDF export used
+`subtitleHidden`/`authorHidden` to mean "don't draw and don't reserve
+space for" — which conflates an explicit hide with a field simply being
+empty. Renamed to `skipSubtitle`/`skipAuthor` with a comment explaining
+why the combined meaning is intentional, no behaviour change. Notes
+store/panel and placeholder blocks were re-read and found correct;
+`notesStore.ts`'s `getNotesForBlock`/`getNotesForStructuralPage` methods
+are unused dead code (every consumer selects the raw per-project array
+and filters in the render body instead, which is actually the more
+correct pattern for a Zustand selector) — harmless, flagged for later
+cleanup rather than fixed now since removing public store methods is a
+better fit for a dedicated pass.
+
+### Verification caveat
+This sandbox's own `node_modules` has two pre-existing environment
+issues unrelated to this session's changes: `npx tsc`/`vite` intermittently
+exceed the tool's 45s command timeout on the very first cold run of a
+session (worked around by invoking `node node_modules/typescript/bin/tsc`
+directly, skipping `npx`'s package-resolution overhead — same compiler,
+consistently fast once warm), and `vite`'s dev server fails to parse its
+own config here, so a real running instance of the app could not be
+opened in a browser this session — Chrome couldn't reach a dev server
+that never started. In place of that, the actual fixed `parseMarkdown`
+function was run against the real uploaded manuscript via an isolated
+`tsx` script (bypassing the app's other stores/UI entirely): confirmed
+16 chapters, titled exactly `Chapter One: ...` through
+`Chapter Sixteen: ...`, zero bogus leading chapter, zero broken
+markdown-link list content. `node node_modules/typescript/bin/tsc -b`
+clean. **Please verify live once pushed**: re-import the same manuscript
+and confirm the Structure tab shows exactly 16 chapters correctly
+numbered, the auto-generated Contents page lists only real chapters, and
+the new fonts appear and render correctly in the Cover's Font picker (on
+screen and in an exported PDF) — none of this could be visually confirmed
+in a live browser this session.
+
 ## Recommended next task
-The two concrete asks from the user's cover-mockup review (text
-visibility, font colour) are shipped. Two related ideas surfaced during
-that conversation and were deliberately deferred rather than built into
-this pass: a "cover accessories" feature (decorative badge/seal + an icon
-feature-strip band, seen on the real covers the user shared — a new kind
-of overlay element, not a property on an existing field) and wiring up
-additional cover font families once the user drops `.woff2` files into
-`public/fonts/custom/` (blocked on that, not on any remaining code work —
-see that folder's README for the ~15-minute wiring checklist once files
-exist). Absent further direction on either, Phase F's remaining items
-(project-creation wizard, outlining templates, word-count goals,
-distraction-free writing mode) are next per `docs/ROADMAP.md`.
+Both the reported import bug and the font-wiring request are shipped. A
+"cover accessories" feature (decorative badge/seal + an icon feature-strip
+band, seen on the real covers the user shared last session — a new kind
+of overlay element, not a property on an existing field) remains
+deliberately deferred, discussed but not yet built. Absent further
+direction, Phase F's remaining items (project-creation wizard, outlining
+templates, word-count goals, distraction-free writing mode) are next per
+`docs/ROADMAP.md`.

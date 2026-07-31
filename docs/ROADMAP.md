@@ -22,6 +22,15 @@ left*. Items already shipped are pre-checked based on `STATUS.md` as of 2026-07-
 - [x] Inline manuscript text editing (no re-import needed to fix a typo)
 - [x] Modular page system: structural pages (cover, title, copyright, TOC, etc.) +
       8 in-chapter content block types
+- [x] Fixed Markdown import bug (2026-07-31, Phase 50): a manuscript that opens
+      with a title-page-style H1 + a hand-typed "Contents" section (a common
+      real-world manuscript shape — reported by the user importing a real
+      16-chapter book) produced a bogus first "chapter" and a second, broken,
+      permanently-stale table of contents alongside the app's own real one,
+      and shifted every real chapter's auto-generated opener number one
+      higher than the number already in its own title. `parser/markdown.ts`
+      now drops a manually-authored Contents section and any purely
+      heading-only leading chapter. See docs/STATUS.md Phase 50.
 
 ## Phase B — Editor UX: Content Editing & Block Management
 
@@ -232,11 +241,16 @@ daily use of everything built so far.)*
       overlay element, not a property on the existing title/subtitle/
       author fields; scoped out of Phase 49 deliberately. Would reuse the
       same colour/font system once built
-- [ ] More cover font families beyond Inter/Source Serif 4 — blocked on the
-      user dropping `.woff2` files into `public/fonts/custom/` (this
-      sandbox can't fetch fonts itself); wiring a dropped-in family into
-      `CoverFontChoice`/`pdf/fonts.ts`/the font picker is a small, ready-to-go
-      follow-up once files exist — see that folder's README
+- [x] More cover font families beyond Inter/Source Serif 4 — shipped
+      2026-07-31 (Phase 50): the user downloaded and dropped in 7 Google
+      Fonts families (Anton, Bebas Neue, Oswald, Playfair Display, DM
+      Serif Display, Abril Fatface, Fraunces); wired into `CoverFontChoice`,
+      `src/index.css`, `pdf/fonts.ts`, and the Inspector's font picker —
+      cover-only, deliberately not offered for the book's interior theme
+      (most are display faces unsuited to running body text). `pdf/fonts.ts`
+      was refactored from two hardcoded families to a generic per-family
+      `FontWeightSet` + cascading weight/italic fallback so future families
+      are a ~15-minute addition, not a rewrite
 - [ ] Stock image / illustration library integration — deferred: needs a
       real third-party stock-photo API + licensing/attribution handling this
       client-only architecture doesn't have yet

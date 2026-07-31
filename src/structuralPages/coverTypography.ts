@@ -1,4 +1,4 @@
-import type { CoverTypographyOverride } from '@/types/structuralPage'
+import type { CoverFontChoice, CoverTypographyOverride } from '@/types/structuralPage'
 
 /**
  * Resolves a Cover/Back Cover's actual font family, honouring an optional
@@ -11,9 +11,29 @@ import type { CoverTypographyOverride } from '@/types/structuralPage'
 const SERIF_FAMILY = '"Source Serif 4", serif'
 const SANS_FAMILY = '"Inter", sans-serif'
 
+/**
+ * The seven cover-only display/serif families wired up in Phase 50 — CSS
+ * strings matching the `@font-face` declarations in `src/index.css`, with
+ * a plain generic fallback for the split second before the real face
+ * loads (or if a user opens an export in something that can't render the
+ * embedded font at all). Deliberately not offered anywhere in the book's
+ * interior theme system — see `CoverFontChoice`'s doc comment.
+ */
+const CUSTOM_FAMILY_CSS: Record<Exclude<CoverFontChoice, 'theme' | 'serif' | 'sans'>, string> = {
+  anton: '"Anton", sans-serif',
+  'bebas-neue': '"Bebas Neue", sans-serif',
+  oswald: '"Oswald", sans-serif',
+  'playfair-display': '"Playfair Display", serif',
+  'dm-serif-display': '"DM Serif Display", serif',
+  'abril-fatface': '"Abril Fatface", serif',
+  fraunces: '"Fraunces", serif',
+}
+
 export function resolveCoverFontFamily(typography: CoverTypographyOverride | undefined, themeFamily: string): string {
-  if (typography?.fontChoice === 'serif') return SERIF_FAMILY
-  if (typography?.fontChoice === 'sans') return SANS_FAMILY
+  const choice = typography?.fontChoice
+  if (choice === 'serif') return SERIF_FAMILY
+  if (choice === 'sans') return SANS_FAMILY
+  if (choice && choice !== 'theme') return CUSTOM_FAMILY_CSS[choice]
   return themeFamily
 }
 

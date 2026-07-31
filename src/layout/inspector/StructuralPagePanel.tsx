@@ -156,6 +156,16 @@ const FONT_CHOICE_OPTIONS: { id: CoverFontChoice; label: string }[] = [
   { id: 'theme', label: "Book's theme" },
   { id: 'serif', label: 'Serif' },
   { id: 'sans', label: 'Sans-serif' },
+  // Seven cover-only display/serif faces wired up in Phase 50 — see
+  // `public/fonts/custom/` and `pdf/fonts.ts`. Deliberately not offered
+  // for the book's interior theme (see `CoverFontChoice`'s doc comment).
+  { id: 'anton', label: 'Anton' },
+  { id: 'bebas-neue', label: 'Bebas Neue' },
+  { id: 'oswald', label: 'Oswald' },
+  { id: 'playfair-display', label: 'Playfair Display' },
+  { id: 'dm-serif-display', label: 'DM Serif Display' },
+  { id: 'abril-fatface', label: 'Abril Fatface' },
+  { id: 'fraunces', label: 'Fraunces' },
 ]
 
 const WEIGHT_OPTIONS: { value: number; label: string }[] = [
@@ -167,9 +177,10 @@ const WEIGHT_OPTIONS: { value: number; label: string }[] = [
 /**
  * Font/weight/italic/size controls for a Cover's title or a Back Cover's
  * blurb — deliberately independent of the book's interior theme (see
- * `types/structuralPage.ts`'s `CoverFontChoice` doc comment). Limited to
- * the two families this app actually embeds; `public/fonts/custom/`'s
- * README explains how to add more once real font files exist.
+ * `types/structuralPage.ts`'s `CoverFontChoice` doc comment). Offers the
+ * book's own two interior families plus the seven cover-only display/
+ * serif faces wired up from `public/fonts/custom/` in Phase 50; that
+ * folder's README still explains how to add further families later.
  */
 function CoverTypographyPanel({
   typography,
@@ -200,7 +211,7 @@ function CoverTypographyPanel({
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-1.5">
         <Label>Font</Label>
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
           {FONT_CHOICE_OPTIONS.map((option) => (
             <Button
               key={option.id}

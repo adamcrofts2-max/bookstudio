@@ -54,6 +54,158 @@
 }
 
 /* ------------------------------------------------------------------
+ * Cover-only display/serif fonts (Phase 50)
+ * Dropped into public/fonts/custom/ per that folder's README — 7 families
+ * offered only as Cover/Back Cover typography overrides
+ * (CoverFontChoice), never as a whole-book interior body/heading font:
+ * Anton/Bebas Neue/Oswald are single-weight-or-condensed display faces
+ * that would be close to unreadable set as running body text, and Abril
+ * Fatface/Playfair Display/DM Serif Display/Fraunces are all display-
+ * weight serif faces meant for large cover titling, not paragraph text —
+ * see coverTypography.ts. All seven are OFL-licensed Google Fonts.
+ * ------------------------------------------------------------------ */
+@font-face {
+  font-family: "Anton";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Anton/Anton-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Bebas Neue";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Bebas_Neue/BebasNeue-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Oswald/static/Oswald-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/custom/Oswald/static/Oswald-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/custom/Oswald/static/Oswald-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Oswald";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/custom/Oswald/static/Oswald-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Playfair_Display/static/PlayfairDisplay-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("/fonts/custom/Playfair_Display/static/PlayfairDisplay-Medium.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/custom/Playfair_Display/static/PlayfairDisplay-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/custom/Playfair_Display/static/PlayfairDisplay-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Playfair_Display/static/PlayfairDisplay-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Playfair Display";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/custom/Playfair_Display/static/PlayfairDisplay-BoldItalic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "DM Serif Display";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/DM_Serif_Display/DMSerifDisplay-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "DM Serif Display";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/DM_Serif_Display/DMSerifDisplay-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Abril Fatface";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Abril_Fatface/AbrilFatface-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Fraunces/static/Fraunces_72pt-Regular.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/custom/Fraunces/static/Fraunces_72pt-SemiBold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/custom/Fraunces/static/Fraunces_72pt-Bold.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/custom/Fraunces/static/Fraunces_72pt-Italic.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/custom/Fraunces/static/Fraunces_72pt-BoldItalic.ttf") format("truetype");
+}
+
+/* ------------------------------------------------------------------
  * Book Studio Design System
  * Source of truth: Book Studio UI Design System (docs/UI_DESIGN_SYSTEM.md)
  * Do not introduce ad-hoc colours, spacing, radii or type sizes.

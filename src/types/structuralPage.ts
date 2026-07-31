@@ -70,16 +70,29 @@ export interface CoverImageFocalPoint {
 export type CoverOverlayStyle = 'flat' | 'gradient-bottom' | 'gradient-top' | 'none'
 
 /**
- * Which of the app's two embedded font families a Cover/Back Cover's text
- * uses — deliberately independent of the book's interior theme (a
- * professional cover conventionally looks different from the inside
- * pages). `'theme'` (absent default) inherits the interior theme's
- * heading/body fonts exactly as before this milestone. Only two real
- * choices exist because those are the only families this app currently
- * embeds for PDF export (see `pdf/fonts.ts`) — `public/fonts/custom/`
- * exists for dropping in more later; see that folder's README.
+ * Which embedded font family a Cover/Back Cover's text uses — deliberately
+ * independent of the book's interior theme (a professional cover
+ * conventionally looks different from the inside pages). `'theme'` (absent
+ * default) inherits the interior theme's heading/body fonts exactly as
+ * before this milestone; `'serif'`/`'sans'` are the book's own two interior
+ * families (Source Serif 4 / Inter) used cover-only regardless of the
+ * theme's own choice. The seven `'anton'`...`'fraunces'` ids are cover-only
+ * display/serif faces dropped into `public/fonts/custom/` and wired up in
+ * Phase 50 — see `coverTypography.ts` and `pdf/fonts.ts` for why these are
+ * deliberately NOT offered as whole-book interior fonts (most are display
+ * faces unsuited to running body text).
  */
-export type CoverFontChoice = 'theme' | 'serif' | 'sans'
+export type CoverFontChoice =
+  | 'theme'
+  | 'serif'
+  | 'sans'
+  | 'anton'
+  | 'bebas-neue'
+  | 'oswald'
+  | 'playfair-display'
+  | 'dm-serif-display'
+  | 'abril-fatface'
+  | 'fraunces'
 
 export interface CoverTypographyOverride {
   fontChoice?: CoverFontChoice

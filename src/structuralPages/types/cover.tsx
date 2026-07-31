@@ -233,8 +233,13 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   const accent = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e0e0e0' : theme.page.accent))
   const hiddenFields = page.content.hiddenFields
   const titleHidden = isFieldHidden(hiddenFields, 'title')
-  const subtitleHidden = isFieldHidden(hiddenFields, 'subtitle') || !page.content.subtitle
-  const authorHidden = isFieldHidden(hiddenFields, 'author') || !page.content.author
+  // "Skip drawing" also covers a field that's simply empty — not the same
+  // concept as `isFieldHidden` (an explicit user choice), but the two are
+  // only ever consumed together below (skip the draw call, don't reserve
+  // layout space for it), so one combined name keeps the draw logic and
+  // the space-reservation logic below from being able to disagree.
+  const skipSubtitle = isFieldHidden(hiddenFields, 'subtitle') || !page.content.subtitle
+  const skipAuthor = isFieldHidden(hiddenFields, 'author') || !page.content.author
 
   const titleFontFamily = resolveCoverFontFamily(typography, theme.fonts.heading)
   const titleWeight = resolveCoverWeight(typography, theme.typography.headingWeight)
@@ -258,8 +263,8 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   // the *last* line near the bottom margin rather than the title. A hidden
   // field reserves no space, same as one that was never filled in.
   let totalSpanPt = 0
-  if (!subtitleHidden) totalSpanPt += titleSize * 1.5
-  if (!authorHidden) totalSpanPt += theme.typography.bodySize * 2.4 * PX_TO_PT
+  if (!skipSubtitle) totalSpanPt += titleSize * 1.5
+  if (!skipAuthor) totalSpanPt += theme.typography.bodySize * 2.4 * PX_TO_PT
 
   let cursorY = computeCoverLayoutCursorY({
     layout: page.content.layout,
@@ -273,14 +278,14 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
     ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink })
   }
 
-  if (!subtitleHidden && page.content.subtitle) {
+  if (!skipSubtitle && page.content.subtitle) {
     cursorY -= titleSize * 1.5
     const subSize = theme.typography.bodySize * 1.15 * PX_TO_PT
     const subWidth = bodyFont.widthOfTextAtSize(page.content.subtitle, subSize)
     ctx.page.drawText(page.content.subtitle, { x: centerX - subWidth / 2, y: cursorY, size: subSize, font: bodyFont, color: mutedInk })
   }
 
-  if (!authorHidden && page.content.author) {
+  if (!skipAuthor && page.content.author) {
     cursorY -= theme.typography.bodySize * 2.4 * PX_TO_PT
     const authorSize = theme.typography.bodySize * PX_TO_PT
     const authorWidth = bodyFont.widthOfTextAtSize(page.content.author, authorSize)
