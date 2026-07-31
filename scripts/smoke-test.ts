@@ -164,6 +164,7 @@ import {
   missingTerminalPunctuationChecker,
   quoteStyleConsistencyChecker,
 } from '../src/virtualEditor/checkers/proofreading'
+import { DEFAULT_STYLE_GUIDE } from '../src/virtualEditor/types'
 import type { Manuscript, ParagraphBlock } from '../src/types/content'
 
 function makeSingleParagraphManuscript(html: string): Manuscript {
@@ -252,6 +253,47 @@ check('VE proofreading: mixed quote styles flagged',
   quoteStyleConsistencyChecker.run({ manuscript: makeSingleParagraphManuscript('He said "hi" and she said “hello”.') }).length === 1)
 check('VE proofreading: no false positive on a single quote style',
   quoteStyleConsistencyChecker.run({ manuscript: makeSingleParagraphManuscript('He said “hi” and she said “hello”.') }).length === 0)
+
+// Straight vs curly quote consistency, WITH a Style Guide preference
+// (Phase 24) — the checker's old book-wide-mixing behaviour must stay
+// byte-for-byte unchanged when no preference is set (including when
+// 'no-preference' is passed explicitly), but must switch to per-span,
+// preference-aware flagging once a real preference is set.
+const mixedQuoteText = 'He said "hi" and she said “hello”.'
+check(
+  'VE proofreading: styleGuide.quoteStyle "no-preference" behaves exactly like no styleGuide at all',
+  quoteStyleConsistencyChecker.run({
+    manuscript: makeSingleParagraphManuscript(mixedQuoteText),
+    styleGuide: { ...DEFAULT_STYLE_GUIDE, quoteStyle: 'no-preference' },
+  }).length === 1,
+)
+const curlyPreferenceFindings = quoteStyleConsistencyChecker.run({
+  manuscript: makeSingleParagraphManuscript(mixedQuoteText),
+  styleGuide: { ...DEFAULT_STYLE_GUIDE, quoteStyle: 'curly' },
+})
+check(
+  'VE proofreading: with quoteStyle "curly" preferred, the straight-quote span is flagged (not the book-wide message)',
+  curlyPreferenceFindings.length === 1 && curlyPreferenceFindings[0]?.issueType === 'quote-style-preference-violation',
+)
+check(
+  'VE proofreading: curly-preference finding message names the actual preference',
+  curlyPreferenceFindings[0]?.message.includes('curly') ?? false,
+)
+const straightPreferenceFindings = quoteStyleConsistencyChecker.run({
+  manuscript: makeSingleParagraphManuscript(mixedQuoteText),
+  styleGuide: { ...DEFAULT_STYLE_GUIDE, quoteStyle: 'straight' },
+})
+check(
+  'VE proofreading: with quoteStyle "straight" preferred, the curly-quote span is flagged',
+  straightPreferenceFindings.length === 1 && straightPreferenceFindings[0]?.issueType === 'quote-style-preference-violation',
+)
+check(
+  'VE proofreading: a manuscript using only the preferred quote style produces no findings',
+  quoteStyleConsistencyChecker.run({
+    manuscript: makeSingleParagraphManuscript('He said “hi” and she said “hello”.'),
+    styleGuide: { ...DEFAULT_STYLE_GUIDE, quoteStyle: 'curly' },
+  }).length === 0,
+)
 
 // --- Virtual Editor: Consistency checkers (term-casing + measurement units) ---
 import { termCasingConsistencyChecker, measurementUnitConsistencyChecker } from '../src/virtualEditor/checkers/consistency'
@@ -400,23 +442,113 @@ check(
   longSentenceParagraphChecker.run({ manuscript: makeMultiParagraphManuscript([shortSentenceText]) }).length === 0,
 )
 
+// --- Virtual Editor: Copy editing checkers (Phase 24 — first
+// Style-Guide-dependent checker: only ever fires when a heading
+// capitalisation preference is explicitly set) ---
+import { headingCapitalisationChecker } from '../src/virtualEditor/checkers/copyEditing'
+
+function makeHeadingManuscript(headings: string[]): Manuscript {
+  return {
+    chapters: [
+      {
+        id: 've-heading-chapter',
+        title: 'Chapter One',
+        order: 0,
+        blocks: headings.map((text, i) => ({ id: `ve-heading-${i}`, type: 'heading', level: 2, text }) as HeadingBlock),
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 've-heading-fixture.md',
+  }
+}
+
+// Title Case: correctly-cased heading is never flagged.
+check(
+  'VE copyEditing: a correctly Title-Cased heading is not flagged',
+  headingCapitalisationChecker.run({
+    manuscript: makeHeadingManuscript(['A Walk in the Garden']),
+    styleGuide: { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'title-case' },
+  }).length === 0,
+)
+// Title Case: a major word left lowercase ("walk") is flagged.
+const titleCaseFindings = headingCapitalisationChecker.run({
+  manuscript: makeHeadingManuscript(['A walk in the Garden']),
+  styleGuide: { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'title-case' },
+})
+check('VE copyEditing: a heading violating Title Case is flagged', titleCaseFindings.length === 1)
+check('VE copyEditing: Title Case finding is in the copyEditing category', titleCaseFindings[0]?.category === 'copyEditing')
+check('VE copyEditing: Title Case finding has no suggestedFix (flag-only)', titleCaseFindings[0]?.suggestedFix === undefined)
+check('VE copyEditing: Title Case finding points at the exact heading block', titleCaseFindings[0]?.location.blockId === 've-heading-0')
+
+// Sentence case: correctly-cased heading (only first word capitalised, no
+// proper nouns in this fixture) is never flagged.
+check(
+  'VE copyEditing: a correctly Sentence-cased heading is not flagged',
+  headingCapitalisationChecker.run({
+    manuscript: makeHeadingManuscript(['The history of gardening']),
+    styleGuide: { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'sentence-case' },
+  }).length === 0,
+)
+// Sentence case: extra capitalised words are flagged.
+const sentenceCaseFindings = headingCapitalisationChecker.run({
+  manuscript: makeHeadingManuscript(['The History Of Gardening']),
+  styleGuide: { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'sentence-case' },
+})
+check('VE copyEditing: a heading violating Sentence case is flagged', sentenceCaseFindings.length === 1)
+
+// Never fires with no preference set — the checker's whole premise is that
+// it needs an explicit Style Guide opinion to have anything to enforce.
+check(
+  'VE copyEditing: does not fire at all when headingCapitalisation is "no-preference"',
+  headingCapitalisationChecker.run({
+    manuscript: makeHeadingManuscript(['A walk in the Garden', 'The History Of Gardening']),
+    styleGuide: { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'no-preference' },
+  }).length === 0,
+)
+check(
+  'VE copyEditing: does not fire at all when no styleGuide is passed',
+  headingCapitalisationChecker.run({
+    manuscript: makeHeadingManuscript(['A walk in the Garden', 'The History Of Gardening']),
+  }).length === 0,
+)
+
 // Pipeline + score aggregation
 const dirtyReport = runPipeline('ve-test-project', makeSingleParagraphManuscript('This  has a double space and the the repeated word'))
 check('VE pipeline: dirty manuscript scores below 100 on proofreading', (dirtyReport.categoryScores.proofreading?.score ?? 100) < 100)
 check('VE pipeline: overall score is computed once at least one category is analysed', dirtyReport.overallScore !== null)
 check(
-  'VE pipeline: a category with no checker registered at all still stays null (honest "not yet analysed") — copy editing has no checker yet',
-  dirtyReport.categoryScores.copyEditing === null,
+  // copyEditing gained a real (if conditionally silent) checker in Phase 24
+  // (headingCapitalisationChecker) — it's no longer a "not yet analysed"
+  // example. publishingStandards has no checker at all yet, so it's the
+  // still-accurate example of a category that stays null.
+  'VE pipeline: a category with no checker registered at all still stays null (honest "not yet analysed") — publishing standards has no checker yet',
+  dirtyReport.categoryScores.publishingStandards === null,
 )
 check(
   'VE pipeline: consistency and readability are no longer null now that real checkers are registered for them (Phase 23)',
   dirtyReport.categoryScores.consistency !== null && dirtyReport.categoryScores.readability !== null,
 )
-const analysedDirtyScores = [dirtyReport.categoryScores.proofreading, dirtyReport.categoryScores.consistency, dirtyReport.categoryScores.readability].filter(
-  (c): c is NonNullable<typeof c> => c !== null,
-)
 check(
-  'VE pipeline: overall score equals the mean of every analysed category (proofreading + consistency + readability), not just proofreading alone',
+  // Registering headingCapitalisationChecker under copyEditing (Phase 24)
+  // means that category is now "analysed" too, even when no styleGuide is
+  // passed at all — the checker correctly finds nothing (it only fires with
+  // an explicit heading-capitalisation preference), so it scores a real,
+  // honest 100 rather than null. This mirrors the documented scoring rule:
+  // "a category with a registered checker but zero findings scores a real
+  // 100" — not a bug, but worth asserting explicitly since it's a visible
+  // dashboard behaviour change (Grammar Score tile goes from "Not yet
+  // analysed" to "100" even with no Style Guide set at all).
+  'VE pipeline: copyEditing now scores a real 100 (registered checker, zero findings with no styleGuide passed) instead of null',
+  dirtyReport.categoryScores.copyEditing !== null && dirtyReport.categoryScores.copyEditing?.score === 100,
+)
+const analysedDirtyScores = [
+  dirtyReport.categoryScores.proofreading,
+  dirtyReport.categoryScores.consistency,
+  dirtyReport.categoryScores.readability,
+  dirtyReport.categoryScores.copyEditing,
+].filter((c): c is NonNullable<typeof c> => c !== null)
+check(
+  'VE pipeline: overall score equals the mean of every analysed category (proofreading + consistency + readability + copyEditing), not just proofreading alone',
   dirtyReport.overallScore === Math.round(analysedDirtyScores.reduce((sum, c) => sum + c.score, 0) / analysedDirtyScores.length),
 )
 
@@ -523,6 +655,33 @@ const fixAllStatuses = useVirtualEditorStore.getState().findingStatusByProject[f
 check(
   'fixAll: the pre-resolved finding\'s status is left exactly as it was (rejected), not overwritten to accepted',
   fixAllStatuses[repeatedWordFindingForFixAll.id] === 'rejected',
+)
+
+// --- virtualEditorStore.runReview: accepts and forwards an optional
+// styleGuide param (Phase 24) all the way to the checkers, through
+// runPipeline, exactly like every other checker input. Confirms the full
+// wiring end-to-end rather than just unit-testing the checker in isolation. ---
+const styleGuideReviewProjectId = 've-stylguide-review-project'
+const styleGuideReviewManuscript = makeHeadingManuscript(['A walk in the Garden'])
+useContentStoreForFixAll.getState().setManuscript(styleGuideReviewProjectId, styleGuideReviewManuscript)
+useVirtualEditorStore.getState().runReview(
+  styleGuideReviewProjectId,
+  styleGuideReviewManuscript,
+  { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'title-case' },
+)
+const styleGuideReport = useVirtualEditorStore.getState().reportsByProject[styleGuideReviewProjectId]!
+check(
+  'runReview: a styleGuide passed through runReview reaches headingCapitalisationChecker via runPipeline',
+  styleGuideReport.findings.some((f) => f.issueType === 'heading-capitalisation-mismatch'),
+)
+// Same manuscript with no styleGuide argument at all — the finding must not appear.
+const noStyleGuideReviewProjectId = 've-no-styleguide-review-project'
+useContentStoreForFixAll.getState().setManuscript(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
+useVirtualEditorStore.getState().runReview(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
+const noStyleGuideReport = useVirtualEditorStore.getState().reportsByProject[noStyleGuideReviewProjectId]!
+check(
+  'runReview: with no styleGuide argument, headingCapitalisationChecker stays silent (no false-positive plumbing bug)',
+  noStyleGuideReport.findings.every((f) => f.issueType !== 'heading-capitalisation-mismatch'),
 )
 
 // --- BookRenderer's scroll-target matching predicate (extracted as
@@ -1002,6 +1161,58 @@ check(
 const { useVersionStore } = await import('../src/store/versionStore')
 const { listSnapshotsForProject: listSnapshotsFromDb } = await import('../src/store/snapshotDb')
 const { useProjectStore } = await import('../src/store/projectStore')
+
+// --- Style Guide settings UI's data plumbing (Phase 24): ProjectSettings'
+// new optional `styleGuide` field persists/reads through
+// projectStore.updateProjectSettings exactly like every other settings
+// field (trimSize, themeId, etc.), and defaults correctly when absent —
+// "optional field, default in code, never migrate", per CLAUDE.md. ---
+const styleGuideProjectId = 've-styleguide-settings-project'
+useProjectStore.setState((state) => ({
+  projects: [
+    ...state.projects,
+    {
+      id: styleGuideProjectId,
+      name: 'Style Guide Settings Project',
+      category: 'other',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      settings: { ...DEFAULT_PROJECT_SETTINGS },
+    },
+  ],
+}))
+check(
+  'ProjectSettings: styleGuide is absent by default on a freshly created project (never migrated in)',
+  useProjectStore.getState().getProject(styleGuideProjectId)?.settings.styleGuide === undefined,
+)
+check(
+  'ProjectSettings: an absent styleGuide reads as DEFAULT_STYLE_GUIDE at the read site (the "?? DEFAULT_STYLE_GUIDE" pattern used by ProjectSettingsDialog/VirtualEditorWorkspace)',
+  JSON.stringify(useProjectStore.getState().getProject(styleGuideProjectId)?.settings.styleGuide ?? DEFAULT_STYLE_GUIDE) === JSON.stringify(DEFAULT_STYLE_GUIDE),
+)
+
+// Setting one field (mirroring ProjectSettingsDialog's `{ ...styleGuide, [field]: value }` merge-at-the-styleGuide-object-level pattern).
+useProjectStore.getState().updateProjectSettings(styleGuideProjectId, {
+  styleGuide: { ...DEFAULT_STYLE_GUIDE, quoteStyle: 'curly' },
+})
+check(
+  'ProjectSettings: updateProjectSettings persists a styleGuide field change',
+  useProjectStore.getState().getProject(styleGuideProjectId)?.settings.styleGuide?.quoteStyle === 'curly',
+)
+check(
+  'ProjectSettings: setting styleGuide does not disturb other, unrelated settings fields (themeId untouched)',
+  useProjectStore.getState().getProject(styleGuideProjectId)?.settings.themeId === DEFAULT_PROJECT_SETTINGS.themeId,
+)
+
+// Flipping a second field must preserve the first (the styleGuide-object-level spread ProjectSettingsDialog performs, not a fresh object).
+const currentStyleGuideForMerge = useProjectStore.getState().getProject(styleGuideProjectId)!.settings.styleGuide!
+useProjectStore.getState().updateProjectSettings(styleGuideProjectId, {
+  styleGuide: { ...currentStyleGuideForMerge, headingCapitalisation: 'sentence-case' },
+})
+const styleGuideAfterSecondFieldChange = useProjectStore.getState().getProject(styleGuideProjectId)?.settings.styleGuide
+check(
+  'ProjectSettings: changing one styleGuide field via the object-level spread preserves a previously-set sibling field (quoteStyle stays "curly")',
+  styleGuideAfterSecondFieldChange?.quoteStyle === 'curly' && styleGuideAfterSecondFieldChange?.headingCapitalisation === 'sentence-case',
+)
 
 function makeVersionTestManuscript(sourceFileName: string): Manuscript {
   return {

@@ -261,15 +261,62 @@ export const missingTerminalPunctuationChecker: Checker = {
   },
 }
 
-/** Book-wide: mixes straight quotes/apostrophes with curly ones. Informational
- * only — deciding which direction to normalise requires more context than a
- * deterministic checker should guess at, so there is no suggested fix. */
+/**
+ * Quotation-mark style. Two distinct behaviours, chosen by
+ * `ctx.styleGuide?.quoteStyle`:
+ *
+ * - **No preference set** (`'no-preference'` or `styleGuide` absent) — the
+ *   original, backward-compatible behaviour: a single book-wide
+ *   informational finding when the manuscript mixes straight and curly
+ *   quotes/apostrophes at all, with no opinion on which is "correct".
+ *   Deciding which direction to normalise needs more context than a
+ *   deterministic checker should guess at, so there is still no suggested
+ *   fix here.
+ * - **`'curly'` or `'straight'` preference set** — a more actionable mode:
+ *   every text span containing a quote/apostrophe mark that contradicts the
+ *   explicit preference gets its own finding (not one vague book-wide
+ *   pattern), so the user can see and fix each offending block. Still no
+ *   `suggestedFix` — converting a straight quote to the correct curly
+ *   opening/closing variant (or vice versa) needs to know which side of a
+ *   quotation it's on, which this checker doesn't attempt to parse.
+ */
 export const quoteStyleConsistencyChecker: Checker = {
   id: 'proofreading.quote-style-consistency',
   category: 'proofreading',
   label: 'Straight vs curly quote consistency',
-  description: 'Flags manuscripts that mix straight and curly quotation marks/apostrophes.',
+  description:
+    'Flags manuscripts that mix straight and curly quotation marks/apostrophes, or (when a Style Guide quote-style preference is set) flags any quote not matching it.',
   run(ctx: CheckerContext): Finding[] {
+    const preference = ctx.styleGuide?.quoteStyle
+
+    if (preference === 'curly' || preference === 'straight') {
+      const findings: Finding[] = []
+      const violatingPattern = preference === 'curly' ? /["']/ : /[‘’“”]/
+      const violatingPatternGlobal = preference === 'curly' ? /["']/g : /[‘’“”]/g
+      const preferredLabel = preference === 'curly' ? 'curly ("smart")' : 'straight'
+      const violatingLabel = preference === 'curly' ? 'straight' : 'curly'
+
+      for (const span of extractTextSpans(ctx.manuscript)) {
+        if (!violatingPattern.test(span.text)) continue
+        const count = (span.text.match(violatingPatternGlobal) ?? []).length
+        findings.push(
+          makeFinding({
+            checkerId: quoteStyleConsistencyChecker.id,
+            issueType: 'quote-style-preference-violation',
+            severity: 'minor',
+            confidence: 0.7,
+            location: { chapterId: span.chapterId, blockId: span.blockId },
+            message: `Found ${count} ${violatingLabel} quotation mark${count === 1 ? '' : 's'}/apostrophe${count === 1 ? '' : 's'} in "${excerpt(span.text)}", but this project's Style Guide prefers ${preferredLabel} quotes.`,
+            whyItMatters:
+              `The project's Style Guide explicitly sets quote style to ${preferredLabel} — a mismatched quote here breaks that stated rule and will read as inconsistent with the rest of the book.`,
+          }),
+        )
+      }
+      return findings
+    }
+
+    // No preference set (or no styleGuide passed at all) — exactly the
+    // original book-wide mixing behaviour, unchanged.
     const spans = extractTextSpans(ctx.manuscript)
     let straightCount = 0
     let curlyCount = 0

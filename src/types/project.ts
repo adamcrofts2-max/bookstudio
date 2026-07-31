@@ -7,6 +7,8 @@
  * docs/SYSTEM_ARCHITECTURE.md for why these stay separate.
  */
 
+import type { StyleGuide } from '@/virtualEditor/types'
+
 export type TrimSize =
   | '5x8'
   | '5.5x8.5'
@@ -31,6 +33,13 @@ export interface ProjectSettings {
   bleed: number
   themeId: string
   language: string
+  /** Project-level editorial preferences consulted by the Virtual Editor
+   * (see `docs/VIRTUAL_EDITOR.md` § Style Guide). Optional and never
+   * migrated — a project persisted before this field existed simply has
+   * no `styleGuide` key; every read site falls back to
+   * `DEFAULT_STYLE_GUIDE` (from `@/virtualEditor/types`) via `?? `, exactly
+   * like `ImageBlock`'s optional fields in `src/types/content.ts`. */
+  styleGuide?: StyleGuide
 }
 
 export type ProjectCategory =

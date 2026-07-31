@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 
 import type { ContentBlock, Manuscript } from '@/types/content'
-import type { EditorialReport, Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
+import type { EditorialReport, Finding, FindingStatus, IssueCategory, StyleGuide } from '@/virtualEditor/types'
 import { runPipeline } from '@/virtualEditor/pipeline'
 import { useContentStore } from '@/store/contentStore'
 import { generateId } from '@/utils/id'
@@ -52,8 +52,12 @@ interface VirtualEditorState {
 interface VirtualEditorActions {
   /** Runs every registered checker against the current manuscript and
    * stores the resulting report, replacing any previous one for this
-   * project. */
-  runReview: (projectId: string, manuscript: Manuscript) => EditorialReport
+   * project. `styleGuide` is optional and simply forwarded to
+   * `runPipeline` — this store never reaches into `projectStore` itself
+   * (per CLAUDE.md's layer-separation rule); the caller (which already has
+   * both the manuscript and the project) is responsible for reading
+   * `project.settings.styleGuide` and passing it in. */
+  runReview: (projectId: string, manuscript: Manuscript, styleGuide?: StyleGuide) => EditorialReport
   getReport: (projectId: string) => EditorialReport | undefined
   getFindingStatuses: (projectId: string) => Readonly<Record<string, FindingStatus>>
   getFindingStatus: (projectId: string, findingId: string) => FindingStatus
@@ -82,8 +86,8 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
   findingStatusByProject: {},
   revisionsByProject: {},
 
-  runReview: (projectId, manuscript) => {
-    const report = runPipeline(projectId, manuscript)
+  runReview: (projectId, manuscript, styleGuide) => {
+    const report = runPipeline(projectId, manuscript, styleGuide)
     set((state) => ({
       reportsByProject: { ...state.reportsByProject, [projectId]: report },
       findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },

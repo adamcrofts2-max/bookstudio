@@ -8,6 +8,7 @@ import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorSto
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { SCORE_TILES } from '@/virtualEditor/scoring'
+import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
 import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
 import { FindingRow, formatCategory } from '@/layout/virtualEditor/FindingRow'
@@ -137,7 +138,12 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               taxonomy is designed and lands incrementally — see <span className="font-medium">docs/VIRTUAL_EDITOR.md</span>.
             </p>
           </div>
-          <Button variant="primary" size="md" className="gap-2" onClick={() => runReview(project.id, manuscript)}>
+          <Button
+            variant="primary"
+            size="md"
+            className="gap-2"
+            onClick={() => runReview(project.id, manuscript, project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE)}
+          >
             <RefreshCcw className="size-4" />
             Review Entire Book
           </Button>

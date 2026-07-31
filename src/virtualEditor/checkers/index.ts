@@ -11,5 +11,11 @@ import type { Checker } from '@/virtualEditor/types'
 import { PROOFREADING_CHECKERS } from '@/virtualEditor/checkers/proofreading'
 import { CONSISTENCY_CHECKERS } from '@/virtualEditor/checkers/consistency'
 import { READABILITY_CHECKERS } from '@/virtualEditor/checkers/readability'
+import { COPY_EDITING_CHECKERS } from '@/virtualEditor/checkers/copyEditing'
 
-export const ALL_CHECKERS: Checker[] = [...PROOFREADING_CHECKERS, ...CONSISTENCY_CHECKERS, ...READABILITY_CHECKERS]
+export const ALL_CHECKERS: Checker[] = [
+  ...PROOFREADING_CHECKERS,
+  ...CONSISTENCY_CHECKERS,
+  ...READABILITY_CHECKERS,
+  ...COPY_EDITING_CHECKERS,
+]

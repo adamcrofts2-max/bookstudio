@@ -1723,3 +1723,211 @@ read, read-only, per the layer boundary in `docs/VIRTUAL_EDITOR.md`, (4)
 line-level text flow so paragraphs can split across pages, (5) justified
 text and image rotation in the PDF exporter, (6) proper glyph subsetting
 once the fontkit bug is understood, (7) EPUB/Kindle export.
+
+## Phase 24 — Virtual Editor: Style Guide settings UI + enforcement (2026-07-31)
+
+A deliberate deviation from Phase 23's own "Recommended next task" pointer
+(which suggested wiring up Edit/Apply-to-Chapter next) — this milestone was
+explicitly commissioned instead: give the long-designed `StyleGuide` type
+(`englishVariant`, `oxfordComma`, `quoteStyle`, `headingCapitalisation`,
+`measurementUnits`, `dateFormat` — all present since Phase 9's foundation,
+never enforced) a real settings UI, real per-project persistence, and real
+enforcement in at least two checkers. `docs/VIRTUAL_EDITOR.md`'s own § Style
+Guide previously described this as fully "designed, not built"; it no longer
+is, though most of the six fields still aren't consulted by anything (see
+below — this is a first slice, not full coverage).
+
+- **`ProjectSettings.styleGuide?: StyleGuide`** (`src/types/project.ts`) —
+  optional, never migrated, following the exact pattern already established
+  for `ImageBlock`'s optional fields in `src/types/content.ts`: a project
+  persisted before this phase simply has no `styleGuide` key, and every read
+  site falls back to `DEFAULT_STYLE_GUIDE` via `??`. `DEFAULT_PROJECT_SETTINGS`
+  itself is deliberately left unchanged (no `styleGuide` key added there
+  either) — the default lives in `virtualEditor/types.ts`'s
+  `DEFAULT_STYLE_GUIDE`, and every read site defaults to that directly,
+  rather than duplicating the default value into `project.ts` too.
+- **`ProjectSettingsDialog.tsx`** gained a new "Style Guide" section (its own
+  `Separator`, appended after the existing Theme section) — six `Select`
+  dropdowns, one per `StyleGuide` field, each defaulting to
+  `DEFAULT_STYLE_GUIDE`'s value when `project.settings.styleGuide` is absent.
+  A local `updateStyleGuideField` helper spreads the *current* style guide
+  object before flipping one field (`{ ...styleGuide, [field]: value }`) and
+  calls the existing `updateProjectSettings(project.id, { styleGuide: ... })`
+  — exactly the same "spread the nested object yourself" pattern the
+  dialog's pre-existing margin fields already use for `settings.margins`,
+  since `projectStore.updateProjectSettings` only shallow-merges
+  `ProjectSettings` at its top level, not one level into `styleGuide`. This
+  UI never resets a whole `styleGuide` back to defaults in one action (only
+  switches individual enum fields), so the shallow-merge limitation flagged
+  in Phase 20/22's `structuralPageStore`/`contentStore` bug writeups doesn't
+  apply here — confirmed, not just assumed, and covered by a direct test
+  (see below).
+- **Pipeline wiring** — `virtualEditorStore.runReview` gained a third,
+  optional `styleGuide?: StyleGuide` parameter, simply forwarded to
+  `pipeline.runPipeline` (which already accepted it as of Phase 9's original
+  plumbing — zero changes needed there). `virtualEditorStore` still never
+  reaches into `projectStore`'s state directly, per CLAUDE.md's layer
+  separation rule: `VirtualEditorWorkspace.tsx`'s "Review Entire Book"
+  button reads `project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE` itself
+  (it already receives the full `project` prop) and passes the resolved
+  value into `runReview` as a plain parameter — mirroring exactly how
+  `runPipeline` itself takes `styleGuide` as a parameter, never a store
+  read.
+- **`quoteStyleConsistencyChecker`** (`checkers/proofreading.ts`) is now
+  Style-Guide-aware. With no preference (`'no-preference'` or no
+  `styleGuide` passed at all — the exact same call shape every pre-Phase-24
+  test used), it is byte-for-byte the original behaviour: one book-wide
+  informational finding when the manuscript mixes straight and curly
+  quotes/apostrophes. With `styleGuide.quoteStyle` set to `'curly'` or
+  `'straight'`, it switches to a more actionable mode: every text span
+  containing a mark that contradicts the explicit preference gets its own
+  finding (`issueType: 'quote-style-preference-violation'`, `confidence:
+  0.7` — higher than the 0.5 heuristic-pattern confidence, since applying a
+  stated rule is more certain than inferring a book-wide pattern), with a
+  message/`whyItMatters` naming the actual preference. Still no
+  `suggestedFix` in either mode — converting a mark to the correct
+  directional curly quote needs to know which side of a quotation it's on,
+  which this checker doesn't parse.
+- **New checker: `headingCapitalisationChecker`** (`checkers/copyEditing.ts`,
+  new file; category `copyEditing`, the first real checker ever registered
+  for that category). Only produces findings when
+  `ctx.styleGuide?.headingCapitalisation` is `'title-case'` or
+  `'sentence-case'` — silent with no preference set or no `styleGuide` at
+  all, since (unlike the quote checker) there's no sensible "default
+  correct" heading convention to fall back to. Scans `heading` blocks with
+  two documented heuristics:
+  - **Title Case**: every word should be capitalised unless it's a short
+    minor word (article/coordinating-conjunction/short preposition — see
+    `MINOR_WORDS`) *and* isn't the first or last word of the heading.
+  - **Sentence case**: only the first word should be capitalised; later
+    words are allowed to be capitalised only if they're a whole-word
+    acronym (all-caps, 2+ letters — assumed deliberate, e.g. "NASA") or the
+    pronoun "I". **Honest, documented limitation**: with no proper-noun
+    dictionary, a genuine proper noun later in a heading (e.g. "The history
+    of London") will false-positive here — directionally useful, not
+    linguistically perfect, the same honesty standard every other
+    heuristic checker in this codebase already documents about its own
+    approximations.
+  No `suggestedFix` — deciding which words are minor/proper nouns needs
+  editorial judgement a regex can't safely automate. Registered in
+  `checkers/index.ts`'s `ALL_CHECKERS` via a new `COPY_EDITING_CHECKERS`
+  array, mirroring `PROOFREADING_CHECKERS`/`CONSISTENCY_CHECKERS`/
+  `READABILITY_CHECKERS`'s exact shape.
+- **A visible, honest side effect of registering a `copyEditing` checker at
+  all**: the dashboard's Grammar Score tile (`copyEditing`) goes from "Not
+  yet analysed" to a real number — 100, with zero findings, even when no
+  heading-capitalisation preference is set at all, since
+  `headingCapitalisationChecker` is still a *registered* checker that
+  correctly finds nothing to flag. This follows directly from `scoring.ts`'s
+  pre-existing, documented rule ("a category with a registered checker but
+  zero findings scores a real 100"), not a new fabrication — but it means a
+  100 Grammar Score no longer means "nothing in Grammar has ever been
+  checked," only "nothing *style-guide-dependent* was flagged." Flagged
+  explicitly here, and in `docs/VIRTUAL_EDITOR.md`, rather than left as a
+  silent surprise.
+- **Tests**: `scripts/smoke-test.ts` grew from 329 to **351** passing checks
+  — `quoteStyleConsistencyChecker`'s new preference-aware behaviour (explicit
+  `'no-preference'` matches the no-`styleGuide` case exactly; `'curly'`
+  preferred flags the straight-quote span with the right `issueType` and a
+  message naming the preference; `'straight'` preferred flags the
+  curly-quote span; a manuscript already matching the preference produces
+  zero findings); `headingCapitalisationChecker` (correct Title Case/
+  Sentence case headings produce no findings; incorrect ones of each kind
+  are flagged with no `suggestedFix`, in the `copyEditing` category, pointed
+  at the exact block; explicitly does NOT fire with `'no-preference'` or no
+  `styleGuide` at all, even against headings that would otherwise violate
+  both conventions); `runReview`'s new `styleGuide` parameter exercised
+  end-to-end (a styleGuide passed through `runReview` really does reach
+  `headingCapitalisationChecker` via `runPipeline`; omitting it keeps the
+  checker silent — confirming the plumbing itself, not just the checker in
+  isolation); and `ProjectSettings.styleGuide`'s persistence/defaulting
+  through the real `projectStore` (absent by default on a fresh project;
+  reads as `DEFAULT_STYLE_GUIDE` via the `??` pattern; `updateProjectSettings`
+  persists a field change without disturbing unrelated settings fields;
+  changing a second `styleGuide` field via the object-level spread preserves
+  a previously-set sibling field, directly confirming the "spread first"
+  merge pattern `ProjectSettingsDialog` relies on actually works). Also
+  updated two now-inaccurate pre-existing pipeline assertions: `copyEditing`
+  is no longer a valid "not yet analysed" example (`publishingStandards` is,
+  now) once it gained a registered checker, and the "overall score equals
+  the mean of every analysed category" assertion now includes `copyEditing`
+  in its expected-mean calculation.
+- **Verified**: `npx tsc -b --force` clean, run directly against the real
+  repo (~32s). `npm run build`/`npm run lint`/`npm run test` were run in a
+  scratch directory (fresh `npm install`, source files synced in) after this
+  sandbox's `vite build` hit the same pre-existing ESM config-loader
+  flakiness against this exact mount that Phases 19–23 already
+  documented — not a regression, since `vite.config.ts` is untouched by this
+  phase and `tsc -b --force` already independently confirmed every
+  new/changed file typechecks correctly against the real, non-scratch repo.
+  `npm run build` clean, 2,462 modules (up from 2,461). `npm run lint`: 0
+  errors, 43 warnings (unchanged from baseline — `copyEditing.ts` is a plain
+  logic module, not a React component, so it doesn't trip the
+  `react/only-export-components` heuristic). `npm run test`: **351/351
+  passing** (329 baseline + 22 new checks).
+
+### Deviations from the brief, and why
+- **`DEFAULT_PROJECT_SETTINGS` was not given a `styleGuide` key.** The brief
+  asked for "optional field, default in code, never migrate" — adding a
+  concrete default value into `DEFAULT_PROJECT_SETTINGS` would mean *every*
+  newly-created project starts with an explicit `styleGuide` object anyway,
+  which is a fine choice but a different one than "the field stays genuinely
+  absent until a user touches the Style Guide UI." Left it genuinely
+  optional/absent so the "absent by default" test actually exercises a real
+  case, matching how `ImageBlock`'s optional fields behave for a
+  freshly-imported image before any panel control has touched it.
+- **Only two checkers were made Style-Guide-aware, per the brief's explicit
+  "at least these two" instruction** — `englishVariant`, `oxfordComma`,
+  `measurementUnits` (the existing `measurementUnitConsistencyChecker` still
+  ignores a deliberate single-system preference), and `dateFormat` remain
+  unconsulted by any checker. Documented as still-open in
+  `docs/VIRTUAL_EDITOR.md`'s § Style Guide, not silently left out.
+- **No "reset Style Guide to defaults" button was built.** Not asked for,
+  and the brief's own caution about the shallow-merge class of bug only
+  applies to a full-object reset-to-default action, which doesn't exist in
+  this UI at all — every control here only ever flips one enum field via
+  the styleGuide-level spread.
+
+### Explicitly deferred (per the milestone's own scope)
+- Phase 23's own "Recommended next task" (Edit/Apply-to-Chapter wiring) —
+  still not done; this phase's work was substituted in for it, not stacked
+  on top of it.
+- Every checker category still without a real checker at all
+  (developmental, publishingStandards, fieldGuide, layout, typography,
+  accessibility, print, commercial) — untouched.
+- `englishVariant`/`oxfordComma`/`measurementUnits`/`dateFormat`
+  enforcement — the type/UI/persistence exist for all six fields, but only
+  `quoteStyle` and `headingCapitalisation` are consulted by a checker today.
+- AI Learning / the personal editorial profile that would eventually tally
+  accept/reject decisions against Style Guide fields — still fully
+  "designed, not built," per `docs/VIRTUAL_EDITOR.md`.
+- Live-browser verification of the new Style Guide `Select` controls
+  actually rendering/behaving correctly in `ProjectSettingsDialog` — this
+  sandbox session had no way to load the app in a real browser; verified by
+  build/typecheck/unit-test only, same honest caveat every prior
+  Virtual-Editor-UI phase has carried.
+
+## Recommended next task
+Phase 23's pointer is still the most direct outstanding item and wasn't
+touched by this phase: wire up **Edit** (currently visibly disabled) and the
+**Apply to Chapter**/**Apply to Book** batch actions on findings (currently
+disabled placeholders in `FindingRow.tsx`) — `virtualEditorStore.fixAll`/
+`fixCategory` already exist as the report-wide/category-wide batch-apply
+primitives (Phase 13), so "Apply to Chapter" is mostly a matter of scoping
+that existing loop down to `finding.location.chapterId`. Also newly relevant
+after this phase: extend Style Guide enforcement to the three still-ignored
+fields (`englishVariant`/`oxfordComma`/`measurementUnits`/`dateFormat`) —
+`measurementUnitConsistencyChecker` in particular already has the exact
+regex-counting infrastructure a `measurementUnits` preference could suppress
+against. Outside the Virtual Editor track: (1) profile the Phase 21
+structural-page mutation freeze (15–30s on a 17-chapter project), still
+unaddressed, (2) a third deterministic checker engine — Publishing Quality
+(widows/orphans/stranded titles) is a strong candidate since
+`renderer/paginate.ts`'s layout output is already plain data a checker could
+read, read-only — but this needs new `CheckerContext` plumbing first (it
+doesn't carry pagination output today, only `manuscript`/`styleGuide`), (3)
+manually verify the Phase 13 scroll-to-block flow and recent dashboard tiles
+in a real browser (jsdom can't exercise either), (4) line-level text flow so
+paragraphs can split across pages, (5) justified text and image rotation in
+the PDF exporter, (6) proper glyph subsetting once the fontkit bug is
+understood, (7) EPUB/Kindle export.

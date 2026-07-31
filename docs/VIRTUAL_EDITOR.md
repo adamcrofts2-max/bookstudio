@@ -115,7 +115,7 @@ know the pipeline became partly asynchronous.
 
 ```
 "Review Entire Book" click
-  → virtualEditorStore.runReview(projectId, manuscript)
+  → virtualEditorStore.runReview(projectId, manuscript, styleGuide?)
       → pipeline.runPipeline(projectId, manuscript, styleGuide?)
           → ALL_CHECKERS.flatMap(checker => checker.run({ manuscript, styleGuide }))
           → scoring.computeCategoryScores(findings, analysedCategories)
@@ -144,12 +144,14 @@ Every `Finding` carries a `confidence` (0–1) alongside its `severity`
 | Unmatched brackets | 0.85 | Reliable stack-matching, but a lone bracket used as a stylistic aside is possible |
 | Unmatched quotes | 0.6 | Straight-quote apostrophes inside contractions can throw off a naive count |
 | Missing terminal punctuation | 0.55 | Some short lines (labels, captions) legitimately have none |
-| Quote-style consistency | 0.5 | A heuristic pattern across the whole book, not a per-sentence fact |
+| Quote-style consistency (no Style Guide preference) | 0.5 | A heuristic pattern across the whole book, not a per-sentence fact |
+| Quote-style preference violation (Style Guide `quoteStyle` set) | 0.7 | Applying an explicit, user-declared rule is more certain than inferring a book-wide pattern, but a straight quote/apostrophe used deliberately inside a quoted excerpt is still theoretically possible |
 | Flesch Reading Ease / Grade Level | 0.7 | The formulas are exact and standard; the input syllable count is a vowel-group heuristic approximation, not a dictionary lookup |
 | Long average sentence length | 0.6 | Naive punctuation-based sentence splitting can misjudge boundaries around abbreviations |
 | Metric vs imperial unit mixing | 0.55 | Regex-based unit detection is reliable in aggregate, but a deliberate "give both" convention (e.g. "5 metres (16 feet)") would still count as a mix |
 | Term-casing consistency | 0.5 | A capitalisation heuristic with no dictionary of real proper nouns — same "book-wide pattern, not certainty" caveat as quote-style consistency |
 | Metric abbreviation-style consistency | 0.5 | Same heuristic caveat as term-casing — a style pattern across the book, not a per-instance fact |
+| Heading capitalisation (Style Guide `headingCapitalisation` set) | 0.5 | No dictionary of proper nouns — a genuine proper noun later in a Sentence-case heading (e.g. "The history of London") will false-positive; directionally useful, not linguistically complete |
 
 **Score formula** (`scoring.ts`): start at 100, subtract
 `SEVERITY_WEIGHT[severity] * confidence` for every finding in a category, floor at 0.
@@ -172,8 +174,8 @@ findings still show up in the Findings list under their own category label.
 
 | Category (dashboard label) | Real today | Designed for later |
 |---|---|---|
-| **Proofreading** | Double spaces, repeated adjacent words, unmatched quotes, unmatched brackets, missing terminal punctuation, straight/curly quote consistency | Spelling, dash consistency, ellipsis consistency, missing/extra spaces around punctuation, broken hyperlinks, malformed URLs |
-| **Grammar** (`copyEditing`) | — | Grammar, sentence flow, awkward wording, passive voice, word repetition, overly long sentences, inconsistent terminology/abbreviations, capitalisation, number/bullet/table formatting, italic species names |
+| **Proofreading** | Double spaces, repeated adjacent words, unmatched quotes, unmatched brackets, missing terminal punctuation, straight/curly quote consistency (book-wide heuristic with no Style Guide preference set, **or** a per-span preference-violation flag once `styleGuide.quoteStyle` is `'curly'`/`'straight'`) | Spelling, dash consistency, ellipsis consistency, missing/extra spaces around punctuation, broken hyperlinks, malformed URLs |
+| **Grammar** (`copyEditing`) | Heading capitalisation (Title Case / Sentence case), but **only when** `styleGuide.headingCapitalisation` is explicitly set to `'title-case'` or `'sentence-case'` — silent with no preference | Grammar, sentence flow, awkward wording, passive voice, word repetition, overly long sentences, inconsistent terminology/abbreviations, number/bullet/table formatting, italic species names |
 | *(taxonomy only)* `developmental` | — | Weak intros/conclusions, out-of-place chapters, missing explanations/diagrams/examples, poor transitions, repetition, information overload, chapter length outliers, logical inconsistencies |
 | **Publishing Quality** (`publishingStandards`) | — | Stranded chapter titles, widows, orphans, images separated from captions, captions without images, bad table splits, bad page turns, crowded/sparse pages, isolated bullets, single-line paragraphs/headings, blank pages, missing folios, running-header errors, inconsistent margins/spacing |
 | **Readability** | Book-wide Flesch Reading Ease + Flesch-Kincaid Grade Level (real word/sentence/syllable-count formulas, informational, always reported), per-paragraph unusually-long-average-sentence-length flag | Reading age (beyond Flesch-Kincaid), passive-voice %, reading time, chapter difficulty, reading fatigue |
@@ -266,15 +268,58 @@ preferred paragraph length. None of this is implemented. The intended shape:
   learned profile should be inspectable/editable by the user like any other
   setting, never a silent behavior change.
 
-## Style Guide (designed, not built)
+## Style Guide (partially built — Phase 24)
 
-`StyleGuide` (in `types.ts`) already exists as a type — English variant, Oxford
-comma, quote style, heading capitalisation, measurement units, date format — and
-`Checker.run` already accepts it as optional context (`CheckerContext.styleGuide`),
-so wiring it in later doesn't require changing the `Checker` interface. No UI to
-edit a project's Style Guide exists yet, and no checker currently reads it (the six
-proofreading checkers in this milestone don't have style-dependent behaviour). A
-`DEFAULT_STYLE_GUIDE` constant is provided as the eventual default.
+`StyleGuide` (in `types.ts`) is a type — English variant, Oxford comma, quote
+style, heading capitalisation, measurement units, date format — and `Checker.run`
+accepts it as optional context (`CheckerContext.styleGuide`). As of Phase 24 the
+full path is real, from settings UI down to two consulting checkers:
+
+- **Settings UI**: `ProjectSettingsDialog.tsx` has a "Style Guide" section — six
+  `Select` dropdowns, one per `StyleGuide` field. Each defaults to
+  `DEFAULT_STYLE_GUIDE`'s value when `project.settings.styleGuide` is absent, and
+  writes via `updateProjectSettings(project.id, { styleGuide: { ...current, [field]: value } })`
+  — an object-level spread, since `updateProjectSettings` only shallow-merges
+  `ProjectSettings` at the top level, not one level into `styleGuide`.
+- **Persistence**: `ProjectSettings.styleGuide?: StyleGuide` (`src/types/project.ts`)
+  is optional and never migrated — a project persisted before this field existed
+  simply has no `styleGuide` key, and every read site falls back to
+  `DEFAULT_STYLE_GUIDE` via `??`, exactly like `ImageBlock`'s optional fields in
+  `src/types/content.ts`.
+- **Wiring into the pipeline**: `VirtualEditorWorkspace.tsx`'s "Review Entire Book"
+  button reads `project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE` (it already has
+  the `project` prop) and passes it into `virtualEditorStore.runReview(projectId,
+  manuscript, styleGuide)`, a new optional third parameter that `runReview` simply
+  forwards to `runPipeline` — `virtualEditorStore` never reaches into
+  `projectStore`'s own state directly, keeping the layer boundary intact.
+- **Checkers that actually consult it today** (exactly two — every other checker
+  in the codebase still ignores `ctx.styleGuide` entirely, unchanged):
+  1. `quoteStyleConsistencyChecker` (`checkers/proofreading.ts`) — when
+     `styleGuide.quoteStyle` is `'curly'` or `'straight'`, it switches from "the
+     book mixes styles" to flagging every span containing a quote/apostrophe that
+     contradicts the explicit preference (`issueType:
+     'quote-style-preference-violation'`, one finding per offending span, more
+     actionable than the book-wide message). With `'no-preference'` or no
+     `styleGuide` passed at all, it falls back to the original, unchanged
+     book-wide-mixing behaviour.
+  2. `headingCapitalisationChecker` (new, `checkers/copyEditing.ts`, category
+     `copyEditing`) — only produces findings when `styleGuide.headingCapitalisation`
+     is `'title-case'` or `'sentence-case'`; silent otherwise. Scans `heading`
+     blocks with a documented, honest heuristic (see the file's doc comments for
+     the exact rules and known false-positive cases — e.g. Sentence case has no
+     proper-noun dictionary, so a genuine proper noun past the first word will
+     false-positive). This is the first checker registered under `copyEditing`,
+     so the dashboard's Grammar Score tile now shows a real number (100 with zero
+     findings when no heading-capitalisation preference is set) instead of "Not
+     yet analysed" — an honest consequence of the existing "a category with a
+     registered checker but zero findings scores 100" scoring rule, not a
+     fabricated score, but worth knowing since a 100 there no longer means
+     "nothing in Grammar has ever been checked."
+- **Still not enforced**: `englishVariant`, `oxfordComma`, `measurementUnits`
+  (the existing `measurementUnitConsistencyChecker` in `consistency.ts` still
+  ignores it — a project that's deliberately single-system still gets flagged for
+  "mixing"), and `dateFormat`. AI Learning (§ above) also remains untouched by
+  this phase.
 
 ## Editorial Dashboard (what's built)
 
@@ -361,5 +406,5 @@ revision log) generalise to them too.
 | Original/RevA/RevB/RevC side-by-side compare | **Designed, not built** |
 | Copy editing / developmental / publishing-standards / field-guide / layout / typography / accessibility / print / commercial checkers | **Designed, not built** |
 | AI Learning / editorial profile | **Designed, not built** |
-| Style Guide enforcement | **Type + plumbing exist, not enforced by any checker yet** |
+| Style Guide enforcement | **Partially real (Phase 24)** — settings UI + persistence + pipeline wiring are real; `quoteStyleConsistencyChecker` and the new `headingCapitalisationChecker` consult it; `englishVariant`/`oxfordComma`/`measurementUnits`/`dateFormat` and every other checker still ignore it |
 | Future AI modules (fact-check, indexing, glossary, etc.) | **Named as extension points, not stubbed individually** |
