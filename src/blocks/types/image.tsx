@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { degrees } from 'pdf-lib'
 
 import type { ContentBlock } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
@@ -132,7 +133,43 @@ async function drawImagePdf(ctx: DrawCtx, block: ContentBlock) {
     : align === 'right' ? ctx.contentX + (ctx.contentWidthPt - displayWidth)
     : ctx.contentX + (ctx.contentWidthPt - displayWidth) / 2
   ctx.cursorY -= displayHeight
-  ctx.page.drawImage(pdfImage, { x: imageX, y: ctx.cursorY, width: displayWidth, height: displayHeight })
+
+  // `block.rotation` (0/90/180/270) is a CSS `transform: rotate(...)deg`
+  // on-screen (see `ImageRender` above) — CSS rotation is clockwise-positive
+  // around the element's own center, with no change to its layout box size.
+  // pdf-lib's `rotate` on `drawImage` is counter-clockwise-positive (its
+  // transform matrix is the standard math rotation matrix — see
+  // `docs/STATUS.md` Phase 39) and pivots around the image's *bottom-left*
+  // corner `(x, y)`, not its center. To reproduce the same "rotate in place
+  // about the center, box size unchanged" visual behaviour the screen
+  // renders, this computes a shifted `(x, y)` anchor such that after
+  // pdf-lib's corner-pivot rotation, the image's *center* lands back on the
+  // same point `(imageX + displayWidth/2, cursorY + displayHeight/2)` the
+  // unrotated image would have occupied. Derivation: pdf-lib's pipeline is
+  // translate(x,y) -> rotate(θ) -> scale(w,h), so a local point p scaled
+  // into [0,w]x[0,h] ends up at `(x,y) + Rθ(p)`; solving for the anchor
+  // that keeps the scaled rectangle's own center `v = (w/2, h/2)` mapped
+  // onto center `C` gives `(x,y) = C - Rθ(v)`.
+  if (block.rotation === 0) {
+    ctx.page.drawImage(pdfImage, { x: imageX, y: ctx.cursorY, width: displayWidth, height: displayHeight })
+  } else {
+    const thetaRad = (-block.rotation * Math.PI) / 180 // CSS clockwise -> pdf-lib counter-clockwise
+    const cos = Math.cos(thetaRad)
+    const sin = Math.sin(thetaRad)
+    const vx = displayWidth / 2
+    const vy = displayHeight / 2
+    const centerX = imageX + vx
+    const centerY = ctx.cursorY + vy
+    const anchorX = centerX - (vx * cos - vy * sin)
+    const anchorY = centerY - (vx * sin + vy * cos)
+    ctx.page.drawImage(pdfImage, {
+      x: anchorX,
+      y: anchorY,
+      width: displayWidth,
+      height: displayHeight,
+      rotate: degrees(-block.rotation),
+    })
+  }
   if (block.caption) {
     ctx.cursorY -= 4
     const capSize = theme.typography.bodySize * 0.75 * PX_TO_PT

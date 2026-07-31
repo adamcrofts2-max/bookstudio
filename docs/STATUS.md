@@ -2986,10 +2986,98 @@ fixes on the same block (e.g. a double-space fix, then later an Oxford
 comma fix on the same paragraph) and confirm a "Revision compare" section
 appears showing Original/RevA/RevB with the correct text at each stage.
 
+## Phase 39 — Four PDF export fixes: justified text, image rotation,
+italic/hyperlink styling, table cell wrapping (2026-07-31)
+
+Phase C is now complete except the deliberately-deferred AI items. First
+concrete slice of Phase D: four PDF-export bugs that were all pre-existing
+gaps between the on-screen preview and the exported PDF (this exporter's
+whole design goal, per `CLAUDE.md`'s WYSIWYG non-negotiable).
+
+- **True justified text** (`src/pdf/textWrap.ts`): `wrapRuns` gained an
+  optional `WrapRunsOptions.justify` flag. When set, every wrapped line
+  except a paragraph's actual last line has its inter-word spacing
+  stretched so the line's rightmost word lands exactly at `maxWidth` —
+  redistributing only the *space between words* (never touching a word's
+  own rendered width), the same mechanism real justified typesetting uses.
+  `paragraph.tsx`'s `drawParagraphPdf` now passes
+  `theme.typography.justify` — the exact flag the on-screen `<p>` already
+  reads for its CSS `text-align: justify` — so the PDF finally matches
+  instead of silently staying left-aligned. Drop-cap paragraphs skip
+  justifying their first line's already-narrowed width against a
+  now-different `maxWidth` than later lines — a minor, documented
+  simplification (drop-cap paragraphs are typically short), not a silent
+  bug.
+- **Per-image rotation** (`src/blocks/types/image.tsx`): `drawImagePdf`
+  previously never read `block.rotation` at all. pdf-lib's `rotate` on
+  `drawImage` is counter-clockwise-positive and pivots around the image's
+  bottom-left corner (confirmed by reading `rotateRadians`'s actual
+  transformation-matrix source in `node_modules/pdf-lib`), whereas CSS
+  `transform: rotate()` (what the screen renderer uses) is
+  clockwise-positive and pivots around the element's own center with the
+  layout box unchanged. The fix computes a shifted anchor point so pdf-lib's
+  corner-pivot rotation reproduces the same "rotate in place about the
+  center, same box size" visual result CSS gives — derived from pdf-lib's
+  actual `translate → rotate → scale` operator pipeline, not guessed.
+- **Italic and hyperlink styling** (`src/pdf/{fonts,htmlRuns,textWrap,
+  drawBlockHelpers}.ts`, `paragraph.tsx`): `TextRun` now carries `italic`/
+  `href` (parsed from `<em>`/`<i>`/`<a href>`, which the manuscript
+  sanitiser already preserved — see `parser/html.ts` — just never consumed
+  here). Italic runs render in a real italic font — but since no italic
+  `.woff2` exists in `public/fonts` and this sandbox has no network access
+  to fetch one, `pickItalicFont` (`fonts.ts`) falls back to pdf-lib's
+  built-in standard-14 fonts (Helvetica Oblique / Times Italic), which need
+  no embedding at all (no fetch, so no network dependency) — a real,
+  correct italic slant, just a different typeface for italic runs
+  specifically from the rest of the paragraph. Honestly documented as a
+  known limitation, not silently faked. Link runs render in the theme's
+  accent colour with a real underline rule — genuine visual distinction —
+  but deliberately **not** a clickable PDF link annotation: hand-constructing
+  a `/Link` annotation via pdf-lib's low-level object API with no PDF
+  viewer available in this environment to confirm it actually resolves was
+  judged too large/unverifiable a side quest for a print-first exporter,
+  especially with EPUB export (where links matter far more) landing next
+  in this same phase.
+- **Table cell text wrapping** (`src/blocks/types/table.tsx`):
+  `drawTablePdf` previously drew each cell's raw text at a fixed x with no
+  wrapping at all — a long cell simply overflowed into neighbouring
+  columns. New `drawTableRow` helper wraps each cell independently to its
+  own column width via the existing `wrapRuns`/`drawWrappedLines`, using an
+  isolated per-cell scratch `DrawCtx` (so `drawWrappedLines`'s internal
+  cursor mutation never leaks between cells) and advancing the row's real
+  cursor once by whichever cell wrapped to the most lines, keeping every
+  cell in a row vertically aligned regardless of how much any one cell
+  wrapped.
+- All four changes are additive to `wrapRuns`/`drawWrappedLines`'s
+  signatures (new trailing optional-object parameters) — the ~20 other call
+  sites across `src/blocks/types/` and `src/structuralPages/types/` that
+  don't need italic/justify/link behaviour compile and run completely
+  unchanged.
+- **Real font subsetting** (a separate Phase D checklist item) is not part
+  of this phase and is now marked blocked-in-this-environment in
+  `docs/ROADMAP.md`: pdf-lib 1.17.1 (the installed version) has no
+  subsetting API, and getting one would need installing a different or
+  forked package — this sandbox has no npm registry access to do that.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` in this sandbox. Verified via
+`npx tsc -b --force` only (clean) plus hand-derivation of the image-rotation
+math against pdf-lib's actual operator source (not just assumed). **Manually
+verify a real exported PDF**: a justified-theme paragraph's lines reach the
+right margin evenly (except its last line), a 90°/180°/270°-rotated image
+exports rotated in the same visual position as the on-screen preview, a
+paragraph with `<em>`/`<a href>` text shows a visibly different (though not
+identical-family) italic and an underlined accent-coloured link, and a table
+with a long cell wraps within its column instead of overflowing.
+
 ## Recommended next task
-Manually verify Phase 38 live (see caveat above). Phase C is now complete
-except the deliberately-deferred AI-backed items (real `AiReviewer`, AI
-Learning — both need a real backend-vs-BYOK architectural decision first).
-Moving on to Phase D (EPUB/Kindle export, PDF export fixes, ISBN/barcode +
-POD validation) next, per the user's "keep working until C, D, E are
-complete" directive.
+Manually verify Phase 39's four PDF fixes in a real exported PDF (see
+caveat above). Continuing Phase D: EPUB export next (the biggest remaining
+Phase D item), then ISBN/barcode export wiring + a KDP/IngramSpark
+validation report (leveraging the Print Readiness/Commercial Quality
+checkers Phase 36 already built), then Phase E (theme gallery, custom theme
+editor, cover/back-cover designer). Kindle/MOBI export, HTML/web-book
+export, and CMYK-aware export remain open Phase D items — MOBI in
+particular may turn out to be a low-priority target since Amazon's own KDP
+pipeline now primarily ingests EPUB and converts it internally, worth
+confirming before investing in a separate legacy MOBI writer.

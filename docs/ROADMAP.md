@@ -157,11 +157,18 @@ daily use of everything built so far.)*
 - [ ] HTML / web-book export
 - [ ] ISBN + barcode field and placement on the copyright/back-cover page
 - [ ] Print-on-demand validation profiles (Amazon KDP, IngramSpark spec checks)
-- [ ] True justified text in PDF export (currently CSS-only on screen, left-aligned in PDF)
-- [ ] Per-image rotation in PDF export (screen preview already supports it)
-- [ ] Italic and hyperlink styling distinguished in exported PDF (only bold is today)
-- [ ] Table cell text wrapping in PDF export (screen preview already wraps)
-- [ ] Real font subsetting (currently embeds full font files, ~170KB overhead/export)
+- [x] True justified text in PDF export — see STATUS.md Phase 39
+- [x] Per-image rotation in PDF export — see STATUS.md Phase 39
+- [x] Italic and hyperlink styling distinguished in exported PDF — see
+      STATUS.md Phase 39 (italic via a standard-font fallback since no
+      italic .woff2 exists and this sandbox has no network access to fetch
+      one; hyperlinks get underline+accent colour, deliberately not a
+      clickable annotation — see Phase 39's reasoning)
+- [x] Table cell text wrapping in PDF export — see STATUS.md Phase 39
+- [ ] Real font subsetting — **blocked in this environment**: pdf-lib 1.17.1
+      (the installed version) has no subsetting API at all, and getting one
+      would need installing a different/forked package, which needs npm
+      registry access this sandbox doesn't have
 - [ ] CMYK-aware export workflow for commercial print
 
 ## Phase E — Design & Templates (the "Canva" layer)
