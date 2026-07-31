@@ -8,7 +8,18 @@ demo-quality code.
 1. Read every document in `/docs` (PRD, System Architecture, Development Plan, UI
    Design System, Book Layout Rules).
 2. Read `docs/STATUS.md` for what's built and what's next.
-3. Review recent commits (`git log`). Continue the existing codebase — never restart.
+3. Read `docs/ROADMAP.md` — the prioritised, tickable checklist toward "Canva for
+   book publishing." Pick the next task from the highest-priority unchecked phase
+   (Phase B before Phase C, etc.) unless there's a good reason to deviate — say so if
+   you do.
+4. Review recent commits (`git log`). Continue the existing codebase — never restart.
+
+## After every build
+Before committing, update `docs/ROADMAP.md`: tick any item that genuinely shipped
+(build/lint/test clean, verified — not just attempted), and add any newly discovered
+work as new unchecked items in the right phase. Record the detailed "how" in
+`docs/STATUS.md` as usual; `ROADMAP.md` only needs the one-line checkbox kept honest.
+A roadmap that drifts from the real code is worse than no roadmap.
 
 ## Non-negotiables
 - The manuscript, illustrations and projects are sacred: never delete, overwrite, or

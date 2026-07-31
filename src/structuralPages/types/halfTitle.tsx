@@ -6,6 +6,7 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
+import { EditableText } from '@/structuralPages/shared'
 import { pickFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
@@ -24,9 +25,13 @@ function findTitlePageTitle(siblingPages: StructuralPage[]): string | undefined 
 /** Traditionally the very first page of a printed book: just the title,
  * small and centred, with lots of whitespace above and below — deliberately
  * plainer than the full Title Page that follows it. */
-function HalfTitleRender({ page, theme, selected, onSelect, siblingPages }: StructuralPageRenderProps) {
+function HalfTitleRender({ page, theme, selected, onSelect, onCommit, siblingPages }: StructuralPageRenderProps) {
   if (page.type !== 'half-title') return null
 
+  // Shows the resolved (own-or-sibling-fallback) title, but editing always
+  // writes to this page's own `content.title` — never the sibling Title
+  // Page's — same "display the computed default, edit sets an explicit
+  // override" precedent as `copyright.tsx`'s boilerplate text.
   const title = page.content.title?.trim() || findTitlePageTitle(siblingPages) || 'Untitled'
 
   return (
@@ -35,7 +40,11 @@ function HalfTitleRender({ page, theme, selected, onSelect, siblingPages }: Stru
       className={cn('flex h-full w-full cursor-pointer flex-col items-center justify-center px-20 text-center', outlineClass(selected, false))}
       style={{ background: theme.page.background }}
     >
-      <h1
+      <EditableText
+        as="h1"
+        value={title}
+        placeholder="Untitled"
+        onCommit={(value) => onCommit({ title: value || undefined })}
         style={{
           fontFamily: theme.fonts.heading,
           fontWeight: theme.typography.headingWeight,
@@ -43,9 +52,7 @@ function HalfTitleRender({ page, theme, selected, onSelect, siblingPages }: Stru
           letterSpacing: '0.02em',
           color: theme.page.ink,
         }}
-      >
-        {title}
-      </h1>
+      />
     </div>
   )
 }

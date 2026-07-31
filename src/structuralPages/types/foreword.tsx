@@ -14,7 +14,7 @@ const FOREWORD_PLACEHOLDER = 'This foreword has no text yet.'
  * `src/structuralPages/longForm.tsx` for the shared rendering/drawing logic
  * this, `preface.tsx`, and `acknowledgements.tsx` all reuse. */
 function ForewordRender(props: StructuralPageRenderProps) {
-  const { page, theme, selected, onSelect } = props
+  const { page, theme, selected, onSelect, onCommit } = props
   if (page.type !== 'foreword') return null
 
   return (
@@ -26,6 +26,7 @@ function ForewordRender(props: StructuralPageRenderProps) {
       theme={theme}
       selected={selected}
       onSelect={onSelect}
+      onCommitAttribution={(value) => onCommit({ authorName: value || undefined })}
     />
   )
 }

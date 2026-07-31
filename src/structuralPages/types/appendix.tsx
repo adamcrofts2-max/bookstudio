@@ -17,7 +17,7 @@ function resolveHeading(title: string | undefined): string {
 }
 
 function AppendixRender(props: StructuralPageRenderProps) {
-  const { page, theme, selected, onSelect } = props
+  const { page, theme, selected, onSelect, onCommit } = props
   if (page.type !== 'appendix') return null
 
   return (
@@ -28,6 +28,7 @@ function AppendixRender(props: StructuralPageRenderProps) {
       theme={theme}
       selected={selected}
       onSelect={onSelect}
+      onCommitHeading={(value) => onCommit({ title: value || undefined })}
     />
   )
 }

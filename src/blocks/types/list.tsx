@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { List as ListIcon } from 'lucide-react'
 
 import type { ContentBlock } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
@@ -77,6 +78,8 @@ function drawListPdf(ctx: DrawCtx, block: ContentBlock) {
 
 export const listBlockType: BlockTypeDefinition = {
   id: 'list',
+  label: 'List',
+  icon: ListIcon,
   Render: ListRender,
   drawPdf: drawListPdf,
 }

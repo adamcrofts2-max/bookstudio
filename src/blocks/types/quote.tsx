@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { TextQuote } from 'lucide-react'
 
 import type { ContentBlock } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
@@ -127,6 +128,8 @@ function drawQuotePdf(ctx: DrawCtx, block: ContentBlock) {
 
 export const quoteBlockType: BlockTypeDefinition = {
   id: 'quote',
+  label: 'Quote',
+  icon: TextQuote,
   Render: QuoteRender,
   drawPdf: drawQuotePdf,
   blockSpacing: () => 6,

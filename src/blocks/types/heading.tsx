@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Heading as HeadingIcon } from 'lucide-react'
 
 import type { ContentBlock } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
@@ -75,6 +76,8 @@ function drawHeadingPdf(ctx: DrawCtx, block: ContentBlock) {
 
 export const headingBlockType: BlockTypeDefinition = {
   id: 'heading',
+  label: 'Heading',
+  icon: HeadingIcon,
   Render: HeadingRender,
   drawPdf: drawHeadingPdf,
   blockSpacing: () => 8,

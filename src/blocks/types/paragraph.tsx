@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
+import { Pilcrow } from 'lucide-react'
 
 import type { ContentBlock } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import { useEditableField, outlineClass } from '@/blocks/shared'
+import { FloatingFormatToolbar } from '@/renderer/FloatingFormatToolbar'
 import { pickFont } from '@/pdf/fonts'
 import { wrapRuns } from '@/pdf/textWrap'
 import { parseInlineRuns } from '@/pdf/htmlRuns'
@@ -33,35 +35,38 @@ function ParagraphRender(props: BlockRenderProps) {
   if (block.type !== 'paragraph') return null
 
   return (
-    <p
-      ref={(el) => {
-        primary.ref.current = el
-      }}
-      onClick={!primary.isEditing ? onSelect : undefined}
-      onDoubleClick={editable ? primary.startEditing : undefined}
-      contentEditable={primary.isEditing}
-      suppressContentEditableWarning
-      onBlur={primary.isEditing ? primary.handleBlur : undefined}
-      onKeyDown={primary.isEditing ? primary.handleKeyDown : undefined}
-      className={cn(
-        'outline-offset-4 transition-[outline-color] duration-150',
-        outlineClass(!!selected, primary.isEditing),
-        'cursor-pointer pb-3.5',
-        dropCap && 'book-drop-cap',
-      )}
-      style={{
-        fontFamily: theme.fonts.body,
-        fontSize: theme.typography.bodySize,
-        lineHeight: theme.typography.lineHeight,
-        color: theme.page.ink,
-        textAlign: theme.typography.justify ? 'justify' : 'left',
-        hyphens: 'auto',
-        fontVariantLigatures: 'common-ligatures',
-        wordBreak: 'normal',
-        overflowWrap: 'break-word',
-      }}
-      {...(!primary.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
-    />
+    <>
+      <p
+        ref={(el) => {
+          primary.ref.current = el
+        }}
+        onClick={!primary.isEditing ? onSelect : undefined}
+        onDoubleClick={editable ? primary.startEditing : undefined}
+        contentEditable={primary.isEditing}
+        suppressContentEditableWarning
+        onBlur={primary.isEditing ? primary.handleBlur : undefined}
+        onKeyDown={primary.isEditing ? primary.handleKeyDown : undefined}
+        className={cn(
+          'outline-offset-4 transition-[outline-color] duration-150',
+          outlineClass(!!selected, primary.isEditing),
+          'cursor-pointer pb-3.5',
+          dropCap && 'book-drop-cap',
+        )}
+        style={{
+          fontFamily: theme.fonts.body,
+          fontSize: theme.typography.bodySize,
+          lineHeight: theme.typography.lineHeight,
+          color: theme.page.ink,
+          textAlign: theme.typography.justify ? 'justify' : 'left',
+          hyphens: 'auto',
+          fontVariantLigatures: 'common-ligatures',
+          wordBreak: 'normal',
+          overflowWrap: 'break-word',
+        }}
+        {...(!primary.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
+      />
+      <FloatingFormatToolbar containerRef={primary.ref} active={primary.isEditing} />
+    </>
   )
 }
 
@@ -95,6 +100,8 @@ function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
 
 export const paragraphBlockType: BlockTypeDefinition = {
   id: 'paragraph',
+  label: 'Paragraph',
+  icon: Pilcrow,
   Render: ParagraphRender,
   drawPdf: drawParagraphPdf,
 }

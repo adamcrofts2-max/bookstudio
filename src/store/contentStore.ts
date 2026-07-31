@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 import type { Chapter, ContentBlock, Manuscript } from '@/types/content'
+import { generateId } from '@/utils'
 
 interface ContentStoreState {
   /** Manuscript per project id. Never imported by Theme/Layout/Rendering
@@ -67,6 +68,22 @@ interface ContentStoreActions {
    * are expected to confirm with the user before calling this.
    */
   deleteBlock: (projectId: string, chapterId: string, blockId: string) => void
+  /**
+   * Deep-clones `blockId` (fresh id) and inserts the clone immediately after
+   * the original within the same chapter. Mirrors
+   * `structuralPageStore.duplicatePage`'s exact shape (read via `get()`, then
+   * delegate to `insertBlock` — the "insert this exact object at this exact
+   * position" primitive — rather than duplicating that splice logic here).
+   * Returns the new block's id, or `undefined` if `blockId` doesn't exist.
+   */
+  duplicateBlock: (projectId: string, chapterId: string, blockId: string) => string | undefined
+  /**
+   * Simple adjacent-swap reorder within `chapterId`'s block list. No-ops at
+   * a chapter boundary (first block can't move up, last can't move down) —
+   * moving a block into an adjacent chapter is out of scope, mirrors
+   * `structuralPageStore.movePage`'s within-category-only behaviour.
+   */
+  moveBlock: (projectId: string, chapterId: string, blockId: string, direction: 'up' | 'down') => void
 }
 
 export const useContentStore = create<ContentStoreState & ContentStoreActions>()(
@@ -168,6 +185,37 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
           const chapters: Chapter[] = manuscript.chapters.map((chapter) => {
             if (chapter.id !== chapterId) return chapter
             return { ...chapter, blocks: chapter.blocks.filter((b) => b.id !== blockId) }
+          })
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      duplicateBlock: (projectId, chapterId, blockId) => {
+        const manuscript = get().byProject[projectId]
+        const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+        const original = chapter?.blocks.find((b) => b.id === blockId)
+        if (!original) return undefined
+        const clone = { ...structuredClone(original), id: generateId('block') } as ContentBlock
+        get().insertBlock(projectId, chapterId, blockId, clone)
+        return clone.id
+      },
+
+      moveBlock: (projectId, chapterId, blockId, direction) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const chapters: Chapter[] = manuscript.chapters.map((chapter) => {
+            if (chapter.id !== chapterId) return chapter
+            const index = chapter.blocks.findIndex((b) => b.id === blockId)
+            if (index === -1) return chapter
+            const swapIndex = direction === 'up' ? index - 1 : index + 1
+            if (swapIndex < 0 || swapIndex >= chapter.blocks.length) return chapter // no-op at a chapter boundary
+            const blocks = chapter.blocks.slice()
+            ;[blocks[index], blocks[swapIndex]] = [blocks[swapIndex], blocks[index]]
+            return { ...chapter, blocks }
           })
           return {
             byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },

@@ -2122,7 +2122,7 @@ needed new `CheckerContext` plumbing first, since it only carried
   (already prevented by construction, or a non-finding once structural pages
   are excluded, or needs real block-height data this milestone doesn't add).
 
-## Recommended next task
+## Recommended next task (Phase 25's own — superseded below by Phase 26)
 The Virtual Editor's remaining designed-not-built categories are:
 Typography, Accessibility, Print Readiness, and Commercial Quality (all four
 need either real AI judgement or Theme/Print-layer data this milestone
@@ -2141,3 +2141,128 @@ dashboard tile (including this phase's two) in a real browser, (4)
 line-level text flow so paragraphs can split across pages, (5) justified
 text and image rotation in the PDF exporter, (6) proper glyph subsetting
 once the fontkit bug is understood, (7) EPUB/Kindle export.
+
+## Phase 26 — Editor UX: block toolbar, structural-page inline editing, format toolbar, block inserter, pagination fix (2026-07-31)
+
+**Deliberate reprioritisation, not a continuation of Phase 25's own "recommended
+next task" above.** The user reported real usability friction from actually using
+the app — inline text editing "needs improving", "page titles end up in a funny
+place", "we can't edit page titles, only paragraphs", "no way to delete a
+paragraph" — which became `docs/ROADMAP.md`'s new Phase B, placed ahead of
+finishing the Virtual Editor per `CLAUDE.md`'s own "Read `docs/ROADMAP.md` ...
+pick the next task from the highest-priority unchecked phase" rule added this
+session. This phase closes 6 of Phase B's 8 items.
+
+- **Per-block hover toolbar** (`src/renderer/BlockToolbar.tsx`): every block —
+  not just images — now has delete/duplicate/move-up/move-down. `contentStore`
+  gained `duplicateBlock`/`moveBlock` actions (mirroring
+  `structuralPageStore.duplicatePage`/`movePage` exactly — read via `get()`,
+  delegate to the existing `insertBlock` "insert this exact object at this exact
+  position" primitive rather than duplicating splice logic), wrapped by
+  `editorActions.ts`'s `duplicateBlockWithHistory`/`moveBlockWithHistory` for
+  undo/redo. Toolbar reveals on hover (`group-hover`, pure CSS, always mounted)
+  or when the block is selected. "Change block type" was explicitly **not**
+  built — the 14 block types have heterogeneous shapes (a `TimelineBlock`'s
+  `entries` vs. a `HeadingBlock`'s `text`) and a lossless conversion isn't
+  well-defined; scoped out rather than shipped half-working.
+- **Delete/Backspace keyboard shortcut** (`useKeyboardShortcuts.ts`): deletes the
+  selected block, guarded by the existing `isTypingTarget` check so it only
+  fires when a block is selected but *not* being edited (backspacing inside a
+  field still edits text, never deletes the block). Structural pages already
+  had delete/duplicate/move via the Sidebar's Structure tab — untouched, this
+  is content-block-only.
+- **Structural-page inline editing** (`src/structuralPages/shared.tsx`'s new
+  `EditableText`, reusing `blocks/shared.tsx`'s `useEditableField` hook):
+  Cover/Title Page's title+subtitle+author, Half Title's title, ISBN Page's
+  isbn/edition/printerInfo, Barcode's isbn, Foreword's attribution, and
+  Appendix's heading are now editable directly on the canvas via double-click —
+  previously every structural-page field was editable *only* through the
+  Inspector's "Page" settings panel, which is exactly what "we can't edit page
+  titles" meant. **Deliberately not extended to the longer, multi-paragraph
+  `text` fields** (Copyright, Dedication, Foreword/Preface/Acknowledgements/
+  Conclusion/Appendix/About the Author body text) — `useEditableField`'s
+  single-line "Enter commits" model doesn't fit multi-paragraph text, and the
+  Inspector's `Textarea` (with its own "separate paragraphs with a blank line"
+  convention) already handles these reasonably. `LongFormPageRender` (shared by
+  5 structural-page types) gained optional `onCommitHeading`/
+  `onCommitAttribution` props, used only by Appendix/Foreword respectively —
+  Conclusion/Preface/Acknowledgements have fixed heading labels with no backing
+  content field, so they're intentionally left non-editable.
+- **Floating format toolbar** (`src/renderer/FloatingFormatToolbar.tsx`): a
+  small bold/italic/link toolbar appears above the text selection while editing
+  a paragraph. Only wired into `paragraph.tsx` — the only block field using
+  `useEditableField({ mode: 'html' })`; every other field is `mode: 'text'`,
+  which strips markup on commit, so formatting would have no effect there. Uses
+  `document.execCommand('bold' | 'italic' | 'createLink')` — deprecated but
+  still universally supported for exactly this, and avoids pulling in a
+  rich-text-editor dependency this codebase otherwise has none of. Output
+  (`<b>`/`<i>`/`<a>`) is normalised by the existing `sanitiseInline` on commit,
+  same as any other contentEditable edit.
+- **"+" block inserter** (`src/renderer/InsertBlockButton.tsx`,
+  `src/blocks/defaultContent.ts`): a hover-revealed "+" button in the gap
+  between blocks (reusing the same gap `ImageDropZone` already occupies) opens
+  a dropdown of insertable block types — reads `label`/`icon` straight from the
+  block-type registry, which had carried these fields since Modular Page System
+  Milestone 5 specifically as "forward-looking groundwork for a future 'Add
+  Block' UI picker" (see `src/blocks/registry.ts`'s own doc comment — this is
+  that milestone). The 6 original block types (heading/paragraph/quote/list/
+  table/image) didn't have `label`/`icon` set yet; added them (only `image` is
+  excluded from the inserter itself, alongside `gallery` — both need a real
+  asset picked first, which the inserter doesn't do; images still come from
+  drag-and-drop, per the existing `handleDropAsset` flow). 12 of 14 types are
+  insertable with sensible minimal defaults (`src/blocks/defaultContent.ts`).
+- **Pagination bug fix** (`src/renderer/paginate.ts`): the heading-orphan guard
+  previously reserved only `Math.min(getHeight(next), 32)` px of the following
+  block when deciding whether a heading fits on the current page. This under-
+  reserved space — the heading would be kept on the page, but the *next* loop
+  iteration then re-checked that same following block against its own *full*
+  height and, finding it didn't fit in what little space remained, flushed it
+  to a new page anyway, stranding the heading alone at the bottom of the old
+  page (the "page titles end up in a funny place" report). Fixed by reserving
+  the follower's *entire* height (`getHeight(next) + blockSpacing(next)`) up
+  front — if the heading is kept, the block after it is now guaranteed to fit
+  too, so the later check can never undo this one.
+
+### Explicitly deferred (Phase B items not done this phase)
+- **Drag-to-reorder for blocks.** Move-up/move-down buttons (this phase) solve
+  the same underlying need (reordering without deleting and re-adding) and are
+  arguably more precise/keyboard-accessible than drag; full HTML5 drag-and-drop
+  across `LazySpread`'s lazily-mounted spreads is a materially larger, riskier
+  addition that wasn't attempted rather than shipped half-working.
+- Inline editing for structural pages' long-form `text` fields — see above;
+  intentionally scoped to the Inspector panel, not a gap that was missed.
+
+### Verification caveat — read before trusting this phase blind
+**This sandbox session had no working `npm run test`, `npm run lint`, or
+`vite build`, and no network access to npm's registry or GitHub to repair
+either.** `node_modules/zustand/esm/vanilla.mjs` is missing from this sandbox's
+`node_modules` (a partial/corrupted install — same category of stray-artifact
+issue documented in earlier phases, but this time `npm install`/registry access
+itself returned `403 Forbidden — blocked by allowlist`, so it couldn't be
+repaired here at all). `oxlint` crashed with a bus error independent of that.
+**What was actually verified:** `npx tsc -b --force` — clean, zero errors, run
+three times across this phase's edits — plus careful manual code review against
+existing, already-shipped patterns in the same files (every new piece of logic
+mirrors an existing precedent: `duplicateBlock` mirrors `duplicatePage`,
+`EditableText` mirrors `ListItemField`/`TableCellField`, etc.). **Not verified:**
+the full smoke-test suite (`scripts/smoke-test.ts`, 383 checks as of Phase 25) —
+no new tests were added for this phase's changes either, since writing tests
+that can't be run risks false confidence. **Before trusting this phase's
+changes in production: run `npm install && npm run build && npm run lint &&
+npm run test` on a machine with real npm registry access, and manually
+exercise the block toolbar, structural-page inline editing, format toolbar, and
+inserter in a real browser.** No commits from this phase have been pushed to
+GitHub — this sandbox also has no network access to github.com.
+
+## Recommended next task
+Two Phase B items remain: drag-to-reorder for blocks (deprioritised above, not
+abandoned), and extending inline editing to structural pages' long-form text
+fields (would need a different editing model than `useEditableField`'s
+single-line commit-on-Enter). Beyond Phase B, `docs/ROADMAP.md` Phase C
+(Editorial Intelligence) has 12 unchecked items, Phase D (Publishing Output
+Expansion — EPUB/Kindle export, PDF justification/rotation/font-subsetting
+fixes) is untouched, and Phase G (Accounts, Cloud & Collaboration) remains the
+biggest structural gap for a real multi-device product — none of this has a
+backend, accounts, or cloud storage today. **Before any of that: get this
+phase's changes verified on a machine with a working `npm install` and pushed
+to GitHub**, since neither was possible from this sandbox.

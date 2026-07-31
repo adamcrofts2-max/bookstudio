@@ -121,6 +121,47 @@ export function deleteBlockWithHistory(projectId: string, chapterId: string, blo
   )
 }
 
+/**
+ * History-aware replacement for `contentStore.duplicateBlock`. Mirrors
+ * `duplicatePageWithHistory`'s exact shape: perform the real (id-generating)
+ * duplicate first, then look up the freshly-created block so undo/redo can
+ * reference it directly (`deleteBlock` to undo, `insertBlock` with the exact
+ * same object to redo) rather than re-deriving a new id a second time.
+ */
+export function duplicateBlockWithHistory(projectId: string, chapterId: string, blockId: string): string | undefined {
+  const newId = useContentStore.getState().duplicateBlock(projectId, chapterId, blockId)
+  if (!newId) return undefined
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const created = manuscript?.chapters.find((c) => c.id === chapterId)?.blocks.find((b) => b.id === newId)
+
+  if (created) {
+    useHistoryStore.getState().record(
+      projectId,
+      'Duplicate block',
+      () => useContentStore.getState().deleteBlock(projectId, chapterId, newId),
+      () => useContentStore.getState().insertBlock(projectId, chapterId, blockId, created),
+    )
+  }
+
+  return newId
+}
+
+/**
+ * History-aware replacement for `contentStore.moveBlock`. A simple
+ * adjacent-swap reorder is its own inverse — undo just moves the same block
+ * one step the opposite direction. Mirrors `movePageWithHistory` exactly.
+ */
+export function moveBlockWithHistory(projectId: string, chapterId: string, blockId: string, direction: 'up' | 'down'): void {
+  useContentStore.getState().moveBlock(projectId, chapterId, blockId, direction)
+  const opposite = direction === 'up' ? 'down' : 'up'
+  useHistoryStore.getState().record(
+    projectId,
+    'Reorder block',
+    () => useContentStore.getState().moveBlock(projectId, chapterId, blockId, opposite),
+    () => useContentStore.getState().moveBlock(projectId, chapterId, blockId, direction),
+  )
+}
+
 /** History-aware replacement for `contentStore.renameChapter`. */
 export function renameChapterWithHistory(projectId: string, chapterId: string, title: string): void {
   const manuscript = useContentStore.getState().getManuscript(projectId)

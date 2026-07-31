@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Table as TableIcon } from 'lucide-react'
 
 import type { ContentBlock } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
@@ -100,6 +101,8 @@ function drawTablePdf(ctx: DrawCtx, block: ContentBlock) {
 
 export const tableBlockType: BlockTypeDefinition = {
   id: 'table',
+  label: 'Table',
+  icon: TableIcon,
   Render: TableRender,
   drawPdf: drawTablePdf,
 }

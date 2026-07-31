@@ -5,10 +5,21 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import type { ContentBlock, ImageBlock } from '@/types/content'
 import { BlockContent } from '@/renderer/BlockContent'
+import { BlockToolbar } from '@/renderer/BlockToolbar'
+import { InsertBlockButton } from '@/renderer/InsertBlockButton'
+import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
-import { editBlock, insertBlockWithHistory, renameChapterWithHistory, updatePageContentWithHistory } from '@/store/editorActions'
+import {
+  editBlock,
+  insertBlockWithHistory,
+  renameChapterWithHistory,
+  updatePageContentWithHistory,
+  deleteBlockWithHistory,
+  duplicateBlockWithHistory,
+  moveBlockWithHistory,
+} from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
@@ -71,6 +82,7 @@ const CHAPTER_NUMBER_WORDS = [
 
 export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bookTitle, language = 'en' }: PageProps) {
   const select = useSelectionStore((s) => s.select)
+  const clearSelection = useSelectionStore((s) => s.clear)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const editRequestId = useSelectionStore((s) => s.editRequestId)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
@@ -92,33 +104,63 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     setInspectorTab(block.type === 'image' ? 'image' : 'typography')
   }
 
+  // The chapter this page belongs to spans multiple pages via pagination, so
+  // "insert after block X" is chapter-level (chapterId + a block id within
+  // `chapter.blocks`), never page-scoped — see `contentStore.insertBlock`.
+  // Declared before `renderBlock` (rather than relying on closure hoisting)
+  // since the toolbar's move-up/down bounds need the full chapter's block
+  // list, not just this page's slice.
+  const chapter = page.chapterId ? manuscript?.chapters.find((c) => c.id === page.chapterId) : undefined
+
   // Wrapped in a stable `data-block-id` anchor so the Virtual Editor's
   // Locate/Edit actions (via `selectionStore.requestScrollToBlock` /
   // `BookRenderer`'s scroll effect) can scroll to this exact block once
   // its spread is force-mounted, rather than only ever landing on the
   // chapter's opening page. This wrapper is Page.tsx-only — HeightMeasurer
   // renders blocks separately for off-screen measurement and must stay
-  // untouched.
-  const renderBlock = (block: ContentBlock) => (
-    <div key={block.id} data-block-id={block.id}>
-      <BlockContent
-        block={block}
-        theme={theme}
-        dropCap={dropCapBlockIds.has(block.id)}
-        selected={selectedBlockId === block.id}
-        onSelect={() => page.chapterId && handleSelect(page.chapterId, block)}
-        editable
-        onCommit={(updates) => page.chapterId && editBlock(projectId, page.chapterId, block.id, updates)}
-        autoEdit={selectedBlockId === block.id && editRequestId !== null}
-        onAutoEditHandled={consumeEditRequest}
-      />
-    </div>
-  )
+  // untouched. The `group relative` classes exist solely to host
+  // `BlockToolbar`'s hover reveal (`group-hover:opacity-100`) — see that
+  // file's doc comment.
+  const renderBlock = (block: ContentBlock) => {
+    const chapterId = page.chapterId
+    const indexInChapter = chapter ? chapter.blocks.findIndex((b) => b.id === block.id) : -1
+    const canMoveUp = indexInChapter > 0
+    const canMoveDown = !!chapter && indexInChapter >= 0 && indexInChapter < chapter.blocks.length - 1
+    const isSelected = selectedBlockId === block.id
 
-  // The chapter this page belongs to spans multiple pages via pagination, so
-  // "insert after block X" is chapter-level (chapterId + a block id within
-  // `chapter.blocks`), never page-scoped — see `contentStore.insertBlock`.
-  const chapter = page.chapterId ? manuscript?.chapters.find((c) => c.id === page.chapterId) : undefined
+    return (
+      <div key={block.id} data-block-id={block.id} className="group relative">
+        <BlockContent
+          block={block}
+          theme={theme}
+          dropCap={dropCapBlockIds.has(block.id)}
+          selected={isSelected}
+          onSelect={() => chapterId && handleSelect(chapterId, block)}
+          editable
+          onCommit={(updates) => chapterId && editBlock(projectId, chapterId, block.id, updates)}
+          autoEdit={isSelected && editRequestId !== null}
+          onAutoEditHandled={consumeEditRequest}
+        />
+        {chapterId && (
+          <BlockToolbar
+            selected={isSelected}
+            canMoveUp={canMoveUp}
+            canMoveDown={canMoveDown}
+            onMoveUp={() => moveBlockWithHistory(projectId, chapterId, block.id, 'up')}
+            onMoveDown={() => moveBlockWithHistory(projectId, chapterId, block.id, 'down')}
+            onDuplicate={() => {
+              const newId = duplicateBlockWithHistory(projectId, chapterId, block.id)
+              if (newId) handleSelect(chapterId, { id: newId, type: block.type })
+            }}
+            onDelete={() => {
+              deleteBlockWithHistory(projectId, chapterId, block.id)
+              if (isSelected) clearSelection()
+            }}
+          />
+        )}
+      </div>
+    )
+  }
 
   const handleDropAsset = (chapterId: string, afterBlockId: string | null, assetId: string) => {
     const newBlock: ImageBlock = {
@@ -134,9 +176,16 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     setInspectorTab('image')
   }
 
-  /** Interleaves a drop zone before the first block, between every adjacent
-   * pair, and after the last — only for chapter content, never TOC/blank
-   * pages (this is only ever called from those two page kinds below). */
+  const handleInsertBlock = (chapterId: string, afterBlockId: string | null, type: InsertableBlockType) => {
+    const newBlock = createDefaultBlock(type)
+    insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
+    handleSelect(chapterId, newBlock)
+  }
+
+  /** Interleaves a drop zone + "insert block" button before the first block,
+   * between every adjacent pair, and after the last — only for chapter
+   * content, never TOC/blank pages (this is only ever called from those two
+   * page kinds below). */
   const renderBlocksWithDropZones = (blocks: ContentBlock[]) => {
     if (!page.chapterId) return blocks.map(renderBlock)
     const chapterId = page.chapterId
@@ -151,17 +200,21 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       return idx > 0 ? chapter.blocks[idx - 1].id : null
     }
 
+    const renderGap = (afterId: string | null) => (
+      <div key={`gap-${afterId ?? 'start'}`}>
+        <ImageDropZone onDropAsset={(assetId) => handleDropAsset(chapterId, afterId, assetId)} />
+        <InsertBlockButton onInsert={(type) => handleInsertBlock(chapterId, afterId, type)} />
+      </div>
+    )
+
     const nodes: React.ReactNode[] = []
     blocks.forEach((block, i) => {
       const afterId = i === 0 ? firstBlockPrevId() : blocks[i - 1].id
-      nodes.push(
-        <ImageDropZone key={`drop-${afterId ?? 'start'}`} onDropAsset={(assetId) => handleDropAsset(chapterId, afterId, assetId)} />,
-      )
+      nodes.push(renderGap(afterId))
       nodes.push(renderBlock(block))
     })
     if (blocks.length > 0) {
-      const lastId = blocks[blocks.length - 1].id
-      nodes.push(<ImageDropZone key={`drop-end-${lastId}`} onDropAsset={(assetId) => handleDropAsset(chapterId, lastId, assetId)} />)
+      nodes.push(renderGap(blocks[blocks.length - 1].id))
     }
     return nodes
   }

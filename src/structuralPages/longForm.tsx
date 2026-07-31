@@ -1,6 +1,7 @@
 import type { ResolvedBookTheme } from '@/theme/presets'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import { outlineClass } from '@/blocks/shared'
+import { EditableText } from '@/structuralPages/shared'
 import { pickFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { wrapRuns } from '@/pdf/textWrap'
@@ -44,11 +45,36 @@ interface LongFormPageRenderProps {
   theme: ResolvedBookTheme
   selected: boolean
   onSelect: () => void
+  /**
+   * Present only for types with a real, editable heading field (currently
+   * just Appendix's `content.title` — Foreword/Preface/Acknowledgements/
+   * Conclusion's headings are fixed labels with no backing content field, so
+   * they stay plain, non-editable text). When provided, the heading becomes
+   * inline-editable via `EditableText` — see docs/ROADMAP.md Phase B.
+   */
+  onCommitHeading?: (value: string) => void
+  /** Present only for Foreword's `content.authorName` — the one type in
+   * this family with an attribution field. */
+  onCommitAttribution?: (value: string) => void
 }
 
 /** Shared on-screen renderer: a heading, a stack of body paragraphs (split
- * on `\n\n`), and an optional right-aligned "— {attribution}" line. */
-export function LongFormPageRender({ heading, text, emptyPlaceholder, attribution, theme, selected, onSelect }: LongFormPageRenderProps) {
+ * on `\n\n`), and an optional right-aligned "— {attribution}" line. The body
+ * paragraphs themselves stay Inspector-panel-only (see `EditableText`'s doc
+ * comment on why multi-paragraph text doesn't fit its single-line, Enter-
+ * commits editing model) — only the heading/attribution are inline-editable,
+ * and only where a real content field backs them. */
+export function LongFormPageRender({
+  heading,
+  text,
+  emptyPlaceholder,
+  attribution,
+  theme,
+  selected,
+  onSelect,
+  onCommitHeading,
+  onCommitAttribution,
+}: LongFormPageRenderProps) {
   const paragraphs = splitParagraphs(text)
 
   return (
@@ -57,16 +83,31 @@ export function LongFormPageRender({ heading, text, emptyPlaceholder, attributio
       className={cn('flex h-full w-full cursor-pointer flex-col gap-6 px-16 py-20', outlineClass(selected, false))}
       style={{ background: theme.page.background }}
     >
-      <h2
-        style={{
-          fontFamily: theme.fonts.heading,
-          fontWeight: theme.typography.headingWeight,
-          fontSize: '1.5em',
-          color: theme.page.ink,
-        }}
-      >
-        {heading}
-      </h2>
+      {onCommitHeading ? (
+        <EditableText
+          as="h1"
+          value={heading}
+          placeholder="Untitled"
+          onCommit={onCommitHeading}
+          style={{
+            fontFamily: theme.fonts.heading,
+            fontWeight: theme.typography.headingWeight,
+            fontSize: '1.5em',
+            color: theme.page.ink,
+          }}
+        />
+      ) : (
+        <h2
+          style={{
+            fontFamily: theme.fonts.heading,
+            fontWeight: theme.typography.headingWeight,
+            fontSize: '1.5em',
+            color: theme.page.ink,
+          }}
+        >
+          {heading}
+        </h2>
+      )}
       <div className="flex flex-col gap-4">
         {(paragraphs.length > 0 ? paragraphs : [emptyPlaceholder]).map((paragraph, i) => (
           <p
@@ -83,13 +124,23 @@ export function LongFormPageRender({ heading, text, emptyPlaceholder, attributio
           </p>
         ))}
       </div>
-      {attribution && (
+      {onCommitAttribution ? (
         <p
-          className="text-right"
+          className="flex justify-end gap-1 text-right"
           style={{ fontFamily: theme.fonts.body, fontSize: '0.95em', fontStyle: 'italic', color: theme.page.mutedInk }}
         >
-          — {attribution}
+          <span>—</span>
+          <EditableText as="span" value={attribution ?? ''} placeholder="Add attribution…" onCommit={onCommitAttribution} />
         </p>
+      ) : (
+        attribution && (
+          <p
+            className="text-right"
+            style={{ fontFamily: theme.fonts.body, fontSize: '0.95em', fontStyle: 'italic', color: theme.page.mutedInk }}
+          >
+            — {attribution}
+          </p>
+        )
       )}
     </div>
   )

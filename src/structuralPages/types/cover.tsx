@@ -7,6 +7,7 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
+import { EditableText } from '@/structuralPages/shared'
 import { useAssetStore } from '@/store/assetStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
@@ -20,7 +21,7 @@ import { cn } from '@/lib/utils'
  * a light tint of the theme's accent colour, with centred title/subtitle/
  * author on top — reflects the active theme automatically, no new theme
  * fields needed for this milestone. */
-function CoverRender({ page, theme, pageBox, selected, onSelect }: StructuralPageRenderProps) {
+function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   if (page.type !== 'cover') return null
 
@@ -45,7 +46,11 @@ function CoverRender({ page, theme, pageBox, selected, onSelect }: StructuralPag
         className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center"
         style={{ paddingLeft: pageBox.marginOuterPx, paddingRight: pageBox.marginOuterPx }}
       >
-        <h1
+        <EditableText
+          as="h1"
+          value={page.content.title ?? ''}
+          placeholder="Untitled"
+          onCommit={(value) => onCommit({ title: value || undefined })}
           style={{
             fontFamily: theme.fonts.heading,
             fontWeight: theme.typography.headingWeight,
@@ -53,25 +58,25 @@ function CoverRender({ page, theme, pageBox, selected, onSelect }: StructuralPag
             lineHeight: 1.15,
             color: ink,
           }}
-        >
-          {page.content.title || 'Untitled'}
-        </h1>
-        {page.content.subtitle && (
-          <p style={{ fontFamily: theme.fonts.body, fontSize: '1.15em', color: mutedInk }}>{page.content.subtitle}</p>
-        )}
-        {page.content.author && (
-          <p
-            style={{
-              fontFamily: theme.fonts.body,
-              fontSize: '1em',
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
-              color: accent,
-            }}
-          >
-            {page.content.author}
-          </p>
-        )}
+        />
+        <EditableText
+          value={page.content.subtitle ?? ''}
+          placeholder="Add a subtitle…"
+          onCommit={(value) => onCommit({ subtitle: value || undefined })}
+          style={{ fontFamily: theme.fonts.body, fontSize: '1.15em', color: mutedInk }}
+        />
+        <EditableText
+          value={page.content.author ?? ''}
+          placeholder="Add an author name…"
+          onCommit={(value) => onCommit({ author: value || undefined })}
+          style={{
+            fontFamily: theme.fonts.body,
+            fontSize: '1em',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
+            color: accent,
+          }}
+        />
       </div>
     </div>
   )

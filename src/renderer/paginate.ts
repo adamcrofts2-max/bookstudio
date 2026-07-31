@@ -101,10 +101,22 @@ export function paginate(
       const block = chapter.blocks[i]
       const height = getHeight(block) + blockSpacing(block)
 
-      // Heading-orphan guard: don't strand a heading alone at the bottom
-      // of a page with no following content beneath it.
+      // Heading-orphan guard: don't strand a heading alone at the bottom of
+      // a page with no following content beneath it. Must reserve the
+      // *entire* following block's height, not just a small slice of it —
+      // block-level pagination can't split a block across the boundary, so
+      // reserving only a sliver (e.g. 32px) only guarantees the heading
+      // fits *alongside that sliver*; the very next loop iteration then
+      // re-checks the following block against its own *full* height and,
+      // finding it doesn't fit in the remaining space, flushes it to a new
+      // page anyway — stranding the heading alone on the page it was
+      // supposedly protected on. Reserving the full height here means: if
+      // the heading is kept on this page, the block after it is now
+      // guaranteed to fit too, so that later check can never undo this
+      // one. (Documented previously as fixed with a 32px lookahead, which
+      // this replaces — see docs/ROADMAP.md Phase B and docs/STATUS.md.)
       const next = chapter.blocks[i + 1]
-      const requiredHeight = block.type === 'heading' && next ? height + Math.min(getHeight(next), 32) : height
+      const requiredHeight = block.type === 'heading' && next ? height + getHeight(next) + blockSpacing(next) : height
 
       if (currentBlocks.length > 0 && currentHeight + requiredHeight > available) {
         flush()

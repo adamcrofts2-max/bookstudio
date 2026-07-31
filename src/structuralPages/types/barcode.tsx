@@ -5,6 +5,7 @@ import type { ResolvedBookTheme } from '@/theme/presets'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
+import { EditableText } from '@/structuralPages/shared'
 import { pickFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
@@ -42,8 +43,12 @@ function findIsbnPageValue(siblingPages: StructuralPage[]): string | undefined {
 /** Small, unobtrusive barcode strip near the bottom of the page — falls back
  * to a sibling ISBN Page's `isbn` value (same sibling-read pattern
  * `copyright.tsx` uses for the Title Page's author) before a placeholder. */
-function BarcodeRender({ page, theme, selected, onSelect, siblingPages }: StructuralPageRenderProps) {
+function BarcodeRender({ page, theme, selected, onSelect, onCommit, siblingPages }: StructuralPageRenderProps) {
   if (page.type !== 'barcode') return null
+  // Shows the resolved (own-or-sibling-fallback-or-placeholder) ISBN for the
+  // bars AND the text beneath, but editing always writes this page's own
+  // `content.isbn` — same "display computed default, edit sets an explicit
+  // override" precedent as `copyright.tsx`/`halfTitle.tsx`.
   const isbn = page.content.isbn?.trim() || findIsbnPageValue(siblingPages) || PLACEHOLDER_ISBN
   const bars = barsFromIsbn(isbn)
 
@@ -58,9 +63,13 @@ function BarcodeRender({ page, theme, selected, onSelect, siblingPages }: Struct
           <div key={i} style={{ width: `${bar.width * 1.4}px`, background: bar.bar ? theme.page.ink : 'transparent' }} />
         ))}
       </div>
-      <p className="text-[0.72em] tracking-widest" style={{ fontFamily: theme.fonts.body, color: theme.page.mutedInk }}>
-        {isbn}
-      </p>
+      <EditableText
+        value={isbn}
+        placeholder={PLACEHOLDER_ISBN}
+        onCommit={(value) => onCommit({ isbn: value || undefined })}
+        className="text-[0.72em] tracking-widest"
+        style={{ fontFamily: theme.fonts.body, color: theme.page.mutedInk }}
+      />
     </div>
   )
 }

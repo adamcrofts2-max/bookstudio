@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { useHistoryStore } from '@/store/historyStore'
 import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { deleteBlockWithHistory } from '@/store/editorActions'
 
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false
@@ -33,6 +34,8 @@ export function useKeyboardShortcuts(projectId: string | null) {
   const viewMode = useUiStore((s) => s.viewMode)
   const setViewMode = useUiStore((s) => s.setViewMode)
   const clearSelection = useSelectionStore((s) => s.clear)
+  const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
+  const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const undo = useHistoryStore((s) => s.undo)
   const redo = useHistoryStore((s) => s.redo)
 
@@ -80,6 +83,18 @@ export function useKeyboardShortcuts(projectId: string | null) {
         case 'Escape':
           clearSelection()
           break
+        case 'Delete':
+        case 'Backspace':
+          // Only ever reaches here once `isTypingTarget` above has already
+          // ruled out a contentEditable field / input / textarea — i.e. a
+          // block is *selected* but not currently being edited. Deletes the
+          // whole block; see docs/ROADMAP.md Phase B ("no way to delete a
+          // paragraph"). Structural pages already have a delete action in
+          // the Sidebar's Structure tab, so this is content-block-only.
+          if (!projectId || !selectedChapterId || !selectedBlockId) return
+          deleteBlockWithHistory(projectId, selectedChapterId, selectedBlockId)
+          clearSelection()
+          break
         default:
           return
       }
@@ -88,5 +103,18 @@ export function useKeyboardShortcuts(projectId: string | null) {
 
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [projectId, undo, redo, toggleSidebar, toggleInspector, setZoom, zoom, viewMode, setViewMode, clearSelection])
+  }, [
+    projectId,
+    undo,
+    redo,
+    toggleSidebar,
+    toggleInspector,
+    setZoom,
+    zoom,
+    viewMode,
+    setViewMode,
+    clearSelection,
+    selectedChapterId,
+    selectedBlockId,
+  ])
 }
