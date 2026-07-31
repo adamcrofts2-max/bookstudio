@@ -20,6 +20,12 @@ interface UiStoreState {
   zoom: number
   showThumbnails: boolean
   workspaceMode: WorkspaceMode
+  /** Toggleable dashed safe-text-zone guide on the Cover/Back Cover
+   * preview (`CoverSafeZoneGuide` in `structuralPages/shared.tsx`) — an app
+   * preference, not project data, so it stays on/off across every project
+   * the user opens, same reasoning as `showThumbnails`. See
+   * docs/STATUS.md Phase 46. */
+  showCoverSafeZone: boolean
 }
 
 interface UiStoreActions {
@@ -31,6 +37,7 @@ interface UiStoreActions {
   setZoom: (zoom: number) => void
   toggleThumbnails: () => void
   setWorkspaceMode: (mode: WorkspaceMode) => void
+  toggleCoverSafeZone: () => void
 }
 
 /**
@@ -49,6 +56,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       zoom: 1,
       showThumbnails: true,
       workspaceMode: 'manuscript',
+      showCoverSafeZone: false,
 
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -58,6 +66,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)) }),
       toggleThumbnails: () => set((state) => ({ showThumbnails: !state.showThumbnails })),
       setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
+      toggleCoverSafeZone: () => set((state) => ({ showCoverSafeZone: !state.showCoverSafeZone })),
     }),
     {
       name: 'book-studio.ui',

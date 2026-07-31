@@ -8,13 +8,23 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
-import { StructuralImageDropZone, CoverNudgeHandle } from '@/structuralPages/shared'
+import {
+  StructuralImageDropZone,
+  CoverNudgeHandle,
+  CoverImageUploadButton,
+  CoverFocalPointPicker,
+  CoverSafeZoneGuide,
+} from '@/structuralPages/shared'
 import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY, COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
+import { computeCoverImageScreenStyle, computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
+import { computeCoverOverlayScreenStyle, drawCoverOverlayPdf } from '@/structuralPages/coverOverlay'
+import { resolveCoverFontFamily, resolveCoverSizeScale, resolveCoverWeight } from '@/structuralPages/coverTypography'
 import { splitParagraphs } from '@/structuralPages/longForm'
 import { useAssetStore } from '@/store/assetStore'
+import { useUiStore } from '@/store/uiStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
-import { pickFont } from '@/pdf/fonts'
+import { pickFont, pickItalicFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { wrapRuns } from '@/pdf/textWrap'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
@@ -24,6 +34,11 @@ import { cn } from '@/lib/utils'
 const BLURB_PLACEHOLDER =
   'Add back-cover copy — a short, compelling summary of this book that makes someone want to pick it up.'
 
+/** Back Cover's own pre-existing fixed overlay opacity — deliberately not
+ * `coverOverlay.ts`'s exported `DEFAULT_OVERLAY_OPACITY` (that's Cover's
+ * `0.35`); this page always used `0.4`. See that module's doc comment. */
+const BACK_COVER_DEFAULT_OVERLAY_OPACITY = 0.4
+
 /**
  * The book's last page: back-cover copy (a blurb/synopsis) plus an optional
  * short author-bio line, over a full-bleed image-or-tinted background —
@@ -32,8 +47,9 @@ const BLURB_PLACEHOLDER =
  * docs/ROADMAP.md Phase E and docs/STATUS.md's entry for why this exists —
  * there was previously no back-cover page type at all.
  */
-function BackCoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: StructuralPageRenderProps) {
+function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+  const showSafeZone = useUiStore((s) => s.showCoverSafeZone)
   // See `cover.tsx`'s identical field for why this stays local until
   // pointer-up.
   const [liveNudge, setLiveNudge] = useState<number | null>(null)
@@ -46,6 +62,12 @@ function BackCoverRender({ page, theme, pageBox, selected, onSelect, onCommit }:
   const committedNudge = page.content.verticalNudge ?? 0
   const effectiveNudge = liveNudge ?? committedNudge
   const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
+  const imageStyle = computeCoverImageScreenStyle(page.content.imageFocalPoint, page.content.imageZoom)
+  const overlayStyle = computeCoverOverlayScreenStyle(page.content.overlayStyle, page.content.overlayOpacity ?? BACK_COVER_DEFAULT_OVERLAY_OPACITY)
+  const typography = page.content.typography
+  const blurbFontFamily = resolveCoverFontFamily(typography, theme.fonts.body)
+  const blurbWeight = resolveCoverWeight(typography, 400)
+  const blurbSizeScale = resolveCoverSizeScale(typography)
 
   return (
     <div
@@ -55,15 +77,36 @@ function BackCoverRender({ page, theme, pageBox, selected, onSelect, onCommit }:
     >
       {imageUrl && (
         <>
-          <img src={imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.4)' }} />
+          <img
+            src={imageUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full"
+            style={{ objectFit: 'cover', ...imageStyle }}
+          />
+          {overlayStyle && <div className="absolute inset-0" style={overlayStyle} />}
         </>
+      )}
+      {selected && imageUrl && (
+        <CoverFocalPointPicker
+          focalPoint={page.content.imageFocalPoint}
+          onChange={(point) => onCommit({ imageFocalPoint: point })}
+        />
       )}
       <StructuralImageDropZone
         hasImage={!!imageUrl}
         label="Drop a back-cover image here"
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
+      {selected && (
+        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+          <CoverImageUploadButton
+            projectId={projectId}
+            label={imageUrl ? 'Change image' : 'Add back-cover image'}
+            onUploaded={(assetId) => onCommit({ imageAssetId: assetId })}
+          />
+        </div>
+      )}
+      {showSafeZone && <CoverSafeZoneGuide pageBox={pageBox} />}
       <div
         className="absolute inset-0 flex flex-col gap-4 px-16 py-24"
         style={{
@@ -87,11 +130,12 @@ function BackCoverRender({ page, theme, pageBox, selected, onSelect, onCommit }:
           <p
             key={i}
             style={{
-              fontFamily: theme.fonts.body,
-              fontSize: '1.05em',
+              fontFamily: blurbFontFamily,
+              fontWeight: blurbWeight,
+              fontSize: `${1.05 * blurbSizeScale}em`,
               lineHeight: theme.typography.lineHeight,
               color: ink,
-              fontStyle: paragraphs.length > 0 ? 'normal' : 'italic',
+              fontStyle: paragraphs.length > 0 ? (typography?.italic ? 'italic' : 'normal') : 'italic',
             }}
           >
             {paragraph}
@@ -122,16 +166,22 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
     if (blob) {
       const { bytes, width, height } = await blobToPng(blob, false)
       const pdfImage = await ctx.page.doc.embedPng(bytes)
-      const scale = Math.max(mediaWidthPt / width, mediaHeightPt / height)
-      const drawWidth = width * scale
-      const drawHeight = height * scale
-      ctx.page.drawImage(pdfImage, {
-        x: (mediaWidthPt - drawWidth) / 2,
-        y: (mediaHeightPt - drawHeight) / 2,
-        width: drawWidth,
-        height: drawHeight,
+      const placement = computeCoverImagePdfPlacement({
+        mediaWidthPt,
+        mediaHeightPt,
+        imageWidth: width,
+        imageHeight: height,
+        focalPoint: page.content.imageFocalPoint,
+        zoom: page.content.imageZoom,
       })
-      ctx.page.drawRectangle({ x: 0, y: 0, width: mediaWidthPt, height: mediaHeightPt, color: rgb(0, 0, 0), opacity: 0.4 })
+      ctx.page.drawImage(pdfImage, placement)
+      drawCoverOverlayPdf(
+        ctx.page,
+        page.content.overlayStyle,
+        page.content.overlayOpacity ?? BACK_COVER_DEFAULT_OVERLAY_OPACITY,
+        mediaWidthPt,
+        mediaHeightPt,
+      )
       hasImage = true
     }
   }
@@ -148,8 +198,14 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
   const ink = hasImage ? rgb(1, 1, 1) : hexToPdfColor(theme.page.ink)
   const mutedInk = hasImage ? rgb(0.9, 0.9, 0.9) : hexToPdfColor(theme.page.mutedInk)
 
-  const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
-  const bodySize = theme.typography.bodySize * 1.05 * PX_TO_PT
+  const typography = page.content.typography
+  const blurbFontFamily = resolveCoverFontFamily(typography, theme.fonts.body)
+  const blurbWeight = resolveCoverWeight(typography, 400)
+  const blurbSizeScale = resolveCoverSizeScale(typography)
+  const bodyFont = typography?.italic
+    ? pickItalicFont(ctx.fonts, blurbFontFamily, blurbWeight)
+    : pickFont(ctx.fonts, blurbFontFamily, blurbWeight)
+  const bodySize = theme.typography.bodySize * 1.05 * blurbSizeScale * PX_TO_PT
   const lineHeight = bodySize * theme.typography.lineHeight
   const contentX = bleedPt + pageBox.marginOuterPx * PX_TO_PT
   const contentWidthPt = mediaWidthPt - contentX - bleedPt - pageBox.marginOuterPx * PX_TO_PT

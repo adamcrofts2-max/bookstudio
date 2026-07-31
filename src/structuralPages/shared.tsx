@@ -1,9 +1,12 @@
 import { useRef, useState } from 'react'
-import { GripVertical, ImagePlus } from 'lucide-react'
+import { GripVertical, ImagePlus, Crosshair } from 'lucide-react'
 
 import { useEditableField } from '@/blocks/shared'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
+import { useAssetStore } from '@/store/assetStore'
+import { PX_PER_MM, type PageBox } from '@/renderer/pageGeometry'
+import type { CoverImageFocalPoint } from '@/types/structuralPage'
 import { cn } from '@/lib/utils'
 
 function clamp(value: number, min: number, max: number): number {
@@ -180,5 +183,118 @@ export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal }: CoverNu
       <GripVertical className="size-3" />
       Drag to reposition
     </button>
+  )
+}
+
+interface CoverImageUploadButtonProps {
+  projectId: string
+  onUploaded: (assetId: string) => void
+  label: string
+  className?: string
+}
+
+/**
+ * Click-to-browse alternative to `StructuralImageDropZone`'s drag-and-drop —
+ * a first-time user has no reason to know dragging a thumbnail from the
+ * Assets sidebar tab is even possible. Reuses `assetStore.importFiles`
+ * directly (the exact function the sidebar's own file drop already calls),
+ * so a picked file becomes a real, undo-tracked asset the same way. See
+ * `docs/STATUS.md` Phase 46.
+ */
+export function CoverImageUploadButton({ projectId, onUploaded, label, className }: CoverImageUploadButtonProps) {
+  const importFiles = useAssetStore((s) => s.importFiles)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          inputRef.current?.click()
+        }}
+        className={cn(
+          'pointer-events-auto flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 px-4 py-2 text-xs text-white transition-colors hover:bg-black/60',
+          className,
+        )}
+      >
+        <ImagePlus className="size-3.5" />
+        {label}
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onClick={(e) => e.stopPropagation()}
+        onChange={async (e) => {
+          const file = e.target.files?.[0]
+          e.target.value = '' // reset so picking the exact same file again still fires onChange
+          if (!file) return
+          const [created] = await importFiles(projectId, [file])
+          if (created) onUploaded(created.id)
+        }}
+      />
+    </>
+  )
+}
+
+interface CoverFocalPointPickerProps {
+  focalPoint: CoverImageFocalPoint | undefined
+  onChange: (point: CoverImageFocalPoint) => void
+}
+
+/**
+ * Click-anywhere-on-the-image control for setting a Cover/Back Cover's
+ * image focal point (`coverImageFit.ts`) — the crosshair marks the current
+ * point, clicking elsewhere moves it. Only rendered while selected and an
+ * image is set, sitting above the image but below the text block in
+ * stacking order (siblings render in the order the caller places them).
+ */
+export function CoverFocalPointPicker({ focalPoint, onChange }: CoverFocalPointPickerProps) {
+  const x = focalPoint?.x ?? 0.5
+  const y = focalPoint?.y ?? 0.5
+
+  return (
+    <div
+      className="absolute inset-0 z-[5] cursor-crosshair"
+      title="Click to set the photo's focal point"
+      onClick={(e) => {
+        e.stopPropagation()
+        const rect = e.currentTarget.getBoundingClientRect()
+        const nx = clamp((e.clientX - rect.left) / rect.width, 0, 1)
+        const ny = clamp((e.clientY - rect.top) / rect.height, 0, 1)
+        onChange({ x: nx, y: ny })
+      }}
+    >
+      <div
+        className="pointer-events-none absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-white bg-black/30 text-white shadow-[0_0_0_1.5px_rgba(0,0,0,0.6)]"
+        style={{ left: `${x * 100}%`, top: `${y * 100}%` }}
+      >
+        <Crosshair className="size-3.5" />
+      </div>
+    </div>
+  )
+}
+
+/** Amazon KDP's published minimum distance text should stay from the trim
+ * edge on a cover (0.25in) — a first-time author has no reason to already
+ * know this, and there's no other guide anywhere in the app showing it. */
+const COVER_SAFE_ZONE_MM = 6.35
+
+/**
+ * Toggleable dashed guide showing the safe text zone on a Cover/Back Cover
+ * preview — purely visual, on-screen only, never exported (an exported PDF
+ * has no "current UI state" to draw a guide into, and a guide baked into
+ * the artwork would be a real defect, not a helpful reminder).
+ */
+export function CoverSafeZoneGuide({ pageBox }: { pageBox: PageBox }) {
+  const insetPx = pageBox.bleedPx + COVER_SAFE_ZONE_MM * PX_PER_MM
+  return (
+    <div className="pointer-events-none absolute z-[6] border border-dashed border-white/70" style={{ inset: insetPx }}>
+      <span className="absolute -top-5 left-0 rounded-sm bg-black/55 px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-white">
+        Safe zone
+      </span>
+    </div>
   )
 }

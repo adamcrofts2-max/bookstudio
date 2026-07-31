@@ -208,6 +208,17 @@ daily use of everything built so far.)*
       full multi-element x/y canvas or true wraparound-cover file
       generation — see Phase 45's STATUS entry for the reasoning; Cover and
       Back Cover remain two independent pages, not one spread
+- [x] Cover/Back Cover: click-to-upload image, focal-point + zoom cropping,
+      adjustable overlay (flat tint or a fade-only-behind-the-text
+      gradient), decoupled font/weight/italic/size for the cover text
+      (independent of the book's interior theme), and a toggleable
+      safe-text-zone guide — shipped 2026-07-31 (Phase 46). Also fixed a
+      real EPUB bug: the exported cover image was never flagged with
+      EPUB3's `cover-image` manifest property, so e-readers/library grids
+      likely never showed the real artwork as the book's thumbnail
+- [x] `public/fonts/custom/` — a folder + README for dropping in more font
+      files later (this sandbox has no network access to fetch new fonts
+      itself); only Inter/Source Serif 4 are embedded today
 - [ ] Stock image / illustration library integration — deferred: needs a
       real third-party stock-photo API + licensing/attribution handling this
       client-only architecture doesn't have yet

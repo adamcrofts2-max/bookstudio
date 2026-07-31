@@ -8,23 +8,38 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
-import { EditableText, StructuralImageDropZone, CoverNudgeHandle } from '@/structuralPages/shared'
+import {
+  EditableText,
+  StructuralImageDropZone,
+  CoverNudgeHandle,
+  CoverImageUploadButton,
+  CoverFocalPointPicker,
+  CoverSafeZoneGuide,
+} from '@/structuralPages/shared'
 import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY } from '@/structuralPages/coverLayout'
+import { computeCoverImageScreenStyle, computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
+import { computeCoverOverlayScreenStyle, drawCoverOverlayPdf, DEFAULT_OVERLAY_OPACITY } from '@/structuralPages/coverOverlay'
+import { resolveCoverFontFamily, resolveCoverSizeScale, resolveCoverWeight } from '@/structuralPages/coverTypography'
 import { useAssetStore } from '@/store/assetStore'
+import { useUiStore } from '@/store/uiStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
-import { pickFont } from '@/pdf/fonts'
+import { pickFont, pickItalicFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { tintHex } from '@/structuralPages/colorUtils'
 import { cn } from '@/lib/utils'
 
 /** Full-bleed cover: background image (if `content.imageAssetId` is set) or
- * a light tint of the theme's accent colour, with centred title/subtitle/
- * author on top — reflects the active theme automatically, no new theme
- * fields needed for this milestone. */
-function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: StructuralPageRenderProps) {
+ * a light tint of the theme's accent colour, with title/subtitle/author on
+ * top. Font, size, overlay and image crop can all be overridden per-cover
+ * (see `types/structuralPage.ts`'s `CoverTypographyOverride`/
+ * `CoverOverlayStyle`/`CoverImageFocalPoint`) — absent means every value
+ * reproduces this milestone's pre-existing fixed look exactly, so no
+ * project made before Phase 46 changes. */
+function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+  const showSafeZone = useUiStore((s) => s.showCoverSafeZone)
   // Live-drag preview state — never persisted until the handle's pointer-up
   // fires `onCommit`, so undo history gets exactly one entry per drag
   // gesture. `null` while not dragging, meaning "use the page's committed
@@ -39,6 +54,12 @@ function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: Str
   const committedNudge = page.content.verticalNudge ?? 0
   const effectiveNudge = liveNudge ?? committedNudge
   const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
+  const imageStyle = computeCoverImageScreenStyle(page.content.imageFocalPoint, page.content.imageZoom)
+  const overlayStyle = computeCoverOverlayScreenStyle(page.content.overlayStyle, page.content.overlayOpacity ?? DEFAULT_OVERLAY_OPACITY)
+  const typography = page.content.typography
+  const titleFontFamily = resolveCoverFontFamily(typography, theme.fonts.heading)
+  const titleWeight = resolveCoverWeight(typography, theme.typography.headingWeight)
+  const titleSizeScale = resolveCoverSizeScale(typography)
 
   return (
     <div
@@ -48,15 +69,36 @@ function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: Str
     >
       {imageUrl && (
         <>
-          <img src={imageUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} />
+          <img
+            src={imageUrl}
+            alt=""
+            className="absolute inset-0 h-full w-full"
+            style={{ objectFit: 'cover', ...imageStyle }}
+          />
+          {overlayStyle && <div className="absolute inset-0" style={overlayStyle} />}
         </>
+      )}
+      {selected && imageUrl && (
+        <CoverFocalPointPicker
+          focalPoint={page.content.imageFocalPoint}
+          onChange={(point) => onCommit({ imageFocalPoint: point })}
+        />
       )}
       <StructuralImageDropZone
         hasImage={!!imageUrl}
         label="Drop a cover image here"
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
+      {selected && (
+        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+          <CoverImageUploadButton
+            projectId={projectId}
+            label={imageUrl ? 'Change image' : 'Add cover image'}
+            onUploaded={(assetId) => onCommit({ imageAssetId: assetId })}
+          />
+        </div>
+      )}
+      {showSafeZone && <CoverSafeZoneGuide pageBox={pageBox} />}
       <div
         className="absolute inset-0 flex flex-col items-center gap-5 text-center"
         style={{
@@ -84,9 +126,10 @@ function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: Str
           placeholder="Untitled"
           onCommit={(value) => onCommit({ title: value || undefined })}
           style={{
-            fontFamily: theme.fonts.heading,
-            fontWeight: theme.typography.headingWeight,
-            fontSize: '2.6em',
+            fontFamily: titleFontFamily,
+            fontWeight: titleWeight,
+            fontStyle: typography?.italic ? 'italic' : 'normal',
+            fontSize: `${2.6 * titleSizeScale}em`,
             lineHeight: 1.15,
             color: ink,
           }}
@@ -127,18 +170,19 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
     if (blob) {
       const { bytes, width, height } = await blobToPng(blob, false)
       const pdfImage = await ctx.page.doc.embedPng(bytes)
-      // Cover-fit: scale to fill the full bleed box, centred, may crop —
-      // matches the on-screen `object-cover` treatment above.
-      const scale = Math.max(mediaWidthPt / width, mediaHeightPt / height)
-      const drawWidth = width * scale
-      const drawHeight = height * scale
-      ctx.page.drawImage(pdfImage, {
-        x: (mediaWidthPt - drawWidth) / 2,
-        y: (mediaHeightPt - drawHeight) / 2,
-        width: drawWidth,
-        height: drawHeight,
+      // Cover-fit + focal point + zoom: matches the on-screen `object-fit:
+      // cover` + `object-position` + `scale()` treatment above exactly —
+      // see `coverImageFit.ts`'s doc comment for the shared formula.
+      const placement = computeCoverImagePdfPlacement({
+        mediaWidthPt,
+        mediaHeightPt,
+        imageWidth: width,
+        imageHeight: height,
+        focalPoint: page.content.imageFocalPoint,
+        zoom: page.content.imageZoom,
       })
-      ctx.page.drawRectangle({ x: 0, y: 0, width: mediaWidthPt, height: mediaHeightPt, color: rgb(0, 0, 0), opacity: 0.35 })
+      ctx.page.drawImage(pdfImage, placement)
+      drawCoverOverlayPdf(ctx.page, page.content.overlayStyle, page.content.overlayOpacity ?? DEFAULT_OVERLAY_OPACITY, mediaWidthPt, mediaHeightPt)
       hasImage = true
     }
   }
@@ -156,10 +200,16 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   const mutedInk = hasImage ? rgb(0.92, 0.92, 0.92) : hexToPdfColor(theme.page.mutedInk)
   const accent = hasImage ? rgb(0.88, 0.88, 0.88) : hexToPdfColor(theme.page.accent)
 
-  const titleFont = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
+  const typography = page.content.typography
+  const titleFontFamily = resolveCoverFontFamily(typography, theme.fonts.heading)
+  const titleWeight = resolveCoverWeight(typography, theme.typography.headingWeight)
+  const titleSizeScale = resolveCoverSizeScale(typography)
+  const titleFont = typography?.italic
+    ? pickItalicFont(ctx.fonts, titleFontFamily, titleWeight)
+    : pickFont(ctx.fonts, titleFontFamily, titleWeight)
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   const title = page.content.title || 'Untitled'
-  const titleSize = theme.typography.bodySize * 2.2 * PX_TO_PT
+  const titleSize = theme.typography.bodySize * 2.2 * titleSizeScale * PX_TO_PT
   const titleWidth = titleFont.widthOfTextAtSize(title, titleSize)
   const centerX = mediaWidthPt / 2
 

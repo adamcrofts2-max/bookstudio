@@ -13,15 +13,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 import { useExportStore } from '@/store/exportStore'
+import { useUiStore } from '@/store/uiStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { updatePageContentWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { COVER_LAYOUT_OPTIONS } from '@/structuralPages/coverLayout'
 import { computeSpineWidthIn, PAPER_TYPE_LABELS, MIN_PAGE_COUNT_FOR_SPINE_TEXT, type CoverPaperType } from '@/cover/spineWidth'
-import type { StructuralPage, CoverTextLayout } from '@/types/structuralPage'
+import type { StructuralPage, CoverTextLayout, CoverOverlayStyle, CoverFontChoice, CoverTypographyOverride } from '@/types/structuralPage'
 
 interface StructuralPagePanelProps {
   projectId: string
@@ -55,6 +57,202 @@ function LayoutPicker({ value, onChange }: { value: CoverTextLayout | undefined;
       <p className="text-xs text-text-secondary">
         Select the page in the preview, then drag the small handle above its text to fine-tune position.
       </p>
+    </div>
+  )
+}
+
+const OVERLAY_OPTIONS: { id: CoverOverlayStyle; label: string }[] = [
+  { id: 'flat', label: 'Flat tint' },
+  { id: 'gradient-bottom', label: 'Fade from bottom' },
+  { id: 'gradient-top', label: 'Fade from top' },
+  { id: 'none', label: 'None' },
+]
+
+/**
+ * Image controls for a Cover/Back Cover: zoom (the focal-point click
+ * itself happens directly in the live preview, via `CoverFocalPointPicker`
+ * — this panel only has the parts that don't make sense as a click
+ * target) and the overlay tint/gradient/opacity that keeps text readable
+ * over a photo. Only rendered once an image is actually set.
+ */
+function ImageAdjustmentsPanel({
+  zoom,
+  overlayStyle,
+  overlayOpacity,
+  defaultOverlayOpacity,
+  onChange,
+}: {
+  zoom: number | undefined
+  overlayStyle: CoverOverlayStyle | undefined
+  overlayOpacity: number | undefined
+  defaultOverlayOpacity: number
+  onChange: (updates: { imageZoom?: number; overlayStyle?: CoverOverlayStyle; overlayOpacity?: number }) => void
+}) {
+  const resolvedZoom = zoom ?? 1
+  const resolvedOpacity = overlayOpacity ?? defaultOverlayOpacity
+  const resolvedOverlay = overlayStyle ?? 'flat'
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Photo zoom</Label>
+        <input
+          type="range"
+          min={1}
+          max={2.5}
+          step={0.05}
+          value={resolvedZoom}
+          onChange={(e) => onChange({ imageZoom: Number(e.target.value) })}
+          className="w-full accent-accent"
+        />
+        <p className="text-xs text-text-secondary">Click the photo in the preview to set which part stays in frame.</p>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Overlay</Label>
+        <div className="grid grid-cols-2 gap-1.5">
+          {OVERLAY_OPTIONS.map((option) => (
+            <Button
+              key={option.id}
+              type="button"
+              variant={resolvedOverlay === option.id ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => onChange({ overlayStyle: option.id })}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      {resolvedOverlay !== 'none' && (
+        <div className="flex flex-col gap-1.5">
+          <Label>Overlay strength</Label>
+          <input
+            type="range"
+            min={0}
+            max={0.85}
+            step={0.05}
+            value={resolvedOpacity}
+            onChange={(e) => onChange({ overlayOpacity: Number(e.target.value) })}
+            className="w-full accent-accent"
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+const FONT_CHOICE_OPTIONS: { id: CoverFontChoice; label: string }[] = [
+  { id: 'theme', label: "Book's theme" },
+  { id: 'serif', label: 'Serif' },
+  { id: 'sans', label: 'Sans-serif' },
+]
+
+const WEIGHT_OPTIONS: { value: number; label: string }[] = [
+  { value: 400, label: 'Regular' },
+  { value: 500, label: 'Medium' },
+  { value: 700, label: 'Bold' },
+]
+
+/**
+ * Font/weight/italic/size controls for a Cover's title or a Back Cover's
+ * blurb — deliberately independent of the book's interior theme (see
+ * `types/structuralPage.ts`'s `CoverFontChoice` doc comment). Limited to
+ * the two families this app actually embeds; `public/fonts/custom/`'s
+ * README explains how to add more once real font files exist.
+ */
+function CoverTypographyPanel({
+  typography,
+  onChange,
+}: {
+  typography: CoverTypographyOverride | undefined
+  onChange: (typography: CoverTypographyOverride) => void
+}) {
+  const fontChoice = typography?.fontChoice ?? 'theme'
+  // No fallback to a hardcoded number here — leaving `weight` undefined
+  // until the user picks one means none of the buttons falsely claim to be
+  // "active" while the page is actually still using the book's own theme
+  // weight (see `coverTypography.ts`'s `resolveCoverWeight`).
+  const weight = typography?.weight
+  const italic = typography?.italic ?? false
+  const sizeScale = typography?.sizeScale ?? 1
+
+  function patchTypography(partial: Partial<CoverTypographyOverride>) {
+    onChange({ ...typography, ...partial })
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1.5">
+        <Label>Font</Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {FONT_CHOICE_OPTIONS.map((option) => (
+            <Button
+              key={option.id}
+              type="button"
+              variant={fontChoice === option.id ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => patchTypography({ fontChoice: option.id })}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Weight</Label>
+        <div className="grid grid-cols-3 gap-1.5">
+          {WEIGHT_OPTIONS.map((option) => (
+            <Button
+              key={option.value}
+              type="button"
+              variant={weight === option.value ? 'primary' : 'secondary'}
+              size="sm"
+              onClick={() => patchTypography({ weight: option.value })}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-4">
+        <Label htmlFor="cover-italic-switch">Italic</Label>
+        <Switch id="cover-italic-switch" checked={italic} onCheckedChange={(checked) => patchTypography({ italic: checked })} />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Size</Label>
+        <input
+          type="range"
+          min={0.6}
+          max={1.6}
+          step={0.05}
+          value={sizeScale}
+          onChange={(e) => patchTypography({ sizeScale: Number(e.target.value) })}
+          className="w-full accent-accent"
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Toggles the on-screen-only dashed safe-text-zone guide
+ * (`CoverSafeZoneGuide` in `structuralPages/shared.tsx`) — a global app
+ * preference (`uiStore.showCoverSafeZone`), not per-page content, so it's
+ * identical whichever of Cover/Back Cover is currently selected. */
+function SafeZoneToggle() {
+  const showCoverSafeZone = useUiStore((s) => s.showCoverSafeZone)
+  const toggleCoverSafeZone = useUiStore((s) => s.toggleCoverSafeZone)
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-col gap-0.5">
+        <Label htmlFor="safe-zone-switch">Show safe zone</Label>
+        <p className="text-xs text-text-secondary">Guide for keeping text away from the trim edge.</p>
+      </div>
+      <Switch id="safe-zone-switch" checked={showCoverSafeZone} onCheckedChange={toggleCoverSafeZone} />
     </div>
   )
 }
@@ -173,10 +371,29 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
           {page.type === 'cover' && (
             <>
               <p className="text-xs text-text-secondary">
-                Drag an image from the Assets tab onto the cover in the preview to set (or replace) its background.
+                Click "Add cover image" in the preview (or drag one from the Assets tab) to set a background photo.
               </p>
               <Separator />
               <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
+              <Separator />
+              <CoverTypographyPanel
+                typography={page.content.typography}
+                onChange={(typography) => patch({ typography })}
+              />
+              {page.content.imageAssetId && (
+                <>
+                  <Separator />
+                  <ImageAdjustmentsPanel
+                    zoom={page.content.imageZoom}
+                    overlayStyle={page.content.overlayStyle}
+                    overlayOpacity={page.content.overlayOpacity}
+                    defaultOverlayOpacity={0.35}
+                    onChange={(updates) => patch(updates)}
+                  />
+                </>
+              )}
+              <Separator />
+              <SafeZoneToggle />
             </>
           )}
         </>
@@ -204,10 +421,29 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             />
           </div>
           <p className="text-xs text-text-secondary">
-            Drag an image from the Assets tab onto the back cover in the preview to set (or replace) its background.
+            Click "Add back-cover image" in the preview (or drag one from the Assets tab) to set a background photo.
           </p>
           <Separator />
           <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
+          <Separator />
+          <CoverTypographyPanel
+            typography={page.content.typography}
+            onChange={(typography) => patch({ typography })}
+          />
+          {page.content.imageAssetId && (
+            <>
+              <Separator />
+              <ImageAdjustmentsPanel
+                zoom={page.content.imageZoom}
+                overlayStyle={page.content.overlayStyle}
+                overlayOpacity={page.content.overlayOpacity}
+                defaultOverlayOpacity={0.4}
+                onChange={(updates) => patch(updates)}
+              />
+            </>
+          )}
+          <Separator />
+          <SafeZoneToggle />
           <Separator />
           <SpineWidthInfo projectId={projectId} />
         </>

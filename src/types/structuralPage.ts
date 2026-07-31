@@ -46,6 +46,55 @@ interface BaseStructuralPage {
  */
 export type CoverTextLayout = 'centered' | 'top' | 'bottom'
 
+/**
+ * Where the "important part" of a Cover/Back Cover's background image
+ * sits, as a fraction of the image (`0,0` top-left, `1,1` bottom-right,
+ * `0.5,0.5` centre — today's fixed crop). Set by clicking the image in the
+ * on-screen preview. Absent means `0.5,0.5`, so every pre-existing project
+ * keeps its exact current crop. See `docs/STATUS.md` Phase 46.
+ */
+export interface CoverImageFocalPoint {
+  x: number
+  y: number
+}
+
+/**
+ * Overlay drawn on a Cover/Back Cover's background image so text stays
+ * readable. `'flat'` (absent default) is a uniform tint across the whole
+ * image — the pre-existing, previously-fixed behaviour. The two
+ * `'gradient-*'` options only darken the end of the image nearest the
+ * text, matching whichever `layout` anchor is active, which keeps far more
+ * of a photo's real detail visible than a flat tint. `'none'` removes the
+ * overlay entirely (best for already-dark or low-contrast images).
+ */
+export type CoverOverlayStyle = 'flat' | 'gradient-bottom' | 'gradient-top' | 'none'
+
+/**
+ * Which of the app's two embedded font families a Cover/Back Cover's text
+ * uses — deliberately independent of the book's interior theme (a
+ * professional cover conventionally looks different from the inside
+ * pages). `'theme'` (absent default) inherits the interior theme's
+ * heading/body fonts exactly as before this milestone. Only two real
+ * choices exist because those are the only families this app currently
+ * embeds for PDF export (see `pdf/fonts.ts`) — `public/fonts/custom/`
+ * exists for dropping in more later; see that folder's README.
+ */
+export type CoverFontChoice = 'theme' | 'serif' | 'sans'
+
+export interface CoverTypographyOverride {
+  fontChoice?: CoverFontChoice
+  /** Applies to the dominant text element only (Cover's title, Back
+   * Cover's blurb) — every other field (subtitle/author/authorBio) keeps
+   * its existing fixed size/weight relative to it, same as before this
+   * milestone. */
+  weight?: number
+  italic?: boolean
+  /** Multiplier on the existing fixed size (Cover title's `2.6em`, Back
+   * Cover blurb's `1.05em`) — `1` or absent reproduces today's exact
+   * size. */
+  sizeScale?: number
+}
+
 export interface CoverPage extends BaseStructuralPage {
   type: 'cover'
   content: {
@@ -64,6 +113,13 @@ export interface CoverPage extends BaseStructuralPage {
      * `NUDGE_RANGE_PX` / `drawCoverPdf`'s matching PDF-point range.
      */
     verticalNudge?: number
+    imageFocalPoint?: CoverImageFocalPoint
+    /** `>= 1`; `1` or absent is the pre-existing plain cover-fit crop. */
+    imageZoom?: number
+    overlayStyle?: CoverOverlayStyle
+    /** `0..1`; absent means the pre-existing fixed `0.35`. */
+    overlayOpacity?: number
+    typography?: CoverTypographyOverride
   }
 }
 
@@ -177,6 +233,11 @@ export interface BackCoverPage extends BaseStructuralPage {
     imageAssetId?: string
     layout?: CoverTextLayout
     verticalNudge?: number
+    imageFocalPoint?: CoverImageFocalPoint
+    imageZoom?: number
+    overlayStyle?: CoverOverlayStyle
+    overlayOpacity?: number
+    typography?: CoverTypographyOverride
   }
 }
 

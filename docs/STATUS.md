@@ -3418,14 +3418,103 @@ matches the on-screen position; open a project that predates this phase
 (no `layout`/`verticalNudge` in its stored content) and confirm its
 Cover/Back Cover render pixel-identical to before.
 
+## Phase 46 — Cover designer: images, overlay, fonts + EPUB cover fix (2026-07-31)
+
+Requested directly by the user, thinking as a first-time self-published
+author with no design experience: "I can't easily pick a photo," "my photo
+crops oddly," and "everything's the same font as the interior." Also
+fixed a real correctness bug found while researching this: EPUB export
+never flagged the cover image as the book's actual cover.
+
+- **`src/types/structuralPage.ts`**: `CoverPage`/`BackCoverPage.content`
+  gain `imageFocalPoint?` (`{x,y}`, 0..1), `imageZoom?` (`>=1`),
+  `overlayStyle?` (`'flat' | 'gradient-bottom' | 'gradient-top' | 'none'`),
+  `overlayOpacity?`, and `typography?` (`{fontChoice, weight, italic,
+  sizeScale}`). Every field absent reproduces this milestone's
+  pre-existing fixed look exactly — verified by inspection for the
+  centred/flat/theme-font defaults, same standard as every prior phase's
+  "no regression for existing projects" claim.
+- **`src/structuralPages/coverImageFit.ts`** (new): shared focal-point +
+  zoom math for both the screen (`object-position` + `scale()` transform,
+  pivoted on the focal point) and the PDF exporter (a placement formula
+  that mirrors CSS `object-position` semantics exactly, y-axis flipped for
+  pdf-lib's bottom-up coordinate space). At the defaults (focal `0.5,0.5`,
+  zoom `1`) the PDF formula reduces algebraically to the exact pre-existing
+  centred-crop expression.
+- **`src/structuralPages/coverOverlay.ts`** (new): shared overlay
+  rendering. `'flat'` is unchanged from before. The two gradient options
+  render as a real CSS `linear-gradient` on screen; in the PDF (which has
+  no native gradient-fill primitive in pdf-lib's high-level API) the same
+  fade is approximated with 40 thin, increasingly-transparent horizontal
+  bands — a standard technique, not a true PDF shading pattern, documented
+  as such.
+- **`src/structuralPages/coverTypography.ts`** (new): resolves a cover's
+  actual font family/weight/size from an optional override, falling back
+  to the book's interior theme when absent. Only two real family choices
+  exist (Inter, Source Serif 4) — the only two this app embeds.
+- **`src/structuralPages/shared.tsx`**: three new components —
+  `CoverImageUploadButton` (hidden `<input type="file">` + `assetStore.
+  importFiles`, so uploading doesn't require knowing sidebar
+  drag-and-drop exists), `CoverFocalPointPicker` (click-anywhere-on-the-
+  photo crosshair), `CoverSafeZoneGuide` (dashed guide at KDP's published
+  0.25in minimum text-safety margin beyond bleed — purely on-screen,
+  never exported).
+- **`src/store/uiStore.ts`**: new `showCoverSafeZone` (persisted app
+  preference, not project data — same reasoning as `showThumbnails`).
+- **`src/structuralPages/types/cover.tsx`, `backCover.tsx`**: wire all of
+  the above into both `*Render` (upload button + focal picker + safe-zone
+  guide + resolved overlay/typography) and `drawCoverPdf`/
+  `drawBackCoverPdf` (image placement via `computeCoverImagePdfPlacement`,
+  overlay via `drawCoverOverlayPdf`, font resolution via
+  `resolveCoverFontFamily`/`resolveCoverWeight`/`resolveCoverSizeScale`,
+  italic via the existing `pickItalicFont` from Phase 39).
+- **`src/layout/inspector/StructuralPagePanel.tsx`**: new
+  `ImageAdjustmentsPanel` (zoom slider, overlay-style buttons, overlay-
+  strength slider — only shown once an image exists), `CoverTypographyPanel`
+  (font-choice/weight buttons, italic switch, size slider), `SafeZoneToggle`.
+  Wired into both the Cover and Back Cover sections.
+- **`src/epub/exportEpub.ts`**: the cover's image manifest `<item>` now
+  gets `properties="cover-image"`, and `<metadata>` gets an EPUB2-
+  compatibility `<meta name="cover" content="img-...">` pointer — Kindle
+  Previewer, Apple Books, and library-grid views read one of these two to
+  decide what to show as a book's thumbnail; previously neither existed,
+  so the real cover artwork likely never appeared anywhere outside the
+  book's own first page.
+- **`public/fonts/custom/README.md`** (new): a folder + documented,
+  numbered steps for wiring in more font families once real `.woff2` files
+  exist — this sandbox's outbound network is still blocked (re-confirmed
+  this session: a direct fetch to `fonts.gstatic.com` for an open-license
+  display font returned the same proxy 403 as prior sessions), so an
+  agent can't fetch new font files itself; a human (or a future session
+  with network access) needs to drop real files in first.
+
+### Verification caveat
+`npx tsc -b --force` clean. As with every phase this session, this
+sandbox cannot run a real browser session — **manually verify** once
+pushed: upload a cover image by clicking (not dragging); click the photo
+to move the focal point and confirm the crop follows; drag the zoom
+slider and confirm it zooms around the focal point rather than a corner;
+switch overlay styles and confirm the gradient options only darken one
+edge; change the font/weight/italic/size and confirm the live preview
+updates; toggle the safe zone and confirm the dashed guide appears; export
+to PDF and confirm all of the above matches the on-screen preview
+(image crop, overlay, font, gradient banding); export to EPUB and confirm
+the cover shows correctly in an e-reader or the Kindle Previewer's library
+view; open a project that predates this phase and confirm its Cover/Back
+Cover render pixel-identical to before (no `imageFocalPoint`/`overlayStyle`/
+`typography` in its stored content).
+
 ## Recommended next task
-Phase E is now complete except three items needing infrastructure this
+Phase E is complete except three items needing infrastructure this
 client-only app doesn't have (documented as deliberately deferred in
 `docs/ROADMAP.md`, same treatment as the AI reviewer/CMYK items): stock
 image library integration, AI image generation, and a community template
 gallery — all three need a real backend/third-party API. Per the user's
 "keep working until C, D, E are complete" directive, Phases C, D, and E
-are now all complete or deliberately-deferred-with-reasoning. Recommend
+are now all complete or deliberately-deferred-with-reasoning. A genuinely
+higher-impact next step for a first-time author, if the user wants to keep
+going: real additional cover font families (blocked purely on font files —
+see `public/fonts/custom/README.md`), or Phase F. Otherwise, recommend
 pausing here for the user's planned GitHub push + Chrome verification
 pass, per their original instruction: "then I will send to github and let
 you check everything on google chrome."

@@ -189,8 +189,19 @@ export async function exportBookToEpub(
     const mediaType = 'application/xhtml+xml'
     manifestItems.push(`<item id="${s.id}" href="${s.fileName}" media-type="${mediaType}" />`)
   }
+  // The cover image gets EPUB3's `properties="cover-image"` manifest flag
+  // (and, below, an EPUB2-compatibility `<meta name="cover">` pointer) so
+  // e-readers, Kindle Previewer, and library-grid views show the actual
+  // artwork as the book's thumbnail instead of a generic placeholder —
+  // previously missing entirely, meaning the exported EPUB likely never
+  // displayed a real cover anywhere outside the book's own first page. See
+  // docs/STATUS.md Phase 46.
+  const coverImageAssetId = coverPage?.content.imageAssetId
+  const coverIsAvailable = !!coverImageAssetId && availableImageIds.has(coverImageAssetId)
   for (const assetId of availableImageIds) {
-    manifestItems.push(`<item id="img-${assetId}" href="images/${assetId}.png" media-type="image/png" />`)
+    const isCover = coverIsAvailable && assetId === coverImageAssetId
+    const properties = isCover ? ' properties="cover-image"' : ''
+    manifestItems.push(`<item id="img-${assetId}" href="images/${assetId}.png" media-type="image/png"${properties} />`)
   }
   const spineItems = spine.map((s) => `<itemref idref="${s.id}" />`).join('')
 
@@ -202,6 +213,7 @@ export async function exportBookToEpub(
 <dc:language>${escapeXmlText(language)}</dc:language>
 ${author ? `<dc:creator>${escapeXmlText(author)}</dc:creator>` : ''}
 <meta property="dcterms:modified">${modified}</meta>
+${coverIsAvailable ? `<meta name="cover" content="img-${coverImageAssetId}" />` : ''}
 </metadata>
 <manifest>
 ${manifestItems.join('\n')}
