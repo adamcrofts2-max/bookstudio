@@ -203,6 +203,23 @@ Both fixes verified live (not just build-clean) via a real browser: opening the 
 project renders the editor shell with no console errors, and a hard reload on
 `/project/:id` loads the app directly instead of Vercel's 404 page.
 
+### Incident (2026-07-31): pushes silently stopped reaching the live app for ~5 phases
+This local checkout's branch is named `master`, not `main`. Every push this session
+(Phase 21's docs follow-up through Phase 24) went to `origin master` — which exists on
+the remote as its own, separate branch — while Vercel's auto-deploy (see above) only
+ever watches `origin main`. `main` had been silently stuck at the Milestone 4b commit
+(`8728312`) the whole time. Every "verified live in the browser" claim across that span
+was unknowingly re-testing that same stale deployed build, not the new commits — the
+live-browser checks themselves were run correctly, they just weren't checking what they
+were meant to. Caught only when Phase 24's new Style Guide dialog section didn't appear
+live despite a clean local commit and push. Fixed by fast-forwarding `main` to `master`'s
+tip (`git push origin master:main` — safe here since `main`'s commit was a real ancestor
+of `master`, confirmed via `git merge-base --is-ancestor` before pushing). **Going
+forward, every push in this repo must target `origin main` directly (`git push <remote>
+master:main`), not `origin master`**, or re-verify after every push that `main`'s remote
+ref actually advanced (`git ls-remote --heads origin`) before trusting a live-browser
+check.
+
 ## Phase 10 — Inline manuscript text editing
 
 Closed the gap called out at the end of Phase 9: until now, Book Studio had zero
