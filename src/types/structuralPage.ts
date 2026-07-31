@@ -38,9 +38,33 @@ interface BaseStructuralPage {
   exportSettings?: Record<string, unknown>
 }
 
+/**
+ * Vertical anchor for a Cover/Back Cover's text block — absent means
+ * `'centered'`, preserving every pre-existing project's current look with
+ * zero migration. See `docs/STATUS.md` Phase 45 for the full cover-designer
+ * reasoning.
+ */
+export type CoverTextLayout = 'centered' | 'top' | 'bottom'
+
 export interface CoverPage extends BaseStructuralPage {
   type: 'cover'
-  content: { title?: string; subtitle?: string; author?: string; imageAssetId?: string }
+  content: {
+    title?: string
+    subtitle?: string
+    author?: string
+    imageAssetId?: string
+    layout?: CoverTextLayout
+    /**
+     * Fine-tune vertical offset within the chosen `layout` zone, from a
+     * drag handle in the on-screen preview — range `-1` (as far toward the
+     * top as the zone allows) to `1` (as far toward the bottom), `0` or
+     * absent meaning no offset. Deliberately a single normalised number
+     * rather than raw pixels so it stays meaningful across different trim
+     * sizes and screen-vs-PDF coordinate spaces — see `cover.tsx`'s
+     * `NUDGE_RANGE_PX` / `drawCoverPdf`'s matching PDF-point range.
+     */
+    verticalNudge?: number
+  }
 }
 
 export interface TitlePage extends BaseStructuralPage {
@@ -147,7 +171,13 @@ export interface BarcodePage extends BaseStructuralPage {
  */
 export interface BackCoverPage extends BaseStructuralPage {
   type: 'back-cover'
-  content: { blurb?: string; authorBio?: string; imageAssetId?: string }
+  content: {
+    blurb?: string
+    authorBio?: string
+    imageAssetId?: string
+    layout?: CoverTextLayout
+    verticalNudge?: number
+  }
 }
 
 export type StructuralPage =

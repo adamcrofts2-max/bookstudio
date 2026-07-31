@@ -3337,14 +3337,95 @@ project falls back to Classic Novel without erroring; confirm a custom
 theme also renders correctly in an exported PDF (proves the `resolveTheme`
 lookup really is used by the PDF layer, not just on-screen).
 
+## Phase 45 — Dedicated cover/back-cover designer (2026-07-31)
+
+Closes Phase E's last buildable item, task #32. Scoped deliberately smaller
+than the roadmap wording's full ambition ("layout templates, draggable
+element positioning, spine-width calculation for a real wraparound
+cover") — a genuinely freeform multi-element x/y canvas and a single
+merged wraparound-cover artwork file are both much larger, riskier
+rewrites than the remaining milestone budget allows, and would touch
+Cover/Back Cover's fundamental one-page-per-side data model (a real
+wraparound cover needs front+spine+back as one spread, not two
+independent `StructuralPage`s). What shipped is real and used end-to-end
+(screen, PDF, and the Inspector), not a mockup:
+
+- **`src/types/structuralPage.ts`**: `CoverPage`/`BackCoverPage.content`
+  gained two new optional fields — `layout?: CoverTextLayout` ('centered'
+  | 'top' | 'bottom', absent meaning 'centered', so every pre-existing
+  project renders identically to before) and `verticalNudge?: number`
+  (-1..1, a fine-tune offset within the chosen layout's zone).
+- **`src/structuralPages/coverLayout.ts`** (new): the shared layout math
+  used by *both* the on-screen renderer and the PDF exporter, so the two
+  can never drift apart — `computeCoverLayoutScreenStyle` (flex
+  justification + zone padding, computed in real px from `pageBox`, never
+  a CSS percentage — padding percentages resolve against the containing
+  block's *width*, which would distort a portrait page) and
+  `computeCoverLayoutCursorY` (the PDF-side equivalent, in PDF points).
+  `COVER_NUDGE_RANGE_PX` is the single shared constant both sides multiply
+  by their own unit conversion, so a full drag moves the text by the same
+  physical distance on screen and in the exported PDF.
+- **`src/structuralPages/shared.tsx`**: new `CoverNudgeHandle` — a small
+  drag handle (pointer events, not HTML5 `dataTransfer` drag — this
+  codebase's existing asset-drop drag isn't suited to live coordinate
+  dragging, and there was zero prior art for freeform positioning
+  anywhere in the app before this). Live-drags a local preview value
+  (`onLiveChange`) without touching the store, then commits exactly once
+  on pointer-up (`onCommitFinal`) — one drag gesture is one undo-history
+  entry, not one entry per pointer-move tick. Only rendered while the page
+  is selected, matching `ThemeGallery.tsx`'s existing hover/selection-
+  gated affordance pattern.
+- **`src/structuralPages/types/cover.tsx`** / **`backCover.tsx`**: both
+  `*Render` components now compute `computeCoverLayoutScreenStyle` and
+  apply it via inline `justifyContent`/padding/`translateY`, and render
+  `<CoverNudgeHandle>` above their text/blurb block when selected. Both
+  `drawCoverPdf`/`drawBackCoverPdf` now call `computeCoverLayoutCursorY`
+  instead of a single hardcoded centred formula — the default/'centered'
+  path was written to reproduce the *exact* pre-existing formula bit for
+  bit (verified by inspection, not just "should be equivalent"), so no
+  project that never touches the new layout picker sees any visual change
+  at all.
+- **`src/cover/spineWidth.ts`** (new): `computeSpineWidthIn`/
+  `computeSpineWidthMm`, using Amazon KDP's own published pages-per-inch
+  figures per paper stock (the same public source already cited by
+  `virtualEditor/checkers/printReadiness.ts`'s `kdpGutterMarginChecker`).
+  Always presented as an estimate, never a guarantee — IngramSpark's own
+  constants differ slightly per stock.
+- **`src/layout/inspector/StructuralPagePanel.tsx`**: new `LayoutPicker`
+  (three one-click buttons: Top/Centered/Bottom, for both Cover and Back
+  Cover) and new `SpineWidthInfo` (paper-type `<Select>` + a live
+  page-count read from `useExportStore` — the same paginated layout
+  `BookRenderer` has on screen, so it reflects the *real* current book,
+  not a stale estimate). Deliberately placed as informational/planning
+  text, not a live-editable spine element, since there's no single
+  wraparound artwork file to edit yet.
+- **Deliberately NOT touched**: `src/epub/structuralPageToXhtml.ts` — a
+  reflowable e-reader page has no concept of vertical anchoring within a
+  fixed page the way print/on-screen preview does (there's no "page
+  height" to anchor within), so applying `layout`/`verticalNudge` there
+  would have no meaningful reader-visible effect. EPUB/HTML export stay
+  exactly as they were.
+
+### Verification caveat
+`npx tsc -b --force` clean. As with every phase this session, this
+sandbox cannot run a real browser session (`vite`'s config loader still
+fails here) — **manually verify** once pushed: select a Cover, switch
+between the three layout buttons and confirm the on-screen preview moves;
+drag the small handle and confirm a live preview follows the pointer,
+then release and confirm it stays (and that Undo reverts the whole drag
+in one step, not many); export to PDF and confirm the exported page
+matches the on-screen position; open a project that predates this phase
+(no `layout`/`verticalNudge` in its stored content) and confirm its
+Cover/Back Cover render pixel-identical to before.
+
 ## Recommended next task
-Phase E's last open item is task #32, the dedicated cover/back-cover
-designer (layout templates, draggable element positioning, real spine-width
-calculation from page count + trim + paper — Cover/Back Cover today are
-both one fixed centred-text-over-image layout). The three items after that
-(stock image library, AI image generation, community template gallery) all
-need external service APIs this client-only architecture doesn't have, and
-should be documented as deliberately deferred — with reasoning, the same
-way the AI reviewer and CMYK export were handled — once reached, rather
-than silently dropped. Per the user's "keep working until C, D, E are
-complete" directive, task #32 is next.
+Phase E is now complete except three items needing infrastructure this
+client-only app doesn't have (documented as deliberately deferred in
+`docs/ROADMAP.md`, same treatment as the AI reviewer/CMYK items): stock
+image library integration, AI image generation, and a community template
+gallery — all three need a real backend/third-party API. Per the user's
+"keep working until C, D, E are complete" directive, Phases C, D, and E
+are now all complete or deliberately-deferred-with-reasoning. Recommend
+pausing here for the user's planned GitHub push + Chrome verification
+pass, per their original instruction: "then I will send to github and let
+you check everything on google chrome."

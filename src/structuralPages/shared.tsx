@@ -1,9 +1,14 @@
-import { useState } from 'react'
-import { ImagePlus } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { GripVertical, ImagePlus } from 'lucide-react'
 
 import { useEditableField } from '@/blocks/shared'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
+import { COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
 import { cn } from '@/lib/utils'
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 
 interface EditableTextProps {
   value: string
@@ -116,5 +121,64 @@ export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop a
         </div>
       )}
     </div>
+  )
+}
+
+interface CoverNudgeHandleProps {
+  /** Currently-committed nudge value, -1..1. */
+  value: number
+  /** Called continuously while dragging, for a live preview transform — the
+   * caller should NOT persist this (would spam undo history with one entry
+   * per pointer-move tick). */
+  onLiveChange: (value: number) => void
+  /** Called exactly once, on pointer release, with the final value — the
+   * caller persists this via `onCommit`/`updatePageContentWithHistory`, so
+   * one drag gesture is one undo step. */
+  onCommitFinal: (value: number) => void
+}
+
+/**
+ * Small drag handle for fine-tuning a Cover/Back Cover text block's vertical
+ * position within its chosen layout preset (`coverLayout.ts`). Deliberately
+ * a single vertical-only handle, not a full draggable multi-element canvas —
+ * see `docs/STATUS.md` Phase 45 for why. Only rendered while the page is
+ * selected, matching this app's existing hover/selection-gated affordance
+ * pattern (see `ThemeGallery.tsx`'s edit/delete icons).
+ */
+export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal }: CoverNudgeHandleProps) {
+  const draggingRef = useRef(false)
+  const startRef = useRef({ y: 0, value: 0 })
+
+  function nextValue(clientY: number) {
+    const deltaPx = clientY - startRef.current.y
+    return clamp(startRef.current.value + deltaPx / COVER_NUDGE_RANGE_PX, -1, 1)
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label="Drag up or down to fine-tune this text block's vertical position"
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => {
+        e.stopPropagation()
+        e.preventDefault()
+        draggingRef.current = true
+        startRef.current = { y: e.clientY, value }
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        if (!draggingRef.current) return
+        onLiveChange(nextValue(e.clientY))
+      }}
+      onPointerUp={(e) => {
+        if (!draggingRef.current) return
+        draggingRef.current = false
+        onCommitFinal(nextValue(e.clientY))
+      }}
+      className="mx-auto flex w-fit cursor-ns-resize items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm"
+    >
+      <GripVertical className="size-3" />
+      Drag to reposition
+    </button>
   )
 }

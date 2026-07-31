@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Book } from 'lucide-react'
 import { rgb } from 'pdf-lib'
 
@@ -7,7 +8,8 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
-import { StructuralImageDropZone } from '@/structuralPages/shared'
+import { StructuralImageDropZone, CoverNudgeHandle } from '@/structuralPages/shared'
+import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY, COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
 import { splitParagraphs } from '@/structuralPages/longForm'
 import { useAssetStore } from '@/store/assetStore'
 import { getAssetBlob } from '@/store/assetDb'
@@ -30,14 +32,20 @@ const BLURB_PLACEHOLDER =
  * docs/ROADMAP.md Phase E and docs/STATUS.md's entry for why this exists —
  * there was previously no back-cover page type at all.
  */
-function BackCoverRender({ page, theme, selected, onSelect, onCommit }: StructuralPageRenderProps) {
+function BackCoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+  // See `cover.tsx`'s identical field for why this stays local until
+  // pointer-up.
+  const [liveNudge, setLiveNudge] = useState<number | null>(null)
   if (page.type !== 'back-cover') return null
 
   const imageUrl = page.content.imageAssetId ? getObjectUrl(page.content.imageAssetId) : undefined
   const ink = imageUrl ? '#ffffff' : theme.page.ink
   const mutedInk = imageUrl ? 'rgba(255,255,255,0.85)' : theme.page.mutedInk
   const paragraphs = splitParagraphs(page.content.blurb ?? '')
+  const committedNudge = page.content.verticalNudge ?? 0
+  const effectiveNudge = liveNudge ?? committedNudge
+  const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
 
   return (
     <div
@@ -56,7 +64,25 @@ function BackCoverRender({ page, theme, selected, onSelect, onCommit }: Structur
         label="Drop a back-cover image here"
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
-      <div className="absolute inset-0 flex flex-col justify-center gap-4 px-16 py-24">
+      <div
+        className="absolute inset-0 flex flex-col gap-4 px-16 py-24"
+        style={{
+          justifyContent: layoutStyle.justifyContent,
+          paddingTop: layoutStyle.paddingTop,
+          paddingBottom: layoutStyle.paddingBottom,
+          transform: `translateY(${layoutStyle.translateYPx}px)`,
+        }}
+      >
+        {selected && (
+          <CoverNudgeHandle
+            value={committedNudge}
+            onLiveChange={setLiveNudge}
+            onCommitFinal={(value) => {
+              setLiveNudge(null)
+              onCommit({ verticalNudge: value })
+            }}
+          />
+        )}
         {(paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]).map((paragraph, i) => (
           <p
             key={i}
@@ -129,7 +155,30 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
   const contentWidthPt = mediaWidthPt - contentX - bleedPt - pageBox.marginOuterPx * PX_TO_PT
 
   const paragraphs = splitParagraphs(page.content.blurb ?? '')
-  const drawCtx: DrawCtx = { ...ctx, contentX, contentWidthPt, cursorY: mediaHeightPt / 2 + (paragraphs.length * lineHeight) / 2 }
+  const blockCount = paragraphs.length > 0 ? paragraphs.length : 1
+  // 'centered' keeps the exact pre-existing formula (no regression for
+  // every project created before this milestone, which all default to
+  // 'centered'); 'top'/'bottom' reuse the same shared zone-padding anchor
+  // `cover.tsx`'s title uses, treating the whole blurb block's estimated
+  // height as `totalSpanPt` since (unlike the cover's title) there's no
+  // single "first line size" distinct from the rest.
+  const layout = page.content.layout
+  const estimatedBlockHeightPt = blockCount * lineHeight
+  const startCursorY =
+    layout === 'top' || layout === 'bottom'
+      ? computeCoverLayoutCursorY({
+          layout,
+          mediaHeightPt,
+          topLineSizePt: lineHeight,
+          totalSpanPt: estimatedBlockHeightPt - lineHeight,
+          nudge: page.content.verticalNudge,
+          pxToPt: PX_TO_PT,
+        })
+      : // Exact pre-existing formula (uses `paragraphs.length`, not
+        // `blockCount`, so an empty blurb — 0 real paragraphs — still
+        // centres at `mediaHeightPt / 2` exactly as before this milestone).
+        mediaHeightPt / 2 + (paragraphs.length * lineHeight) / 2 + (page.content.verticalNudge ?? 0) * COVER_NUDGE_RANGE_PX * PX_TO_PT
+  const drawCtx: DrawCtx = { ...ctx, contentX, contentWidthPt, cursorY: startCursorY }
   for (const paragraph of paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]) {
     const lines = wrapRuns([{ text: paragraph, bold: false }], bodyFont, bodyFont, bodySize, contentWidthPt)
     drawWrappedLines(drawCtx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont)

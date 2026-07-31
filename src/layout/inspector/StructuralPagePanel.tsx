@@ -1,18 +1,108 @@
+import { useState } from 'react'
 import { FileQuestion } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
+import { useExportStore } from '@/store/exportStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { updatePageContentWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
-import type { StructuralPage } from '@/types/structuralPage'
+import { COVER_LAYOUT_OPTIONS } from '@/structuralPages/coverLayout'
+import { computeSpineWidthIn, PAPER_TYPE_LABELS, MIN_PAGE_COUNT_FOR_SPINE_TEXT, type CoverPaperType } from '@/cover/spineWidth'
+import type { StructuralPage, CoverTextLayout } from '@/types/structuralPage'
 
 interface StructuralPagePanelProps {
   projectId: string
+}
+
+/** Cover/Back Cover's "Layout" preset picker — the coarse half of the
+ * cover designer (see `structuralPages/coverLayout.ts`'s doc comment). The
+ * fine-tune half (the drag handle) lives directly in the live preview
+ * (`cover.tsx`/`backCover.tsx`), not here — this panel only ever offers
+ * discrete, one-click choices, consistent with every other field on this
+ * page. */
+function LayoutPicker({ value, onChange }: { value: CoverTextLayout | undefined; onChange: (layout: CoverTextLayout) => void }) {
+  const active = value ?? 'centered'
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>Layout</Label>
+      <div className="flex gap-1.5">
+        {COVER_LAYOUT_OPTIONS.map((option) => (
+          <Button
+            key={option.id}
+            type="button"
+            variant={active === option.id ? 'primary' : 'secondary'}
+            size="sm"
+            className="flex-1"
+            onClick={() => onChange(option.id)}
+          >
+            {option.label}
+          </Button>
+        ))}
+      </div>
+      <p className="text-xs text-text-secondary">
+        Select the page in the preview, then drag the small handle above its text to fine-tune position.
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Estimated wraparound-cover spine width from the book's real, live
+ * paginated page count — see `cover/spineWidth.ts`'s doc comment for why
+ * this belongs here rather than a separate "cover designer" dialog: Book
+ * Studio doesn't generate a single wraparound cover file yet (Cover/Back
+ * Cover stay two independent pages), so this is presented as the planning
+ * information an author needs when building that wraparound file
+ * elsewhere, not as a live-editable spine element.
+ */
+function SpineWidthInfo({ projectId }: { projectId: string }) {
+  const pageCount = useExportStore((s) => s.byProject[projectId]?.pages.length ?? 0)
+  const [paperType, setPaperType] = useState<CoverPaperType>('white')
+  const spineWidthIn = computeSpineWidthIn(pageCount, paperType)
+
+  return (
+    <div className="flex flex-col gap-1.5 rounded-[var(--radius-card)] border border-border p-3">
+      <Label>Spine width estimate</Label>
+      <Select value={paperType} onValueChange={(value) => setPaperType(value as CoverPaperType)}>
+        <SelectTrigger>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(PAPER_TYPE_LABELS) as CoverPaperType[]).map((type) => (
+            <SelectItem key={type} value={type}>
+              {PAPER_TYPE_LABELS[type]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {pageCount > 0 ? (
+        <p className="text-xs text-text-secondary">
+          At {pageCount} pages: <span className="font-medium text-text-primary">{spineWidthIn.toFixed(3)} in</span> wide —
+          for preparing a wraparound cover file outside Book Studio.
+          {pageCount < MIN_PAGE_COUNT_FOR_SPINE_TEXT && ' Too thin for spine text at most print-on-demand printers.'}
+        </p>
+      ) : (
+        <p className="text-xs text-text-secondary">Open the book preview to compute a live page count.</p>
+      )}
+      <p className="text-[0.65rem] leading-snug text-text-secondary/80">
+        Estimate only, from Amazon KDP&apos;s published paper-thickness figures — always confirm against your printer&apos;s
+        own cover calculator before submitting final files.
+      </p>
+    </div>
+  )
 }
 
 /**
@@ -81,9 +171,13 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             />
           </div>
           {page.type === 'cover' && (
-            <p className="text-xs text-text-secondary">
-              Drag an image from the Assets tab onto the cover in the preview to set (or replace) its background.
-            </p>
+            <>
+              <p className="text-xs text-text-secondary">
+                Drag an image from the Assets tab onto the cover in the preview to set (or replace) its background.
+              </p>
+              <Separator />
+              <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
+            </>
           )}
         </>
       )}
@@ -112,6 +206,10 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
           <p className="text-xs text-text-secondary">
             Drag an image from the Assets tab onto the back cover in the preview to set (or replace) its background.
           </p>
+          <Separator />
+          <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
+          <Separator />
+          <SpineWidthInfo projectId={projectId} />
         </>
       )}
 

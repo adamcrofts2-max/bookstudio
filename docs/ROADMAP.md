@@ -201,13 +201,23 @@ daily use of everything built so far.)*
       `customThemeStore.ts`. Margins deliberately excluded — margins are
       Project settings (Layer 1), already customisable per-project regardless
       of theme
-- [ ] Dedicated cover/back-cover designer — layout templates, draggable element
-      positioning, spine-width calculation from page count + trim + paper for a
-      real wraparound cover (Cover/Back Cover today are both one fixed layout:
-      centred text over a background image)
-- [ ] Stock image / illustration library integration
-- [ ] AI image generation for covers and illustrations
-- [ ] Community/shareable template gallery
+- [x] Dedicated cover/back-cover designer — shipped 2026-07-31 (Phase 45):
+      3 layout presets (Top/Centered/Bottom) + a draggable fine-tune handle
+      for vertical position, plus a live spine-width calculator from real
+      page count + trim + paper stock. Scoped deliberately smaller than a
+      full multi-element x/y canvas or true wraparound-cover file
+      generation — see Phase 45's STATUS entry for the reasoning; Cover and
+      Back Cover remain two independent pages, not one spread
+- [ ] Stock image / illustration library integration — deferred: needs a
+      real third-party stock-photo API + licensing/attribution handling this
+      client-only architecture doesn't have yet
+- [ ] AI image generation for covers and illustrations — deferred: needs a
+      real image-generation API (and a decision on hosted-backend vs.
+      bring-your-own-key, same open question already deferred for
+      `AiReviewer` in Phase C)
+- [ ] Community/shareable template gallery — deferred: needs a real backend
+      service to host/browse shared templates, which this client-only app
+      doesn't have
 
 ## Phase F — Planning & Writing Tools
 

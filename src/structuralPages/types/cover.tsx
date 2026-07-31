@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { BookImage } from 'lucide-react'
 import { rgb } from 'pdf-lib'
 
@@ -7,7 +8,8 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
-import { EditableText, StructuralImageDropZone } from '@/structuralPages/shared'
+import { EditableText, StructuralImageDropZone, CoverNudgeHandle } from '@/structuralPages/shared'
+import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY } from '@/structuralPages/coverLayout'
 import { useAssetStore } from '@/store/assetStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
@@ -23,12 +25,20 @@ import { cn } from '@/lib/utils'
  * fields needed for this milestone. */
 function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+  // Live-drag preview state — never persisted until the handle's pointer-up
+  // fires `onCommit`, so undo history gets exactly one entry per drag
+  // gesture. `null` while not dragging, meaning "use the page's committed
+  // value" (see `liveNudge ?? page.content.verticalNudge`).
+  const [liveNudge, setLiveNudge] = useState<number | null>(null)
   if (page.type !== 'cover') return null
 
   const imageUrl = page.content.imageAssetId ? getObjectUrl(page.content.imageAssetId) : undefined
   const ink = imageUrl ? '#ffffff' : theme.page.ink
   const mutedInk = imageUrl ? 'rgba(255,255,255,0.88)' : theme.page.mutedInk
   const accent = imageUrl ? 'rgba(255,255,255,0.82)' : theme.page.accent
+  const committedNudge = page.content.verticalNudge ?? 0
+  const effectiveNudge = liveNudge ?? committedNudge
+  const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
 
   return (
     <div
@@ -48,9 +58,26 @@ function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: Str
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
       <div
-        className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center"
-        style={{ paddingLeft: pageBox.marginOuterPx, paddingRight: pageBox.marginOuterPx }}
+        className="absolute inset-0 flex flex-col items-center gap-5 text-center"
+        style={{
+          paddingLeft: pageBox.marginOuterPx,
+          paddingRight: pageBox.marginOuterPx,
+          paddingTop: layoutStyle.paddingTop,
+          paddingBottom: layoutStyle.paddingBottom,
+          justifyContent: layoutStyle.justifyContent,
+          transform: `translateY(${layoutStyle.translateYPx}px)`,
+        }}
       >
+        {selected && (
+          <CoverNudgeHandle
+            value={committedNudge}
+            onLiveChange={setLiveNudge}
+            onCommitFinal={(value) => {
+              setLiveNudge(null)
+              onCommit({ verticalNudge: value })
+            }}
+          />
+        )}
         <EditableText
           as="h1"
           value={page.content.title ?? ''}
@@ -136,7 +163,21 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   const titleWidth = titleFont.widthOfTextAtSize(title, titleSize)
   const centerX = mediaWidthPt / 2
 
-  let cursorY = mediaHeightPt / 2 + titleSize * 0.6
+  // Same vertical distance the subtitle/author gaps below actually use —
+  // precomputed so `computeCoverLayoutCursorY`'s 'bottom' preset can anchor
+  // the *last* line near the bottom margin rather than the title.
+  let totalSpanPt = 0
+  if (page.content.subtitle) totalSpanPt += titleSize * 1.5
+  if (page.content.author) totalSpanPt += theme.typography.bodySize * 2.4 * PX_TO_PT
+
+  let cursorY = computeCoverLayoutCursorY({
+    layout: page.content.layout,
+    mediaHeightPt,
+    topLineSizePt: titleSize,
+    totalSpanPt,
+    nudge: page.content.verticalNudge,
+    pxToPt: PX_TO_PT,
+  })
   ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink })
 
   if (page.content.subtitle) {
