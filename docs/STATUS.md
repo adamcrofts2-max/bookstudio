@@ -3153,14 +3153,57 @@ end-to-end — no such app is available in this sandbox.
 
 ## Recommended next task
 Manually verify Phase 40's EPUB export in a real e-reader (see verification
-note above) — export a book with images, a gallery, and a few front-/
-back-matter pages, and confirm it opens, the cover/TOC/chapters navigate
-correctly, and images/styling look right. Continuing Phase D: ISBN/barcode
-export wiring + a KDP/IngramSpark validation report next (leveraging the
-Print Readiness/Commercial Quality checkers Phase 36 already built), then
-Phase E (theme gallery, custom theme editor, cover/back-cover designer).
-Kindle/MOBI export, HTML/web-book export, and CMYK-aware export remain open
-Phase D items — MOBI in particular may turn out to be a low-priority target
-since Amazon's own KDP pipeline now primarily ingests EPUB and converts it
-internally, worth confirming before investing in a separate legacy MOBI
-writer.
+note above). Continuing to Phase 41 below.
+
+## Phase 41 — Pre-export KDP/IngramSpark-style validation gate (2026-07-31)
+
+Research into Phase D's "ISBN + barcode field and placement" and
+"Print-on-demand validation profiles" items found the first was already
+substantially shipped: `isbn-page`/`barcode` are real, dedicated
+back-matter structural page types (Phase 21) with working PDF rendering
+(and now EPUB export, Phase 40) — ticked in `docs/ROADMAP.md` with a note
+about what's still an honest placeholder (the barcode's bars aren't a real
+scannable EAN-13 symbol, documented since Phase 21). The genuinely open
+item was validation profiles, closed this phase.
+
+- **`src/virtualEditor/exportReadiness.ts`** (new): `checkExportReadiness(ctx)`
+  re-runs *only* the `print`/`commercial` category checkers already built
+  in Phase 36 (KDP gutter-margin table, bleed minimums, low-resolution
+  images, missing copyright/ISBN/back-cover-blurb/title-page) — deliberately
+  not a new rule set or a duplicated checker, per `CLAUDE.md`'s "avoid
+  duplicate logic." `hasBlockingReadinessIssues` treats `critical`/`major`
+  findings as worth interrupting the user for; `minor`/`suggestion` findings
+  don't trigger the gate.
+- **`src/hooks/useExportReadiness.ts`** (new): assembles the same
+  `CheckerContext` shape `VirtualEditorWorkspace.tsx` builds for a full
+  review (manuscript, project, structural pages, assets, and — if
+  available this session — real paginated `pages`), memoised, and runs
+  `checkExportReadiness` against it.
+- **`src/components/common/ExportReadinessDialog.tsx`** (new): lists the
+  blocking findings with their `whyItMatters` explanation and offers
+  "Go back and fix" or "Export anyway" — never a hard block, matching
+  `CLAUDE.md`'s AI Philosophy ("never make destructive edits without
+  confirmation") extended to "don't silently ship something that would
+  fail a printer's or a reader's expectations without at least asking."
+- **`Toolbar.tsx`**: both "Export PDF" and "Export EPUB" now route through
+  `handleExportClick`, which checks `hasBlockingIssues` first and only
+  opens the confirmation dialog when there's something worth flagging —
+  otherwise export proceeds immediately exactly as before, so a
+  ready-to-publish book sees zero change in the export flow.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` in this sandbox. Verified via
+`npx tsc -b --force` only (clean). **Manually verify**: a project missing a
+copyright page or with an under-resolution image shows the readiness
+dialog on Export PDF/EPUB, "Export anyway" proceeds with the real export,
+"Go back and fix" just closes the dialog, and a project with none of those
+issues exports immediately with no dialog at all.
+
+## Recommended next task
+Manually verify Phase 41's export-readiness gate (see caveat above), and
+Phase 40's EPUB export in a real e-reader. Phase D's remaining open items —
+Kindle/MOBI export, HTML/web-book export, CMYK-aware export, real font
+subsetting (blocked in this environment) — are all either lower-priority or
+environment-blocked; moving on to Phase E next (theme gallery, custom theme
+editor, dedicated cover/back-cover designer), per the user's "keep working
+until C, D, E are complete" directive.

@@ -16,8 +16,10 @@ import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { useExportEpub } from '@/epub/useExportEpub'
+import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
+import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
 import type { Project } from '@/types'
 
 interface ToolbarProps {
@@ -52,6 +54,8 @@ export function Toolbar({ project }: ToolbarProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
+  const [readinessOpen, setReadinessOpen] = useState(false)
+  const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | null>(null)
   const { resolved, setAppearance } = useTheme()
   const collapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -61,6 +65,27 @@ export function Toolbar({ project }: ToolbarProps) {
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
   const { canExport: canExportEpub, busy: exportingEpub, error: epubExportError, runExport: runExportEpub } = useExportEpub(project)
+  const { findings: readinessFindings, hasBlockingIssues } = useExportReadiness(project)
+
+  /** Gate for both "Export PDF" and "Export EPUB": if the readiness check
+   * (Amazon KDP/IngramSpark-style print/commercial-quality rules — see
+   * `virtualEditor/exportReadiness.ts`) has anything blocking, show the
+   * confirmation dialog instead of exporting immediately. Never a hard
+   * block — "Export anyway" in the dialog always proceeds. */
+  const handleExportClick = (format: 'pdf' | 'epub') => {
+    if (hasBlockingIssues) {
+      setPendingExportFormat(format)
+      setReadinessOpen(true)
+      return
+    }
+    if (format === 'pdf') void runExport()
+    else void runExportEpub()
+  }
+
+  const handleExportAnyway = () => {
+    if (pendingExportFormat === 'pdf') void runExport()
+    else if (pendingExportFormat === 'epub') void runExportEpub()
+  }
   const canUndo = useHistoryStore((s) => s.canUndo(project.id))
   const canRedo = useHistoryStore((s) => s.canRedo(project.id))
   const undoLabel = useHistoryStore((s) => s.peekUndoLabel(project.id))
@@ -161,10 +186,10 @@ export function Toolbar({ project }: ToolbarProps) {
             </TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem disabled={!canExport || exporting} onSelect={runExport}>
+            <DropdownMenuItem disabled={!canExport || exporting} onSelect={() => handleExportClick('pdf')}>
               Export PDF — print-ready, bleed &amp; crop marks
             </DropdownMenuItem>
-            <DropdownMenuItem disabled={!canExportEpub || exportingEpub} onSelect={runExportEpub}>
+            <DropdownMenuItem disabled={!canExportEpub || exportingEpub} onSelect={() => handleExportClick('epub')}>
               Export EPUB — reflowable ebook
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -185,6 +210,13 @@ export function Toolbar({ project }: ToolbarProps) {
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <VersionHistoryDialog projectId={project.id} open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen} />
+      <ExportReadinessDialog
+        open={readinessOpen}
+        onOpenChange={setReadinessOpen}
+        findings={readinessFindings}
+        formatLabel={pendingExportFormat === 'epub' ? 'the EPUB' : 'the PDF'}
+        onExportAnyway={handleExportAnyway}
+      />
     </header>
   )
 }

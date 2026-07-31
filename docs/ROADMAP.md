@@ -157,8 +157,17 @@ daily use of everything built so far.)*
       pipeline now primarily ingests EPUB and converts it internally, so a
       separate legacy MOBI writer may not be worth building
 - [ ] HTML / web-book export
-- [ ] ISBN + barcode field and placement on the copyright/back-cover page
-- [ ] Print-on-demand validation profiles (Amazon KDP, IngramSpark spec checks)
+- [x] ISBN + barcode field and placement — already shipped as dedicated
+      `isbn-page`/`barcode` structural page types (Phase 21) with real PDF
+      rendering, and now also EPUB export (Phase 40, ISBN as text — a
+      scannable barcode has no meaning in reflowable ebook text). The
+      barcode's bars are still an honest, documented non-scannable visual
+      placeholder (Phase 21) — a real EAN-13 symbology renderer remains a
+      distinct, larger future task
+- [x] Print-on-demand validation profiles (Amazon KDP, IngramSpark spec
+      checks) — see STATUS.md Phase 41: a pre-export warning dialog reusing
+      the Print Readiness/Commercial Quality checkers (Phase 36), not a new
+      rule set
 - [x] True justified text in PDF export — see STATUS.md Phase 39
 - [x] Per-image rotation in PDF export — see STATUS.md Phase 39
 - [x] Italic and hyperlink styling distinguished in exported PDF — see
