@@ -2632,19 +2632,17 @@ both introduced earlier this session.
   unnamed `group` added anywhere else in `Page.tsx`).
 
 ### Verification note — different from every prior phase's caveat
-This phase's fixes were themselves found *by* manual browser verification,
-but the fixes haven't yet been re-verified live (would require the user to
-push this commit and wait for the Vercel auto-deploy, then re-check) — that
-loop wasn't closed within this session. **Re-run the same two checks
-(thumbnail visibility, single-block-only toolbar hover) once this is
-deployed.** Otherwise verified via `npx tsc -b --force` (clean) plus the DOM
-inspection described above.
+This phase's fixes were themselves found *by* manual browser verification.
+User pushed the commit, Vercel redeployed, and confirmed live 2026-07-31:
+both thumbnail visibility and single-block-only toolbar hover now work
+correctly on https://bookstudio-rose.vercel.app/. This is the first phase
+this session with a fully closed find-fix-verify loop, not just a `tsc`
+pass plus a "please check this manually" caveat.
 
 ## Recommended next task
-Push this commit, wait for the Vercel auto-deploy, and re-verify both fixes
-live (thumbnails visible, only the hovered block's toolbar appears).
-Otherwise: real thumbnail previews and page-delete are now both genuinely
-confirmed working end-to-end for the first time this session — next up per
+Real thumbnail previews and page-delete are now both genuinely confirmed
+working end-to-end, live, by the user — the first features this session
+verified beyond `tsc`. Next up per
 the roadmap is the cover/back-cover designer (Phase E), Phase C's remaining
 Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and Phase G
 (accounts/cloud).
