@@ -21,4 +21,6 @@ export const BUILT_IN_THEMES: BookTheme[] = [
   { id: 'coffee-table', name: 'Coffee Table', description: 'Huge imagery, minimal text, large margins.' },
   { id: 'educational', name: 'Educational', description: 'Clear hierarchy, coloured information boxes.' },
   { id: 'childrens', name: "Children's", description: 'Rounded typography, playful spacing, bright colours.' },
+  { id: 'modern-minimalist', name: 'Modern Minimalist', description: 'Clean sans-serif, generous whitespace, understated.' },
+  { id: 'academic-journal', name: 'Academic Journal', description: 'Dense serif, formal, justified, numbered chapters.' },
 ]

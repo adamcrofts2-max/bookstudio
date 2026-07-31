@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useProjectStore } from '@/store/projectStore'
-import { BUILT_IN_THEMES } from '@/types/theme'
+import { ThemeGallery } from '@/components/settings/ThemeGallery'
 import type { Project, TrimSize } from '@/types'
 import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
 import type { StyleGuide } from '@/virtualEditor/types'
@@ -206,21 +206,10 @@ export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSe
 
           <div className="flex flex-col gap-1.5">
             <Label>Theme</Label>
-            <Select
+            <ThemeGallery
               value={settings.themeId}
-              onValueChange={(value) => updateProjectSettings(project.id, { themeId: value })}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {BUILT_IN_THEMES.map((theme) => (
-                  <SelectItem key={theme.id} value={theme.id}>
-                    {theme.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={(themeId) => updateProjectSettings(project.id, { themeId })}
+            />
           </div>
 
           <Separator />

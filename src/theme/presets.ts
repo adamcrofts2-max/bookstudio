@@ -1,4 +1,5 @@
 import { BUILT_IN_THEMES } from '@/types/theme'
+import { useCustomThemeStore } from '@/store/customThemeStore'
 
 export interface ResolvedBookTheme {
   id: string
@@ -68,12 +69,40 @@ const PRESETS: Record<string, ResolvedBookTheme> = {
     typography: { bodySize: 18, lineHeight: 1.8, justify: false, dropCap: false, headingWeight: 700 },
     chapterOpener: { numberLabel: 'word', topSpacer: 90 },
   },
+  'modern-minimalist': {
+    id: 'modern-minimalist',
+    name: 'Modern Minimalist',
+    page: { background: '#ffffff', ink: '#141414', mutedInk: '#737373', accent: '#141414', ruleColor: '#ececec' },
+    fonts: { heading: '"Inter", sans-serif', body: '"Inter", sans-serif' },
+    typography: { bodySize: 15.5, lineHeight: 1.7, justify: false, dropCap: false, headingWeight: 500 },
+    chapterOpener: { numberLabel: 'numeral', topSpacer: 170 },
+  },
+  'academic-journal': {
+    id: 'academic-journal',
+    name: 'Academic Journal',
+    page: { background: '#fbfbf9', ink: '#1a1a1a', mutedInk: '#5a5a5a', accent: '#1f3a5f', ruleColor: '#d9d9d3' },
+    fonts: { heading: '"Source Serif 4", serif', body: '"Source Serif 4", serif' },
+    typography: { bodySize: 14.5, lineHeight: 1.55, justify: true, dropCap: false, headingWeight: 600 },
+    chapterOpener: { numberLabel: 'numeral', topSpacer: 80 },
+  },
 }
 
+/**
+ * Consults user-created themes (`customThemeStore.ts`) before falling back to
+ * the hardcoded `PRESETS` map, so every call site — PDF export, on-screen
+ * rendering, the Virtual Editor's checkers — resolves a custom theme exactly
+ * like a built-in one, with no changes needed anywhere else. Reading
+ * `useCustomThemeStore.getState()` outside React is safe (Zustand stores are
+ * plain subscribable objects); this stays within the Theme layer since custom
+ * themes are still theme data, just persisted separately from the hardcoded
+ * presets.
+ */
 export function resolveTheme(themeId: string): ResolvedBookTheme {
+  const custom = useCustomThemeStore.getState().customThemes.find((t) => t.id === themeId)
+  if (custom) return custom
   return PRESETS[themeId] ?? PRESETS[BUILT_IN_THEMES[0].id]
 }
 
 export function listThemes(): ResolvedBookTheme[] {
-  return Object.values(PRESETS)
+  return [...Object.values(PRESETS), ...useCustomThemeStore.getState().customThemes]
 }

@@ -3238,13 +3238,113 @@ it renders correctly end-to-end (styling, images, in-page chapter links) —
 not exercised here since it needs an actual manuscript with images loaded,
 which this sandbox has no project data to generate from.
 
+## Phase 43 — Visual theme gallery + two new built-in themes (2026-07-31)
+
+Closes two Phase E roadmap items together, per `CLAUDE.md`'s "the interface
+should be visual rather than settings-based wherever possible": replaces
+`ProjectSettingsDialog.tsx`'s plain `<Select>` theme dropdown with a real
+visual gallery.
+
+- **`src/theme/presets.ts`**: two new entries in `PRESETS` —
+  `modern-minimalist` (clean Inter sans-serif, no justify/drop-cap, wide
+  chapter-opener spacer) and `academic-journal` (dense justified Source
+  Serif 4, numbered chapters). Both deliberately reuse only the two font
+  families this app actually self-hosts and embeds in exported PDFs
+  (`"Inter", sans-serif` / `"Source Serif 4", serif` — see `pdf/fonts.ts`'s
+  `loadThemeFonts`), so on-screen preview and exported PDF never diverge.
+- **`src/types/theme.ts`**: matching `BUILT_IN_THEMES` entries — 7 built-in
+  themes total now, up from 5.
+- **`src/components/settings/ThemeGallery.tsx`** (new): `ThemePreviewCard`
+  renders each theme's *actual* resolved values (`resolveTheme()` output) —
+  real background colour, real heading font/weight, real accent-coloured
+  rule, real body text with the theme's real justify/drop-cap/line-height
+  settings, real chapter-opener numeral/word preview — not just a name and
+  a one-line description. `ThemeGallery` lays these out in a responsive
+  grid; selecting one still just calls `onChange`, which
+  `ProjectSettingsDialog.tsx` wires straight into
+  `updateProjectSettings({ themeId })` exactly as the old dropdown did, so
+  switching still regenerates the whole book instantly with no
+  re-import — the same non-negotiable the dropdown already satisfied.
+- **`ProjectSettingsDialog.tsx`**: swapped the old `<Select>` theme picker
+  for `<ThemeGallery>`; the `Select`-family imports stayed, since the trim
+  size and Style Guide pickers further down the same dialog still use them.
+
+### Verification caveat
+`npx tsc -b --force` clean. Not exercised: opening the dialog in a real
+browser to confirm the grid renders and clicking a card actually re-themes
+the live preview — this sandbox cannot run `vite dev`/`vite build`
+(confirmed again this session: `vite.config.ts`'s config loader fails with
+a Node ESM syntax error unrelated to this change), so **manually verify**
+in Chrome once pushed: open Project Settings, confirm all 7 built-in cards
+render distinct real previews, and confirm selecting one instantly
+re-themes the open book.
+
+## Phase 44 — Custom theme editor (2026-07-31)
+
+Closes the last piece of Phase E task "theme gallery + custom theme
+editor": users can now design and save their own theme, not just pick
+from the built-in 7.
+
+- **`src/store/customThemeStore.ts`** (new): a `persist`-backed Zustand
+  store holding `customThemes: CustomTheme[]` (global, not per-project — a
+  theme a user designs is meant to be reusable across every project, like
+  the built-ins). `CustomTheme extends ResolvedBookTheme` with `isCustom:
+  true` and a `description`. `addCustomTheme`/`updateCustomTheme`/
+  `deleteCustomTheme` actions; deleting one requires no migration — any
+  project still pointing at a deleted theme id falls back to the first
+  built-in the next time `resolveTheme` runs, the same "optional field,
+  default in code" pattern used everywhere else in this codebase.
+- **`src/theme/presets.ts`**: `resolveTheme()` now checks
+  `useCustomThemeStore.getState().customThemes` before falling back to the
+  hardcoded `PRESETS` map, so every existing call site — PDF export,
+  on-screen rendering, `HeightMeasurer`, every Virtual Editor checker that
+  reads theme data — picks up a custom theme with zero changes elsewhere,
+  same as any built-in theme id. `listThemes()` extended the same way.
+  Reading a Zustand store from a non-React module is safe (stores are
+  plain subscribable objects outside React too); this stays a same-layer
+  read (Theme reading Theme data), not a cross-layer violation.
+- **`src/components/settings/CustomThemeEditorDialog.tsx`** (new):
+  create/edit form for a custom theme — name, heading/body font (a
+  `<Select>` restricted to the same two embeddable families Phase 43 used,
+  never a free-text field: an arbitrary CSS font-family would render with
+  *some* system font on screen but silently fall back to Inter in the
+  exported PDF, breaking true WYSIWYG), five `<input type="color">` colour
+  fields (background/ink/mutedInk/accent/ruleColor), body size, line
+  height, heading weight, chapter-opener label, and `Switch` toggles for
+  justify/drop-cap. Deliberately has no margin fields — margins are
+  Project settings (Layer 1), already fully customisable per-project
+  regardless of theme, per `docs/SYSTEM_ARCHITECTURE.md`'s layer split;
+  conflating them into "theme" would be an architecture violation even
+  though the original roadmap wording grouped them together.
+- **`ThemeGallery.tsx`**: now also lists every custom theme alongside the
+  7 built-ins, each with hover-revealed edit/delete icon buttons (built-ins
+  never show these), plus a trailing dashed "+ Create custom theme" card.
+  Saving a new or edited theme calls `onChange` immediately with the saved
+  theme's id, so it applies without a second click. Deleting the
+  currently-active theme falls the selection back to the first built-in
+  theme immediately, rather than leaving `themeId` pointing at a
+  now-deleted id until the next render happens to call `resolveTheme`.
+
+### Verification caveat
+`npx tsc -b --force` clean (including the new
+`presets.ts` → `customThemeStore.ts` import — a type-only import back from
+`customThemeStore.ts` to `presets.ts` keeps this from being a real runtime
+cycle). Same as Phase 43: this sandbox cannot run a real browser session,
+so **manually verify** once pushed: create a custom theme, confirm it
+appears in the gallery and applies instantly; edit it and confirm the
+change reflects; delete it while it's the active theme and confirm the
+project falls back to Classic Novel without erroring; confirm a custom
+theme also renders correctly in an exported PDF (proves the `resolveTheme`
+lookup really is used by the PDF layer, not just on-screen).
+
 ## Recommended next task
-Manually verify Phases 40/41/42's exports (EPUB in a real e-reader, the
-readiness gate's dialog behaviour, and the HTML export opened in a
-browser). Phase D's remaining open items — Kindle/MOBI export (likely
-low-priority, see Phase 40's note), CMYK-aware export, real font
-subsetting (blocked in this environment) — are all either lower-priority or
-environment-blocked. Phase D is otherwise complete. Moving on to Phase E
-next (theme gallery, custom theme editor, dedicated cover/back-cover
-designer), per the user's "keep working until C, D, E are complete"
-directive.
+Phase E's last open item is task #32, the dedicated cover/back-cover
+designer (layout templates, draggable element positioning, real spine-width
+calculation from page count + trim + paper — Cover/Back Cover today are
+both one fixed centred-text-over-image layout). The three items after that
+(stock image library, AI image generation, community template gallery) all
+need external service APIs this client-only architecture doesn't have, and
+should be documented as deliberately deferred — with reasoning, the same
+way the AI reviewer and CMYK export were handled — once reached, rather
+than silently dropped. Per the user's "keep working until C, D, E are
+complete" directive, task #32 is next.

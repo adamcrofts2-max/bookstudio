@@ -192,9 +192,15 @@ daily use of everything built so far.)*
       replace its image (previously there was no way to set these at all,
       despite the field existing). Still missing: an explicit "remove image"
       action (only replace-by-dragging-another works)
-- [ ] Template/theme gallery with visual preview before applying
-- [ ] More built-in themes beyond the current 5
-- [ ] Custom theme editor — user-defined colours/fonts/margins saved as a new theme
+- [x] Template/theme gallery with visual preview before applying — shipped
+      2026-07-31 (Phase 43): `ThemeGallery.tsx` real resolved-theme mockups
+- [x] More built-in themes beyond the current 5 — shipped 2026-07-31 (Phase
+      43): added Modern Minimalist + Academic Journal (7 built-ins total)
+- [x] Custom theme editor — user-defined colours/fonts saved as a new theme —
+      shipped 2026-07-31 (Phase 44): `CustomThemeEditorDialog.tsx` +
+      `customThemeStore.ts`. Margins deliberately excluded — margins are
+      Project settings (Layer 1), already customisable per-project regardless
+      of theme
 - [ ] Dedicated cover/back-cover designer — layout templates, draggable element
       positioning, spine-width calculation from page count + trim + paper for a
       real wraparound cover (Cover/Back Cover today are both one fixed layout:
