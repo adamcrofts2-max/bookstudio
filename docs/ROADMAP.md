@@ -152,8 +152,10 @@ daily use of everything built so far.)*
 
 ## Phase D — Publishing Output Expansion
 
-- [ ] EPUB export
-- [ ] Kindle / MOBI export
+- [x] EPUB export — see STATUS.md Phase 40
+- [ ] Kindle / MOBI export — worth confirming priority first: Amazon's KDP
+      pipeline now primarily ingests EPUB and converts it internally, so a
+      separate legacy MOBI writer may not be worth building
 - [ ] HTML / web-book export
 - [ ] ISBN + barcode field and placement on the copyright/back-cover page
 - [ ] Print-on-demand validation profiles (Amazon KDP, IngramSpark spec checks)

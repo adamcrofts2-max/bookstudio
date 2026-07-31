@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronsRight, Download, History, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sparkles, Sun, Undo2 } from 'lucide-react'
+import { ChevronDown, ChevronsRight, Download, History, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sparkles, Sun, Undo2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -8,12 +8,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
 import { useUiStore } from '@/store/uiStore'
 import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { useExportPdf } from '@/pdf/useExportPdf'
+import { useExportEpub } from '@/epub/useExportEpub'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import type { Project } from '@/types'
@@ -58,6 +60,7 @@ export function Toolbar({ project }: ToolbarProps) {
   const workspaceMode = useUiStore((s) => s.workspaceMode)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
+  const { canExport: canExportEpub, busy: exportingEpub, error: epubExportError, runExport: runExportEpub } = useExportEpub(project)
   const canUndo = useHistoryStore((s) => s.canUndo(project.id))
   const canRedo = useHistoryStore((s) => s.canRedo(project.id))
   const undoLabel = useHistoryStore((s) => s.peekUndoLabel(project.id))
@@ -131,25 +134,41 @@ export function Toolbar({ project }: ToolbarProps) {
           Project Settings
         </Button>
 
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span>
-              <Button
-                variant="primary"
-                size="sm"
-                disabled={!canExport || exporting}
-                className="gap-1.5"
-                onClick={runExport}
-              >
-                {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                {exporting ? 'Exporting…' : 'Export PDF'}
-              </Button>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>
-            {canExport ? (exportError ?? 'Export a print-ready PDF — bleed, crop marks, embedded fonts') : 'Import a manuscript first'}
-          </TooltipContent>
-        </Tooltip>
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    disabled={(!canExport && !canExportEpub) || exporting || exportingEpub}
+                    className="gap-1.5"
+                  >
+                    {exporting || exportingEpub ? (
+                      <Loader2 className="size-3.5 animate-spin" />
+                    ) : (
+                      <Download className="size-3.5" />
+                    )}
+                    {exporting ? 'Exporting PDF…' : exportingEpub ? 'Exporting EPUB…' : 'Export'}
+                    <ChevronDown className="size-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {canExport || canExportEpub ? (exportError ?? epubExportError ?? 'Choose a format to export') : 'Import a manuscript first'}
+            </TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem disabled={!canExport || exporting} onSelect={runExport}>
+              Export PDF — print-ready, bleed &amp; crop marks
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!canExportEpub || exportingEpub} onSelect={runExportEpub}>
+              Export EPUB — reflowable ebook
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <IconButton
           label={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}

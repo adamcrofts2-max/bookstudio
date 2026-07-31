@@ -3070,14 +3070,97 @@ paragraph with `<em>`/`<a href>` text shows a visibly different (though not
 identical-family) italic and an underlined accent-coloured link, and a table
 with a long cell wraps within its column instead of overflowing.
 
+## Phase 40 — Real EPUB3 export, dependency-free (2026-07-31)
+
+The biggest remaining Phase D item. Unlike PDF export, EPUB is reflowable
+HTML+CSS, so this never touches pagination, manual text-wrapping, or font
+embedding at all — a materially simpler problem than the PDF exporter, once
+one real gap was closed: **no zip library is installed, and this sandbox
+has no npm registry access to add one** (`npm install` fails here — a
+known, standing limitation this whole session). A real Vercel deployment
+build *would* be able to fetch a new dependency, but adding one anyway
+would mean shipping code I could never actually typecheck or run in this
+environment before the user pushes it. Chose instead to write a small,
+from-scratch, dependency-free ZIP writer — both more verifiable here and a
+smaller footprint for something the ZIP format's STORE/DEFLATE-plus-
+central-directory core doesn't really need a whole package for.
+
+- **`src/epub/crc32.ts`** (new): standard IEEE/zlib/PKZIP CRC-32 — a
+  table-driven ~20-line implementation, needed because every ZIP header
+  requires each entry's CRC.
+- **`src/epub/zipWriter.ts`** (new): `buildZip(entries)` writes real local
+  file headers, a central directory, and an end-of-central-directory
+  record. Compression uses the Web platform's built-in `CompressionStream`
+  (`'deflate-raw'`) — no dependency, just a browser-API version floor
+  (Chrome/Edge 80+, Firefox 113+, Safari 16.4+) consistent with the rest of
+  the app. Supports a `store` flag per entry for EPUB's own requirement
+  that its `mimetype` entry be the very first, stored (uncompressed) entry
+  in the archive.
+- **`src/epub/blockToXhtml.ts`** (new): converts each of the 14
+  `ContentBlock` types to semantic XHTML. Paragraph's `html` field (already
+  sanitised to `<strong>`/`<em>`/`<a>` by `parser/html.ts`) is reused
+  verbatim — it's already valid XHTML. Body heading levels shift down one
+  (`h1`→`h2` etc.) since each chapter file uses its own title as that
+  file's `<h1>` — the same heading-outline concern
+  `accessibility.ts`'s `headingHierarchySkipChecker` checks for, applied
+  here to keep the export itself correct.
+- **`src/epub/structuralPageToXhtml.ts`** (new): converts front-/back-matter
+  structural pages, returning `null` (skip entirely) for a `blank` page
+  (a print-pagination-only concept with no reflowable equivalent) or any
+  page with no content entered. Barcode pages export their ISBN as text
+  only — a scannable barcode graphic is a physical-print requirement with
+  no meaning in an ebook file.
+- **`src/epub/stylesheet.ts`** (new): generates one CSS file from the
+  project's `resolveTheme()` output (fonts, colours, justify, drop-cap via
+  `::first-letter`) — no embedded font files (unlike the PDF exporter,
+  every EPUB reader ships its own system fonts, so `font-family` with a
+  generic fallback is enough for a close, correctly-themed match without
+  bundling `.woff2` files into every exported `.epub`).
+- **`src/epub/exportEpub.ts`** (new): orchestrates the whole package —
+  `mimetype`, `META-INF/container.xml`, `content.opf` (metadata + manifest +
+  spine), an EPUB3 `nav.xhtml` plus a `toc.ncx` for older-reader
+  compatibility, one XHTML file per chapter and per non-empty structural
+  page, and every referenced image (chapter image/gallery blocks, plus
+  cover/back-cover/about-the-author's `imageAssetId`) rasterised to PNG via
+  the PDF exporter's existing `blobToPng` and embedded once each.
+- **`src/epub/useExportEpub.ts`** (new): same shape as `pdf/useExportPdf.ts`,
+  but reads the raw manuscript/structural pages directly — `canExport` only
+  needs a manuscript to exist, so EPUB export works even before the
+  manuscript workspace has rendered this session (no `layout` dependency).
+- **`Toolbar.tsx`**: the single "Export PDF" button became an "Export ▾"
+  dropdown (using the already-installed `@radix-ui/react-dropdown-menu` —
+  no new dependency) offering "Export PDF" and "Export EPUB" separately.
+
+### Verification
+No working `npm run build`/`lint`/`test` in this sandbox. Verified via
+`npx tsc -b --force` (clean) plus a real, independent structural
+verification of the ZIP format itself: `scripts/test-zip-writer.mjs`
+reproduces `crc32.ts`/`zipWriter.ts`'s exact logic standalone (Node 22 also
+has `CompressionStream`), builds a small three-entry test archive, and —
+rather than trusting my own writer to check its own work — the *result*
+was validated against two completely independent, unrelated tools: Python's
+`zipfile.testzip()` reports no CRC/structural errors and extracts all three
+entries byte-identical to what was written (including the stored,
+uncompressed `mimetype` entry), and the `file` command (libmagic) correctly
+identifies the archive as `EPUB document` from its magic bytes. This is
+real, higher-confidence verification than `tsc` alone, precisely because
+`tsc` can't check byte-level file-format correctness — the risk this
+project's own history (the pagination/thumbnail bugs from earlier this
+session) shows `tsc` alone reliably misses. Still outstanding: opening the
+actual exported `.epub` in a real reading app (Apple Books, Calibre, a
+Kindle-via-Send-to-Kindle conversion, etc.) to confirm rendering/navigation
+end-to-end — no such app is available in this sandbox.
+
 ## Recommended next task
-Manually verify Phase 39's four PDF fixes in a real exported PDF (see
-caveat above). Continuing Phase D: EPUB export next (the biggest remaining
-Phase D item), then ISBN/barcode export wiring + a KDP/IngramSpark
-validation report (leveraging the Print Readiness/Commercial Quality
-checkers Phase 36 already built), then Phase E (theme gallery, custom theme
-editor, cover/back-cover designer). Kindle/MOBI export, HTML/web-book
-export, and CMYK-aware export remain open Phase D items — MOBI in
-particular may turn out to be a low-priority target since Amazon's own KDP
-pipeline now primarily ingests EPUB and converts it internally, worth
-confirming before investing in a separate legacy MOBI writer.
+Manually verify Phase 40's EPUB export in a real e-reader (see verification
+note above) — export a book with images, a gallery, and a few front-/
+back-matter pages, and confirm it opens, the cover/TOC/chapters navigate
+correctly, and images/styling look right. Continuing Phase D: ISBN/barcode
+export wiring + a KDP/IngramSpark validation report next (leveraging the
+Print Readiness/Commercial Quality checkers Phase 36 already built), then
+Phase E (theme gallery, custom theme editor, cover/back-cover designer).
+Kindle/MOBI export, HTML/web-book export, and CMYK-aware export remain open
+Phase D items — MOBI in particular may turn out to be a low-priority target
+since Amazon's own KDP pipeline now primarily ingests EPUB and converts it
+internally, worth confirming before investing in a separate legacy MOBI
+writer.
