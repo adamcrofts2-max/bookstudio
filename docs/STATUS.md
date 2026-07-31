@@ -2388,10 +2388,67 @@ timing-sensitive rendering bug — manually reload the app on a cold cache
 (hard refresh, or throttle network in DevTools) and confirm no paragraph gets
 clipped, before trusting this beyond a quick look.**
 
-## Recommended next task
+## Recommended next task (Phase 28's own — superseded below by Phase 29)
 Manually verify the font-swap fix in a real browser (cold cache reload,
 throttled network) since this class of bug is inherently hard to catch via
 `tsc` alone. Otherwise unchanged: real thumbnail previews and the cover/
 back-cover designer (Phase 27's deferred items), then Phase C (Virtual Editor
 categories), Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/cloud)
 as the biggest remaining structural gaps.
+
+## Phase 29 — Page-level delete/duplicate/move directly on the canvas (2026-07-31)
+
+Triggered by real usage feedback repeated a second time: "still no way to
+delete whole pages," even after Phase 27's Sidebar discoverability fix
+shipped. Investigated rather than assuming Phase 27 was insufficient for a
+vague reason — the actual gap: Phase 27 only made the *existing*
+Sidebar-Structure-tab delete/duplicate/move icons more visible (`opacity-0`
+→ `opacity-35`). That's a completely different panel from the page canvas
+itself; a user looking at a Cover or Blank page in the main view had no
+on-page indication any delete action existed at all, sidebar or otherwise.
+This violates `CLAUDE.md`'s "visual rather than settings-based" principle
+more directly than the opacity issue Phase 27 actually fixed.
+
+- **`src/renderer/PageToolbar.tsx`** (new): a floating action cluster —
+  move up/down, duplicate, delete — shown at the top-right corner of a
+  structural page, visually identical to `BlockToolbar.tsx`'s per-block
+  toolbar (same reveal pattern: invisible until the page is hovered/selected,
+  `group-hover`/`selected` opacity toggle). Uses the exact same
+  `duplicatePageWithHistory`/`deletePageWithHistory`/`movePageWithHistory`
+  actions the Sidebar rows already called — no new store logic, purely a
+  second, canvas-native entry point to the same undo-safe actions.
+- **`src/renderer/Page.tsx`**: added `group` to the outer page container
+  (previously only individual block wrappers had it) so `PageToolbar` can
+  reveal on page hover; renders `PageToolbar` as a sibling of the
+  structural-page `Render`, outside its `overflow-hidden` wrapper so the
+  toolbar itself is never clipped. Move-up/down boundaries computed from
+  same-category structural-page siblings, mirroring
+  `structuralPageStore.movePage`'s own boundary logic (buttons grey out at
+  an edge; the action itself was already a safe no-op there regardless).
+- **Sidebar's Structure-tab controls are unchanged** — this is an additional
+  entry point, not a replacement. Some users will still prefer managing the
+  full front/back-matter list from the sidebar (e.g. reordering many pages
+  at once without scrolling the canvas).
+- **Deliberately not extended to `chapter-start`/`content` pages** — those
+  are computed pagination output (whichever blocks flowed onto that page),
+  not a single stored object with an id to delete. `BlockToolbar`'s
+  per-block delete (Phase 26) already covers "remove content from this
+  page" for that case; see docs/ROADMAP.md Phase B for why a page-level
+  delete doesn't make sense there.
+
+### Verification caveat — same as Phase 26/27/28
+No working `npm run build`/`lint`/`test` or GitHub/registry network access in
+this sandbox. Verified via `npx tsc -b --force` only (clean) plus manual
+review against `BlockToolbar.tsx`'s established pattern. **Manually hover and
+delete a structural page from the canvas in a real browser before trusting
+this beyond a quick look** — particularly the hover-reveal timing and that
+the toolbar doesn't visually collide with anything the structural page's own
+`Render` draws near its top-right corner (Cover/Back Cover's centred text
+shouldn't, but check with a real image set).
+
+## Recommended next task
+Real thumbnail previews (`ThumbnailRail.tsx` still renders blank boxes) is
+the last open item in Phase B — natural next pick. After that: the cover/
+back-cover designer (Phase E), Phase C's remaining Virtual Editor checkers,
+Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/cloud) as the
+biggest remaining structural gaps.

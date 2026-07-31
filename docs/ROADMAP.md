@@ -62,11 +62,15 @@ daily use of everything built so far.)*
 - [ ] Drag-to-reorder for all blocks — deprioritised in favour of the move-up/down
       buttons above, which solve the same need with less risk (full drag-and-drop
       across `LazySpread`'s lazily-mounted spreads is a materially bigger change)
-- [x] Structural-page delete discoverability — shipped 2026-07-31 (Phase 27): the
-      Sidebar's move/duplicate/delete icons per page were `opacity-0` until hover
-      (delete already worked, just easy to miss entirely); now faintly visible by
-      default. Regular chapter-content pages still have no page-level delete,
-      correctly — see docs/STATUS.md Phase 27 for why that's not a gap
+- [x] Structural-page delete discoverability — Phase 27 (2026-07-31) made the
+      Sidebar's icons less easy to miss (`opacity-0` → `opacity-35`), but that
+      wasn't the real gap: the user reported it again afterward. Fixed
+      properly in Phase 29 (2026-07-31): `PageToolbar.tsx` puts move/
+      duplicate/delete directly on the page canvas itself (same hover-reveal
+      pattern as `BlockToolbar`), not just in a separate sidebar tab. Sidebar
+      controls kept as a second entry point. Regular chapter-content pages
+      still have no page-level delete, correctly — they're computed
+      pagination output, not a stored object — see docs/STATUS.md Phase 29
 - [ ] Real thumbnail previews — `ThumbnailRail.tsx` currently renders a blank box
       per page (only chapter-opener pages show 3 letters of the chapter title);
       confirmed via user report 2026-07-31. Needs either genuine miniature page

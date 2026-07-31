@@ -6,6 +6,7 @@ import type { ResolvedBookTheme } from '@/theme/presets'
 import type { ContentBlock, ImageBlock } from '@/types/content'
 import { BlockContent } from '@/renderer/BlockContent'
 import { BlockToolbar } from '@/renderer/BlockToolbar'
+import { PageToolbar } from '@/renderer/PageToolbar'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
 import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useSelectionStore } from '@/store/selectionStore'
@@ -19,6 +20,9 @@ import {
   deleteBlockWithHistory,
   duplicateBlockWithHistory,
   moveBlockWithHistory,
+  duplicatePageWithHistory,
+  deletePageWithHistory,
+  movePageWithHistory,
 } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -242,29 +246,61 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       : undefined
   const structuralDef = structuralPage ? getStructuralPageTypeDefinition(structuralPage.type) : undefined
 
+  // Move-up/down availability mirrors `structuralPageStore.movePage`'s own
+  // boundary check (same-category siblings, ordered) — computed here purely
+  // to grey out the buttons at a boundary; `movePageWithHistory` itself is
+  // already a safe no-op past the edge, same pattern as `Sidebar.tsx`'s rows.
+  const structuralSiblingsInCategory = structuralPage
+    ? structuralPages.filter((p) => p.category === structuralPage.category).sort((a, b) => a.order - b.order)
+    : []
+  const structuralIndexInCategory = structuralPage
+    ? structuralSiblingsInCategory.findIndex((p) => p.id === structuralPage.id)
+    : -1
+  const isStructuralPageSelected = !!structuralPage && selectedStructuralPageId === structuralPage.id
+
   return (
     <div
       id={`page-${page.id}`}
       data-chapter-start={page.kind === 'chapter-start' ? page.chapterId : undefined}
-      className="relative shrink-0 shadow-[var(--shadow-md)]"
+      className="group relative shrink-0 shadow-[var(--shadow-md)]"
       style={{ width: pageBox.widthPx, height: pageBox.heightPx, background: theme.page.background }}
     >
       {page.kind === 'structural' && structuralPage && structuralDef && (
-        <div className="absolute inset-0 overflow-hidden">
-          <structuralDef.Render
-            page={structuralPage}
-            theme={theme}
-            pageBox={pageBox}
-            projectId={projectId}
-            siblingPages={structuralPages}
-            selected={selectedStructuralPageId === structuralPage.id}
-            onSelect={() => {
-              selectStructuralPage(structuralPage.id)
-              setInspectorTab('page')
+        <>
+          <div className="absolute inset-0 overflow-hidden">
+            <structuralDef.Render
+              page={structuralPage}
+              theme={theme}
+              pageBox={pageBox}
+              projectId={projectId}
+              siblingPages={structuralPages}
+              selected={isStructuralPageSelected}
+              onSelect={() => {
+                selectStructuralPage(structuralPage.id)
+                setInspectorTab('page')
+              }}
+              onCommit={(updates) => updatePageContentWithHistory(projectId, structuralPage.id, updates)}
+            />
+          </div>
+          <PageToolbar
+            selected={isStructuralPageSelected}
+            canMoveUp={structuralIndexInCategory > 0}
+            canMoveDown={structuralIndexInCategory >= 0 && structuralIndexInCategory < structuralSiblingsInCategory.length - 1}
+            onMoveUp={() => movePageWithHistory(projectId, structuralPage.id, 'up')}
+            onMoveDown={() => movePageWithHistory(projectId, structuralPage.id, 'down')}
+            onDuplicate={() => {
+              const newId = duplicatePageWithHistory(projectId, structuralPage.id)
+              if (newId) {
+                selectStructuralPage(newId)
+                setInspectorTab('page')
+              }
             }}
-            onCommit={(updates) => updatePageContentWithHistory(projectId, structuralPage.id, updates)}
+            onDelete={() => {
+              deletePageWithHistory(projectId, structuralPage.id)
+              if (isStructuralPageSelected) clearSelection()
+            }}
           />
-        </div>
+        </>
       )}
 
       {page.kind !== 'blank' && page.kind !== 'structural' && (
