@@ -1,5 +1,21 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronsRight, Download, History, Keyboard, Loader2, Moon, PanelLeft, Redo2, Sparkles, Sun, Undo2 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import {
+  ChevronDown,
+  ChevronsRight,
+  Download,
+  FolderOpen,
+  History,
+  Keyboard,
+  Loader2,
+  Moon,
+  PanelLeft,
+  Redo2,
+  Save,
+  Sparkles,
+  Sun,
+  Undo2,
+} from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -17,6 +33,9 @@ import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDial
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { useExportEpub } from '@/epub/useExportEpub'
 import { useExportHtmlBook } from '@/epub/useExportHtmlBook'
+import { useExportProjectFile } from '@/projectFile/useExportProjectFile'
+import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
+import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
@@ -68,6 +87,13 @@ export function Toolbar({ project }: ToolbarProps) {
   const { canExport: canExportEpub, busy: exportingEpub, error: epubExportError, runExport: runExportEpub } = useExportEpub(project)
   const { canExport: canExportHtml, busy: exportingHtml, runExport: runExportHtml } = useExportHtmlBook(project)
   const { findings: readinessFindings, hasBlockingIssues } = useExportReadiness(project)
+  const navigate = useNavigate()
+  const { busy: savingProject, error: saveProjectError, runExport: runSaveProject } = useExportProjectFile(project)
+  const { busy: loadingProject, error: loadProjectError, runImport } = useImportProjectFile()
+  const { openPicker: openProjectFilePicker, inputProps: projectFileInputProps } = useProjectFilePicker(async (file) => {
+    const newProjectId = await runImport(file)
+    if (newProjectId) navigate(`/project/${newProjectId}`)
+  })
 
   /** Gate for "Export PDF"/"Export EPUB"/"Export HTML": if the readiness check
    * (Amazon KDP/IngramSpark-style print/commercial-quality rules — see
@@ -158,6 +184,27 @@ export function Toolbar({ project }: ToolbarProps) {
         <IconButton label="Version history" onClick={() => setVersionHistoryOpen(true)}>
           <History className="size-4" />
         </IconButton>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => void runSaveProject()} disabled={savingProject}>
+              {savingProject ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+              Save
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{saveProjectError ?? 'Save this project as a file you can keep or move to another computer'}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="secondary" size="sm" className="gap-1.5" onClick={openProjectFilePicker} disabled={loadingProject}>
+              {loadingProject ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
+              Load
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{loadProjectError ?? 'Open a project file saved earlier, as a new project'}</TooltipContent>
+        </Tooltip>
+        <input {...projectFileInputProps} />
 
         <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
           Project Settings

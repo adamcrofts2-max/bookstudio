@@ -47,6 +47,12 @@ interface NotesStoreActions {
   updateNoteText: (projectId: string, noteId: string, text: string) => void
   setNoteResolved: (projectId: string, noteId: string, resolved: boolean) => void
   deleteNote: (projectId: string, noteId: string) => void
+  /** Wholesale replacement of every note for a project — project-file
+   * import's bulk-load primitive (Phase 51), mirrors
+   * `contentStore.setManuscript`/`structuralPageStore.replaceAllPages`. Not
+   * a tracked user edit, so deliberately outside `editorActions.ts`'s
+   * undo/redo history. */
+  replaceAllNotes: (projectId: string, notes: Note[]) => void
 }
 
 export const useNotesStore = create<NotesStoreState & NotesStoreActions>()(
@@ -91,6 +97,10 @@ export const useNotesStore = create<NotesStoreState & NotesStoreActions>()(
         set((state) => ({
           byProject: { ...state.byProject, [projectId]: (state.byProject[projectId] ?? []).filter((n) => n.id !== noteId) },
         }))
+      },
+
+      replaceAllNotes: (projectId, notes) => {
+        set((state) => ({ byProject: { ...state.byProject, [projectId]: notes } }))
       },
     }),
     {

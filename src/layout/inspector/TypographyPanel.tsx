@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Type } from 'lucide-react'
 
 import { Label } from '@/components/ui/label'
@@ -8,8 +9,9 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
 import { editBlock } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useEditableField } from '@/blocks/shared'
 import { stripHtml, wordCount } from '@/utils'
-import type { Chapter, ContentBlock, PlaceholderKind } from '@/types/content'
+import type { Chapter, ContentBlock, ParagraphBlock, PlaceholderKind } from '@/types/content'
 
 interface TypographyPanelProps {
   projectId: string
@@ -45,6 +47,60 @@ const PLACEHOLDER_KIND_OPTIONS: { value: PlaceholderKind; label: string }[] = [
   { value: 'diagram', label: 'Diagram' },
   { value: 'generic', label: 'Other' },
 ]
+
+interface ParagraphTextEditorProps {
+  projectId: string
+  chapterId: string
+  block: ParagraphBlock
+}
+
+/**
+ * A second, always-available way to edit a paragraph's text — the on-canvas
+ * double-click + floating toolbar (`paragraph.tsx`) still works, but this
+ * gives a dedicated, always-visible box in the sidebar so a user doesn't
+ * have to find and precisely double-click the right spot on the page,
+ * especially on a small preview. Reuses the exact same `useEditableField`
+ * (html mode) and commits through the exact same `editorActions.editBlock`
+ * path, so both editing surfaces stay in sync and go through the same
+ * sanitiser/history mechanism — never a second parallel edit path.
+ *
+ * The parent renders this with `key={block.id}` so selecting a *different*
+ * paragraph fully remounts it (resetting edit state); the mount effect then
+ * immediately enters edit mode, since the whole point is "click a paragraph,
+ * get an editable box" with no extra click required.
+ */
+function ParagraphTextEditor({ projectId, chapterId, block }: ParagraphTextEditorProps) {
+  const field = useEditableField({
+    mode: 'html',
+    initialValue: block.html,
+    onCommit: (value) => editBlock(projectId, chapterId, block.id, { html: value }),
+  })
+
+  useEffect(() => {
+    field.startEditing()
+    // Only on mount — see the `key={block.id}` note above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label>Paragraph text</Label>
+      <div
+        ref={(el) => {
+          field.ref.current = el
+        }}
+        onClick={!field.isEditing ? field.startEditing : undefined}
+        contentEditable={field.isEditing}
+        suppressContentEditableWarning
+        onBlur={field.handleBlur}
+        onKeyDown={field.handleKeyDown}
+        className="min-h-[100px] cursor-text rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-sm leading-relaxed text-text-primary outline-none focus:border-[var(--color-accent)]"
+        {...(!field.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
+      />
+      <p className="text-xs text-text-secondary">Enter saves · Shift+Enter for a line break · Esc cancels</p>
+    </div>
+  )
+}
 
 function findBlock(chapters: Chapter[], chapterId: string, blockId: string) {
   const chapter = chapters.find((c) => c.id === chapterId)
@@ -131,6 +187,10 @@ export function TypographyPanel({ projectId }: TypographyPanelProps) {
       </div>
 
       <Separator />
+
+      {block.type === 'paragraph' && (
+        <ParagraphTextEditor key={block.id} projectId={projectId} chapterId={chapter.id} block={block} />
+      )}
 
       {block.type === 'heading' && (
         <div className="flex flex-col gap-1.5">

@@ -49,6 +49,18 @@ interface ContentStoreActions {
   replaceBlock: (projectId: string, chapterId: string, blockId: string, block: ContentBlock) => void
   renameChapter: (projectId: string, chapterId: string, title: string) => void
   /**
+   * Inserts an already-fully-formed `chapter` into `manuscript.chapters`,
+   * immediately after the chapter with id `afterChapterId` (or at the very
+   * start if `null`). Mirrors `insertBlock`'s "insert this exact object at
+   * this exact position" contract — the only sanctioned way anything adds a
+   * chapter; no other layer splices into `manuscript.chapters` directly.
+   * If no manuscript exists yet for this project, starts a brand-new one
+   * with just this chapter (Phase 51) — "Add chapter" doubles as the way to
+   * begin a book from scratch, not just something available after an
+   * import.
+   */
+  insertChapter: (projectId: string, afterChapterId: string | null, chapter: Chapter) => void
+  /**
    * Removes the entire chapter (title + every block it contains) from
    * `manuscript.chapters`. The only sanctioned way anything deletes a
    * chapter — no other layer reaches into `manuscript.chapters` directly.
@@ -203,6 +215,33 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
           const manuscript = state.byProject[projectId]
           if (!manuscript) return state
           const chapters = manuscript.chapters.filter((c) => c.id !== chapterId)
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      insertChapter: (projectId, afterChapterId, chapter) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) {
+            return {
+              byProject: {
+                ...state.byProject,
+                [projectId]: { chapters: [chapter], importedAt: new Date().toISOString(), sourceFileName: '' },
+              },
+              revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+            }
+          }
+          // Mirrors `insertBlock`'s exact "not-found falls back to the
+          // start" convention, for consistency — in practice every real
+          // caller passes an id read fresh from current state, so this
+          // fallback is never actually exercised.
+          const afterIndex = afterChapterId === null ? -1 : manuscript.chapters.findIndex((c) => c.id === afterChapterId)
+          const insertAt = afterIndex === -1 ? 0 : afterIndex + 1
+          const chapters = manuscript.chapters.slice()
+          chapters.splice(insertAt, 0, chapter)
           return {
             byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
             revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },

@@ -5,7 +5,7 @@ import { useHistoryStore } from '@/store/historyStore'
 import { useStructuralPageStore } from '@/store/structuralPageStore'
 import { useNotesStore, type Note } from '@/store/notesStore'
 import { generateId } from '@/utils'
-import type { ContentBlock } from '@/types/content'
+import type { Chapter, ContentBlock } from '@/types/content'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 
 /**
@@ -74,6 +74,37 @@ export function editBlock(
     labelForBlock(oldBlock),
     () => useContentStore.getState().replaceBlock(projectId, chapterId, blockId, oldBlock),
     () => useContentStore.getState().updateBlock(projectId, chapterId, blockId, updates),
+  )
+}
+
+/**
+ * History-aware replacement for `contentStore.replaceBlock` — swaps a block
+ * for a wholly different one at the same position, e.g. converting an
+ * image-kind placeholder into a real `ImageBlock` once the user uploads a
+ * photo (Phase 51). Deliberately a separate wrapper from `editBlock`, which
+ * only ever patches fields *within* the same block type — a type change
+ * needs the full non-merging replace `editBlock`'s own undo path already
+ * uses, not a merge.
+ */
+export function replaceBlockWithHistory(
+  projectId: string,
+  chapterId: string,
+  blockId: string,
+  newBlock: ContentBlock,
+): void {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  const oldBlock = chapter?.blocks.find((b) => b.id === blockId)
+
+  useContentStore.getState().replaceBlock(projectId, chapterId, blockId, newBlock)
+
+  if (!oldBlock) return
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Replace block',
+    () => useContentStore.getState().replaceBlock(projectId, chapterId, blockId, oldBlock),
+    () => useContentStore.getState().replaceBlock(projectId, chapterId, blockId, newBlock),
   )
 }
 
@@ -232,6 +263,36 @@ export function renameChapterWithHistory(projectId: string, chapterId: string, t
  * those, just bigger, so there's no reason to special-case a confirm
  * prompt here.
  */
+/**
+ * History-aware "add a new chapter" — the counterpart to
+ * `deleteChapterWithHistory` below, closing the "add" half of the gap a
+ * user reported ("there should be a way to add/remove new chapters"; delete
+ * already existed, add didn't). Always appends after `afterChapterId` (the
+ * `Sidebar.tsx` "+" button always passes the current last chapter's id, so
+ * a new chapter lands at the end of the book — the position a user expects
+ * without having to reorder afterward); `null` also works for the
+ * zero-chapters case, which starts a brand-new manuscript via
+ * `contentStore.insertChapter`'s own fallback. The new chapter starts with
+ * an empty `blocks` array — `title` is the chapter's own metadata field,
+ * never duplicated as an in-body heading block, matching every
+ * parser-created chapter's shape (see `parser/markdown.ts`). Returns the
+ * new chapter's id so the caller can immediately enter rename mode on it.
+ */
+export function addChapterWithHistory(projectId: string, afterChapterId: string | null, title: string): string {
+  const chapter: Chapter = { id: generateId('ch'), title, order: 0, blocks: [] }
+
+  useContentStore.getState().insertChapter(projectId, afterChapterId, chapter)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Add chapter',
+    () => useContentStore.getState().deleteChapter(projectId, chapter.id),
+    () => useContentStore.getState().insertChapter(projectId, afterChapterId, chapter),
+  )
+
+  return chapter.id
+}
+
 export function deleteChapterWithHistory(projectId: string, chapterId: string): void {
   const manuscript = useContentStore.getState().getManuscript(projectId)
   if (!manuscript) return

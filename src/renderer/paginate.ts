@@ -136,6 +136,16 @@ export function paginate(
       }
       currentBlocks.push(block)
       currentHeight += height
+
+      // Manual page break (Phase 51): lets a user force whatever comes next
+      // onto a fresh page regardless of remaining space — e.g. a
+      // chapter-opener that's just a title + photo, with the following
+      // paragraph text always starting a new page rather than flowing up
+      // into the leftover space beneath the photo. `flush()` already
+      // no-ops safely if this happens to be the chapter's last block (the
+      // post-loop `currentBlocks.length > 0 || isOpener` check finds
+      // nothing left to do).
+      if (block.breakAfter) flush()
     }
 
     if (currentBlocks.length > 0 || isOpener) flush()

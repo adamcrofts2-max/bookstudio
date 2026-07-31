@@ -4,7 +4,7 @@ import { GripVertical, ImagePlus, Crosshair, Eye, EyeOff } from 'lucide-react'
 import { useEditableField } from '@/blocks/shared'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
-import { useAssetStore } from '@/store/assetStore'
+import { useImageUpload } from '@/hooks/useImageUpload'
 import { PX_PER_MM, type PageBox } from '@/renderer/pageGeometry'
 import type { CoverImageFocalPoint } from '@/types/structuralPage'
 import { cn } from '@/lib/utils'
@@ -256,14 +256,13 @@ interface CoverImageUploadButtonProps {
 /**
  * Click-to-browse alternative to `StructuralImageDropZone`'s drag-and-drop —
  * a first-time user has no reason to know dragging a thumbnail from the
- * Assets sidebar tab is even possible. Reuses `assetStore.importFiles`
- * directly (the exact function the sidebar's own file drop already calls),
- * so a picked file becomes a real, undo-tracked asset the same way. See
- * `docs/STATUS.md` Phase 46.
+ * Assets sidebar tab is even possible. Built on the shared `useImageUpload`
+ * hook (Phase 51) — the same "pick a file, import it as a real asset" flow
+ * the block inserter's Image option and placeholder-to-real-image
+ * conversion also use. See `docs/STATUS.md` Phase 46.
  */
 export function CoverImageUploadButton({ projectId, onUploaded, label, className }: CoverImageUploadButtonProps) {
-  const importFiles = useAssetStore((s) => s.importFiles)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const { openPicker, inputProps } = useImageUpload(projectId, onUploaded)
 
   return (
     <>
@@ -271,7 +270,7 @@ export function CoverImageUploadButton({ projectId, onUploaded, label, className
         type="button"
         onClick={(e) => {
           e.stopPropagation()
-          inputRef.current?.click()
+          openPicker()
         }}
         className={cn(
           'pointer-events-auto flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 px-4 py-2 text-xs text-white transition-colors hover:bg-black/60',
@@ -281,20 +280,7 @@ export function CoverImageUploadButton({ projectId, onUploaded, label, className
         <ImagePlus className="size-3.5" />
         {label}
       </button>
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onClick={(e) => e.stopPropagation()}
-        onChange={async (e) => {
-          const file = e.target.files?.[0]
-          e.target.value = '' // reset so picking the exact same file again still fires onChange
-          if (!file) return
-          const [created] = await importFiles(projectId, [file])
-          if (created) onUploaded(created.id)
-        }}
-      />
+      <input {...inputProps} />
     </>
   )
 }

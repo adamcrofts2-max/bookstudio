@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { BookOpen, Moon, Plus, Sun, Trash2 } from 'lucide-react'
+import { BookOpen, FolderOpen, Loader2, Moon, Plus, Sun, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -10,6 +10,8 @@ import { useProjectStore } from '@/store/projectStore'
 import { useTheme } from '@/hooks/useTheme'
 import { formatRelativeTime } from '@/utils'
 import { NewProjectDialog } from '@/pages/NewProjectDialog'
+import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
+import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 
 /** Home screen: the library of projects. First screen a user ever sees. */
 export function ProjectsPage() {
@@ -18,6 +20,11 @@ export function ProjectsPage() {
   const deleteProject = useProjectStore((s) => s.deleteProject)
   const { resolved, setAppearance } = useTheme()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const { busy: loadingProject, error: loadProjectError, runImport } = useImportProjectFile()
+  const { openPicker: openProjectFilePicker, inputProps: projectFileInputProps } = useProjectFilePicker(async (file) => {
+    const newProjectId = await runImport(file)
+    if (newProjectId) navigate(`/project/${newProjectId}`)
+  })
 
   return (
       <div className="min-h-dvh bg-background">
@@ -37,6 +44,16 @@ export function ProjectsPage() {
               </TooltipTrigger>
               <TooltipContent>Toggle appearance</TooltipContent>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="secondary" size="md" className="gap-1.5" onClick={openProjectFilePicker} disabled={loadingProject}>
+                  {loadingProject ? <Loader2 className="size-4 animate-spin" /> : <FolderOpen className="size-4" />}
+                  Load Project
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{loadProjectError ?? 'Open a .bookstudio project file saved earlier'}</TooltipContent>
+            </Tooltip>
+            <input {...projectFileInputProps} />
             <Button variant="primary" size="md" className="gap-1.5" onClick={() => setDialogOpen(true)}>
               <Plus className="size-4" />
               New Project

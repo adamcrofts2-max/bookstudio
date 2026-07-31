@@ -100,6 +100,32 @@ daily use of everything built so far.)*
       tab (next to the existing rename pencil) and a hover-reveal icon on
       the title itself on the chapter's opening page. See docs/STATUS.md
       Phase 34.
+- [x] Add a new chapter — shipped 2026-07-31 (Phase 51), closing the other
+      half of a user report ("there should be a way to add/remove new
+      chapters" — delete already existed, add didn't). A "+" button in the
+      Sidebar's Chapters tab header appends a new empty chapter after the
+      current last one (or starts a brand-new manuscript from scratch if
+      there are none yet) and drops straight into rename mode. See
+      docs/STATUS.md Phase 51.
+- [x] Click an image-kind placeholder to upload/replace it with a real photo
+      — shipped 2026-07-31 (Phase 51), plus the same upload flow added to
+      the "+" block inserter's new "Image" option. See docs/STATUS.md
+      Phase 51.
+- [x] Paragraph text editor in the Inspector sidebar — shipped 2026-07-31
+      (Phase 51): selecting a paragraph shows an always-editable box under
+      the Type tab, a second entry point alongside the existing on-canvas
+      double-click editing. See docs/STATUS.md Phase 51.
+- [x] Manual page-break-after toggle — shipped 2026-07-31 (Phase 51): a
+      per-block toolbar button forces whatever follows onto a fresh page,
+      e.g. a chapter-opener that's just a title + photo with the body text
+      always starting on the next page. Wired into screen pagination, PDF
+      export (shared `paginate.ts` pipeline) and EPUB (CSS page-break hint).
+      See docs/STATUS.md Phase 51.
+- [x] Save/load a project as a portable file — shipped 2026-07-31 (Phase 51):
+      "Save"/"Load" in the top toolbar (plus "Load Project" on the Projects
+      page) pack manuscript + structural pages + notes + custom theme +
+      every image asset into a `.bookstudio` archive and back. See
+      docs/STATUS.md Phase 51.
 - [x] Real thumbnail previews — shipped 2026-07-31 (Phase 30): `ThumbnailPage.tsx`
       renders a genuine, lazily-mounted, CSS-scaled miniature of the real `Page`
       component (not a text-density approximation) — true WYSIWYG, stays in

@@ -3816,12 +3816,152 @@ the new fonts appear and render correctly in the Cover's Font picker (on
 screen and in an exported PDF) — none of this could be visually confirmed
 in a live browser this session.
 
+## Phase 51 — Placeholder upload, sidebar paragraph editing, manual page breaks, project save/load, add-chapter (2026-07-31)
+
+Five features from one "think about it" request covering five separate
+usability gaps, plus a follow-up chapter-management gap reported
+immediately after. All five approved via `AskUserQuestion` before building.
+
+### 1. Click an image placeholder to upload a real photo
+`useImageUpload` (`src/hooks/useImageUpload.ts`, new) is a shared "open a
+file picker, import via `assetStore.importFiles`, hand back an asset id"
+hook — extracted so the Cover designer's existing upload button
+(`CoverImageUploadButton`), the "+" block inserter's new "Image" option,
+and the placeholder-to-photo conversion all go through one implementation
+instead of three. `editorActions.replaceBlockWithHistory` (new) is the
+forward-facing wrapper around `contentStore.replaceBlock` (a full,
+non-merging replace already existed as `editBlock`'s own undo mechanism,
+but had no history-tracked forward call site until now) — needed because
+swapping a `PlaceholderBlock` for an `ImageBlock` is a type change, not a
+field update. `BlockContentProps` gained `projectId`/`onReplace`, threaded
+through `Page.tsx` to every block's `Render`. `placeholder.tsx` shows an
+"Upload photo" button for `kind === 'image'` placeholders in editable
+mode, converting to a real `ImageBlock` on pick. `InsertBlockButton.tsx`
+rewritten with an "Image" option above the existing type list, opening
+the same picker.
+
+### 2. Paragraph text editor in the Inspector sidebar
+`TypographyPanel.tsx`'s new `ParagraphTextEditor` renders an always-
+editable contentEditable box under the Type tab when a paragraph is
+selected — a second entry point alongside the existing on-canvas
+double-click editing, useful when the preview is small or the exact
+double-click target is fiddly to hit. Reuses the exact same
+`useEditableField` (html mode) and commits through the same
+`editorActions.editBlock`, so both editing surfaces go through one
+sanitiser/history path, never two. Keyed by `block.id` so switching the
+selected paragraph fully remounts (and re-enters edit mode); removing the
+node from the DOM while focused fires a real blur first, so an in-progress
+edit still commits before the remount, the same behaviour the on-canvas
+editor already relies on.
+
+### 3. Manual page-break-after toggle
+`ContentBlock` gained a cross-cutting `breakAfter?: boolean` — added by
+intersecting the whole 14-member discriminated union with `{ breakAfter?:
+boolean }` rather than editing every interface individually (there's no
+shared base interface — see `docs/MODULAR_PAGE_SYSTEM_PLAN.md`).
+`paginate.ts`'s main loop calls `flush()` right after pushing a block with
+`breakAfter` set — a one-line addition, safe even on a chapter's last
+block since the post-loop flush-if-anything-left check then finds nothing
+to do. Because PDF export consumes the exact same `LaidOutPage[]` this
+produces (`exportStore.ts` imports `LaidOutPage` from `renderer/paginate`),
+the fix is print-accurate for free — no separate PDF-side pagination to
+touch. EPUB (reflowable, no real pagination) gets a best-effort
+equivalent: `blockToXhtml.ts` appends an empty `<div class="bs-page-break">`
+after a `breakAfter` block, styled with `page-break-after`/`break-after`
+in `stylesheet.ts` — most e-reader apps honour it even though EPUB content
+is technically reflowable. UI: a new toggle icon
+(`SeparatorHorizontal`, accent-coloured when active) in `BlockToolbar.tsx`,
+wired to `editBlock(..., { breakAfter: !block.breakAfter })` in `Page.tsx`.
+Verified with an isolated `paginate()` call (small fixed block heights
+that would normally all fit one page, one block flagged `breakAfter` —
+correctly split into two pages at that exact point) rather than through
+the browser, for the same sandbox reasons noted in Phase 50.
+
+### 4. Save/load a project as a portable file
+New `.bookstudio` format (a real ZIP): `manifest.json` (format version,
+project name/category/settings), `manuscript.json`, `structuralPages.json`,
+`notes.json`, `customTheme.json` (only if `settings.themeId` is a custom
+theme — built-in presets need nothing bundled), and `assets/` (each image's
+actual bytes, plus `assets/manifest.json` for their metadata) — deliberately
+a superset of `snapshotDb.ts`'s existing autosave snapshots, which never
+bundle asset blobs since they assume the same browser's IndexedDB is still
+around; this format is the one meant to actually travel.
+
+Wrote `src/epub/zipReader.ts` as the read-side counterpart to the existing
+`zipWriter.ts` (End-Of-Central-Directory + Central Directory parsing,
+`DecompressionStream('deflate-raw')`, CRC-32 verified on read) — both files
+are generic ZIP primitives despite living under `epub/`, reused as-is by
+`src/projectFile/{export,import}ProjectFile.ts` rather than a second
+archive implementation. Also deduplicated a pre-existing `saveBlob`
+helper that `useExportPdf`/`useExportEpub`/`useExportHtmlBook` each kept
+their own near-identical copy of (one had already been generalised to take
+description/mimeType/extension params, the other two hardcoded a single
+format) — now one `src/utils/saveBlob.ts`, all four export paths import it.
+
+Store changes: `structuralPageStore.replaceAllPages`, `notesStore.
+replaceAllNotes` (bulk-set primitives, mirroring `contentStore.
+setManuscript`'s existing "bulk import, not a tracked edit" shape — none of
+the three are wrapped in undo/redo history) and `customThemeStore.
+importCustomTheme` (upserts under the theme's own exact id, unlike
+`addCustomTheme` which always mints a fresh one — needed because a
+project's `settings.themeId` only keeps resolving if the theme comes back
+under the same id it was exported with).
+
+Import always creates a **new** project (`projectStore.createProject`)
+rather than overwriting anything already in the library, even if the file
+was exported from what is now an existing project id — five separate
+stores are keyed by project id here, and reusing the original id risked
+silently clobbering unrelated data in any one of them if the id happened
+to collide. The one deliberate exception: `assetStore.restoreAsset` keeps
+each image's own original id (only `projectId` is repointed), because
+`ImageBlock.assetId` references inside the imported manuscript/structural
+pages were captured at export time and only resolve if the asset comes
+back under that same id.
+
+UI: "Save"/"Load" buttons in the top `Toolbar.tsx` (the "more obvious save
+button" the user asked for), plus a "Load Project" button on
+`ProjectsPage.tsx` for starting from a file before any project is open.
+Verified with an isolated round-trip script (`buildProjectFile` →
+`parseProjectFile`, a manuscript with a heading/paragraph/image block plus
+one fake image asset) — chapters, block types, and asset bytes all came
+back byte-identical; `tsc -b`/`oxlint` both clean throughout.
+
+### 5. Add a new chapter (follow-up report: "there should be a way to add/remove new chapters")
+Delete already existed (Phase 34); add didn't. `contentStore.insertChapter`
+(new) mirrors `insertBlock`'s exact "insert this exact object after this
+id, not-found falls back to the start" contract, with one addition: if no
+manuscript exists yet for the project, it starts a brand-new one — so "Add
+chapter" also works as a from-scratch starting point, not just something
+available after an import. `editorActions.addChapterWithHistory` wraps it
+with undo/redo. `Sidebar.tsx`'s Chapters tab gained a header row with a
+"+" button (mirroring the Structure tab's existing per-section "+"
+pattern) that always appends after the current last chapter and
+immediately enters rename mode — plus an "Add Chapter" action on the
+empty state, since "no chapters yet" previously only offered "import a
+manuscript" with no from-scratch path.
+
+### Verification
+`node node_modules/typescript/bin/tsc -b` and `node_modules/.bin/oxlint`
+both clean after every feature and again at the end of the batch. Live
+browser verification remains unavailable in this sandbox (`vite`'s dev
+server fails to parse its own config here — see Phase 50's note); every
+piece of genuinely new logic (pagination's `breakAfter` split, the ZIP
+round-trip) was instead verified with isolated `tsx` scripts that exercise
+the real functions directly. **Please verify live once pushed**: uploading
+a photo onto an image placeholder, editing a paragraph from the sidebar
+box, toggling a page break and confirming both the screen preview and an
+exported PDF split there, saving a project then loading it back (ideally
+in a different browser/profile to confirm it's genuinely self-contained),
+and adding a chapter from an empty project.
+
 ## Recommended next task
-Both the reported import bug and the font-wiring request are shipped. A
-"cover accessories" feature (decorative badge/seal + an icon feature-strip
-band, seen on the real covers the user shared last session — a new kind
-of overlay element, not a property on an existing field) remains
-deliberately deferred, discussed but not yet built. Absent further
-direction, Phase F's remaining items (project-creation wizard, outlining
-templates, word-count goals, distraction-free writing mode) are next per
-`docs/ROADMAP.md`.
+All five items from the "think about it" request plus the add-chapter
+follow-up are shipped. A "cover accessories" feature (decorative
+badge/seal + an icon feature-strip band, seen on the real covers the user
+shared two sessions ago) remains deliberately deferred, discussed but not
+yet built. Chapter *reordering* (drag-and-drop or up/down, matching what
+structural pages already have) doesn't exist yet either — noticed while
+building add-chapter, out of scope for that report, worth flagging as a
+natural next small gap. Absent further direction, Phase F's remaining
+items (project-creation wizard, outlining templates, word-count goals,
+distraction-free writing mode) are next per `docs/ROADMAP.md`.

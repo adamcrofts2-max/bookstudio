@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp, Copy, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, SeparatorHorizontal, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 
@@ -13,6 +13,15 @@ interface BlockToolbarProps {
    * used when the block is the current selection, so it doesn't disappear
    * the instant the mouse moves away from a just-clicked block. */
   selected: boolean
+  /**
+   * Current state of `ContentBlock.breakAfter` (Phase 51) — whether
+   * whatever comes after this block is forced onto a fresh page rather
+   * than flowing up into remaining space. Optional so call sites that
+   * don't (yet) support it — none currently — can omit the button
+   * entirely rather than passing a no-op.
+   */
+  breakAfter?: boolean
+  onToggleBreakAfter?: () => void
 }
 
 const iconButtonClass =
@@ -41,7 +50,17 @@ const iconButtonClass =
  * block's (caught by manually testing the deployed app, 2026-07-31 — see
  * docs/STATUS.md). Named groups scope the match to that specific name only.
  */
-export function BlockToolbar({ onDuplicate, onMoveUp, onMoveDown, onDelete, canMoveUp, canMoveDown, selected }: BlockToolbarProps) {
+export function BlockToolbar({
+  onDuplicate,
+  onMoveUp,
+  onMoveDown,
+  onDelete,
+  canMoveUp,
+  canMoveDown,
+  selected,
+  breakAfter,
+  onToggleBreakAfter,
+}: BlockToolbarProps) {
   return (
     <div
       className={cn(
@@ -61,6 +80,18 @@ export function BlockToolbar({ onDuplicate, onMoveUp, onMoveDown, onDelete, canM
       <button type="button" className={iconButtonClass} onClick={onDuplicate} aria-label="Duplicate block" title="Duplicate">
         <Copy className="size-3.5" />
       </button>
+      {onToggleBreakAfter && (
+        <button
+          type="button"
+          className={cn(iconButtonClass, breakAfter && 'text-[var(--color-accent)] hover:text-[var(--color-accent)]')}
+          onClick={onToggleBreakAfter}
+          aria-label="Force a page break after this block"
+          title={breakAfter ? 'Page break after: on — whatever follows always starts a new page' : 'Start a new page after this block'}
+          aria-pressed={!!breakAfter}
+        >
+          <SeparatorHorizontal className="size-3.5" />
+        </button>
+      )}
       <button
         type="button"
         className={cn(iconButtonClass, 'hover:text-danger')}

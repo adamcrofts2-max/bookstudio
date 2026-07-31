@@ -236,7 +236,20 @@ export interface PlaceholderBlock {
   description?: string
 }
 
-export type ContentBlock =
+/**
+ * The 14 block-type interfaces above share no base interface (see
+ * `docs/MODULAR_PAGE_SYSTEM_PLAN.md`), so a genuinely cross-cutting field —
+ * one that means the same thing regardless of block type — is added by
+ * intersecting the whole union with a small object type here, rather than
+ * editing all 14 interfaces individually. `breakAfter` (Phase 51) is the
+ * first field to need this: "force a fresh page immediately after this
+ * block", e.g. for a chapter-opener that's a title + photo with no text
+ * underneath, where the following paragraph text should always start a new
+ * page rather than flow up onto whatever space is left. Read via
+ * `renderer/paginate.ts`'s pagination loop and `pdf/exportPdf.ts`'s PDF
+ * pagination, so screen and print stay identical.
+ */
+export type ContentBlock = (
   | HeadingBlock
   | ParagraphBlock
   | ImageBlock
@@ -252,6 +265,9 @@ export type ContentBlock =
   | StatisticsBlock
   | ChecklistBlock
   | PlaceholderBlock
+) & {
+  breakAfter?: boolean
+}
 
 export interface Chapter {
   id: string

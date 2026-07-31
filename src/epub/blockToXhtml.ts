@@ -22,8 +22,19 @@ import { escapeXmlText, escapeXmlAttr } from '@/epub/xhtmlEscape'
  * needs to start at `<h2>` to keep a correct, unbroken heading outline —
  * exactly the concern `accessibility.ts`'s `headingHierarchySkipChecker`
  * checks for in the Virtual Editor, applied here to the export itself.
+ *
+ * `block.breakAfter` (Phase 51, manual page break) appends an empty
+ * `.bs-page-break` div rather than threading a style attribute through
+ * every case below — `stylesheet.ts` gives that class `page-break-after`/
+ * `break-after`, which e-readers that paginate (most do, even though EPUB
+ * content is reflowable) honour the same way a printed book would.
  */
 export function blockToXhtml(block: ContentBlock, imageSrc: (assetId: string) => string): string {
+  const html = blockToXhtmlContent(block, imageSrc)
+  return block.breakAfter && html ? `${html}<div class="bs-page-break"></div>` : html
+}
+
+function blockToXhtmlContent(block: ContentBlock, imageSrc: (assetId: string) => string): string {
   switch (block.type) {
     case 'heading': {
       const level = Math.min(block.level + 1, 6)

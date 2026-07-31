@@ -1,11 +1,19 @@
-import { Plus } from 'lucide-react'
+import { Plus, ImagePlus } from 'lucide-react'
 
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { INSERTABLE_BLOCK_TYPES, type InsertableBlockType } from '@/blocks/defaultContent'
+import { useImageUpload } from '@/hooks/useImageUpload'
 
 interface InsertBlockButtonProps {
+  projectId: string
   onInsert: (type: InsertableBlockType) => void
+  /** Inserts a real `ImageBlock` once the user picks a photo — a separate
+   * callback from `onInsert` since Image isn't one of
+   * `INSERTABLE_BLOCK_TYPES` (it needs a real asset id before a valid
+   * block even exists, unlike every other type's blank starting point).
+   * Phase 51. */
+  onInsertImage: (assetId: string) => void
 }
 
 /**
@@ -18,8 +26,15 @@ interface InsertBlockButtonProps {
  * `label`/`icon` from the block-type registry — see `src/blocks/registry.ts`,
  * which already documented this exact future UI as its reason for existing.
  * See docs/ROADMAP.md Phase B.
+ *
+ * "Image" sits above the rest, separated, and opens a file picker
+ * (`useImageUpload`, Phase 51) rather than inserting a blank block — the
+ * same click-to-upload flow the Cover designer and placeholder-to-real-
+ * image conversion also use.
  */
-export function InsertBlockButton({ onInsert }: InsertBlockButtonProps) {
+export function InsertBlockButton({ projectId, onInsert, onInsertImage }: InsertBlockButtonProps) {
+  const { openPicker, inputProps } = useImageUpload(projectId, onInsertImage)
+
   return (
     <div className="group/insert relative -my-1.5 flex h-3 items-center justify-center">
       <div className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-border opacity-0 transition-opacity group-hover/insert:opacity-100" />
@@ -35,6 +50,11 @@ export function InsertBlockButton({ onInsert }: InsertBlockButtonProps) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="center">
+          <DropdownMenuItem onClick={openPicker} className="gap-2">
+            <ImagePlus className="size-3.5" />
+            Image
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           {INSERTABLE_BLOCK_TYPES.map((type) => {
             const def = getBlockTypeDefinition(type)
             if (!def) return null
@@ -48,6 +68,7 @@ export function InsertBlockButton({ onInsert }: InsertBlockButtonProps) {
           })}
         </DropdownMenuContent>
       </DropdownMenu>
+      <input {...inputProps} />
     </div>
   )
 }

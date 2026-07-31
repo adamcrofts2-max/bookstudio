@@ -98,5 +98,9 @@ div.bs-placeholder {
 }
 p.bs-placeholder-label { font-weight: 600; color: ${theme.page.ink}; margin-bottom: 0.4em; }
 p.bs-placeholder-description { font-size: 0.9em; margin: 0; }
+div.bs-page-break {
+  page-break-after: always;
+  break-after: page;
+}
 `.trim()
 }

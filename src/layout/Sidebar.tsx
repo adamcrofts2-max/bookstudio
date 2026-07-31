@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
-import { removeAssetWithHistory, renameChapterWithHistory, deleteChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
+import { removeAssetWithHistory, renameChapterWithHistory, deleteChapterWithHistory, addChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -223,6 +223,17 @@ export function Sidebar({ project }: SidebarProps) {
     if (selectedChapterId === chapterId) clearSelection()
   }
 
+  /** Always appends after the current last chapter (or starts a brand-new
+   * manuscript if there are none yet) and drops straight into rename mode,
+   * so typing the real title is the very next thing the user does — no
+   * separate "name it" step. */
+  const handleAddChapter = () => {
+    const lastChapterId = manuscript && manuscript.chapters.length > 0 ? manuscript.chapters[manuscript.chapters.length - 1].id : null
+    const newChapterId = addChapterWithHistory(project.id, lastChapterId, 'Untitled Chapter')
+    startRename(newChapterId, 'Untitled Chapter')
+    requestScrollToChapter(newChapterId)
+  }
+
   const assets = useAssetStore((s) => s.byProject[project.id] ?? EMPTY_ASSETS)
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
@@ -261,13 +272,25 @@ export function Sidebar({ project }: SidebarProps) {
           <TabsTrigger value="assets" className="flex-1">Assets</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="chapters" className="min-h-0 flex-1">
-          <ScrollArea className="h-full">
+        <TabsContent value="chapters" className="flex min-h-0 flex-1 flex-col">
+          <div className="flex items-center justify-between px-1.5 py-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-muted">Chapters</span>
+            <Button variant="ghost" size="icon" className="size-6" aria-label="Add chapter" onClick={handleAddChapter}>
+              <Plus className="size-3.5" />
+            </Button>
+          </div>
+          <ScrollArea className="h-full flex-1">
             {!manuscript || manuscript.chapters.length === 0 ? (
               <EmptyState
                 icon={BookOpen}
                 title="No chapters yet"
-                description="Import a manuscript to start building your book."
+                description="Import a manuscript, or add your first chapter to start from scratch."
+                action={
+                  <Button variant="secondary" size="sm" className="gap-1.5" onClick={handleAddChapter}>
+                    <Plus className="size-3.5" />
+                    Add Chapter
+                  </Button>
+                }
                 className="py-12"
               />
             ) : (

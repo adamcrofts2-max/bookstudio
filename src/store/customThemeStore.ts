@@ -51,6 +51,17 @@ interface CustomThemeStoreActions {
    * confirmation dialog, consistent with every other delete action in this
    * app (see docs/STATUS.md Phase 34's reasoning for chapter delete). */
   deleteCustomTheme: (id: string) => void
+  /**
+   * Upserts a custom theme under its own exact `id` rather than generating
+   * a fresh one — the project-file import counterpart to
+   * `assetStore.restoreAsset`'s "restore under the original id" contract
+   * (Phase 51). A project's `settings.themeId` is captured at export time,
+   * so the imported project's theme reference only keeps resolving if the
+   * theme comes back under that same id; `addCustomTheme` can't be reused
+   * here for exactly the reason its own doc comment gives for minting a
+   * fresh id on every call.
+   */
+  importCustomTheme: (theme: CustomTheme) => void
 }
 
 export const EMPTY_CUSTOM_THEMES: readonly CustomTheme[] = []
@@ -77,6 +88,14 @@ export const useCustomThemeStore = create<CustomThemeStoreState & CustomThemeSto
 
       deleteCustomTheme: (id) => {
         set((state) => ({ customThemes: state.customThemes.filter((t) => t.id !== id) }))
+      },
+
+      importCustomTheme: (theme) => {
+        set((state) => ({
+          customThemes: state.customThemes.some((t) => t.id === theme.id)
+            ? state.customThemes.map((t) => (t.id === theme.id ? theme : t))
+            : [...state.customThemes, theme],
+        }))
       },
     }),
     {

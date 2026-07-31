@@ -8,6 +8,19 @@ export interface BlockContentProps {
   dropCap?: boolean
   selected?: boolean
   onSelect?: () => void
+  /** The owning project's id — only populated on `Page.tsx`'s real
+   * rendering path (never `HeightMeasurer.tsx`'s off-screen instances,
+   * same rule as `editable`/`onCommit` below). Needed by any block type
+   * that has to call `assetStore` itself rather than go through a
+   * `Page.tsx`-level callback — currently just the image-kind placeholder's
+   * upload-to-convert flow (Phase 51). */
+  projectId?: string
+  /** Swaps this block for a wholly different one at the same position —
+   * e.g. converting an image-kind placeholder into a real `ImageBlock`
+   * once a photo is uploaded (Phase 51). Wired to
+   * `editorActions.replaceBlockWithHistory`, same "this component never
+   * touches the store itself" rule as `onCommit`. */
+  onReplace?: (block: ContentBlock) => void
   /**
    * Opt-in inline text editing. Only ever passed `true` from `Page.tsx`'s
    * real rendering path — `HeightMeasurer.tsx` never passes this prop, so

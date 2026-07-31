@@ -1,10 +1,11 @@
 import { useEffect } from 'react'
-import { ImagePlus, BarChart3, Table2, Shapes, Box, type LucideIcon } from 'lucide-react'
+import { ImagePlus, Upload, BarChart3, Table2, Shapes, Box, type LucideIcon } from 'lucide-react'
 
-import type { ContentBlock, PlaceholderKind } from '@/types/content'
+import type { ContentBlock, ImageBlock, PlaceholderKind } from '@/types/content'
 import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import { useEditableField, outlineClass } from '@/blocks/shared'
+import { useImageUpload } from '@/hooks/useImageUpload'
 import { pickFont } from '@/pdf/fonts'
 import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
@@ -26,7 +27,24 @@ const KIND_META: Record<PlaceholderKind, { label: string; icon: LucideIcon }> = 
 const PLACEHOLDER_HEIGHT_PX = 200
 
 function PlaceholderRender(props: BlockRenderProps) {
-  const { block, theme, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled } = props
+  const { block, theme, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled, projectId, onReplace } = props
+
+  // Always called (even for non-image-kind or non-editable placeholders) —
+  // hooks can't be conditional. `projectId` is only ever undefined on
+  // `HeightMeasurer.tsx`'s off-screen instances, where `editable` is also
+  // false, so the upload button below never renders there and this stays
+  // inert. See `BlockContentProps.onReplace` (Phase 51).
+  const { openPicker, inputProps } = useImageUpload(projectId ?? '', (assetId) => {
+    if (block.type !== 'placeholder') return
+    const replacement: ImageBlock = {
+      id: block.id,
+      type: 'image',
+      assetId,
+      rotation: 0,
+      widthPercent: 100,
+    }
+    onReplace?.(replacement)
+  })
 
   const label = useEditableField({
     mode: 'text',
@@ -108,6 +126,22 @@ function PlaceholderRender(props: BlockRenderProps) {
       >
         {!description.isEditing ? block.description || (editable ? 'Describe what belongs here…' : '') : null}
       </p>
+      {editable && block.kind === 'image' && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation()
+              openPicker()
+            }}
+            className="mt-1 flex items-center gap-1.5 rounded-[var(--radius-button)] border border-border bg-background-secondary px-3 py-1.5 text-xs font-medium text-text-primary shadow-[var(--shadow-sm)] transition-colors hover:opacity-80"
+          >
+            <Upload className="size-3.5" />
+            Upload photo
+          </button>
+          <input {...inputProps} />
+        </>
+      )}
     </div>
   )
 }

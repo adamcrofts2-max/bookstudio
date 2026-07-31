@@ -1,0 +1,47 @@
+import { useRef, type ChangeEvent, type MouseEvent } from 'react'
+
+import { useAssetStore } from '@/store/assetStore'
+
+/**
+ * Shared "click to browse, pick an image file, import it as a real asset"
+ * flow (Phase 51) — the same shape three separate call sites need
+ * (`CoverImageUploadButton`, the block inserter's "Image" option, and
+ * converting an image-kind placeholder into a real photo): a hidden file
+ * input, a function to open the native picker, and an `onChange` that
+ * imports the picked file via `assetStore.importFiles` and hands the
+ * caller back a real asset id. Resetting the input's value after every
+ * pick lets choosing the exact same file twice in a row still fire
+ * `onChange` a second time.
+ *
+ * Returns `inputProps` to spread directly onto a real `<input type="file">`
+ * — kept as a real hidden input (not a synthetic click on a detached one)
+ * so the browser's own file-picker security model stays happy.
+ */
+export function useImageUpload(projectId: string, onUploaded: (assetId: string) => void) {
+  const importFiles = useAssetStore((s) => s.importFiles)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const openPicker = () => inputRef.current?.click()
+
+  const handleChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    const [created] = await importFiles(projectId, [file])
+    if (created) onUploaded(created.id)
+  }
+
+  const stopPropagation = (e: MouseEvent) => e.stopPropagation()
+
+  return {
+    openPicker,
+    inputProps: {
+      ref: inputRef,
+      type: 'file' as const,
+      accept: 'image/*',
+      className: 'hidden',
+      onClick: stopPropagation,
+      onChange: handleChange,
+    },
+  }
+}

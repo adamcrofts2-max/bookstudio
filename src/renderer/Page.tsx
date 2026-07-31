@@ -16,6 +16,7 @@ import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import {
   editBlock,
+  replaceBlockWithHistory,
   insertBlockWithHistory,
   renameChapterWithHistory,
   updatePageContentWithHistory,
@@ -170,6 +171,8 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           onCommit={decorative ? undefined : (updates) => chapterId && editBlock(projectId, chapterId, block.id, updates)}
           autoEdit={isSelected && editRequestId !== null}
           onAutoEditHandled={consumeEditRequest}
+          projectId={decorative ? undefined : projectId}
+          onReplace={decorative ? undefined : (newBlock) => chapterId && replaceBlockWithHistory(projectId, chapterId, block.id, newBlock)}
         />
         {chapterId && !decorative && (
           <BlockToolbar
@@ -186,6 +189,8 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               deleteBlockWithHistory(projectId, chapterId, block.id)
               if (isSelected) clearSelection()
             }}
+            breakAfter={block.breakAfter}
+            onToggleBreakAfter={() => editBlock(projectId, chapterId, block.id, { breakAfter: !block.breakAfter })}
           />
         )}
         {chapterId && !decorative && (
@@ -246,7 +251,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const renderGap = (afterId: string | null) => (
       <div key={`gap-${afterId ?? 'start'}`}>
         <ImageDropZone onDropAsset={(assetId) => handleDropAsset(chapterId, afterId, assetId)} />
-        <InsertBlockButton onInsert={(type) => handleInsertBlock(chapterId, afterId, type)} />
+        <InsertBlockButton
+          projectId={projectId}
+          onInsert={(type) => handleInsertBlock(chapterId, afterId, type)}
+          onInsertImage={(assetId) => handleDropAsset(chapterId, afterId, assetId)}
+        />
       </div>
     )
 

@@ -71,6 +71,16 @@ interface StructuralPageStoreActions {
    * prior `content` object restored wholesale, not merged — this is that.
    */
   replacePageContent: (projectId: string, pageId: string, content: StructuralPage['content']) => void
+  /**
+   * Wholesale replacement of every structural page for a project — mirrors
+   * `contentStore.setManuscript`'s "bulk import, not a tracked edit" shape.
+   * The only current caller is project-file import (Phase 51,
+   * `projectFile/importProjectFile.ts`): unlike every other action here,
+   * this isn't a user-initiated edit inside an already-open project, so it
+   * deliberately isn't wrapped in `editorActions.ts`'s undo/redo history —
+   * same reasoning as `setManuscript` not being history-tracked either.
+   */
+  replaceAllPages: (projectId: string, pages: StructuralPage[]) => void
 }
 
 function bumpRevision(state: StructuralPageStoreState, projectId: string): Record<string, number> {
@@ -237,6 +247,12 @@ export const useStructuralPageStore = create<StructuralPageStoreState & Structur
             revisionByProject: bumpRevision(state, projectId),
           }
         })
+      },
+      replaceAllPages: (projectId, pages) => {
+        set((state) => ({
+          byProject: { ...state.byProject, [projectId]: renumberOrders(pages) },
+          revisionByProject: bumpRevision(state, projectId),
+        }))
       },
     }),
     {
