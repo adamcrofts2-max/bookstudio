@@ -2824,13 +2824,94 @@ missing/extra serial comma), and confirm each produces exactly one finding
 with a sensible message — plus confirm all four stay silent when their
 field is left as "no preference."
 
+## Phase 36 — Six new checker categories: Typography, Accessibility, Print
+Readiness, Commercial Quality, Developmental, Field-guide (2026-07-31)
+
+User directive: "keep working on it until all the phases C, D, E are
+complete." This phase closes every remaining item in Phase C's checker
+taxonomy except the AI-backed ones (real `AiReviewer`, AI learning) and the
+UI-only ones (revision compare view, persisted revision log) — six brand
+new categories, thirteen new checkers.
+
+- **`CheckerContext` extended** (`types.ts`) with three new optional
+  fields — `project`, `structuralPages`, `assets` — following the exact
+  precedent `pages` set in an earlier milestone: forwarded through
+  `runPipeline` (`pipeline.ts`) and `virtualEditorStore.runReview`, and
+  supplied by `VirtualEditorWorkspace.tsx` (which already holds `project`
+  and now also reads `structuralPageStore`/`assetStore`, exactly the same
+  layer-crossing-at-the-call-site pattern `layout?.pages` already used —
+  `virtualEditorStore`/`pipeline.ts` still never reach into another layer's
+  store directly). `project` unlocks trim size/margins/bleed/theme/category;
+  `structuralPages` unlocks front-/back-matter content (title page,
+  copyright, ISBN, back cover) that never lived on `Manuscript`; `assets`
+  unlocks each image's real pixel dimensions.
+- **`typography.ts`** (new): `shoutingTextChecker` (2+ consecutive ALL-CAPS
+  words of 5+ letters in body prose — a common plain-text-import artefact
+  that should be italics/bold instead), `dropCapFirstCharacterChecker`
+  (first checker to key off `resolveTheme(project.settings.themeId)` — flags
+  a chapter opening with a non-letter when the theme has drop caps on),
+  `consecutiveHeadingsChecker` (two headings stacked with nothing between
+  them).
+- **`accessibility.ts`** (new): `missingImageAltTextChecker` (major when
+  neither altText nor caption exist, suggestion when only a caption is
+  standing in for real alt text), `galleryMissingDescriptionsChecker`
+  (surfaces the known gap that `GalleryBlock` has no per-image alt-text
+  field yet, rather than saying nothing about galleries),
+  `headingHierarchySkipChecker`
+  (WCAG 2.4.6 — flags a heading level skipping past an intermediate level,
+  e.g. H1 straight to H3), `tableMissingHeaderChecker` (WCAG 1.3.1 — a table
+  with no header-row text has no column labels for a screen reader).
+- **`printReadiness.ts`** (new): `lowResolutionImageChecker` (real pixel
+  dimensions vs. the standard 300ppi print floor, using
+  `computePageBox`/`PX_PER_MM` from `pageGeometry.ts` to resolve percentage-
+  based image widths to physical mm), `imageExceedsColumnWidthChecker` (an
+  explicit `widthMm` wider than the page's own content column — closes the
+  "honest limitation" `layout.ts`'s `effectiveImageWidth` documented about
+  not having page geometry), `kdpGutterMarginChecker` (Amazon KDP's
+  published page-count-scaled inner-margin minimum table), 
+  `insufficientBleedForImageryChecker` (bleed below the conventional
+  0.125in/3mm minimum when a Cover/Back Cover has a full-bleed image).
+- **`commercialQuality.ts`** (new): `missingCopyrightPageChecker`,
+  `missingIsbnChecker` (worded softly — a platform-assigned free ISBN is a
+  legitimate choice), `missingBackCoverBlurbChecker`,
+  `missingTitlePageChecker`, `missingAuthorBioChecker` (checks both the
+  About the Author page and the Back Cover's short bio field, so having
+  either one doesn't false-positive).
+- **`developmental.ts`** (new): `chapterLengthOutlierChecker` (word count
+  vs. book average, same outlier-detection shape as `layout.ts`'s image-
+  density checker), `placeholderChapterTitleChecker` (empty or
+  "Untitled"/"Chapter"/"New Chapter" placeholder titles — distinct from
+  `publishingStandards.ts`'s `emptyChapterOpenerChecker`, which checks body
+  content, not the title).
+- **`fieldGuide.ts`** (new): `nonfictionMissingReferenceApparatusChecker`
+  (nonfiction/educational/scientific books with no Glossary/Index/
+  Bibliography), `inconsistentChapterNumberingChecker` (novels/children's
+  books mixing "Chapter One"-style and name-only chapter titles — flags
+  whichever convention is the minority).
+- `scoring.ts`'s `SCORE_TILES` already had entries for `typography`/
+  `accessibility`/`print`/`commercial` (designed ahead of any checker
+  existing for them) — no scoring changes needed, those tiles simply stop
+  reading `null` ("Not yet analysed") the first time a review runs.
+- `checkers/index.ts`'s `ALL_CHECKERS` now spreads all six new arrays.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` in this sandbox (`oxlint` itself
+crashes with a bus error when invoked directly here — a sandbox limitation,
+not a code issue). Verified via `npx tsc -b --force` only (clean, zero
+errors) plus a manual read-through of every new file. **Manually verify in
+the Virtual Editor dashboard**: run "Review Entire Book" against a project
+with a rendered manuscript view (so `pages` is populated) and confirm the
+Typography/Accessibility/Print Readiness/Commercial Quality tiles go from
+"Not yet analysed" to a real score, and that a deliberately introduced
+example of each new finding type (an ALL-CAPS run, a captionless image, an
+undersized image, a missing copyright page, a wildly short chapter, a mixed
+numbered/unnumbered chapter title) is actually caught.
+
 ## Recommended next task
-Manually verify Phase 35's four new checkers live (see caveat above).
-Otherwise, Phase C's remaining gaps are a new checker *category*
-(Typography, Accessibility, Print Readiness, Commercial Quality,
-Developmental, Field-guide) — note Typography specifically would need a
-`CheckerContext` data-model extension first, since it currently carries no
-theme/font-metric data; that's a larger separate task, not a drop-in
-addition like this phase. Beyond Phase C: the cover/back-cover designer
-(Phase E), Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/cloud)
-remain the biggest structural gaps.
+Manually verify Phase 36's thirteen new checkers live (see caveat above).
+Remaining Phase C scope: persist the revision log across a reload, a real
+`AiReviewer` (this needs either a backend or a bring-your-own-API-key
+client-side integration — a real architectural decision, not a drop-in),
+and the Original/RevA/RevB/RevC revision compare view. Beyond Phase C: the
+cover/back-cover designer and theme gallery (Phase E), EPUB/PDF export work
+(Phase D), and Phase G (accounts/cloud) remain the biggest structural gaps.

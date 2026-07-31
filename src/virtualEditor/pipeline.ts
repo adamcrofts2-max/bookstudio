@@ -13,6 +13,9 @@
 import { generateId } from '@/utils/id'
 import type { Manuscript } from '@/types/content'
 import type { LaidOutPage } from '@/renderer/paginate'
+import type { Project } from '@/types/project'
+import type { StructuralPage } from '@/types/structuralPage'
+import type { ImageAsset } from '@/types/asset'
 import type { CheckerContext, EditorialReport, StyleGuide } from '@/virtualEditor/types'
 import { ALL_CHECKERS } from '@/virtualEditor/checkers'
 import { computeCategoryScores, computeOverallScore } from '@/virtualEditor/scoring'
@@ -22,8 +25,11 @@ export function runPipeline(
   manuscript: Manuscript,
   styleGuide?: StyleGuide,
   pages?: LaidOutPage[],
+  project?: Project,
+  structuralPages?: StructuralPage[],
+  assets?: ImageAsset[],
 ): EditorialReport {
-  const ctx: CheckerContext = { manuscript, styleGuide, pages }
+  const ctx: CheckerContext = { manuscript, styleGuide, pages, project, structuralPages, assets }
   const findings = ALL_CHECKERS.flatMap((checker) => checker.run(ctx))
   // A category counts as "analysed" only when at least one of its checkers
   // could actually run against this context — not merely "is registered."

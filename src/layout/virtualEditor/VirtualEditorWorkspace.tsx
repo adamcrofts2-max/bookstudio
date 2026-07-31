@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
 import { useExportStore } from '@/store/exportStore'
+import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
+import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
 import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
@@ -41,6 +43,14 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   // session; genuinely `undefined` otherwise, which is why the caption below
   // exists rather than silently passing nothing through.
   const layout = useExportStore((s) => s.byProject[project.id])
+  // Front-/back-matter content and real asset dimensions — read here (not
+  // inside the Virtual Editor layer itself) and forwarded into `runReview`,
+  // same layer-separation pattern as `layout?.pages` above: this workspace
+  // already legitimately holds references to every layer, but
+  // `virtualEditorStore`/`pipeline.ts` never reach into `structuralPageStore`
+  // or `assetStore` directly. See docs/STATUS.md Phase 36.
+  const structuralPages = useStructuralPageStore((s) => s.byProject[project.id]) ?? EMPTY_STRUCTURAL_PAGES
+  const assets = useAssetStore((s) => s.byProject[project.id]) ?? EMPTY_ASSETS
   const report = useVirtualEditorStore((s) => s.reportsByProject[project.id])
   const findingStatuses = useVirtualEditorStore((s) => s.findingStatusByProject[project.id])
   const revisions = useVirtualEditorStore((s) => s.revisionsByProject[project.id] ?? EMPTY_REVISIONS)
@@ -152,7 +162,15 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               size="md"
               className="gap-2"
               onClick={() =>
-                runReview(project.id, manuscript, project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE, layout?.pages)
+                runReview(
+                  project.id,
+                  manuscript,
+                  project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE,
+                  layout?.pages,
+                  project,
+                  structuralPages,
+                  assets,
+                )
               }
             >
               <RefreshCcw className="size-4" />

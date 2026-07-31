@@ -11,6 +11,9 @@
 
 import type { ContentBlock, Manuscript } from '@/types/content'
 import type { LaidOutPage } from '@/renderer/paginate'
+import type { Project } from '@/types/project'
+import type { StructuralPage } from '@/types/structuralPage'
+import type { ImageAsset } from '@/types/asset'
 
 /**
  * The full editorial taxonomy from the product spec. Every `Finding` is
@@ -122,6 +125,26 @@ export interface CheckerContext {
   manuscript: Manuscript
   styleGuide?: StyleGuide
   pages?: LaidOutPage[]
+  /**
+   * Added for the Typography/Print Readiness/Commercial Quality/Field-guide
+   * checkers (docs/STATUS.md Phase 36). `project` exposes trim size/margins/
+   * bleed/themeId/category (a pure read of Layer 1, and — via
+   * `resolveTheme(project.settings.themeId)` — Layer 3); `structuralPages`
+   * exposes front-/back-matter content (title page, copyright, ISBN, back
+   * cover) that never lives on `Manuscript`; `assets` exposes each image's
+   * real pixel dimensions for print-resolution checks. All three are
+   * optional and simply forwarded by the caller (`VirtualEditorWorkspace.tsx`,
+   * which already holds `project` and reads the other two stores) — this
+   * layer still never reaches into `projectStore`/`structuralPageStore`/
+   * `assetStore` itself, per CLAUDE.md's layer-separation rule. Checkers that
+   * depend on one of these must declare `isApplicable` (or check for
+   * `undefined` inline), exactly like the existing `pages`-dependent checkers,
+   * so the dashboard can honestly report "Not yet analysed" instead of a
+   * fake 100.
+   */
+  project?: Project
+  structuralPages?: StructuralPage[]
+  assets?: ImageAsset[]
 }
 
 /**

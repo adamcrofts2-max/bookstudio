@@ -134,12 +134,12 @@ daily use of everything built so far.)*
 - [x] Style Guide settings UI (englishVariant/oxfordComma/measurementUnits/dateFormat fields)
 - [x] Non-destructive fixes: Accept/Reject/Ignore, revision log, restore original
 - [x] Style Guide values actually *enforced* by a checker — see STATUS.md Phase 35
-- [ ] Typography checker
-- [ ] Accessibility checker
-- [ ] Print Readiness checker
-- [ ] Commercial Quality checker
-- [ ] Developmental checker
-- [ ] Field-guide checker
+- [x] Typography checker — see STATUS.md Phase 36
+- [x] Accessibility checker — see STATUS.md Phase 36
+- [x] Print Readiness checker — see STATUS.md Phase 36
+- [x] Commercial Quality checker — see STATUS.md Phase 36
+- [x] Developmental checker — see STATUS.md Phase 36
+- [x] Field-guide checker — see STATUS.md Phase 36
 - [ ] Real `AiReviewer` (LLM-backed judgement calls, currently a null stub)
 - [ ] AI Learning — a personal editorial profile that adapts to accepted/rejected fixes
 - [ ] Original / RevA / RevB / RevC side-by-side revision compare view

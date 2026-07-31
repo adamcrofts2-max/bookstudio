@@ -14,6 +14,12 @@ import { READABILITY_CHECKERS } from '@/virtualEditor/checkers/readability'
 import { COPY_EDITING_CHECKERS } from '@/virtualEditor/checkers/copyEditing'
 import { PUBLISHING_STANDARDS_CHECKERS } from '@/virtualEditor/checkers/publishingStandards'
 import { LAYOUT_CHECKERS } from '@/virtualEditor/checkers/layout'
+import { TYPOGRAPHY_CHECKERS } from '@/virtualEditor/checkers/typography'
+import { ACCESSIBILITY_CHECKERS } from '@/virtualEditor/checkers/accessibility'
+import { PRINT_READINESS_CHECKERS } from '@/virtualEditor/checkers/printReadiness'
+import { COMMERCIAL_QUALITY_CHECKERS } from '@/virtualEditor/checkers/commercialQuality'
+import { DEVELOPMENTAL_CHECKERS } from '@/virtualEditor/checkers/developmental'
+import { FIELD_GUIDE_CHECKERS } from '@/virtualEditor/checkers/fieldGuide'
 
 export const ALL_CHECKERS: Checker[] = [
   ...PROOFREADING_CHECKERS,
@@ -22,4 +28,10 @@ export const ALL_CHECKERS: Checker[] = [
   ...COPY_EDITING_CHECKERS,
   ...PUBLISHING_STANDARDS_CHECKERS,
   ...LAYOUT_CHECKERS,
+  ...TYPOGRAPHY_CHECKERS,
+  ...ACCESSIBILITY_CHECKERS,
+  ...PRINT_READINESS_CHECKERS,
+  ...COMMERCIAL_QUALITY_CHECKERS,
+  ...DEVELOPMENTAL_CHECKERS,
+  ...FIELD_GUIDE_CHECKERS,
 ]

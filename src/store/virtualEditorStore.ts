@@ -2,6 +2,9 @@ import { create } from 'zustand'
 
 import type { ContentBlock, Manuscript } from '@/types/content'
 import type { LaidOutPage } from '@/renderer/paginate'
+import type { Project } from '@/types/project'
+import type { StructuralPage } from '@/types/structuralPage'
+import type { ImageAsset } from '@/types/asset'
 import type { EditorialReport, Finding, FindingStatus, IssueCategory, StyleGuide } from '@/virtualEditor/types'
 import { runPipeline } from '@/virtualEditor/pipeline'
 import { useContentStore } from '@/store/contentStore'
@@ -65,7 +68,15 @@ interface VirtualEditorActions {
    * absent when the manuscript workspace hasn't rendered yet this session,
    * which is what lets `publishingStandards`/`layout` honestly report "Not
    * yet analysed" instead of a fake 100. */
-  runReview: (projectId: string, manuscript: Manuscript, styleGuide?: StyleGuide, pages?: LaidOutPage[]) => EditorialReport
+  runReview: (
+    projectId: string,
+    manuscript: Manuscript,
+    styleGuide?: StyleGuide,
+    pages?: LaidOutPage[],
+    project?: Project,
+    structuralPages?: StructuralPage[],
+    assets?: ImageAsset[],
+  ) => EditorialReport
   getReport: (projectId: string) => EditorialReport | undefined
   getFindingStatuses: (projectId: string) => Readonly<Record<string, FindingStatus>>
   getFindingStatus: (projectId: string, findingId: string) => FindingStatus
@@ -94,8 +105,8 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
   findingStatusByProject: {},
   revisionsByProject: {},
 
-  runReview: (projectId, manuscript, styleGuide, pages) => {
-    const report = runPipeline(projectId, manuscript, styleGuide, pages)
+  runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets) => {
+    const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets)
     set((state) => ({
       reportsByProject: { ...state.reportsByProject, [projectId]: report },
       findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },
