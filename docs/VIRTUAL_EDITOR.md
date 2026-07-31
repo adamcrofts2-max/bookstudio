@@ -13,10 +13,12 @@ table below is the honest boundary of what's actually built — follow
 ## Core principle
 
 The Virtual Editor never overwrites the manuscript. Every recommendation is a
-`Finding` the user can Accept / Reject / Edit / Ignore / Ignore Similar / Apply to
-Chapter / Apply to Book. Every finding explains what's wrong and why it matters.
-Accepting a fixable finding creates a revision — the original block is snapshotted
-before anything changes.
+`Finding` the user can Fix / Reject / Edit / Ignore / Ignore Similar, plus batch-fix
+a whole category or the whole report at once (see § The suggestion engine & action
+verbs for how the original spec's per-finding "Apply to Chapter"/"Apply to Book"
+verbs became these dashboard-level actions instead). Every finding explains what's
+wrong and why it matters. Accepting a fixable finding creates a revision — the
+original block is snapshotted before anything changes.
 
 ## Architecture — where this sits in the existing layer stack
 
@@ -197,21 +199,23 @@ ones (unmatched quotes/brackets, quote-style consistency) are flag-only, matchin
 the spec's "suggest improvements, never rewrite automatically" instruction for
 anything above pure mechanics.
 
-Actions available on every finding in `FindingRow.tsx`:
+Actions available on every finding in `FindingRow.tsx` (updated — Phase 13
+shipped Edit and a batch-apply mechanism; this table went stale after that
+phase landed and is now corrected to match reality):
 
-| Action | Status this milestone |
+| Action | Status |
 |---|---|
-| Accept | Real — only shown when a `suggestedFix` exists; calls `virtualEditorStore.acceptFix` |
+| Fix (formerly "Accept") | Real — only shown when a `suggestedFix` exists; calls `virtualEditorStore.acceptFix` |
 | Reject | Real — marks the finding `rejected` (UI-only status, no learning yet) |
-| Edit | Visibly disabled — "edit the block directly in the manuscript view for now" |
+| Edit | Real — switches back to the manuscript workspace, selects the finding's block, scrolls to it via `requestScrollToBlock`, and enters inline edit mode automatically. Disabled (with a tooltip) only for book-wide findings that have no single `blockId` to jump to. |
 | Ignore | Real — marks the finding `ignored` |
 | Ignore Similar | Real — marks every current finding sharing the same `issueType` as `ignoredSimilar` |
-| Apply to Chapter | Visibly disabled — batch-apply across a chapter isn't built |
-| Apply to Book | Visibly disabled — batch-apply across the book isn't built |
+| Apply to Chapter / Apply to Book | **Redesigned, not disabled.** The original per-row placeholders (batch-apply this finding's fix across just its chapter, or the whole book) were replaced by two dashboard-level actions that cover the same underlying need with less UI clutter: a single "Fix All" button (applies every currently-fixable `'new'` finding across the whole report) and a per-category-group "Fix all in [Category]" button (same, scoped to one `IssueCategory`, shown next to each category's findings). See `docs/STATUS.md`'s Phase 13 entry for the full reasoning — keeping three overlapping batch-apply affordances on screen at once was judged more confusing than useful. |
 
-Disabled actions carry a tooltip explaining they're not implemented yet, rather
-than being hidden — the user should see the full intended action set even before
-every verb works, and never be told something happened that didn't.
+Disabled actions (today, only "Edit" on a blockId-less finding) carry a tooltip
+explaining why, rather than being hidden — the user should always understand
+the full available action set, and never be told something happened that
+didn't.
 
 ## Non-destructive editing
 
@@ -351,8 +355,8 @@ revision log) generalise to them too.
 | Score aggregation (category + overall) | **Real** |
 | Editorial Dashboard UI, 11 score tiles | **Real** (4 of 11 show real numbers: Proofreading, Consistency, Readability, Overall) |
 | Review Entire Book pipeline | **Real** (synchronous, deterministic-only) |
-| Accept / Reject / Ignore / Ignore Similar | **Real** |
-| Edit / Apply to Chapter / Apply to Book | **Designed, visibly disabled** |
+| Fix / Reject / Ignore / Ignore Similar / Edit | **Real** (Edit disabled only for book-wide findings with no single block to jump to) |
+| Batch-apply ("Fix All" + per-category "Fix all in [Category]", replacing the original "Apply to Chapter"/"Apply to Book" placeholders — see Phase 13 in `docs/STATUS.md`) | **Real** |
 | Non-destructive revision log + restore | **Real** (linear list, in-memory only) |
 | Original/RevA/RevB/RevC side-by-side compare | **Designed, not built** |
 | Copy editing / developmental / publishing-standards / field-guide / layout / typography / accessibility / print / commercial checkers | **Designed, not built** |
