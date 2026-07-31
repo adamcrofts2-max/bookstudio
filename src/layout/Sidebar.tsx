@@ -56,6 +56,11 @@ const BACK_MATTER_ADDABLE_TYPES: StructuralPageType[] = [
   'about-the-author',
   'isbn-page',
   'barcode',
+  // Back Cover is deliberately last — it's the physical last page of a
+  // printed book, and while reordering is always available via the
+  // up/down buttons below, defaulting new inserts to the end of this list
+  // matches where it almost always actually belongs.
+  'back-cover',
   'blank',
 ]
 
@@ -99,7 +104,7 @@ function StructuralPageRow({ projectId, page, selected }: StructuralPageRowProps
         type="button"
         onClick={() => movePageWithHistory(projectId, page.id, 'up')}
         aria-label={`Move ${def.label} up`}
-        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100"
       >
         <ChevronUp className="size-3.5" />
       </button>
@@ -107,7 +112,7 @@ function StructuralPageRow({ projectId, page, selected }: StructuralPageRowProps
         type="button"
         onClick={() => movePageWithHistory(projectId, page.id, 'down')}
         aria-label={`Move ${def.label} down`}
-        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100"
       >
         <ChevronDown className="size-3.5" />
       </button>
@@ -115,7 +120,7 @@ function StructuralPageRow({ projectId, page, selected }: StructuralPageRowProps
         type="button"
         onClick={() => duplicatePageWithHistory(projectId, page.id)}
         aria-label={`Duplicate ${def.label}`}
-        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100"
       >
         <Copy className="size-3.5" />
       </button>
@@ -123,7 +128,7 @@ function StructuralPageRow({ projectId, page, selected }: StructuralPageRowProps
         type="button"
         onClick={() => deletePageWithHistory(projectId, page.id)}
         aria-label={`Delete ${def.label}`}
-        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100"
       >
         <Trash2 className="size-3.5" />
       </button>
@@ -304,7 +309,7 @@ export function Sidebar({ project }: SidebarProps) {
                         type="button"
                         onClick={() => startRename(chapter.id, chapter.title)}
                         aria-label={`Rename ${chapter.title}`}
-                        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-0 transition-opacity duration-150 hover:text-text-primary group-hover:opacity-100"
+                        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100"
                       >
                         <Pencil className="size-3" />
                       </button>

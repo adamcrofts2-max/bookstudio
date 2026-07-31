@@ -2254,7 +2254,7 @@ exercise the block toolbar, structural-page inline editing, format toolbar, and
 inserter in a real browser.** No commits from this phase have been pushed to
 GitHub — this sandbox also has no network access to github.com.
 
-## Recommended next task
+## Recommended next task (Phase 26's own — superseded below by Phase 27)
 Two Phase B items remain: drag-to-reorder for blocks (deprioritised above, not
 abandoned), and extending inline editing to structural pages' long-form text
 fields (would need a different editing model than `useEditableField`'s
@@ -2266,3 +2266,86 @@ biggest structural gap for a real multi-device product — none of this has a
 backend, accounts, or cloud storage today. **Before any of that: get this
 phase's changes verified on a machine with a working `npm install` and pushed
 to GitHub**, since neither was possible from this sandbox.
+
+## Phase 27 — Back Cover page type, structural-page image picker, delete discoverability (2026-07-31)
+
+Triggered by real usage feedback after Phase 26 shipped: "there is no way to
+delete whole pages," "the thumbnails don't actually use the text," "we need a
+way to add a back cover," "a page designer for front/back cover." Investigated
+each in the code rather than assuming; this phase addresses the two that were
+concretely scoped and quick, per the user's own prioritisation — thumbnail
+previews and a full cover designer are logged as new `docs/ROADMAP.md` items,
+not attempted this phase.
+
+- **"No way to delete whole pages" — turned out to be discoverability, not a
+  missing feature.** `Sidebar.tsx`'s Structure tab already has working move/
+  duplicate/delete for every front/back-matter page (`deletePageWithHistory`
+  etc., undo-safe) — the icons were `opacity-0` until hover, easy to miss
+  entirely. Changed to `opacity-35` by default (still `opacity-100` on
+  hover), so the delete button is faintly visible without needing to discover
+  the hover state first. Regular chapter-content pages still have no delete
+  concept, correctly — they're computed pagination output, not stored
+  objects (deleting "a page" there really means deleting whichever blocks
+  landed on it, which `BlockToolbar`'s per-block delete, Phase 26, already
+  covers).
+- **Found a bigger, real gap while investigating: Cover, Back Cover (new),
+  and About the Author had no way to set their background/portrait image at
+  all.** `imageAssetId` existed on all three content types and was fully
+  wired into rendering + PDF export, but the Inspector panel only ever said
+  a picker "is planned for a future milestone" — there was no actual UI
+  anywhere. Fixed with `StructuralImageDropZone`
+  (`src/structuralPages/shared.tsx`): a full-page drag target reusing the
+  exact same `ASSET_DRAG_MIME` drag source `Page.tsx`'s content-image drop
+  zones already use, so dragging a thumbnail from the Sidebar's Assets tab
+  now sets (or replaces) the image directly on Cover/Back Cover/About the
+  Author. `structuralPageStore.ts`'s asset-reference tracking (`assets`
+  array, for future cleanup logic) was previously Cover-only — extended to
+  all three image-bearing types.
+- **Back Cover page type** (`src/structuralPages/types/backCover.tsx`,
+  registered in `src/structuralPages/registry.ts` and `Sidebar.tsx`'s
+  back-matter addable list, added last since that's where it almost always
+  belongs): full-bleed image-or-tinted background like Cover, but
+  text-forward — back-cover copy (`content.blurb`, multi-paragraph, split
+  the same way Foreword/Preface/Conclusion/etc. already do) plus an optional
+  short `authorBio` line, not a repeated title (the front cover already has
+  that). `content.blurb`/`authorBio` are Inspector-panel-edited (Textarea/
+  Input), matching Phase 26's established rule that multi-paragraph text
+  stays off the single-line `EditableText` canvas-editing model. Added
+  `StructuralPageType` union member, `StructuralPagePanel.tsx` fields, and a
+  `drawBackCoverPdf` mirroring `cover.tsx`'s PDF drawer shape.
+
+### Explicitly deferred (surfaced this phase, not built)
+- **Real thumbnail previews.** `ThumbnailRail.tsx` renders a plain empty box
+  per page — only chapter-opener pages show the first 3 letters of the
+  chapter title in 6px text; every other page (including every structural
+  page) is a blank rectangle. Confirmed accurate when the user raised it.
+  Needs either a genuine miniature render of each page or a cheaper
+  text-density/colour approximation — not a quick fix, logged in
+  `docs/ROADMAP.md`.
+- **Front/back cover page designer** (layout templates, draggable element
+  positioning, spine-width calculation for a real wraparound cover). Cover
+  and Back Cover are both still fixed single-layout types today (centred
+  text over a background image); a real designer is a multi-session project
+  in its own right, already tracked in `docs/ROADMAP.md` Phase E.
+- **Replacing/removing a structural-page image once set has one remaining
+  rough edge**: `StructuralImageDropZone` supports drag-to-replace (dropping
+  a new asset on an existing image works), but there's no explicit "remove
+  image" button — clearing it back to the tinted-background/no-photo state
+  requires dragging a different image on, not an empty action.
+
+### Verification caveat — same as Phase 26
+This sandbox still has no working `npm run test`/`npm run build (vite)`/
+`npm run lint`, and no network access to npm's registry or GitHub. Verified
+via `npx tsc -b --force` only (clean) plus manual review against this
+project's own established patterns (`StructuralImageDropZone` mirrors
+`Page.tsx`'s `ImageDropZone`; `backCover.tsx` mirrors `cover.tsx` almost
+field-for-field). **Manually exercise the image drag-and-drop and the new
+Back Cover type in a real browser, and run the full build/lint/test suite,
+before trusting this beyond a quick look.**
+
+## Recommended next task
+Real thumbnail previews and the cover/back-cover designer are the two
+explicitly-deferred items above. Otherwise the same priority order as Phase
+26 still holds: verify + push this phase's changes, then Phase C (Virtual
+Editor categories), Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/
+cloud) as the biggest remaining structural gaps.

@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { CoverPage, StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
+import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { generateId } from '@/utils/id'
 
@@ -199,12 +199,15 @@ export const useStructuralPageStore = create<StructuralPageStoreState & Structur
             if (p.id !== pageId) return p
             const merged = { ...p, content: { ...p.content, ...updates } } as StructuralPage
             // Mirror `ImageBlock.assetId`'s asset-reference tracking: if
-            // this update touches a Cover page's `imageAssetId`, keep
-            // `assets` in sync so future asset-cleanup logic has something
-            // to check (see docs/MODULAR_PAGE_SYSTEM_PLAN.md's
-            // `StructuralPage` shape / this type's own doc comment).
-            if (merged.type === 'cover' && 'imageAssetId' in updates) {
-              const imageAssetId = (updates as Partial<CoverPage['content']>).imageAssetId
+            // this update touches an image-bearing page's `imageAssetId`
+            // (Cover, Back Cover, About the Author — the three types with a
+            // real image-drop UI, see `structuralPages/shared.tsx`'s
+            // `StructuralImageDropZone`), keep `assets` in sync so future
+            // asset-cleanup logic has something to check (see
+            // docs/MODULAR_PAGE_SYSTEM_PLAN.md's `StructuralPage` shape /
+            // this type's own doc comment).
+            if ((merged.type === 'cover' || merged.type === 'back-cover' || merged.type === 'about-the-author') && 'imageAssetId' in updates) {
+              const imageAssetId = (updates as { imageAssetId?: string }).imageAssetId
               return { ...merged, assets: imageAssetId ? [imageAssetId] : [] }
             }
             return merged
@@ -223,8 +226,8 @@ export const useStructuralPageStore = create<StructuralPageStoreState & Structur
           const next = pages.map((p) => {
             if (p.id !== pageId) return p
             const replaced = { ...p, content } as StructuralPage
-            if (replaced.type === 'cover') {
-              const imageAssetId = (content as Partial<CoverPage['content']>).imageAssetId
+            if (replaced.type === 'cover' || replaced.type === 'back-cover' || replaced.type === 'about-the-author') {
+              const imageAssetId = (content as { imageAssetId?: string }).imageAssetId
               return { ...replaced, assets: imageAssetId ? [imageAssetId] : [] }
             }
             return replaced

@@ -80,6 +80,38 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               onChange={(e) => patch({ author: e.target.value })}
             />
           </div>
+          {page.type === 'cover' && (
+            <p className="text-xs text-text-secondary">
+              Drag an image from the Assets tab onto the cover in the preview to set (or replace) its background.
+            </p>
+          )}
+        </>
+      )}
+
+      {page.type === 'back-cover' && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="structural-back-cover-blurb">Back-cover copy</Label>
+            <Textarea
+              id="structural-back-cover-blurb"
+              rows={8}
+              placeholder="A short, compelling summary of the book. Separate paragraphs with a blank line…"
+              value={page.content.blurb ?? ''}
+              onChange={(e) => patch({ blurb: e.target.value })}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="structural-back-cover-bio">Short author bio (optional)</Label>
+            <Input
+              id="structural-back-cover-bio"
+              placeholder="One line about the author…"
+              value={page.content.authorBio ?? ''}
+              onChange={(e) => patch({ authorBio: e.target.value })}
+            />
+          </div>
+          <p className="text-xs text-text-secondary">
+            Drag an image from the Assets tab onto the back cover in the preview to set (or replace) its background.
+          </p>
         </>
       )}
 
@@ -221,8 +253,7 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             onChange={(e) => patch({ text: e.target.value })}
           />
           <p className="text-xs text-text-secondary">
-            An author photo can be set via <code>imageAssetId</code> — a picker UI is planned for a future milestone (same status as
-            the Cover page's image field today).
+            Drag an image from the Assets tab onto the author photo circle in the preview to set (or replace) it.
           </p>
         </div>
       )}

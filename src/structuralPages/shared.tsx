@@ -1,4 +1,8 @@
+import { useState } from 'react'
+import { ImagePlus } from 'lucide-react'
+
 import { useEditableField } from '@/blocks/shared'
+import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { cn } from '@/lib/utils'
 
 interface EditableTextProps {
@@ -62,5 +66,55 @@ export function EditableText({ value, placeholder, onCommit, as: Tag = 'p', clas
     >
       {!field.isEditing ? value || placeholder : null}
     </Tag>
+  )
+}
+
+interface StructuralImageDropZoneProps {
+  hasImage: boolean
+  onDropAsset: (assetId: string) => void
+  label?: string
+}
+
+/**
+ * Full-page drag-and-drop target that sets (or replaces) a structural
+ * page's background/portrait image — Cover, Back Cover, and About the
+ * Author all have an `imageAssetId` field, but until now there was no UI
+ * anywhere to actually set it (the Inspector panel only ever said a picker
+ * "is planned for a future milestone"). Reuses the exact same
+ * `ASSET_DRAG_MIME` drag source as `Page.tsx`'s `ImageDropZone` — dragging a
+ * thumbnail from the Sidebar's Assets tab works identically here.
+ *
+ * Rendered as a DOM sibling placed *before* a page's text content (so plain
+ * default stacking order puts the text on top and still clickable/
+ * double-clickable), covering the full page so dropping anywhere on empty
+ * background space works — not gated behind "only when no image is set yet"
+ * so it doubles as a replace affordance too.
+ */
+export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop an image here' }: StructuralImageDropZoneProps) {
+  const [isOver, setIsOver] = useState(false)
+
+  return (
+    <div
+      className={cn('absolute inset-0 flex items-center justify-center transition-colors', isOver && 'bg-black/30')}
+      onDragOver={(e) => {
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'copy'
+        setIsOver(true)
+      }}
+      onDragLeave={() => setIsOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setIsOver(false)
+        const assetId = e.dataTransfer.getData(ASSET_DRAG_MIME)
+        if (assetId) onDropAsset(assetId)
+      }}
+    >
+      {(isOver || !hasImage) && (
+        <div className="pointer-events-none flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 px-4 py-2 text-xs text-white">
+          <ImagePlus className="size-3.5" />
+          {label}
+        </div>
+      )}
+    </div>
   )
 }

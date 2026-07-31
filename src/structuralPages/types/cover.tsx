@@ -7,7 +7,7 @@ import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
-import { EditableText } from '@/structuralPages/shared'
+import { EditableText, StructuralImageDropZone } from '@/structuralPages/shared'
 import { useAssetStore } from '@/store/assetStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
@@ -42,6 +42,11 @@ function CoverRender({ page, theme, pageBox, selected, onSelect, onCommit }: Str
           <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.35)' }} />
         </>
       )}
+      <StructuralImageDropZone
+        hasImage={!!imageUrl}
+        label="Drop a cover image here"
+        onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
+      />
       <div
         className="absolute inset-0 flex flex-col items-center justify-center gap-5 text-center"
         style={{ paddingLeft: pageBox.marginOuterPx, paddingRight: pageBox.marginOuterPx }}

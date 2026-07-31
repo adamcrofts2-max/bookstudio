@@ -62,6 +62,15 @@ daily use of everything built so far.)*
 - [ ] Drag-to-reorder for all blocks — deprioritised in favour of the move-up/down
       buttons above, which solve the same need with less risk (full drag-and-drop
       across `LazySpread`'s lazily-mounted spreads is a materially bigger change)
+- [x] Structural-page delete discoverability — shipped 2026-07-31 (Phase 27): the
+      Sidebar's move/duplicate/delete icons per page were `opacity-0` until hover
+      (delete already worked, just easy to miss entirely); now faintly visible by
+      default. Regular chapter-content pages still have no page-level delete,
+      correctly — see docs/STATUS.md Phase 27 for why that's not a gap
+- [ ] Real thumbnail previews — `ThumbnailRail.tsx` currently renders a blank box
+      per page (only chapter-opener pages show 3 letters of the chapter title);
+      confirmed via user report 2026-07-31. Needs either genuine miniature page
+      rendering or a cheaper text-density approximation
 - [x] Fix awkward heading placement from pagination — shipped 2026-07-31 (Phase 26):
       the orphan guard now reserves the *entire* following block's height, not a
       32px slice, closing the exact bug where a heading was kept on a page whose
@@ -104,11 +113,21 @@ daily use of everything built so far.)*
 
 ## Phase E — Design & Templates (the "Canva" layer)
 
+- [x] Back Cover page type — shipped 2026-07-31 (Phase 27): back-cover copy +
+      optional short author bio over a full-bleed image-or-tinted background,
+      mirroring the front Cover's treatment
+- [x] Structural-page image picker — shipped 2026-07-31 (Phase 27): drag an
+      asset from the Sidebar onto Cover/Back Cover/About the Author to set or
+      replace its image (previously there was no way to set these at all,
+      despite the field existing). Still missing: an explicit "remove image"
+      action (only replace-by-dragging-another works)
 - [ ] Template/theme gallery with visual preview before applying
 - [ ] More built-in themes beyond the current 5
 - [ ] Custom theme editor — user-defined colours/fonts/margins saved as a new theme
-- [ ] Dedicated cover designer (spine-width calculation from page count + trim + paper,
-      distinct from interior layout)
+- [ ] Dedicated cover/back-cover designer — layout templates, draggable element
+      positioning, spine-width calculation from page count + trim + paper for a
+      real wraparound cover (Cover/Back Cover today are both one fixed layout:
+      centred text over a background image)
 - [ ] Stock image / illustration library integration
 - [ ] AI image generation for covers and illustrations
 - [ ] Community/shareable template gallery

@@ -5,6 +5,7 @@ import type { ResolvedBookTheme } from '@/theme/presets'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
+import { StructuralImageDropZone } from '@/structuralPages/shared'
 import { useAssetStore } from '@/store/assetStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
@@ -22,7 +23,7 @@ const PHOTO_SIZE_EM = 7.5
  * photo — reuses the exact same `imageAssetId` + `assetStore`/
  * `imageForPdf.ts` embedding pipeline `cover.tsx` already proved, just in a
  * small centred portrait rather than a full-bleed background. */
-function AboutTheAuthorRender({ page, theme, selected, onSelect }: StructuralPageRenderProps) {
+function AboutTheAuthorRender({ page, theme, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   if (page.type !== 'about-the-author') return null
 
@@ -32,16 +33,23 @@ function AboutTheAuthorRender({ page, theme, selected, onSelect }: StructuralPag
   return (
     <div
       onClick={onSelect}
-      className={cn('flex h-full w-full cursor-pointer flex-col items-center gap-6 px-16 py-20', outlineClass(selected, false))}
+      className={cn('relative flex h-full w-full cursor-pointer flex-col items-center gap-6 px-16 py-20', outlineClass(selected, false))}
       style={{ background: theme.page.background }}
     >
-      {imageUrl && (
-        <img
-          src={imageUrl}
-          alt=""
-          className="shrink-0 rounded-full object-cover"
-          style={{ width: `${PHOTO_SIZE_EM}em`, height: `${PHOTO_SIZE_EM}em` }}
+      {!imageUrl && (
+        <StructuralImageDropZone
+          hasImage={false}
+          label="Drop an author photo here"
+          onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
         />
+      )}
+      {imageUrl && (
+        <div className="group/photo relative shrink-0" style={{ width: `${PHOTO_SIZE_EM}em`, height: `${PHOTO_SIZE_EM}em` }}>
+          <img src={imageUrl} alt="" className="h-full w-full rounded-full object-cover" />
+          <div className="absolute inset-0 overflow-hidden rounded-full opacity-0 transition-opacity group-hover/photo:opacity-100">
+            <StructuralImageDropZone hasImage label="Replace photo" onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })} />
+          </div>
+        </div>
       )}
       <h2
         style={{

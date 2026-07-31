@@ -22,6 +22,7 @@ import { glossaryPageType } from '@/structuralPages/types/glossary'
 import { indexPageType } from '@/structuralPages/types/indexPage'
 import { isbnPagePageType } from '@/structuralPages/types/isbnPage'
 import { barcodePageType } from '@/structuralPages/types/barcode'
+import { backCoverPageType } from '@/structuralPages/types/backCover'
 import { blankPageType } from '@/structuralPages/types/blank'
 
 /**
@@ -93,6 +94,7 @@ const STRUCTURAL_PAGE_REGISTRY: Record<StructuralPageType, StructuralPageTypeDef
   index: indexPageType,
   'isbn-page': isbnPagePageType,
   barcode: barcodePageType,
+  'back-cover': backCoverPageType,
   blank: blankPageType,
 }
 
@@ -120,6 +122,7 @@ export function listStructuralPageTypes(): StructuralPageTypeDefinition[] {
     indexPageType,
     isbnPagePageType,
     barcodePageType,
+    backCoverPageType,
     blankPageType,
   ]
 }

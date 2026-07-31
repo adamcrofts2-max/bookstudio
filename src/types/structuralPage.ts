@@ -136,6 +136,20 @@ export interface BarcodePage extends BaseStructuralPage {
   content: { isbn?: string }
 }
 
+/**
+ * Back-matter's final page: the back cover. Same full-bleed
+ * image-or-tinted-background treatment as `CoverPage`, but the dominant
+ * content is back-cover copy (a blurb/synopsis) rather than a big title —
+ * conventionally the book's title/author already appear on the front cover
+ * and don't need repeating. `authorBio` is a short, separate line (distinct
+ * from the full "About the Author" back-matter page, which is a whole page
+ * to itself). See docs/ROADMAP.md Phase E.
+ */
+export interface BackCoverPage extends BaseStructuralPage {
+  type: 'back-cover'
+  content: { blurb?: string; authorBio?: string; imageAssetId?: string }
+}
+
 export type StructuralPage =
   | CoverPage
   | TitlePage
@@ -154,4 +168,5 @@ export type StructuralPage =
   | IndexPage
   | IsbnPage
   | BarcodePage
+  | BackCoverPage
 export type StructuralPageType = StructuralPage['type']
