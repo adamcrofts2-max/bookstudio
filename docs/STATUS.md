@@ -3199,11 +3199,52 @@ dialog on Export PDF/EPUB, "Export anyway" proceeds with the real export,
 "Go back and fix" just closes the dialog, and a project with none of those
 issues exports immediately with no dialog at all.
 
+## Phase 42 — Single-file HTML/web-book export (2026-07-31)
+
+Closes another Phase D item, made cheap by Phase 40's EPUB work: EPUB
+already needed `blockToXhtml`/`structuralPageToXhtml`/`buildEpubStylesheet`
+to convert every block/page type to real semantic HTML+CSS — a single-file
+HTML export is the same conversion with different packaging, not a third
+implementation of block-to-markup conversion (which would have violated
+`CLAUDE.md`'s "avoid duplicate logic").
+
+- **`src/epub/exportHtmlBook.ts`** (new): reuses every EPUB building block
+  as-is. The two real differences from `exportEpub.ts`: every image is
+  inlined as a base64 `data:` URI (via a new chunked `bytesToDataUri`,
+  chunked specifically to avoid `String.fromCharCode(...bytes)` throwing a
+  stack-size error on a large image) instead of a separate zip entry, so
+  the result is one genuinely self-contained file with nothing else to
+  keep track of; and chapters are addressed with in-page `#id` anchors in
+  a simple table-of-contents `<nav>` instead of an EPUB nav
+  document/spine, since a single flat HTML file has no navigation-document
+  format to speak of.
+- **`src/epub/exportEpub.ts`**: `collectImageAssetIds` changed from private
+  to exported, so the HTML exporter reuses the exact same image-reference
+  scan instead of a second copy of it.
+- **`src/epub/useExportHtmlBook.ts`** (new): same shape as
+  `useExportEpub.ts`.
+- **`Toolbar.tsx`**: "Export" dropdown gained a third item, "Export HTML —
+  single-file web book"; the pre-export readiness gate (Phase 41) now
+  covers all three formats.
+
+### Verification
+`npx tsc -b --force` clean. The one genuinely new piece of logic here
+(`bytesToDataUri`'s chunking) was verified standalone in Node against a
+500KB buffer: encodes without a stack error and round-trips byte-identical
+after decoding — the same "don't just trust `tsc`, actually exercise the
+new logic" standard `zipWriter.ts`'s Phase 40 verification set. Still
+outstanding: opening a real exported `.html` file in a browser to confirm
+it renders correctly end-to-end (styling, images, in-page chapter links) —
+not exercised here since it needs an actual manuscript with images loaded,
+which this sandbox has no project data to generate from.
+
 ## Recommended next task
-Manually verify Phase 41's export-readiness gate (see caveat above), and
-Phase 40's EPUB export in a real e-reader. Phase D's remaining open items —
-Kindle/MOBI export, HTML/web-book export, CMYK-aware export, real font
+Manually verify Phases 40/41/42's exports (EPUB in a real e-reader, the
+readiness gate's dialog behaviour, and the HTML export opened in a
+browser). Phase D's remaining open items — Kindle/MOBI export (likely
+low-priority, see Phase 40's note), CMYK-aware export, real font
 subsetting (blocked in this environment) — are all either lower-priority or
-environment-blocked; moving on to Phase E next (theme gallery, custom theme
-editor, dedicated cover/back-cover designer), per the user's "keep working
-until C, D, E are complete" directive.
+environment-blocked. Phase D is otherwise complete. Moving on to Phase E
+next (theme gallery, custom theme editor, dedicated cover/back-cover
+designer), per the user's "keep working until C, D, E are complete"
+directive.

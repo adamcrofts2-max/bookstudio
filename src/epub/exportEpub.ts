@@ -45,10 +45,11 @@ function xhtmlDocument(title: string, bodyHtml: string): Uint8Array {
 }
 
 /** Collects every image asset id referenced anywhere in the book (chapter
- * blocks + front-/back-matter structural pages) so `exportEpub` can fetch
- * and embed each one exactly once, before any XHTML referencing it is
- * generated. */
-function collectImageAssetIds(manuscript: Manuscript, structuralPages: StructuralPage[]): string[] {
+ * blocks + front-/back-matter structural pages) so `exportEpub`/
+ * `exportHtmlBook` can fetch and embed each one exactly once, before any
+ * XHTML referencing it is generated. Exported so the single-file HTML
+ * exporter can reuse it instead of duplicating this scan. */
+export function collectImageAssetIds(manuscript: Manuscript, structuralPages: StructuralPage[]): string[] {
   const ids = new Set<string>()
   for (const chapter of manuscript.chapters) {
     for (const block of chapter.blocks) {

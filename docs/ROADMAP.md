@@ -156,7 +156,7 @@ daily use of everything built so far.)*
 - [ ] Kindle / MOBI export — worth confirming priority first: Amazon's KDP
       pipeline now primarily ingests EPUB and converts it internally, so a
       separate legacy MOBI writer may not be worth building
-- [ ] HTML / web-book export
+- [x] HTML / web-book export — see STATUS.md Phase 42
 - [x] ISBN + barcode field and placement — already shipped as dedicated
       `isbn-page`/`barcode` structural page types (Phase 21) with real PDF
       rendering, and now also EPUB export (Phase 40, ISBN as text — a

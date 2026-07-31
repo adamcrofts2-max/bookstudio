@@ -16,6 +16,7 @@ import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { useExportEpub } from '@/epub/useExportEpub'
+import { useExportHtmlBook } from '@/epub/useExportHtmlBook'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
@@ -55,7 +56,7 @@ export function Toolbar({ project }: ToolbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
-  const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | null>(null)
+  const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
   const { resolved, setAppearance } = useTheme()
   const collapsed = useUiStore((s) => s.sidebarCollapsed)
   const toggleSidebar = useUiStore((s) => s.toggleSidebar)
@@ -65,26 +66,29 @@ export function Toolbar({ project }: ToolbarProps) {
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
   const { canExport: canExportEpub, busy: exportingEpub, error: epubExportError, runExport: runExportEpub } = useExportEpub(project)
+  const { canExport: canExportHtml, busy: exportingHtml, runExport: runExportHtml } = useExportHtmlBook(project)
   const { findings: readinessFindings, hasBlockingIssues } = useExportReadiness(project)
 
-  /** Gate for both "Export PDF" and "Export EPUB": if the readiness check
+  /** Gate for "Export PDF"/"Export EPUB"/"Export HTML": if the readiness check
    * (Amazon KDP/IngramSpark-style print/commercial-quality rules — see
    * `virtualEditor/exportReadiness.ts`) has anything blocking, show the
    * confirmation dialog instead of exporting immediately. Never a hard
    * block — "Export anyway" in the dialog always proceeds. */
-  const handleExportClick = (format: 'pdf' | 'epub') => {
+  const handleExportClick = (format: 'pdf' | 'epub' | 'html') => {
     if (hasBlockingIssues) {
       setPendingExportFormat(format)
       setReadinessOpen(true)
       return
     }
     if (format === 'pdf') void runExport()
-    else void runExportEpub()
+    else if (format === 'epub') void runExportEpub()
+    else void runExportHtml()
   }
 
   const handleExportAnyway = () => {
     if (pendingExportFormat === 'pdf') void runExport()
     else if (pendingExportFormat === 'epub') void runExportEpub()
+    else if (pendingExportFormat === 'html') void runExportHtml()
   }
   const canUndo = useHistoryStore((s) => s.canUndo(project.id))
   const canRedo = useHistoryStore((s) => s.canRedo(project.id))
@@ -167,22 +171,30 @@ export function Toolbar({ project }: ToolbarProps) {
                   <Button
                     variant="primary"
                     size="sm"
-                    disabled={(!canExport && !canExportEpub) || exporting || exportingEpub}
+                    disabled={(!canExport && !canExportEpub && !canExportHtml) || exporting || exportingEpub || exportingHtml}
                     className="gap-1.5"
                   >
-                    {exporting || exportingEpub ? (
+                    {exporting || exportingEpub || exportingHtml ? (
                       <Loader2 className="size-3.5 animate-spin" />
                     ) : (
                       <Download className="size-3.5" />
                     )}
-                    {exporting ? 'Exporting PDF…' : exportingEpub ? 'Exporting EPUB…' : 'Export'}
+                    {exporting
+                      ? 'Exporting PDF…'
+                      : exportingEpub
+                        ? 'Exporting EPUB…'
+                        : exportingHtml
+                          ? 'Exporting HTML…'
+                          : 'Export'}
                     <ChevronDown className="size-3.5" />
                   </Button>
                 </DropdownMenuTrigger>
               </span>
             </TooltipTrigger>
             <TooltipContent>
-              {canExport || canExportEpub ? (exportError ?? epubExportError ?? 'Choose a format to export') : 'Import a manuscript first'}
+              {canExport || canExportEpub || canExportHtml
+                ? (exportError ?? epubExportError ?? 'Choose a format to export')
+                : 'Import a manuscript first'}
             </TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end">
@@ -191,6 +203,9 @@ export function Toolbar({ project }: ToolbarProps) {
             </DropdownMenuItem>
             <DropdownMenuItem disabled={!canExportEpub || exportingEpub} onSelect={() => handleExportClick('epub')}>
               Export EPUB — reflowable ebook
+            </DropdownMenuItem>
+            <DropdownMenuItem disabled={!canExportHtml || exportingHtml} onSelect={() => handleExportClick('html')}>
+              Export HTML — single-file web book
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -214,7 +229,7 @@ export function Toolbar({ project }: ToolbarProps) {
         open={readinessOpen}
         onOpenChange={setReadinessOpen}
         findings={readinessFindings}
-        formatLabel={pendingExportFormat === 'epub' ? 'the EPUB' : 'the PDF'}
+        formatLabel={pendingExportFormat === 'epub' ? 'the EPUB' : pendingExportFormat === 'html' ? 'the HTML' : 'the PDF'}
         onExportAnyway={handleExportAnyway}
       />
     </header>
