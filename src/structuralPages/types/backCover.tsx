@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Book } from 'lucide-react'
-import { rgb } from 'pdf-lib'
 
 import type { StructuralPage } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
@@ -14,11 +13,19 @@ import {
   CoverImageUploadButton,
   CoverFocalPointPicker,
   CoverSafeZoneGuide,
+  FieldVisibilityToggle,
 } from '@/structuralPages/shared'
 import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY, COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
 import { computeCoverImageScreenStyle, computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
 import { computeCoverOverlayScreenStyle, drawCoverOverlayPdf } from '@/structuralPages/coverOverlay'
-import { resolveCoverFontFamily, resolveCoverSizeScale, resolveCoverWeight } from '@/structuralPages/coverTypography'
+import {
+  resolveCoverFontFamily,
+  resolveCoverSizeScale,
+  resolveCoverWeight,
+  resolveCoverColor,
+  resolveCoverSecondaryColor,
+} from '@/structuralPages/coverTypography'
+import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
 import { splitParagraphs } from '@/structuralPages/longForm'
 import { useAssetStore } from '@/store/assetStore'
 import { useUiStore } from '@/store/uiStore'
@@ -56,8 +63,6 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
   if (page.type !== 'back-cover') return null
 
   const imageUrl = page.content.imageAssetId ? getObjectUrl(page.content.imageAssetId) : undefined
-  const ink = imageUrl ? '#ffffff' : theme.page.ink
-  const mutedInk = imageUrl ? 'rgba(255,255,255,0.85)' : theme.page.mutedInk
   const paragraphs = splitParagraphs(page.content.blurb ?? '')
   const committedNudge = page.content.verticalNudge ?? 0
   const effectiveNudge = liveNudge ?? committedNudge
@@ -68,6 +73,12 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
   const blurbFontFamily = resolveCoverFontFamily(typography, theme.fonts.body)
   const blurbWeight = resolveCoverWeight(typography, 400)
   const blurbSizeScale = resolveCoverSizeScale(typography)
+  // Same override-wins, else-automatic rule as `cover.tsx` — Phase 49.
+  const ink = resolveCoverColor(typography, imageUrl ? '#ffffff' : theme.page.ink)
+  const mutedInk = resolveCoverSecondaryColor(typography, imageUrl ? 'rgba(255,255,255,0.85)' : theme.page.mutedInk)
+  const hiddenFields = page.content.hiddenFields
+  const blurbHidden = isFieldHidden(hiddenFields, 'blurb')
+  const authorBioHidden = isFieldHidden(hiddenFields, 'authorBio')
 
   return (
     <div
@@ -107,44 +118,71 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         </div>
       )}
       {showSafeZone && <CoverSafeZoneGuide pageBox={pageBox} />}
-      <div
-        className="absolute inset-0 flex flex-col gap-4 px-16 py-24"
-        style={{
-          justifyContent: layoutStyle.justifyContent,
-          paddingTop: layoutStyle.paddingTop,
-          paddingBottom: layoutStyle.paddingBottom,
-          transform: `translateY(${layoutStyle.translateYPx}px)`,
-        }}
-      >
-        {selected && (
-          <CoverNudgeHandle
-            value={committedNudge}
-            onLiveChange={setLiveNudge}
-            onCommitFinal={(value) => {
-              setLiveNudge(null)
-              onCommit({ verticalNudge: value })
-            }}
-          />
-        )}
-        {(paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]).map((paragraph, i) => (
+      {!(blurbHidden && !selected) && (
+        <div
+          className="absolute inset-0 flex flex-col gap-4 px-16 py-24"
+          style={{
+            justifyContent: layoutStyle.justifyContent,
+            paddingTop: layoutStyle.paddingTop,
+            paddingBottom: layoutStyle.paddingBottom,
+            transform: `translateY(${layoutStyle.translateYPx}px)`,
+          }}
+        >
+          {selected && (
+            <div className="mx-auto flex items-center gap-2">
+              <FieldVisibilityToggle
+                hidden={blurbHidden}
+                label="Back-cover copy"
+                onToggle={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'blurb') })}
+              />
+              {!blurbHidden && (
+                <CoverNudgeHandle
+                  value={committedNudge}
+                  onLiveChange={setLiveNudge}
+                  onCommitFinal={(value) => {
+                    setLiveNudge(null)
+                    onCommit({ verticalNudge: value })
+                  }}
+                />
+              )}
+            </div>
+          )}
+          {(paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]).map((paragraph, i) => (
+            <p
+              key={i}
+              style={{
+                fontFamily: blurbFontFamily,
+                fontWeight: blurbWeight,
+                fontSize: `${1.05 * blurbSizeScale}em`,
+                lineHeight: theme.typography.lineHeight,
+                color: ink,
+                fontStyle: blurbHidden ? 'italic' : paragraphs.length > 0 ? (typography?.italic ? 'italic' : 'normal') : 'italic',
+                opacity: blurbHidden ? 0.45 : 1,
+              }}
+            >
+              {paragraph}
+            </p>
+          ))}
+        </div>
+      )}
+      {(page.content.authorBio || !imageUrl) && !(authorBioHidden && !selected) && (
+        <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 px-16 pb-14">
+          {selected && (
+            <FieldVisibilityToggle
+              hidden={authorBioHidden}
+              label="Author bio"
+              onToggle={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'authorBio') })}
+            />
+          )}
           <p
-            key={i}
             style={{
-              fontFamily: blurbFontFamily,
-              fontWeight: blurbWeight,
-              fontSize: `${1.05 * blurbSizeScale}em`,
-              lineHeight: theme.typography.lineHeight,
-              color: ink,
-              fontStyle: paragraphs.length > 0 ? (typography?.italic ? 'italic' : 'normal') : 'italic',
+              fontFamily: theme.fonts.body,
+              fontSize: '0.78em',
+              color: mutedInk,
+              fontStyle: 'italic',
+              opacity: authorBioHidden ? 0.45 : 1,
             }}
           >
-            {paragraph}
-          </p>
-        ))}
-      </div>
-      {(page.content.authorBio || !imageUrl) && (
-        <div className="absolute inset-x-0 bottom-0 px-16 pb-14">
-          <p style={{ fontFamily: theme.fonts.body, fontSize: '0.78em', color: mutedInk, fontStyle: 'italic' }}>
             {page.content.authorBio}
           </p>
         </div>
@@ -195,10 +233,14 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
     })
   }
 
-  const ink = hasImage ? rgb(1, 1, 1) : hexToPdfColor(theme.page.ink)
-  const mutedInk = hasImage ? rgb(0.9, 0.9, 0.9) : hexToPdfColor(theme.page.mutedInk)
-
   const typography = page.content.typography
+  // Same override-wins, else-automatic rule as `cover.tsx` — Phase 49.
+  const ink = hexToPdfColor(resolveCoverColor(typography, hasImage ? '#ffffff' : theme.page.ink))
+  const mutedInk = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e6e6e6' : theme.page.mutedInk))
+  const hiddenFields = page.content.hiddenFields
+  const blurbHidden = isFieldHidden(hiddenFields, 'blurb')
+  const authorBioHidden = isFieldHidden(hiddenFields, 'authorBio')
+
   const blurbFontFamily = resolveCoverFontFamily(typography, theme.fonts.body)
   const blurbWeight = resolveCoverWeight(typography, 400)
   const blurbSizeScale = resolveCoverSizeScale(typography)
@@ -234,14 +276,19 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
         // `blockCount`, so an empty blurb — 0 real paragraphs — still
         // centres at `mediaHeightPt / 2` exactly as before this milestone).
         mediaHeightPt / 2 + (paragraphs.length * lineHeight) / 2 + (page.content.verticalNudge ?? 0) * COVER_NUDGE_RANGE_PX * PX_TO_PT
-  const drawCtx: DrawCtx = { ...ctx, contentX, contentWidthPt, cursorY: startCursorY }
-  for (const paragraph of paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]) {
-    const lines = wrapRuns([{ text: paragraph, bold: false }], bodyFont, bodyFont, bodySize, contentWidthPt)
-    drawWrappedLines(drawCtx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont)
-    drawCtx.cursorY -= lineHeight * 0.5
+  // No `BLURB_PLACEHOLDER` fallback here (fixed Phase 49) — same reasoning
+  // as `cover.tsx`'s title fix: that placeholder is an on-screen-only
+  // editing cue, never something a real export should print literally.
+  if (!blurbHidden && paragraphs.length > 0) {
+    const drawCtx: DrawCtx = { ...ctx, contentX, contentWidthPt, cursorY: startCursorY }
+    for (const paragraph of paragraphs) {
+      const lines = wrapRuns([{ text: paragraph, bold: false }], bodyFont, bodyFont, bodySize, contentWidthPt)
+      drawWrappedLines(drawCtx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont)
+      drawCtx.cursorY -= lineHeight * 0.5
+    }
   }
 
-  if (page.content.authorBio) {
+  if (page.content.authorBio && !authorBioHidden) {
     const bioFont = pickFont(ctx.fonts, theme.fonts.body, 400)
     const bioSize = theme.typography.bodySize * 0.78 * PX_TO_PT
     const bioY = bleedPt + pageBox.marginBottomPx * PX_TO_PT + bioSize

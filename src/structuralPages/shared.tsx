@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { GripVertical, ImagePlus, Crosshair } from 'lucide-react'
+import { GripVertical, ImagePlus, Crosshair, Eye, EyeOff } from 'lucide-react'
 
 import { useEditableField } from '@/blocks/shared'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -74,6 +74,66 @@ export function EditableText({ value, placeholder, onCommit, as: Tag = 'p', clas
     >
       {!field.isEditing ? value || placeholder : null}
     </Tag>
+  )
+}
+
+interface FieldVisibilityToggleProps {
+  hidden: boolean
+  label: string
+  onToggle: () => void
+}
+
+/**
+ * Small eye/eye-off pill that hides or shows one Cover/Back Cover text
+ * field for a photo-only look — Phase 49. Only ever rendered while the
+ * page is selected (same gating as `CoverNudgeHandle`); hiding a field
+ * never clears its text, only whether it's drawn on screen/PDF (see
+ * `coverVisibility.ts`).
+ */
+export function FieldVisibilityToggle({ hidden, label, onToggle }: FieldVisibilityToggleProps) {
+  return (
+    <button
+      type="button"
+      aria-label={hidden ? `Show ${label.toLowerCase()}` : `Hide ${label.toLowerCase()} (use just the photo)`}
+      title={hidden ? `Show ${label.toLowerCase()}` : `Hide ${label.toLowerCase()} — use just the photo`}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/45 text-white shadow-[var(--shadow-sm)] backdrop-blur-sm transition-colors hover:bg-black/65"
+    >
+      {hidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+    </button>
+  )
+}
+
+interface HideableTextFieldProps extends EditableTextProps {
+  hidden: boolean
+  /** Whether the parent page is currently selected — an unselected,
+   * hidden field renders nothing at all (matching the real exported
+   * look exactly); selected shows it dimmed plus the toggle, so hiding a
+   * field is never a silent, unrecoverable-looking action. */
+  selected: boolean
+  onToggleHidden: () => void
+  /** Human label for the toggle button's tooltip, e.g. "Subtitle". */
+  fieldLabel: string
+}
+
+/**
+ * `EditableText` plus a per-field show/hide toggle (Phase 49) — used for
+ * Cover's title/subtitle/author. Deliberately a thin wrapper rather than
+ * baking visibility into `EditableText` itself: most of this component's
+ * callers (every other structural-page field) have no concept of
+ * per-field visibility at all.
+ */
+export function HideableTextField({ hidden, selected, onToggleHidden, fieldLabel, style, ...editableProps }: HideableTextFieldProps) {
+  if (hidden && !selected) return null
+
+  return (
+    <div className="flex items-center justify-center gap-2">
+      {selected && <FieldVisibilityToggle hidden={hidden} label={fieldLabel} onToggle={onToggleHidden} />}
+      <EditableText {...editableProps} style={hidden ? { ...style, opacity: 0.45, fontStyle: 'italic' } : style} />
+    </div>
   )
 }
 

@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { BookImage } from 'lucide-react'
-import { rgb } from 'pdf-lib'
 
 import type { StructuralPage } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
@@ -9,7 +8,7 @@ import type { DrawCtx } from '@/pdf/exportPdf'
 import type { StructuralPageRenderProps, StructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { outlineClass } from '@/blocks/shared'
 import {
-  EditableText,
+  HideableTextField,
   StructuralImageDropZone,
   CoverNudgeHandle,
   CoverImageUploadButton,
@@ -19,7 +18,14 @@ import {
 import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY } from '@/structuralPages/coverLayout'
 import { computeCoverImageScreenStyle, computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
 import { computeCoverOverlayScreenStyle, drawCoverOverlayPdf, DEFAULT_OVERLAY_OPACITY } from '@/structuralPages/coverOverlay'
-import { resolveCoverFontFamily, resolveCoverSizeScale, resolveCoverWeight } from '@/structuralPages/coverTypography'
+import {
+  resolveCoverFontFamily,
+  resolveCoverSizeScale,
+  resolveCoverWeight,
+  resolveCoverColor,
+  resolveCoverSecondaryColor,
+} from '@/structuralPages/coverTypography'
+import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
 import { useAssetStore } from '@/store/assetStore'
 import { useUiStore } from '@/store/uiStore'
 import { getAssetBlob } from '@/store/assetDb'
@@ -48,9 +54,6 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
   if (page.type !== 'cover') return null
 
   const imageUrl = page.content.imageAssetId ? getObjectUrl(page.content.imageAssetId) : undefined
-  const ink = imageUrl ? '#ffffff' : theme.page.ink
-  const mutedInk = imageUrl ? 'rgba(255,255,255,0.88)' : theme.page.mutedInk
-  const accent = imageUrl ? 'rgba(255,255,255,0.82)' : theme.page.accent
   const committedNudge = page.content.verticalNudge ?? 0
   const effectiveNudge = liveNudge ?? committedNudge
   const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
@@ -60,6 +63,16 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
   const titleFontFamily = resolveCoverFontFamily(typography, theme.fonts.heading)
   const titleWeight = resolveCoverWeight(typography, theme.typography.headingWeight)
   const titleSizeScale = resolveCoverSizeScale(typography)
+  // Colour: an explicit override always wins; absent falls back to the
+  // pre-existing automatic rule (white on a photo, theme colours
+  // otherwise) exactly as before Phase 49.
+  const ink = resolveCoverColor(typography, imageUrl ? '#ffffff' : theme.page.ink)
+  const mutedInk = resolveCoverSecondaryColor(typography, imageUrl ? 'rgba(255,255,255,0.88)' : theme.page.mutedInk)
+  const accent = resolveCoverSecondaryColor(typography, imageUrl ? 'rgba(255,255,255,0.82)' : theme.page.accent)
+  const hiddenFields = page.content.hiddenFields
+  const titleHidden = isFieldHidden(hiddenFields, 'title')
+  const subtitleHidden = isFieldHidden(hiddenFields, 'subtitle')
+  const authorHidden = isFieldHidden(hiddenFields, 'author')
 
   return (
     <div
@@ -120,11 +133,15 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
             }}
           />
         )}
-        <EditableText
+        <HideableTextField
           as="h1"
           value={page.content.title ?? ''}
           placeholder="Untitled"
           onCommit={(value) => onCommit({ title: value || undefined })}
+          hidden={titleHidden}
+          selected={selected}
+          fieldLabel="Title"
+          onToggleHidden={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'title') })}
           style={{
             fontFamily: titleFontFamily,
             fontWeight: titleWeight,
@@ -134,16 +151,24 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
             color: ink,
           }}
         />
-        <EditableText
+        <HideableTextField
           value={page.content.subtitle ?? ''}
           placeholder="Add a subtitle…"
           onCommit={(value) => onCommit({ subtitle: value || undefined })}
+          hidden={subtitleHidden}
+          selected={selected}
+          fieldLabel="Subtitle"
+          onToggleHidden={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'subtitle') })}
           style={{ fontFamily: theme.fonts.body, fontSize: '1.15em', color: mutedInk }}
         />
-        <EditableText
+        <HideableTextField
           value={page.content.author ?? ''}
           placeholder="Add an author name…"
           onCommit={(value) => onCommit({ author: value || undefined })}
+          hidden={authorHidden}
+          selected={selected}
+          fieldLabel="Author"
+          onToggleHidden={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'author') })}
           style={{
             fontFamily: theme.fonts.body,
             fontSize: '1em',
@@ -196,11 +221,21 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
     })
   }
 
-  const ink = hasImage ? rgb(1, 1, 1) : hexToPdfColor(theme.page.ink)
-  const mutedInk = hasImage ? rgb(0.92, 0.92, 0.92) : hexToPdfColor(theme.page.mutedInk)
-  const accent = hasImage ? rgb(0.88, 0.88, 0.88) : hexToPdfColor(theme.page.accent)
-
   const typography = page.content.typography
+  // Same override-wins, else-automatic rule as the on-screen renderer —
+  // see `cover.tsx`'s `CoverRender` for the shared reasoning. The
+  // automatic fallbacks below are solid-colour hex approximations of the
+  // screen version's translucent whites (PDF text has no alpha blending
+  // here), matching the pre-existing `rgb(0.92,0.92,0.92)`/
+  // `rgb(0.88,0.88,0.88)` values exactly when nothing is overridden.
+  const ink = hexToPdfColor(resolveCoverColor(typography, hasImage ? '#ffffff' : theme.page.ink))
+  const mutedInk = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#ebebeb' : theme.page.mutedInk))
+  const accent = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e0e0e0' : theme.page.accent))
+  const hiddenFields = page.content.hiddenFields
+  const titleHidden = isFieldHidden(hiddenFields, 'title')
+  const subtitleHidden = isFieldHidden(hiddenFields, 'subtitle') || !page.content.subtitle
+  const authorHidden = isFieldHidden(hiddenFields, 'author') || !page.content.author
+
   const titleFontFamily = resolveCoverFontFamily(typography, theme.fonts.heading)
   const titleWeight = resolveCoverWeight(typography, theme.typography.headingWeight)
   const titleSizeScale = resolveCoverSizeScale(typography)
@@ -208,17 +243,23 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
     ? pickItalicFont(ctx.fonts, titleFontFamily, titleWeight)
     : pickFont(ctx.fonts, titleFontFamily, titleWeight)
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
-  const title = page.content.title || 'Untitled'
+  // No "Untitled" fallback here (fixed Phase 49) — that placeholder is an
+  // on-screen-only editing cue (see `EditableText`'s own `placeholder`
+  // prop); a real export must never print literal placeholder text for a
+  // field the author left blank on purpose (e.g. a deliberately photo-only
+  // cover).
+  const title = titleHidden ? '' : (page.content.title ?? '').trim()
   const titleSize = theme.typography.bodySize * 2.2 * titleSizeScale * PX_TO_PT
-  const titleWidth = titleFont.widthOfTextAtSize(title, titleSize)
+  const titleWidth = title ? titleFont.widthOfTextAtSize(title, titleSize) : 0
   const centerX = mediaWidthPt / 2
 
   // Same vertical distance the subtitle/author gaps below actually use —
   // precomputed so `computeCoverLayoutCursorY`'s 'bottom' preset can anchor
-  // the *last* line near the bottom margin rather than the title.
+  // the *last* line near the bottom margin rather than the title. A hidden
+  // field reserves no space, same as one that was never filled in.
   let totalSpanPt = 0
-  if (page.content.subtitle) totalSpanPt += titleSize * 1.5
-  if (page.content.author) totalSpanPt += theme.typography.bodySize * 2.4 * PX_TO_PT
+  if (!subtitleHidden) totalSpanPt += titleSize * 1.5
+  if (!authorHidden) totalSpanPt += theme.typography.bodySize * 2.4 * PX_TO_PT
 
   let cursorY = computeCoverLayoutCursorY({
     layout: page.content.layout,
@@ -228,16 +269,18 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
     nudge: page.content.verticalNudge,
     pxToPt: PX_TO_PT,
   })
-  ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink })
+  if (title) {
+    ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink })
+  }
 
-  if (page.content.subtitle) {
+  if (!subtitleHidden && page.content.subtitle) {
     cursorY -= titleSize * 1.5
     const subSize = theme.typography.bodySize * 1.15 * PX_TO_PT
     const subWidth = bodyFont.widthOfTextAtSize(page.content.subtitle, subSize)
     ctx.page.drawText(page.content.subtitle, { x: centerX - subWidth / 2, y: cursorY, size: subSize, font: bodyFont, color: mutedInk })
   }
 
-  if (page.content.author) {
+  if (!authorHidden && page.content.author) {
     cursorY -= theme.typography.bodySize * 2.4 * PX_TO_PT
     const authorSize = theme.typography.bodySize * PX_TO_PT
     const authorWidth = bodyFont.widthOfTextAtSize(page.content.author, authorSize)

@@ -3615,14 +3615,88 @@ placeholder in the manuscript and confirm it's listed as a blocking
 (critical) finding that links back to the exact block; resolve it (change
 the block to real content or delete it) and confirm the finding clears.
 
+## Phase 49 — Cover/Back Cover: text visibility + colour (2026-07-31)
+
+The user shared four real published-book cover mockups and asked for two
+concrete things the designer couldn't do yet: hide the title/subtitle/
+author (or blurb/author-bio) entirely for a photo-only cover, and control
+font colour rather than the fixed automatic white-on-photo/theme-ink
+rule. Researching the ask surfaced two real export bugs along the way,
+both fixed in the same pass (see below).
+
+- **`src/types/structuralPage.ts`**: `CoverTextFieldId = 'title' |
+  'subtitle' | 'author'`, `BackCoverTextFieldId = 'blurb' | 'authorBio'`;
+  `hiddenFields?: CoverTextFieldId[]` / `BackCoverTextFieldId[]` added to
+  `CoverPage.content`/`BackCoverPage.content`. `CoverTypographyOverride`
+  gains `color?: string` (title/blurb) and `secondaryColor?: string`
+  (subtitle/author/author-bio, one shared override rather than three
+  separate pickers — matches the app's existing ink/mutedInk two-tier
+  model). Absent/empty reproduces every pre-existing project's exact
+  current look — no migration.
+- **`src/structuralPages/coverVisibility.ts`** (new): `isFieldHidden`/
+  `toggleHiddenField` — hiding a field never clears its stored text, only
+  whether it's drawn; switching it back on restores it unchanged.
+- **`src/structuralPages/coverTypography.ts`**: `resolveCoverColor`/
+  `resolveCoverSecondaryColor` — override-wins-else-automatic-fallback,
+  same shape as the existing `resolveCoverFontFamily`/`resolveCoverWeight`.
+- **`src/structuralPages/shared.tsx`**: `FieldVisibilityToggle` (small
+  eye/eye-off pill, only rendered while the page is selected — same
+  gating as `CoverNudgeHandle`) and `HideableTextField` (wraps
+  `EditableText` with the toggle; a hidden-and-unselected field renders
+  nothing at all, matching the real exported look exactly; hidden-and-
+  selected shows it dimmed + italic so hiding is never a silent,
+  unrecoverable-looking action).
+- **`src/structuralPages/types/cover.tsx`**: title/subtitle/author now use
+  `HideableTextField`; colours resolved via `resolveCoverColor`/
+  `resolveCoverSecondaryColor` on both the on-screen renderer and
+  `drawCoverPdf`. **Bug fix**: `drawCoverPdf` previously fell back to the
+  literal string `'Untitled'` when the title was empty — that was always
+  an on-screen-only editing placeholder (`EditableText`'s `placeholder`
+  prop), never something a real export should print; a true photo-only
+  cover would otherwise have shipped with "Untitled" baked into the PDF.
+  Fixed to draw nothing when the title is hidden or genuinely blank.
+- **`src/structuralPages/types/backCover.tsx`**: same treatment for
+  `blurb`/`authorBio`, plus the exact same class of bug fix —
+  `BLURB_PLACEHOLDER` ("Add back-cover copy — a short, compelling
+  summary…") was previously drawn as literal PDF text when the blurb was
+  empty; now only ever shown on screen as an editing cue, never exported.
+- **`src/layout/inspector/StructuralPagePanel.tsx`**: `CoverTypographyPanel`
+  gains two `<input type="color">` swatches (reusing the exact pattern
+  `CustomThemeEditorDialog.tsx` already uses) with a "Reset" button that
+  clears back to automatic; new `FieldVisibilitySwitch` component mirrors
+  the on-canvas eye toggle as a `Switch` next to each Title/Subtitle/
+  Author/Blurb/Author-bio field, for users who don't spot the small
+  on-page icon.
+- EPUB export needed no changes — it embeds the raw cover image asset
+  only (`exportEpub.ts`'s `properties="cover-image"`), never a
+  text-composited render, so text visibility/colour has no EPUB-side
+  effect to wire up.
+
+### Verification caveat
+`node node_modules/typescript/bin/tsc -b --force` clean (28.8s; direct
+node invocation used this session after `npx tsc -b` repeatedly hit this
+sandbox's 45s tool timeout on triggering — same compiler, just skips
+npm's package-resolution overhead). Manually verify once pushed: hide the
+Cover's subtitle via the on-canvas eye icon, confirm it disappears from
+the live preview and the exported PDF, and that re-showing it restores
+the exact original text; set a custom title colour and confirm it applies
+on screen and in the PDF; reset it and confirm the automatic white-on-
+photo behaviour returns; do the same blurb-hide/colour check on the Back
+Cover; confirm a cover with an empty, non-hidden title exports with no
+text at all (no more literal "Untitled"); open a project saved before
+this phase and confirm its Cover/Back Cover render pixel-identical to
+before (no `hiddenFields`/`color`/`secondaryColor` in its stored content).
+
 ## Recommended next task
-Both halves of the original "notes + placeholders" request (Phases 47–48)
-are now shipped. Phase E is complete except three items needing
-infrastructure this client-only app doesn't have (documented as
-deliberately deferred in `docs/ROADMAP.md`): stock image library
-integration, AI image generation, and a community template gallery — all
-three need a real backend/third-party API. The next natural task is
-Phase F's remaining items (project-creation wizard, outlining templates,
-word-count goals, distraction-free writing mode) or Phase G — check
-`docs/ROADMAP.md` for the current highest-priority unchecked phase before
-starting.
+The two concrete asks from the user's cover-mockup review (text
+visibility, font colour) are shipped. Two related ideas surfaced during
+that conversation and were deliberately deferred rather than built into
+this pass: a "cover accessories" feature (decorative badge/seal + an icon
+feature-strip band, seen on the real covers the user shared — a new kind
+of overlay element, not a property on an existing field) and wiring up
+additional cover font families once the user drops `.woff2` files into
+`public/fonts/custom/` (blocked on that, not on any remaining code work —
+see that folder's README for the ~15-minute wiring checklist once files
+exist). Absent further direction on either, Phase F's remaining items
+(project-creation wizard, outlining templates, word-count goals,
+distraction-free writing mode) are next per `docs/ROADMAP.md`.

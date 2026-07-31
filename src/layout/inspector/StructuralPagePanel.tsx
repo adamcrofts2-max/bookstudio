@@ -23,7 +23,16 @@ import { updatePageContentWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { COVER_LAYOUT_OPTIONS } from '@/structuralPages/coverLayout'
 import { computeSpineWidthIn, PAPER_TYPE_LABELS, MIN_PAGE_COUNT_FOR_SPINE_TEXT, type CoverPaperType } from '@/cover/spineWidth'
-import type { StructuralPage, CoverTextLayout, CoverOverlayStyle, CoverFontChoice, CoverTypographyOverride } from '@/types/structuralPage'
+import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
+import type {
+  StructuralPage,
+  CoverTextLayout,
+  CoverOverlayStyle,
+  CoverFontChoice,
+  CoverTypographyOverride,
+  CoverTextFieldId,
+  BackCoverTextFieldId,
+} from '@/types/structuralPage'
 
 interface StructuralPagePanelProps {
   projectId: string
@@ -177,6 +186,11 @@ function CoverTypographyPanel({
   const weight = typography?.weight
   const italic = typography?.italic ?? false
   const sizeScale = typography?.sizeScale ?? 1
+  // Same "leave it undefined until the user actually picks one" rule as
+  // `weight` above — an unset colour keeps the automatic white-on-photo/
+  // theme-colour behaviour exactly (Phase 49).
+  const color = typography?.color
+  const secondaryColor = typography?.secondaryColor
 
   function patchTypography(partial: Partial<CoverTypographyOverride>) {
     onChange({ ...typography, ...partial })
@@ -234,6 +248,78 @@ function CoverTypographyPanel({
           onChange={(e) => patchTypography({ sizeScale: Number(e.target.value) })}
           className="w-full accent-accent"
         />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Text colour</Label>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            aria-label="Title / blurb colour"
+            className="h-9 w-12 shrink-0 rounded-[var(--radius-control)] border border-border"
+            value={color ?? '#ffffff'}
+            onChange={(e) => patchTypography({ color: e.target.value })}
+          />
+          <p className="flex-1 text-xs text-text-secondary">
+            {color ? 'Custom colour' : 'Automatic — white on a photo, theme colour otherwise'}
+          </p>
+          {color && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => patchTypography({ color: undefined })}>
+              Reset
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label>Secondary text colour</Label>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            aria-label="Subtitle / author / bio colour"
+            className="h-9 w-12 shrink-0 rounded-[var(--radius-control)] border border-border"
+            value={secondaryColor ?? '#ffffff'}
+            onChange={(e) => patchTypography({ secondaryColor: e.target.value })}
+          />
+          <p className="flex-1 text-xs text-text-secondary">{secondaryColor ? 'Custom colour' : 'Automatic'}</p>
+          {secondaryColor && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => patchTypography({ secondaryColor: undefined })}>
+              Reset
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * "Show this on the cover" switch for one text field — mirrors the
+ * on-canvas eye-icon toggle (`FieldVisibilityToggle` in
+ * `structuralPages/shared.tsx`) so a user who doesn't want to hunt for the
+ * small on-page icon can flip the same setting here instead. Hiding never
+ * clears the field's own text/value. Phase 49.
+ */
+function FieldVisibilitySwitch<T extends CoverTextFieldId | BackCoverTextFieldId>({
+  id,
+  label,
+  field,
+  hiddenFields,
+  onChange,
+}: {
+  id: string
+  label: string
+  field: T
+  hiddenFields: T[] | undefined
+  onChange: (hiddenFields: T[]) => void
+}) {
+  const hidden = isFieldHidden(hiddenFields, field)
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-text-secondary">{hidden ? 'Hidden' : 'Shown'}</span>
+        <Switch id={id} checked={!hidden} onCheckedChange={() => onChange(toggleHiddenField(hiddenFields, field))} />
       </div>
     </div>
   )
@@ -349,6 +435,15 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               value={page.content.title ?? ''}
               onChange={(e) => patch({ title: e.target.value })}
             />
+            {page.type === 'cover' && (
+              <FieldVisibilitySwitch
+                id="structural-title-visible"
+                label="Show title"
+                field="title"
+                hiddenFields={page.content.hiddenFields}
+                onChange={(hiddenFields) => patch({ hiddenFields })}
+              />
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="structural-subtitle">Subtitle</Label>
@@ -358,6 +453,15 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               value={page.content.subtitle ?? ''}
               onChange={(e) => patch({ subtitle: e.target.value })}
             />
+            {page.type === 'cover' && (
+              <FieldVisibilitySwitch
+                id="structural-subtitle-visible"
+                label="Show subtitle"
+                field="subtitle"
+                hiddenFields={page.content.hiddenFields}
+                onChange={(hiddenFields) => patch({ hiddenFields })}
+              />
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="structural-author">Author</Label>
@@ -367,6 +471,15 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               value={page.content.author ?? ''}
               onChange={(e) => patch({ author: e.target.value })}
             />
+            {page.type === 'cover' && (
+              <FieldVisibilitySwitch
+                id="structural-author-visible"
+                label="Show author"
+                field="author"
+                hiddenFields={page.content.hiddenFields}
+                onChange={(hiddenFields) => patch({ hiddenFields })}
+              />
+            )}
           </div>
           {page.type === 'cover' && (
             <>
@@ -410,6 +523,13 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               value={page.content.blurb ?? ''}
               onChange={(e) => patch({ blurb: e.target.value })}
             />
+            <FieldVisibilitySwitch
+              id="structural-blurb-visible"
+              label="Show back-cover copy"
+              field="blurb"
+              hiddenFields={page.content.hiddenFields}
+              onChange={(hiddenFields) => patch({ hiddenFields })}
+            />
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="structural-back-cover-bio">Short author bio (optional)</Label>
@@ -418,6 +538,13 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               placeholder="One line about the author…"
               value={page.content.authorBio ?? ''}
               onChange={(e) => patch({ authorBio: e.target.value })}
+            />
+            <FieldVisibilitySwitch
+              id="structural-author-bio-visible"
+              label="Show author bio"
+              field="authorBio"
+              hiddenFields={page.content.hiddenFields}
+              onChange={(hiddenFields) => patch({ hiddenFields })}
             />
           </div>
           <p className="text-xs text-text-secondary">

@@ -25,3 +25,22 @@ export function resolveCoverSizeScale(typography: CoverTypographyOverride | unde
 export function resolveCoverWeight(typography: CoverTypographyOverride | undefined, defaultWeight: number): number {
   return typography?.weight ?? defaultWeight
 }
+
+/**
+ * Resolves the dominant text element's colour (Cover's title, Back
+ * Cover's blurb), honouring an optional override — same "absent means
+ * today's exact automatic behaviour" rule as the rest of this file.
+ * `fallback` is whatever the caller's own automatic rule already computed
+ * (white on a photo, theme ink otherwise) so this function stays a pure
+ * override resolver, not a second copy of that rule. Phase 49.
+ */
+export function resolveCoverColor(typography: CoverTypographyOverride | undefined, fallback: string): string {
+  return typography?.color ?? fallback
+}
+
+/** Same as `resolveCoverColor`, for every secondary text element (Cover's
+ * subtitle/author, Back Cover's author bio) — one shared override, see
+ * `CoverTypographyOverride.secondaryColor`'s doc comment for why. Phase 49. */
+export function resolveCoverSecondaryColor(typography: CoverTypographyOverride | undefined, fallback: string): string {
+  return typography?.secondaryColor ?? fallback
+}

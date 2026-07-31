@@ -219,6 +219,24 @@ daily use of everything built so far.)*
 - [x] `public/fonts/custom/` — a folder + README for dropping in more font
       files later (this sandbox has no network access to fetch new fonts
       itself); only Inter/Source Serif 4 are embedded today
+- [x] Cover/Back Cover: per-field text visibility (hide title/subtitle/
+      author or blurb/author-bio for a photo-only cover, without deleting
+      the text) + a title/blurb colour and a secondary subtitle/author/bio
+      colour override — shipped 2026-07-31 (Phase 49), prompted by real
+      published-cover examples the user shared. Also fixed two related
+      export bugs: the PDF previously printed a literal "Untitled"/blurb
+      placeholder string when those fields were left empty, which a
+      genuinely photo-only cover would otherwise have shipped with
+- [ ] Cover "accessories" — decorative badge/seal and an icon feature-strip
+      band (as seen on real published non-fiction covers) — a new kind of
+      overlay element, not a property on the existing title/subtitle/
+      author fields; scoped out of Phase 49 deliberately. Would reuse the
+      same colour/font system once built
+- [ ] More cover font families beyond Inter/Source Serif 4 — blocked on the
+      user dropping `.woff2` files into `public/fonts/custom/` (this
+      sandbox can't fetch fonts itself); wiring a dropped-in family into
+      `CoverFontChoice`/`pdf/fonts.ts`/the font picker is a small, ready-to-go
+      follow-up once files exist — see that folder's README
 - [ ] Stock image / illustration library integration — deferred: needs a
       real third-party stock-photo API + licensing/attribution handling this
       client-only architecture doesn't have yet

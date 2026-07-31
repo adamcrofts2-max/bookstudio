@@ -93,7 +93,34 @@ export interface CoverTypographyOverride {
    * Cover blurb's `1.05em`) — `1` or absent reproduces today's exact
    * size. */
   sizeScale?: number
+  /**
+   * Overrides the dominant text element's colour (Cover's title, Back
+   * Cover's blurb) — a `#rrggbb` hex string. Absent (the default)
+   * reproduces the pre-existing automatic behaviour exactly: white when a
+   * background photo is set, the book's theme ink colour otherwise. See
+   * `coverTypography.ts`'s `resolveCoverColor`. Phase 49.
+   */
+  color?: string
+  /**
+   * Same as `color`, but for every secondary text element (Cover's
+   * subtitle/author, Back Cover's author bio) — deliberately one shared
+   * override rather than three separate colour pickers, matching this
+   * app's existing ink/mutedInk two-tier colour model. Absent reproduces
+   * each field's own pre-existing automatic shade. Phase 49.
+   */
+  secondaryColor?: string
 }
+
+/**
+ * A Cover's individually-hideable text fields — lets a user who just wants
+ * a full-bleed photo hide the title/subtitle/author without deleting the
+ * text underneath (switching back on restores it exactly). Phase 49.
+ */
+export type CoverTextFieldId = 'title' | 'subtitle' | 'author'
+
+/** Same idea as `CoverTextFieldId`, for the Back Cover's two text
+ * elements. Phase 49. */
+export type BackCoverTextFieldId = 'blurb' | 'authorBio'
 
 export interface CoverPage extends BaseStructuralPage {
   type: 'cover'
@@ -120,6 +147,10 @@ export interface CoverPage extends BaseStructuralPage {
     /** `0..1`; absent means the pre-existing fixed `0.35`. */
     overlayOpacity?: number
     typography?: CoverTypographyOverride
+    /** Text fields hidden for a photo-only cover — see `CoverTextFieldId`.
+     * Absent/empty means everything shows, the pre-existing behaviour.
+     * Phase 49. */
+    hiddenFields?: CoverTextFieldId[]
   }
 }
 
@@ -238,6 +269,9 @@ export interface BackCoverPage extends BaseStructuralPage {
     overlayStyle?: CoverOverlayStyle
     overlayOpacity?: number
     typography?: CoverTypographyOverride
+    /** See `CoverPage.content.hiddenFields` — same idea, the Back Cover's
+     * own two text elements. Phase 49. */
+    hiddenFields?: BackCoverTextFieldId[]
   }
 }
 
