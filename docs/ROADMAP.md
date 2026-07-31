@@ -232,6 +232,15 @@ daily use of everything built so far.)*
 
 ## Phase F — Planning & Writing Tools
 
+- [x] Editorial notes — select any paragraph/block or structural page and
+      leave a note in the Inspector's "Notes" tab; shipped 2026-07-31
+      (Phase 47). A small badge on the block/page shows while it has
+      unresolved notes. Authoring-only — never exported to PDF/EPUB/HTML.
+      Not the same feature as Phase G's real-time collaboration comments
+      below (this is single-user, local, no sharing/permissions involved)
+- [ ] Placeholder content blocks ("photo goes here", with a short
+      description) so a draft can be laid out before every asset exists —
+      discussed with the user, not yet built
 - [ ] Project-creation wizard (genre/audience-driven starting template)
 - [ ] Outlining / story-structure templates
 - [ ] Word-count goals and writing-session tracking

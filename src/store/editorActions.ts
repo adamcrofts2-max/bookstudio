@@ -3,6 +3,8 @@ import { getAssetBlob } from '@/store/assetDb'
 import { useContentStore } from '@/store/contentStore'
 import { useHistoryStore } from '@/store/historyStore'
 import { useStructuralPageStore } from '@/store/structuralPageStore'
+import { useNotesStore, type Note } from '@/store/notesStore'
+import { generateId } from '@/utils'
 import type { ContentBlock } from '@/types/content'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 
@@ -404,5 +406,80 @@ export function updatePageContentWithHistory(
     'Edit page',
     () => useStructuralPageStore.getState().replacePageContent(projectId, pageId, oldPage.content),
     () => useStructuralPageStore.getState().updatePageContent(projectId, pageId, updates),
+  )
+}
+
+/**
+ * History-aware note actions (`notesStore.ts`). Notes are a side-channel
+ * annotation layer, not manuscript content, but "support undo/redo
+ * throughout the application" applies here exactly as it does everywhere
+ * else in this codebase — same reasoning, same `historyStore.record`
+ * pattern as every wrapper above.
+ */
+
+/** Creates a note on a block or a structural page (exactly one of
+ * `target.blockId`/`target.structuralPageId` should be set). Returns the
+ * new note's id. */
+export function addNoteWithHistory(
+  projectId: string,
+  target: { chapterId?: string; blockId?: string; structuralPageId?: string },
+  text: string,
+): string {
+  const now = new Date().toISOString()
+  const note: Note = { id: generateId('note'), ...target, text, resolved: false, createdAt: now, updatedAt: now }
+
+  useNotesStore.getState().addNote(projectId, note)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Add note',
+    () => useNotesStore.getState().deleteNote(projectId, note.id),
+    () => useNotesStore.getState().addNote(projectId, note),
+  )
+  return note.id
+}
+
+/** Edits a note's text — snapshots the old text so undo restores it
+ * exactly, same shape as `editBlock`/`updatePageContentWithHistory`
+ * above. Intended to be called once per edit session (e.g. on the note
+ * textarea's blur), not per keystroke, so one edit is one undo step. */
+export function updateNoteTextWithHistory(projectId: string, noteId: string, text: string): void {
+  const oldNote = useNotesStore.getState().getNotes(projectId).find((n) => n.id === noteId)
+  if (!oldNote || oldNote.text === text) return
+
+  useNotesStore.getState().updateNoteText(projectId, noteId, text)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Edit note',
+    () => useNotesStore.getState().updateNoteText(projectId, noteId, oldNote.text),
+    () => useNotesStore.getState().updateNoteText(projectId, noteId, text),
+  )
+}
+
+export function setNoteResolvedWithHistory(projectId: string, noteId: string, resolved: boolean): void {
+  useNotesStore.getState().setNoteResolved(projectId, noteId, resolved)
+
+  useHistoryStore.getState().record(
+    projectId,
+    resolved ? 'Resolve note' : 'Reopen note',
+    () => useNotesStore.getState().setNoteResolved(projectId, noteId, !resolved),
+    () => useNotesStore.getState().setNoteResolved(projectId, noteId, resolved),
+  )
+}
+
+/** Snapshots the full note before deleting so undo can re-`addNote` it back
+ * byte-for-byte, same pattern as `deleteBlockWithHistory`. */
+export function deleteNoteWithHistory(projectId: string, noteId: string): void {
+  const snapshot = useNotesStore.getState().getNotes(projectId).find((n) => n.id === noteId)
+  if (!snapshot) return
+
+  useNotesStore.getState().deleteNote(projectId, noteId)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Delete note',
+    () => useNotesStore.getState().addNote(projectId, snapshot),
+    () => useNotesStore.getState().deleteNote(projectId, noteId),
   )
 }

@@ -8,6 +8,7 @@ import { Trash2 } from 'lucide-react'
 import { BlockContent } from '@/renderer/BlockContent'
 import { BlockToolbar } from '@/renderer/BlockToolbar'
 import { PageToolbar } from '@/renderer/PageToolbar'
+import { NoteIndicatorBadge } from '@/renderer/NoteIndicatorBadge'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
 import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useSelectionStore } from '@/store/selectionStore'
@@ -187,6 +188,17 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
             }}
           />
         )}
+        {chapterId && !decorative && (
+          <NoteIndicatorBadge
+            projectId={projectId}
+            blockId={block.id}
+            className="absolute -top-3 left-2 z-10"
+            onClick={() => {
+              select(chapterId, block.id)
+              setInspectorTab('notes')
+            }}
+          />
+        )}
       </div>
     )
   }
@@ -330,6 +342,17 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               onDelete={() => {
                 deletePageWithHistory(projectId, structuralPage.id)
                 if (isStructuralPageSelected) clearSelection()
+              }}
+            />
+          )}
+          {!decorative && (
+            <NoteIndicatorBadge
+              projectId={projectId}
+              structuralPageId={structuralPage.id}
+              className="absolute left-2 top-2 z-10"
+              onClick={() => {
+                selectStructuralPage(structuralPage.id)
+                setInspectorTab('notes')
               }}
             />
           )}

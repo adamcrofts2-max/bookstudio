@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
 export type AppearanceMode = 'light' | 'dark' | 'system'
-export type InspectorTab = 'typography' | 'image' | 'page' | 'theme' | 'export' | 'book'
+export type InspectorTab = 'typography' | 'image' | 'page' | 'theme' | 'export' | 'book' | 'notes'
 export type BookViewMode = 'single' | 'spread'
 /** Which workspace the centre column shows. `manuscript` is the existing
  * book preview; `virtualEditor` is the new Editorial Dashboard — see

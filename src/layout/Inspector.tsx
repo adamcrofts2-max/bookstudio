@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { TypographyPanel } from '@/layout/inspector/TypographyPanel'
 import { ImagePanel } from '@/layout/inspector/ImagePanel'
 import { StructuralPagePanel } from '@/layout/inspector/StructuralPagePanel'
+import { NotesPanel } from '@/layout/inspector/NotesPanel'
 import type { Project } from '@/types'
 
 interface InspectorProps {
@@ -17,6 +18,7 @@ const TABS: { id: InspectorTab; label: string }[] = [
   { id: 'page', label: 'Page' },
   { id: 'typography', label: 'Type' },
   { id: 'image', label: 'Image' },
+  { id: 'notes', label: 'Notes' },
   { id: 'theme', label: 'Theme' },
 ]
 
@@ -71,6 +73,10 @@ export function Inspector({ project }: InspectorProps) {
 
           <TabsContent value="image">
             <ImagePanel projectId={project.id} />
+          </TabsContent>
+
+          <TabsContent value="notes" className="px-1">
+            <NotesPanel projectId={project.id} />
           </TabsContent>
 
           <TabsContent value="theme">

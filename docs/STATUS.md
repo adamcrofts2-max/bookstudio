@@ -3504,17 +3504,71 @@ view; open a project that predates this phase and confirm its Cover/Back
 Cover render pixel-identical to before (no `imageFocalPoint`/`overlayStyle`/
 `typography` in its stored content).
 
+## Phase 47 — Editorial notes (2026-07-31)
+
+The other half of a feature discussed with the user two turns before this
+one (the plan also covered placeholder content blocks — "photo goes here"
+with a description — which is still open, not built this phase; see
+`docs/ROADMAP.md` Phase F). Lets a user select any paragraph/block or
+structural page and leave a note about it in the Inspector, the same way
+Word/Google Docs comments work but simpler (no threading, no multi-user
+sharing — that's Phase G's separate, much bigger "real-time collaboration"
+item, not this).
+
+- **`src/store/notesStore.ts`** (new): a `persist`-backed Zustand store —
+  a new, additive "Annotations" side-channel, not part of `ContentBlock`/
+  `StructuralPage` (Layer 2). A `Note` references its target by id only
+  (`blockId`+`chapterId`, or `structuralPageId`), exactly the same pattern
+  `virtualEditor/types.ts`'s `Finding.location` already uses — never
+  mutates Content/Structural Page data, and is never read by PDF/EPUB/HTML
+  export (notes are an authoring aid, not book content). Multiple notes
+  can target the same block/page, each independently resolvable/
+  deletable/editable.
+- **`src/store/editorActions.ts`**: four new history-aware wrappers
+  (`addNoteWithHistory`, `updateNoteTextWithHistory`,
+  `setNoteResolvedWithHistory`, `deleteNoteWithHistory`), same
+  snapshot-before-mutate-then-`historyStore.record` shape as every other
+  wrapper in this file. Text edits commit on the note textarea's blur, not
+  per keystroke — one edit session is one undo step, same convention
+  `CoverNudgeHandle` established in Phase 45.
+- **`src/store/uiStore.ts`**: `InspectorTab` gains `'notes'`.
+- **`src/layout/Inspector.tsx`**: new "Notes" tab.
+- **`src/layout/inspector/NotesPanel.tsx`** (new): reads the current
+  selection (`selectionStore`'s block or structural-page selection —
+  whichever is active) and lists that target's notes (open ones first,
+  resolved ones dimmed at the end) above a composer for adding another.
+  Selecting nothing shows an empty state explaining what to do.
+- **`src/renderer/NoteIndicatorBadge.tsx`** (new) + **`Page.tsx`**: a
+  small badge on any block or structural page with at least one
+  unresolved note (top-left corner, distinct from `BlockToolbar`/
+  `PageToolbar`'s top-right position), showing the open count — clicking
+  it selects the target and jumps straight to the Notes tab. Disappears
+  entirely once every note on a target is resolved, so a manuscript with
+  fully-addressed notes stays visually quiet.
+
+### Verification caveat
+`npx tsc -b --force` clean. As with every phase this session, this
+sandbox cannot run a real browser session — **manually verify** once
+pushed: select a paragraph, add a note, confirm the badge appears on the
+block; click the badge and confirm it jumps to the Notes tab with that
+exact note; resolve it and confirm the badge disappears (and the note
+moves to the dimmed "Resolved" section, still visible in the panel);
+undo/redo through an add/edit/resolve/delete sequence and confirm each
+step reverses in exactly one step; reload the page and confirm notes
+persisted; add a note to a structural page (e.g. the Cover) and confirm
+the same flow works there.
+
 ## Recommended next task
 Phase E is complete except three items needing infrastructure this
 client-only app doesn't have (documented as deliberately deferred in
 `docs/ROADMAP.md`, same treatment as the AI reviewer/CMYK items): stock
 image library integration, AI image generation, and a community template
-gallery — all three need a real backend/third-party API. Per the user's
-"keep working until C, D, E are complete" directive, Phases C, D, and E
-are now all complete or deliberately-deferred-with-reasoning. A genuinely
-higher-impact next step for a first-time author, if the user wants to keep
-going: real additional cover font families (blocked purely on font files —
-see `public/fonts/custom/README.md`), or Phase F. Otherwise, recommend
-pausing here for the user's planned GitHub push + Chrome verification
-pass, per their original instruction: "then I will send to github and let
-you check everything on google chrome."
+gallery — all three need a real backend/third-party API. The other half
+of Phase 47's original two-part request — placeholder content blocks
+("photo goes here" with a short description, so a draft can be laid out
+before every asset exists) — is still open and would be a natural next
+task, following the same block-type-registry pattern Phase 20's Milestone
+5 batch used. Per the user's "keep working until C, D, E are complete"
+directive, Phases C, D, and E remain complete or
+deliberately-deferred-with-reasoning; this Phase F work is additional,
+user-requested scope beyond that original directive.
