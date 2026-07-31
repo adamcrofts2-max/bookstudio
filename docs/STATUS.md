@@ -2907,11 +2907,55 @@ example of each new finding type (an ALL-CAPS run, a captionless image, an
 undersized image, a missing copyright page, a wildly short chapter, a mixed
 numbered/unnumbered chapter title) is actually caught.
 
+## Phase 37 — Persist the revision log across a reload (2026-07-31)
+
+User directive: keep working through Phase C/D/E, but explicitly skip the
+AI-backed items (real `AiReviewer`, AI learning) for now — those need a
+real architectural decision (backend vs. bring-your-own-API-key) that's
+being deliberately deferred, not forgotten. This phase picks up the
+concrete, non-AI item instead: the revision log surviving a page reload.
+
+- **`src/store/virtualEditorStore.ts`** wrapped in Zustand's `persist`
+  middleware (`name: 'book-studio.virtualEditor'`), with a `partialize` that
+  saves **only** `revisionsByProject`. `reportsByProject` and
+  `findingStatusByProject` deliberately stay in-memory-only — not a partial
+  miss, a considered decision, documented at length in the file's own top
+  comment:
+  1. A `Finding` can carry a `suggestedFix.apply` function value, which
+     can't round-trip through JSON at all (the reason this was originally
+     never persisted).
+  2. Even setting that aside, `Finding.id` is freshly randomly generated on
+     every single "Review Entire Book" run — `runReview` already resets
+     `findingStatusByProject` to `{}` on every run, *in the same session*,
+     independent of any reload. A finding's accepted/rejected/ignored
+     status is only ever meaningful against the exact report that produced
+     it, so persisting it across a reload would just persist orphaned data
+     that gets discarded the instant the user re-runs a review anyway —
+     which they must do after a reload, since the report itself isn't
+     persisted.
+  `Revision` itself (a `ContentBlock` snapshot + a partial patch) has no
+  function values and is fully JSON-safe, and — unlike a report — is useful
+  on its own: `restoreRevision` doesn't require a report to exist first, so
+  the permanent audit trail of every fix ever applied now survives a reload
+  even though the live findings list doesn't.
+- No changes needed to `Revision`'s shape or to any of the read/write
+  actions — `persist` only affects what's written to/read from
+  `localStorage` on top of the exact same in-memory store shape.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` in this sandbox. Verified via
+`npx tsc -b --force` only (clean). **Manually verify**: accept a fix in the
+Virtual Editor dashboard (creating a revision), reload the page, open the
+Revisions panel, and confirm the revision is still listed and "Restore"
+still works — then separately confirm the report/findings list is correctly
+empty after the reload (expected, not a bug) until "Review Entire Book" is
+run again.
+
 ## Recommended next task
-Manually verify Phase 36's thirteen new checkers live (see caveat above).
-Remaining Phase C scope: persist the revision log across a reload, a real
-`AiReviewer` (this needs either a backend or a bring-your-own-API-key
-client-side integration — a real architectural decision, not a drop-in),
-and the Original/RevA/RevB/RevC revision compare view. Beyond Phase C: the
-cover/back-cover designer and theme gallery (Phase E), EPUB/PDF export work
-(Phase D), and Phase G (accounts/cloud) remain the biggest structural gaps.
+Manually verify Phase 37 live (see caveat above). Remaining Phase C scope
+(deliberately paused per user direction): a real `AiReviewer` and AI
+learning profile, and the Original/RevA/RevB/RevC revision compare view.
+Moving on to Phase D (EPUB/Kindle export, PDF export fixes, ISBN/barcode +
+POD validation) and Phase E (theme gallery, custom theme editor, cover/
+back-cover designer) next, per the user's "keep working until C, D, E are
+complete" directive.

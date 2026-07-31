@@ -140,10 +140,14 @@ daily use of everything built so far.)*
 - [x] Commercial Quality checker — see STATUS.md Phase 36
 - [x] Developmental checker — see STATUS.md Phase 36
 - [x] Field-guide checker — see STATUS.md Phase 36
-- [ ] Real `AiReviewer` (LLM-backed judgement calls, currently a null stub)
-- [ ] AI Learning — a personal editorial profile that adapts to accepted/rejected fixes
+- [ ] Real `AiReviewer` (LLM-backed judgement calls, currently a null stub) —
+      deliberately deferred, see docs/STATUS.md Phase 37's note
+- [ ] AI Learning — a personal editorial profile that adapts to accepted/rejected fixes —
+      deliberately deferred alongside the above (depends on it)
 - [ ] Original / RevA / RevB / RevC side-by-side revision compare view
-- [ ] Persist revision log + reports across a reload
+- [x] Persist revision log across a reload — see STATUS.md Phase 37. Reports/
+      finding-statuses deliberately stay in-memory-only, not a partial miss —
+      see Phase 37's entry for why persisting them would be meaningless
 
 ## Phase D — Publishing Output Expansion
 

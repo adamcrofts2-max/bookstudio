@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
 
 import type { ContentBlock, Manuscript } from '@/types/content'
 import type { LaidOutPage } from '@/renderer/paginate'
@@ -19,13 +20,26 @@ import { generateId } from '@/utils/id'
  * reaching into `contentStore`'s state directly (see CLAUDE.md's
  * "no layer directly mutates another layer's data").
  *
- * Deliberately NOT persisted (unlike `contentStore`/`projectStore`): the
- * report is a recomputed snapshot, cheap to regenerate with "Review Entire
- * Book", and a `Finding.suggestedFix.apply` is a function value that can't
- * round-trip through JSON anyway. The revision log is therefore also
- * in-memory only for this milestone — surviving a page reload is a
- * documented near-term follow-up, see docs/VIRTUAL_EDITOR.md § Non-Destructive
- * Editing.
+ * `revisionsByProject` is persisted (Phase 37, docs/STATUS.md) — it's plain
+ * data (a `ContentBlock` snapshot plus a partial patch, both JSON-safe), the
+ * permanent audit trail of every fix the Virtual Editor has ever applied,
+ * and useful independent of whether a report currently exists (restoring an
+ * old revision doesn't require re-running a review first).
+ *
+ * `reportsByProject` and `findingStatusByProject` deliberately stay
+ * in-memory only, for two different reasons, not one: (1) a `Finding` can
+ * carry a `suggestedFix.apply` function value, which can't round-trip
+ * through JSON at all; and (2) even setting that aside, `Finding.id` is
+ * freshly randomly generated (`generateId('finding')`) on every single
+ * "Review Entire Book" run — see `runReview` below, which explicitly resets
+ * `findingStatusByProject` to `{}` every time it runs, in the same session,
+ * with no reload involved. A finding's accepted/rejected/ignored status is
+ * therefore only ever meaningful against the *exact* report that produced
+ * it; persisting it across a reload would just be persisting orphaned data
+ * that gets discarded the moment the user runs a fresh review anyway
+ * (which they must do after a reload, since the report itself isn't
+ * persisted). The report is cheap to regenerate with "Review Entire Book"
+ * — that's the intended recovery path after a reload, not a bug.
  */
 
 /** A snapshot taken immediately before a fix was applied, so it can be
@@ -100,116 +114,129 @@ interface VirtualEditorActions {
   restoreRevision: (projectId: string, revisionId: string) => void
 }
 
-export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorActions>()((set, get) => ({
-  reportsByProject: {},
-  findingStatusByProject: {},
-  revisionsByProject: {},
+export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorActions>()(
+  persist(
+    (set, get) => ({
+      reportsByProject: {},
+      findingStatusByProject: {},
+      revisionsByProject: {},
 
-  runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets) => {
-    const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets)
-    set((state) => ({
-      reportsByProject: { ...state.reportsByProject, [projectId]: report },
-      findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },
-    }))
-    return report
-  },
-
-  getReport: (projectId) => get().reportsByProject[projectId],
-
-  getFindingStatuses: (projectId) => get().findingStatusByProject[projectId] ?? EMPTY_FINDING_STATUSES,
-
-  getFindingStatus: (projectId, findingId) => get().findingStatusByProject[projectId]?.[findingId] ?? 'new',
-
-  setFindingStatus: (projectId, findingId, status) => {
-    set((state) => ({
-      findingStatusByProject: {
-        ...state.findingStatusByProject,
-        [projectId]: { ...(state.findingStatusByProject[projectId] ?? {}), [findingId]: status },
+      runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets) => {
+        const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets)
+        set((state) => ({
+          reportsByProject: { ...state.reportsByProject, [projectId]: report },
+          findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },
+        }))
+        return report
       },
-    }))
-  },
 
-  acceptFix: (projectId, finding) => {
-    const { chapterId, blockId } = finding.location
-    if (!finding.suggestedFix || !blockId) return
+      getReport: (projectId) => get().reportsByProject[projectId],
 
-    const manuscript = useContentStore.getState().getManuscript(projectId)
-    const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
-    const block = chapter?.blocks.find((b) => b.id === blockId)
-    if (!manuscript || !chapter || !block) return
+      getFindingStatuses: (projectId) => get().findingStatusByProject[projectId] ?? EMPTY_FINDING_STATUSES,
 
-    const patch = finding.suggestedFix.apply(block)
-    const revision: Revision = {
-      id: generateId('revision'),
-      findingId: finding.id,
-      chapterId: chapter.id,
-      blockId: block.id,
-      before: block,
-      after: patch,
-      appliedAt: new Date().toISOString(),
-      summary: finding.suggestedFix.summary,
-    }
+      getFindingStatus: (projectId, findingId) => get().findingStatusByProject[projectId]?.[findingId] ?? 'new',
 
-    set((state) => ({
-      revisionsByProject: {
-        ...state.revisionsByProject,
-        [projectId]: [...(state.revisionsByProject[projectId] ?? []), revision],
+      setFindingStatus: (projectId, findingId, status) => {
+        set((state) => ({
+          findingStatusByProject: {
+            ...state.findingStatusByProject,
+            [projectId]: { ...(state.findingStatusByProject[projectId] ?? {}), [findingId]: status },
+          },
+        }))
       },
-    }))
 
-    // The only contentStore mutation in this entire layer, and it goes
-    // through the same published action every other editing UI uses.
-    useContentStore.getState().updateBlock(projectId, chapter.id, block.id, patch)
-    get().setFindingStatus(projectId, finding.id, 'accepted')
-  },
+      acceptFix: (projectId, finding) => {
+        const { chapterId, blockId } = finding.location
+        if (!finding.suggestedFix || !blockId) return
 
-  ignoreSimilar: (projectId, finding) => {
-    const report = get().reportsByProject[projectId]
-    if (!report) return
-    set((state) => {
-      const current = state.findingStatusByProject[projectId] ?? {}
-      const next = { ...current }
-      for (const f of report.findings) {
-        if (f.issueType === finding.issueType) next[f.id] = 'ignoredSimilar'
-      }
-      return { findingStatusByProject: { ...state.findingStatusByProject, [projectId]: next } }
-    })
-  },
+        const manuscript = useContentStore.getState().getManuscript(projectId)
+        const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+        const block = chapter?.blocks.find((b) => b.id === blockId)
+        if (!manuscript || !chapter || !block) return
 
-  fixAll: (projectId) => {
-    const report = get().reportsByProject[projectId]
-    if (!report) return
-    const statuses = get().findingStatusByProject[projectId] ?? {}
-    for (const finding of report.findings) {
-      if (!finding.suggestedFix) continue
-      if ((statuses[finding.id] ?? 'new') !== 'new') continue
-      get().acceptFix(projectId, finding)
-    }
-  },
+        const patch = finding.suggestedFix.apply(block)
+        const revision: Revision = {
+          id: generateId('revision'),
+          findingId: finding.id,
+          chapterId: chapter.id,
+          blockId: block.id,
+          before: block,
+          after: patch,
+          appliedAt: new Date().toISOString(),
+          summary: finding.suggestedFix.summary,
+        }
 
-  fixCategory: (projectId, category) => {
-    const report = get().reportsByProject[projectId]
-    if (!report) return
-    const statuses = get().findingStatusByProject[projectId] ?? {}
-    for (const finding of report.findings) {
-      if (finding.category !== category) continue
-      if (!finding.suggestedFix) continue
-      if ((statuses[finding.id] ?? 'new') !== 'new') continue
-      get().acceptFix(projectId, finding)
-    }
-  },
+        set((state) => ({
+          revisionsByProject: {
+            ...state.revisionsByProject,
+            [projectId]: [...(state.revisionsByProject[projectId] ?? []), revision],
+          },
+        }))
 
-  getRevisions: (projectId) => get().revisionsByProject[projectId] ?? EMPTY_REVISIONS,
+        // The only contentStore mutation in this entire layer, and it goes
+        // through the same published action every other editing UI uses.
+        useContentStore.getState().updateBlock(projectId, chapter.id, block.id, patch)
+        get().setFindingStatus(projectId, finding.id, 'accepted')
+      },
 
-  restoreRevision: (projectId, revisionId) => {
-    const revision = (get().revisionsByProject[projectId] ?? []).find((r) => r.id === revisionId)
-    if (!revision) return
+      ignoreSimilar: (projectId, finding) => {
+        const report = get().reportsByProject[projectId]
+        if (!report) return
+        set((state) => {
+          const current = state.findingStatusByProject[projectId] ?? {}
+          const next = { ...current }
+          for (const f of report.findings) {
+            if (f.issueType === finding.issueType) next[f.id] = 'ignoredSimilar'
+          }
+          return { findingStatusByProject: { ...state.findingStatusByProject, [projectId]: next } }
+        })
+      },
 
-    const restorePatch: Partial<ContentBlock> = {}
-    for (const key of Object.keys(revision.after) as (keyof ContentBlock)[]) {
-      Object.assign(restorePatch, { [key]: revision.before[key as keyof typeof revision.before] })
-    }
+      fixAll: (projectId) => {
+        const report = get().reportsByProject[projectId]
+        if (!report) return
+        const statuses = get().findingStatusByProject[projectId] ?? {}
+        for (const finding of report.findings) {
+          if (!finding.suggestedFix) continue
+          if ((statuses[finding.id] ?? 'new') !== 'new') continue
+          get().acceptFix(projectId, finding)
+        }
+      },
 
-    useContentStore.getState().updateBlock(projectId, revision.chapterId, revision.blockId, restorePatch)
-  },
-}))
+      fixCategory: (projectId, category) => {
+        const report = get().reportsByProject[projectId]
+        if (!report) return
+        const statuses = get().findingStatusByProject[projectId] ?? {}
+        for (const finding of report.findings) {
+          if (finding.category !== category) continue
+          if (!finding.suggestedFix) continue
+          if ((statuses[finding.id] ?? 'new') !== 'new') continue
+          get().acceptFix(projectId, finding)
+        }
+      },
+
+      getRevisions: (projectId) => get().revisionsByProject[projectId] ?? EMPTY_REVISIONS,
+
+      restoreRevision: (projectId, revisionId) => {
+        const revision = (get().revisionsByProject[projectId] ?? []).find((r) => r.id === revisionId)
+        if (!revision) return
+
+        const restorePatch: Partial<ContentBlock> = {}
+        for (const key of Object.keys(revision.after) as (keyof ContentBlock)[]) {
+          Object.assign(restorePatch, { [key]: revision.before[key as keyof typeof revision.before] })
+        }
+
+        useContentStore.getState().updateBlock(projectId, revision.chapterId, revision.blockId, restorePatch)
+      },
+    }),
+    {
+      name: 'book-studio.virtualEditor',
+      version: 1,
+      // Only the revision log survives a reload — see this file's top
+      // doc comment for exactly why `reportsByProject`/`findingStatusByProject`
+      // are excluded (a function value that can't serialize, and finding
+      // ids that aren't stable across review runs regardless).
+      partialize: (state) => ({ revisionsByProject: state.revisionsByProject }),
+    },
+  ),
+)
