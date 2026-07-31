@@ -2951,11 +2951,45 @@ still works — then separately confirm the report/findings list is correctly
 empty after the reload (expected, not a bug) until "Review Entire Book" is
 run again.
 
+## Phase 38 — Original/RevA/RevB/RevC revision compare view (2026-07-31)
+
+Closes the last non-AI item in Phase C's checklist (real `AiReviewer`/AI
+Learning remain deliberately deferred per the user's explicit direction).
+
+- **`src/layout/virtualEditor/RevisionCompareView.tsx`** (new): given every
+  `Revision` applied to one specific block (oldest first), reconstructs
+  each intermediate state — `Original` (the first revision's `before`
+  snapshot), then one column per revision after its `after` patch applied —
+  and renders them side by side using the existing `blockPlainText` helper
+  from `textExtract.ts` for a plain-text comparison (no per-block-type rich
+  diffing; a documented, honest scope limit, same spirit as every other
+  heuristic in this codebase). `buildStateChain` merges each state onto the
+  *previous computed state* rather than trusting each revision's own stored
+  `before`, so the chain stays correct even in the edge case of a manual
+  edit landing between two accepted fixes. Renders `null` for a block with
+  only one revision — nothing to compare beyond what the existing flat
+  "Restore original" button in the revision history list already offers.
+- **`VirtualEditorWorkspace.tsx`**: new `revisionChainsByBlock` memo groups
+  the flat `revisions` log by `blockId`, keeping only blocks with 2+
+  revisions; a new "Revision compare" section renders one
+  `RevisionCompareView` per qualifying block, beneath the existing flat
+  "Revision history" list (which stays unchanged — a chronological log
+  across the whole book, not per-block).
+- Purely additive and read-only: no new store actions, no change to
+  `acceptFix`/`restoreRevision`'s behaviour — this only adds a new way to
+  *view* revisions that were already being recorded.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` in this sandbox. Verified via
+`npx tsc -b --force` only (clean). **Manually verify**: accept two different
+fixes on the same block (e.g. a double-space fix, then later an Oxford
+comma fix on the same paragraph) and confirm a "Revision compare" section
+appears showing Original/RevA/RevB with the correct text at each stage.
+
 ## Recommended next task
-Manually verify Phase 37 live (see caveat above). Remaining Phase C scope
-(deliberately paused per user direction): a real `AiReviewer` and AI
-learning profile, and the Original/RevA/RevB/RevC revision compare view.
+Manually verify Phase 38 live (see caveat above). Phase C is now complete
+except the deliberately-deferred AI-backed items (real `AiReviewer`, AI
+Learning — both need a real backend-vs-BYOK architectural decision first).
 Moving on to Phase D (EPUB/Kindle export, PDF export fixes, ISBN/barcode +
-POD validation) and Phase E (theme gallery, custom theme editor, cover/
-back-cover designer) next, per the user's "keep working until C, D, E are
+POD validation) next, per the user's "keep working until C, D, E are
 complete" directive.

@@ -15,6 +15,8 @@ import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
 import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
 import { FindingRow, formatCategory } from '@/layout/virtualEditor/FindingRow'
+import { RevisionCompareView } from '@/layout/virtualEditor/RevisionCompareView'
+import type { Revision } from '@/store/virtualEditorStore'
 import type { Project } from '@/types'
 
 interface VirtualEditorWorkspaceProps {
@@ -96,6 +98,24 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
     return Array.from(groups.entries())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFindings])
+
+  // Groups the flat, chronological `revisions` log by `blockId` so a block
+  // touched by more than one accepted fix can be shown as a single
+  // Original -> RevA -> RevB chain (`RevisionCompareView`) instead of only
+  // as separate rows in the flat history below. Blocks with exactly one
+  // revision are intentionally left out here — a single revision has
+  // nothing to compare against beyond what "Restore original" in the flat
+  // list already offers.
+  const revisionChainsByBlock = useMemo(() => {
+    const groups = new Map<string, Revision[]>()
+    for (const revision of revisions) {
+      const list = groups.get(revision.blockId)
+      if (list) list.push(revision)
+      else groups.set(revision.blockId, [revision])
+    }
+    return Array.from(groups.entries()).filter(([, list]) => list.length >= 2)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revisions])
 
   if (!manuscript) {
     return (
@@ -305,6 +325,24 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                     Restore original
                   </Button>
                 </div>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {revisionChainsByBlock.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-h5 font-semibold text-text-primary">Revision compare</h2>
+            <p className="text-xs text-text-secondary">
+              Blocks touched by more than one accepted fix, shown as their full Original → RevA → RevB chain.
+            </p>
+            <div className="flex flex-col gap-3">
+              {revisionChainsByBlock.map(([blockId, blockRevisions]) => (
+                <RevisionCompareView
+                  key={blockId}
+                  chapterTitle={chapterTitleById.get(blockRevisions[0]!.chapterId) ?? 'Unknown chapter'}
+                  revisions={blockRevisions}
+                />
               ))}
             </div>
           </section>

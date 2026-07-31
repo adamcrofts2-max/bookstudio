@@ -144,7 +144,8 @@ daily use of everything built so far.)*
       deliberately deferred, see docs/STATUS.md Phase 37's note
 - [ ] AI Learning — a personal editorial profile that adapts to accepted/rejected fixes —
       deliberately deferred alongside the above (depends on it)
-- [ ] Original / RevA / RevB / RevC side-by-side revision compare view
+- [x] Original / RevA / RevB / RevC side-by-side revision compare view —
+      see STATUS.md Phase 38
 - [x] Persist revision log across a reload — see STATUS.md Phase 37. Reports/
       finding-statuses deliberately stay in-memory-only, not a partial miss —
       see Phase 37's entry for why persisting them would be meaningless
