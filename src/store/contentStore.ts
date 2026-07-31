@@ -69,6 +69,26 @@ interface ContentStoreActions {
    */
   deleteBlock: (projectId: string, chapterId: string, blockId: string) => void
   /**
+   * Removes every block whose id is in `blockIds` from `chapterId`'s block
+   * list, in one commit (one `revisionByProject` bump, one history entry
+   * upstream) rather than N separate `deleteBlock` calls. This is the
+   * primitive behind "delete this page" for chapter-content/-start pages —
+   * unlike a structural page, a content page has no single stored object to
+   * delete; it's whichever blocks `paginate.ts` happened to flow onto it, so
+   * deleting "the page" means bulk-deleting those blocks. See
+   * `editorActions.ts`'s `deletePageBlocksWithHistory` and docs/STATUS.md.
+   */
+  deleteBlocks: (projectId: string, chapterId: string, blockIds: string[]) => void
+  /**
+   * Full (non-merging) replacement of an entire chapter's block list — the
+   * undo half of `deletePageBlocksWithHistory`. Restoring the whole array in
+   * one commit (rather than re-inserting each deleted block individually at
+   * its own remembered position) keeps the deleted blocks' relative order
+   * and position trivially correct regardless of how many were removed,
+   * mirroring `replaceBlock`'s "full snapshot restore, not a merge" pattern.
+   */
+  replaceChapterBlocks: (projectId: string, chapterId: string, blocks: ContentBlock[]) => void
+  /**
    * Deep-clones `blockId` (fresh id) and inserts the clone immediately after
    * the original within the same chapter. Mirrors
    * `structuralPageStore.duplicatePage`'s exact shape (read via `get()`, then
@@ -186,6 +206,36 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
             if (chapter.id !== chapterId) return chapter
             return { ...chapter, blocks: chapter.blocks.filter((b) => b.id !== blockId) }
           })
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      deleteBlocks: (projectId, chapterId, blockIds) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const idSet = new Set(blockIds)
+          const chapters: Chapter[] = manuscript.chapters.map((chapter) => {
+            if (chapter.id !== chapterId) return chapter
+            return { ...chapter, blocks: chapter.blocks.filter((b) => !idSet.has(b.id)) }
+          })
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      replaceChapterBlocks: (projectId, chapterId, blocks) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const chapters: Chapter[] = manuscript.chapters.map((chapter) =>
+            chapter.id === chapterId ? { ...chapter, blocks } : chapter,
+          )
           return {
             byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
             revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },

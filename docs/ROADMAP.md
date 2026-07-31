@@ -68,14 +68,20 @@ daily use of everything built so far.)*
       properly in Phase 29 (2026-07-31): `PageToolbar.tsx` puts move/
       duplicate/delete directly on the page canvas itself (same hover-reveal
       pattern as `BlockToolbar`), not just in a separate sidebar tab. Sidebar
-      controls kept as a second entry point. Regular chapter-content pages
-      still have no page-level delete, correctly — they're computed
-      pagination output, not a stored object — see docs/STATUS.md Phase 29.
+      controls kept as a second entry point — see docs/STATUS.md Phase 29.
       Also caught and fixed a related regression in Phase 32 — hovering
       anywhere on the page revealed every block's own toolbar too, due to
       Tailwind's unnamed `group` not being scoped to the nearest ancestor.
       Both the toolbar and the fix confirmed working live by the user,
       2026-07-31.
+- [x] Delete for chapter-content/-start pages (imported manuscript pages) —
+      shipped 2026-07-31 (Phase 33), after the user correctly pointed out
+      Phase 29 only fixed structural pages ("I can now delete pages I've
+      added through structure, but not pages that have been imported").
+      These pages have no single stored object to delete (they're whichever
+      blocks pagination flowed onto them) — `PageToolbar` now offers a
+      delete-only action for them that bulk-deletes exactly those blocks,
+      undo-safe in one commit. See docs/STATUS.md Phase 33.
 - [x] Real thumbnail previews — shipped 2026-07-31 (Phase 30): `ThumbnailPage.tsx`
       renders a genuine, lazily-mounted, CSS-scaled miniature of the real `Page`
       component (not a text-density approximation) — true WYSIWYG, stays in

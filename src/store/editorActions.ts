@@ -122,6 +122,35 @@ export function deleteBlockWithHistory(projectId: string, chapterId: string, blo
 }
 
 /**
+ * History-aware "delete this page" for chapter-content/chapter-start pages.
+ * Unlike a structural page (`deletePageWithHistory` below), a content page
+ * has no single stored object to delete — it's whichever blocks
+ * `paginate.ts` happened to flow onto it. Deleting "the page" here means
+ * bulk-deleting exactly those blocks via `contentStore.deleteBlocks`, in one
+ * commit. Snapshots the chapter's full block list BEFORE deleting so undo
+ * restores the exact original array in one commit
+ * (`replaceChapterBlocks`) regardless of how many blocks were removed;
+ * redo re-runs the same bulk delete. A no-op if `blockIds` is empty (a
+ * chapter-start page with no body blocks yet) or the chapter can't be found.
+ */
+export function deletePageBlocksWithHistory(projectId: string, chapterId: string, blockIds: string[]): void {
+  if (blockIds.length === 0) return
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return
+  const snapshot = chapter.blocks
+
+  useContentStore.getState().deleteBlocks(projectId, chapterId, blockIds)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Delete page',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, snapshot),
+    () => useContentStore.getState().deleteBlocks(projectId, chapterId, blockIds),
+  )
+}
+
+/**
  * History-aware replacement for `contentStore.duplicateBlock`. Mirrors
  * `duplicatePageWithHistory`'s exact shape: perform the real (id-generating)
  * duplicate first, then look up the freshly-created block so undo/redo can

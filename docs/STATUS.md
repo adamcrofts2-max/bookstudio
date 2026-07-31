@@ -2639,10 +2639,71 @@ correctly on https://bookstudio-rose.vercel.app/. This is the first phase
 this session with a fully closed find-fix-verify loop, not just a `tsc`
 pass plus a "please check this manually" caveat.
 
-## Recommended next task
+## Recommended next task (Phase 32's own — superseded below by Phase 33)
 Real thumbnail previews and page-delete are now both genuinely confirmed
 working end-to-end, live, by the user — the first features this session
 verified beyond `tsc`. Next up per
 the roadmap is the cover/back-cover designer (Phase E), Phase C's remaining
 Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and Phase G
 (accounts/cloud).
+
+## Phase 33 — Delete for chapter-content/-start pages (2026-07-31)
+
+Immediate follow-up after confirming Phase 29/32's structural-page delete
+worked live: "I can now delete pages that I've added through structure, but
+not pages that have been imported." Correct and expected given Phase 29's
+own scope note ("not rendered for chapter-start/content pages... not a
+single stored object with an id to delete") — but the user's ask makes clear
+that scoping was too narrow for what "delete this page" needs to mean in
+practice, so this phase closes it.
+
+- **What "delete this page" means for a content page**: unlike a structural
+  page, a chapter-content/-start page has no single stored object — it's
+  whichever blocks `paginate.ts`'s greedy flow happened to place on it this
+  layout pass. "Delete the page" is therefore defined as: delete every block
+  currently laid out on it. The chapter itself, its title, and every other
+  page of that chapter are untouched; the remaining blocks simply reflow
+  into the freed space on the next pagination pass, same as deleting any
+  individual block already does.
+- **`src/store/contentStore.ts`**: new `deleteBlocks(projectId, chapterId,
+  blockIds)` — bulk-removes multiple blocks in one `set()`/one revision bump,
+  rather than N separate `deleteBlock` calls (avoids N re-renders/re-
+  paginations for one user action). New `replaceChapterBlocks(projectId,
+  chapterId, blocks)` — full (non-merging) replacement of a chapter's whole
+  block array, mirroring `replaceBlock`'s "full snapshot restore, not a
+  merge" pattern; this is what makes undo trivially correct regardless of
+  how many blocks were deleted or what order they were in.
+- **`src/store/editorActions.ts`**: new `deletePageBlocksWithHistory(projectId,
+  chapterId, blockIds)` — snapshots the chapter's full block list *before*
+  calling `deleteBlocks`, records one history entry whose undo calls
+  `replaceChapterBlocks` with that snapshot and whose redo re-calls
+  `deleteBlocks`. One undo step restores the whole page's content at once,
+  not N separate undos for N blocks.
+- **`src/renderer/PageToolbar.tsx`**: `onMoveUp`/`onMoveDown`/`onDuplicate`
+  (and their `canMoveUp`/`canMoveDown`) are now optional — omitted entirely,
+  not just disabled, when a caller doesn't pass a handler, since "move"/
+  "duplicate a page" have no well-defined meaning for a content page. Added
+  `deleteLabel` so the tooltip can say "Delete page content" for content
+  pages instead of structural pages' "Delete page" (accurately describing
+  that this clears the page's blocks, not a stored page object).
+- **`src/renderer/Page.tsx`**: renders a delete-only `PageToolbar` for
+  `chapter-start`/`content` pages (only when the page actually has ≥1 block —
+  no point showing a delete button with nothing to delete), calling
+  `deletePageBlocksWithHistory` with every block id currently on that page.
+  Uses the same `group/page` hover-reveal already fixed in Phase 32.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` or GitHub/registry network access in
+this sandbox. Verified via `npx tsc -b --force` only (clean) plus manual
+review of the bulk-delete/undo logic against the established
+`replaceBlock`/`replacePageContent` "full restore, not merge" pattern.
+**Manually verify in a real browser**: deleting a content page's blocks
+removes exactly those blocks (not neighbors on other pages of the same
+chapter), the remaining content reflows correctly, and a single Ctrl/Cmd+Z
+restores everything that page had in one step.
+
+## Recommended next task
+Manually verify Phase 33 live (delete a content page, confirm reflow +
+one-step undo). Otherwise: the cover/back-cover designer (Phase E), Phase
+C's remaining Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and
+Phase G (accounts/cloud) as the biggest remaining structural gaps.

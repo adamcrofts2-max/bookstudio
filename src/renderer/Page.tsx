@@ -23,6 +23,7 @@ import {
   duplicatePageWithHistory,
   deletePageWithHistory,
   movePageWithHistory,
+  deletePageBlocksWithHistory,
 } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -331,6 +332,21 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
             />
           )}
         </>
+      )}
+
+      {(page.kind === 'chapter-start' || page.kind === 'content') && page.chapterId && page.blocks.length > 0 && !decorative && (
+        <PageToolbar
+          selected={false}
+          deleteLabel="Delete page content"
+          onDelete={() => {
+            deletePageBlocksWithHistory(
+              projectId,
+              page.chapterId as string,
+              page.blocks.map((b) => b.id),
+            )
+            clearSelection()
+          }}
+        />
       )}
 
       {page.kind !== 'blank' && page.kind !== 'structural' && (
