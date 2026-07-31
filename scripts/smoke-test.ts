@@ -722,6 +722,315 @@ check(
   !spreadMatchesScrollTarget([chapterOpenerPage], { type: 'block', chapterId: 'chap-a', blockId: 'blk-1' }),
 )
 
+// --- Virtual Editor: Publishing Standards + Layout checkers (real
+// pagination data) — the two categories docs/VIRTUAL_EDITOR.md previously
+// listed as "Designed, not built" because CheckerContext carried no
+// pagination output at all. All five checkers below read `ctx.pages`
+// exclusively (never `ctx.manuscript`), so an empty manuscript fixture is
+// reused as `ctx.manuscript` for every case here — reusing `makeFakePage`
+// from the spreadMatchesScrollTarget section above, and `LaidOutPage`/
+// `HeadingBlock`/`ImageBlock`, already imported further down this file (ES
+// module imports are hoisted, same pre-existing pattern this file already
+// relies on for `HeadingBlock` above).
+import { sparseChapterEndingChecker, emptyChapterOpenerChecker, consecutiveBlankPagesChecker } from '../src/virtualEditor/checkers/publishingStandards'
+import { inconsistentImageSizingChecker, imageDensityImbalanceChecker } from '../src/virtualEditor/checkers/layout'
+
+const EMPTY_VE_MANUSCRIPT: Manuscript = { chapters: [], importedAt: new Date().toISOString(), sourceFileName: 've-layout-fixture.md' }
+
+function makeImageBlock(id: string, overrides: Partial<ImageBlock> = {}): ImageBlock {
+  return { id, type: 'image', assetId: `asset-${id}`, rotation: 0, ...overrides }
+}
+
+// A "healthy" book fixture reused as the shared no-false-positive case for
+// every checker below: two real chapters, each with a substantial final
+// page, a small/consistent set of image sizes, a roughly balanced image
+// count between chapters, structural front/back matter, and exactly one
+// (legitimate) blank page mixed in — proving every checker correctly
+// ignores structural pages and doesn't mistake one intentional blank page
+// for an anomaly.
+const healthyChapterAStart = makeFakePage({
+  id: 'healthy-a-start',
+  kind: 'chapter-start',
+  chapterId: 'chap-a',
+  chapterTitle: 'Garden Basics',
+  blocks: [
+    { id: 'healthy-a-heading', type: 'heading', level: 1, text: 'Garden Basics' } as HeadingBlock,
+    {
+      id: 'healthy-a-p1',
+      type: 'paragraph',
+      html: 'A long opening paragraph introducing the chapter with plenty of real content to read through before moving on.',
+    } as ParagraphBlock,
+  ],
+})
+const healthyChapterAContent = makeFakePage({
+  id: 'healthy-a-content',
+  kind: 'content',
+  chapterId: 'chap-a',
+  chapterTitle: 'Garden Basics',
+  blocks: [
+    makeImageBlock('healthy-a-img1', { widthPercent: 100 }),
+    makeImageBlock('healthy-a-img2', { widthPercent: 100 }),
+    {
+      id: 'healthy-a-p2',
+      type: 'paragraph',
+      html: 'A closing paragraph for this chapter that is long enough on its own to not read as a sparse, nearly-blank final page.',
+    } as ParagraphBlock,
+  ],
+})
+const healthyBlank = makeFakePage({ id: 'healthy-blank', kind: 'blank' })
+const healthyChapterBStart = makeFakePage({
+  id: 'healthy-b-start',
+  kind: 'chapter-start',
+  chapterId: 'chap-b',
+  chapterTitle: 'Garden Tools',
+  blocks: [
+    { id: 'healthy-b-heading', type: 'heading', level: 1, text: 'Garden Tools' } as HeadingBlock,
+    makeImageBlock('healthy-b-img1', { widthPercent: 100 }),
+  ],
+})
+const healthyChapterBContent = makeFakePage({
+  id: 'healthy-b-content',
+  kind: 'content',
+  chapterId: 'chap-b',
+  chapterTitle: 'Garden Tools',
+  blocks: [
+    makeImageBlock('healthy-b-img2', { widthPercent: 100 }),
+    makeImageBlock('healthy-b-img3', { widthPercent: 90 }),
+    {
+      id: 'healthy-b-p1',
+      type: 'paragraph',
+      html: 'A closing paragraph for the second chapter that is likewise long enough to be a healthy, non-sparse ending page.',
+    } as ParagraphBlock,
+  ],
+})
+const healthyStructuralFront = makeFakePage({ id: 'healthy-cover', kind: 'structural', number: 0, structuralPageId: 'healthy-cover', blocks: [] })
+const healthyStructuralBack = makeFakePage({ id: 'healthy-back', kind: 'structural', number: 0, structuralPageId: 'healthy-back', blocks: [] })
+const healthyToc = makeFakePage({ id: 'healthy-toc', kind: 'toc', number: 1, blocks: [] })
+
+const healthyPages: LaidOutPage[] = [
+  healthyStructuralFront,
+  healthyToc,
+  healthyChapterAStart,
+  healthyChapterAContent,
+  healthyBlank,
+  healthyChapterBStart,
+  healthyChapterBContent,
+  healthyStructuralBack,
+]
+const healthyCtx = { manuscript: EMPTY_VE_MANUSCRIPT, pages: healthyPages }
+
+check('VE publishingStandards: sparseChapterEndingChecker — no false positive on a healthy book', sparseChapterEndingChecker.run(healthyCtx).length === 0)
+check('VE publishingStandards: emptyChapterOpenerChecker — no false positive on a healthy book', emptyChapterOpenerChecker.run(healthyCtx).length === 0)
+check(
+  'VE publishingStandards: consecutiveBlankPagesChecker — no false positive on a healthy book (single blank page, not a run)',
+  consecutiveBlankPagesChecker.run(healthyCtx).length === 0,
+)
+check('VE layout: inconsistentImageSizingChecker — no false positive on a healthy book (small, consistent size set)', inconsistentImageSizingChecker.run(healthyCtx).length === 0)
+check('VE layout: imageDensityImbalanceChecker — no false positive on a healthy, roughly balanced book', imageDensityImbalanceChecker.run(healthyCtx).length === 0)
+
+// --- sparseChapterEndingChecker: true positive ---
+const sparseChapterStart = makeFakePage({
+  id: 'sparse-start',
+  kind: 'chapter-start',
+  chapterId: 'chap-sparse',
+  chapterTitle: 'Chapter Sparse',
+  blocks: [
+    { id: 'sparse-heading', type: 'heading', level: 1, text: 'Chapter Sparse' } as HeadingBlock,
+    {
+      id: 'sparse-p1',
+      type: 'paragraph',
+      html: 'This chapter explores many aspects of the garden including soil composition, watering schedules, and seasonal planting techniques used by experienced gardeners everywhere.',
+    } as ParagraphBlock,
+  ],
+})
+const sparseChapterLast = makeFakePage({
+  id: 'sparse-last',
+  kind: 'content',
+  chapterId: 'chap-sparse',
+  chapterTitle: 'Chapter Sparse',
+  blocks: [{ id: 'sparse-final-p', type: 'paragraph', html: 'And that was the end.' } as ParagraphBlock],
+})
+const sparsePages: LaidOutPage[] = [sparseChapterStart, sparseChapterLast]
+const sparseFindings = sparseChapterEndingChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: sparsePages })
+check('VE publishingStandards: sparseChapterEndingChecker flags a chapter ending in one short paragraph alone on its final page', sparseFindings.length === 1)
+check('VE publishingStandards: sparse-ending finding points at the exact short paragraph', sparseFindings[0]?.location.blockId === 'sparse-final-p')
+check(
+  'VE publishingStandards: sparse-ending finding is minor severity with no suggestedFix (heuristic, not a mechanical fix)',
+  sparseFindings[0]?.severity === 'minor' && sparseFindings[0]?.suggestedFix === undefined,
+)
+check(
+  "VE publishingStandards: sparseChapterEndingChecker.isApplicable reflects whether ctx.pages is present",
+  sparseChapterEndingChecker.isApplicable?.({ manuscript: EMPTY_VE_MANUSCRIPT }) === false &&
+    sparseChapterEndingChecker.isApplicable?.({ manuscript: EMPTY_VE_MANUSCRIPT, pages: sparsePages }) === true,
+)
+check('VE publishingStandards: sparseChapterEndingChecker returns [] with no pages at all', sparseChapterEndingChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT }).length === 0)
+
+// --- emptyChapterOpenerChecker: true positive ---
+const emptyChapterPage = makeFakePage({ id: 'empty-start', kind: 'chapter-start', chapterId: 'chap-empty', chapterTitle: 'Chapter Empty', blocks: [] })
+const emptyFindings = emptyChapterOpenerChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: [emptyChapterPage] })
+check('VE publishingStandards: emptyChapterOpenerChecker flags a chapter with zero blocks at all', emptyFindings.length === 1)
+check(
+  'VE publishingStandards: empty-chapter finding is major severity, high confidence, with no blockId (no single block to point to)',
+  emptyFindings[0]?.severity === 'major' && (emptyFindings[0]?.confidence ?? 0) >= 0.9 && emptyFindings[0]?.location.blockId === undefined,
+)
+check(
+  'VE publishingStandards: sparseChapterEndingChecker does not also flag a truly empty chapter (0 blocks is not "exactly 1")',
+  sparseChapterEndingChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: [emptyChapterPage] }).length === 0,
+)
+
+// --- consecutiveBlankPagesChecker: true positive ---
+const blankRunBeforeChapter: LaidOutPage[] = [
+  makeFakePage({ id: 'blank-run-a-start', kind: 'chapter-start', chapterId: 'chap-blank-a', chapterTitle: 'Before' }),
+  makeFakePage({ id: 'blank-run-1', kind: 'blank' }),
+  makeFakePage({ id: 'blank-run-2', kind: 'blank' }),
+  makeFakePage({ id: 'blank-run-b-start', kind: 'chapter-start', chapterId: 'chap-blank-b', chapterTitle: 'After' }),
+]
+const blankRunFindings = consecutiveBlankPagesChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: blankRunBeforeChapter })
+check('VE publishingStandards: consecutiveBlankPagesChecker flags 2 adjacent blank pages', blankRunFindings.length === 1)
+check(
+  'VE publishingStandards: consecutive-blank finding is attributed to the chapter immediately following the run',
+  blankRunFindings[0]?.location.chapterId === 'chap-blank-b',
+)
+check('VE publishingStandards: consecutive-blank finding message reports the exact run length', blankRunFindings[0]?.message.includes('2 blank pages'))
+
+// Edge case: a blank run at the very end of the book, with no following
+// chapter at all — falls back to the preceding chapter.
+const blankRunAtEnd: LaidOutPage[] = [
+  makeFakePage({ id: 'blank-end-start', kind: 'chapter-start', chapterId: 'chap-blank-end', chapterTitle: 'Last Chapter' }),
+  makeFakePage({ id: 'blank-end-1', kind: 'blank' }),
+  makeFakePage({ id: 'blank-end-2', kind: 'blank' }),
+]
+const blankRunAtEndFindings = consecutiveBlankPagesChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: blankRunAtEnd })
+check('VE publishingStandards: a blank run at the very end of the book falls back to the preceding chapter', blankRunAtEndFindings[0]?.location.chapterId === 'chap-blank-end')
+
+// --- inconsistentImageSizingChecker: true positive ---
+const sizingChapterPage = makeFakePage({
+  id: 'sizing-content',
+  kind: 'content',
+  chapterId: 'chap-sizing',
+  chapterTitle: 'Chapter Sizing',
+  blocks: [
+    makeImageBlock('sizing-img-40', { widthPercent: 40 }),
+    makeImageBlock('sizing-img-65', { widthPercent: 65 }),
+    makeImageBlock('sizing-img-85', { widthPercent: 85 }),
+    makeImageBlock('sizing-img-100', { widthPercent: 100 }),
+  ],
+})
+const sizingFindings = inconsistentImageSizingChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: [sizingChapterPage] })
+check('VE layout: inconsistentImageSizingChecker flags a chapter with 4 widely different image sizes (the app\'s own 40/65/85/100 presets, all used together)', sizingFindings.length === 1)
+check('VE layout: inconsistent-sizing finding is suggestion severity (polish nit, not an error)', sizingFindings[0]?.severity === 'suggestion')
+
+// Precedence check: widthMm must win over widthPercent, exactly like
+// ImageRender/drawImagePdf — every image below has an identical
+// widthPercent (100, which alone would bucket to a single size) but 4
+// distinct widthMm values; the checker only flags if it's actually reading
+// widthMm, proving the precedence rule was reused correctly, not reinvented.
+const mmPrecedencePages: LaidOutPage[] = [
+  makeFakePage({
+    id: 'sizing-mm',
+    kind: 'content',
+    chapterId: 'chap-sizing-mm',
+    chapterTitle: 'Chapter Sizing MM',
+    blocks: [
+      makeImageBlock('mm-1', { widthMm: 40, widthPercent: 100 }),
+      makeImageBlock('mm-2', { widthMm: 80, widthPercent: 100 }),
+      makeImageBlock('mm-3', { widthMm: 120, widthPercent: 100 }),
+      makeImageBlock('mm-4', { widthMm: 160, widthPercent: 100 }),
+    ],
+  }),
+]
+check(
+  'VE layout: inconsistentImageSizingChecker prefers widthMm over widthPercent, matching ImageRender/drawImagePdf\'s precedence exactly',
+  inconsistentImageSizingChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: mmPrecedencePages }).length === 1,
+)
+
+// --- imageDensityImbalanceChecker: true positive (both outlier shapes in one fixture) ---
+const densityPages: LaidOutPage[] = [
+  makeFakePage({
+    id: 'density-zero-start',
+    kind: 'chapter-start',
+    chapterId: 'chap-density-zero',
+    chapterTitle: 'No Images',
+    blocks: [{ id: 'density-zero-p', type: 'paragraph', html: 'Just text, no images at all in this chapter.' } as ParagraphBlock],
+  }),
+  makeFakePage({
+    id: 'density-mid-start',
+    kind: 'chapter-start',
+    chapterId: 'chap-density-mid',
+    chapterTitle: 'One Image',
+    blocks: [makeImageBlock('density-mid-img1', { widthPercent: 100 })],
+  }),
+  makeFakePage({
+    id: 'density-high-start',
+    kind: 'chapter-start',
+    chapterId: 'chap-density-high',
+    chapterTitle: 'Many Images',
+    blocks: [
+      makeImageBlock('density-high-img1'),
+      makeImageBlock('density-high-img2'),
+      makeImageBlock('density-high-img3'),
+      makeImageBlock('density-high-img4'),
+      makeImageBlock('density-high-img5'),
+      makeImageBlock('density-high-img6'),
+      makeImageBlock('density-high-img7'),
+      makeImageBlock('density-high-img8'),
+    ],
+  }),
+]
+const densityFindings = imageDensityImbalanceChecker.run({ manuscript: EMPTY_VE_MANUSCRIPT, pages: densityPages })
+check('VE layout: imageDensityImbalanceChecker flags both a zero-image outlier and a high-image outlier, and nothing else', densityFindings.length === 2)
+check(
+  'VE layout: the zero-image chapter is flagged as issueType image-density-zero',
+  densityFindings.some((f) => f.issueType === 'image-density-zero' && f.location.chapterId === 'chap-density-zero'),
+)
+check(
+  'VE layout: the 8-image chapter (more than double the 3-image book average) is flagged as issueType image-density-high',
+  densityFindings.some((f) => f.issueType === 'image-density-high' && f.location.chapterId === 'chap-density-high'),
+)
+check(
+  'VE layout: the middling 1-image chapter (close to the book average) is not flagged at all',
+  !densityFindings.some((f) => f.location.chapterId === 'chap-density-mid'),
+)
+
+// --- pipeline.ts: isApplicable-driven analysedCategories — publishingStandards
+// and layout must stay null (honest "Not yet analysed") when pages is
+// omitted, and become real scores the moment real pages are provided,
+// without any other category's behaviour changing at all. ---
+const noPagesReport = runPipeline('ve-layout-pipeline-project', EMPTY_VE_MANUSCRIPT)
+check('VE pipeline: publishingStandards stays null (not yet analysed) when no pages are provided', noPagesReport.categoryScores.publishingStandards === null)
+check('VE pipeline: layout stays null (not yet analysed) when no pages are provided', noPagesReport.categoryScores.layout === null)
+
+const withHealthyPagesReport = runPipeline('ve-layout-pipeline-project', EMPTY_VE_MANUSCRIPT, undefined, healthyPages)
+check(
+  'VE pipeline: publishingStandards becomes a real, perfect 100 once real pages are provided and nothing is flagged',
+  withHealthyPagesReport.categoryScores.publishingStandards?.score === 100,
+)
+check(
+  'VE pipeline: layout becomes a real, perfect 100 once real pages are provided and nothing is flagged',
+  withHealthyPagesReport.categoryScores.layout?.score === 100,
+)
+
+const withSparsePagesReport = runPipeline('ve-layout-pipeline-project', EMPTY_VE_MANUSCRIPT, undefined, sparsePages)
+check('VE pipeline: publishingStandards score drops below 100 with real pages containing a real finding', (withSparsePagesReport.categoryScores.publishingStandards?.score ?? 100) < 100)
+check(
+  'VE pipeline: the sparse-chapter-ending finding actually appears in the pipeline output, tagged publishingStandards',
+  withSparsePagesReport.findings.some((f) => f.issueType === 'sparse-chapter-ending' && f.category === 'publishingStandards'),
+)
+
+// --- virtualEditorStore.runReview: the new optional 4th `pages` parameter
+// really does reach the pipeline (and is genuinely optional — omitting it
+// keeps publishingStandards/layout honestly null, no silent default). ---
+const veReviewPagesProjectId = 've-pages-review-project'
+useContentStoreForFixAll.getState().setManuscript(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT)
+useVirtualEditorStore.getState().runReview(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT, undefined, sparsePages)
+const veReviewPagesReport = useVirtualEditorStore.getState().reportsByProject[veReviewPagesProjectId]!
+check('runReview: an optional pages argument reaches the pipeline and produces a real publishingStandards score', veReviewPagesReport.categoryScores.publishingStandards !== null)
+
+const veNoPagesReviewProjectId = 've-no-pages-review-project'
+useContentStoreForFixAll.getState().setManuscript(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
+useVirtualEditorStore.getState().runReview(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
+const veNoPagesReviewReport = useVirtualEditorStore.getState().reportsByProject[veNoPagesReviewProjectId]!
+check('runReview: without a pages argument, publishingStandards stays null (genuinely optional, no silent default)', veNoPagesReviewReport.categoryScores.publishingStandards === null)
 
 // --- Inline editing: sanitise-on-commit reuses the import-time sanitiser ---
 // BlockContent.tsx feeds whatever a contentEditable paragraph produced back

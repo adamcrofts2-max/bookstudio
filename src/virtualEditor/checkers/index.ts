@@ -12,10 +12,14 @@ import { PROOFREADING_CHECKERS } from '@/virtualEditor/checkers/proofreading'
 import { CONSISTENCY_CHECKERS } from '@/virtualEditor/checkers/consistency'
 import { READABILITY_CHECKERS } from '@/virtualEditor/checkers/readability'
 import { COPY_EDITING_CHECKERS } from '@/virtualEditor/checkers/copyEditing'
+import { PUBLISHING_STANDARDS_CHECKERS } from '@/virtualEditor/checkers/publishingStandards'
+import { LAYOUT_CHECKERS } from '@/virtualEditor/checkers/layout'
 
 export const ALL_CHECKERS: Checker[] = [
   ...PROOFREADING_CHECKERS,
   ...CONSISTENCY_CHECKERS,
   ...READABILITY_CHECKERS,
   ...COPY_EDITING_CHECKERS,
+  ...PUBLISHING_STANDARDS_CHECKERS,
+  ...LAYOUT_CHECKERS,
 ]

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type { ContentBlock, Manuscript } from '@/types/content'
+import type { LaidOutPage } from '@/renderer/paginate'
 import type { EditorialReport, Finding, FindingStatus, IssueCategory, StyleGuide } from '@/virtualEditor/types'
 import { runPipeline } from '@/virtualEditor/pipeline'
 import { useContentStore } from '@/store/contentStore'
@@ -56,8 +57,15 @@ interface VirtualEditorActions {
    * `runPipeline` — this store never reaches into `projectStore` itself
    * (per CLAUDE.md's layer-separation rule); the caller (which already has
    * both the manuscript and the project) is responsible for reading
-   * `project.settings.styleGuide` and passing it in. */
-  runReview: (projectId: string, manuscript: Manuscript, styleGuide?: StyleGuide) => EditorialReport
+   * `project.settings.styleGuide` and passing it in. `pages` is likewise
+   * optional and simply forwarded — the real, already-computed pagination
+   * output (from `useExportStore`, published by `BookRenderer`), never
+   * re-derived here; this store still never reaches into `renderer/*` or
+   * `exportStore` itself, per the same layer-separation rule. Genuinely
+   * absent when the manuscript workspace hasn't rendered yet this session,
+   * which is what lets `publishingStandards`/`layout` honestly report "Not
+   * yet analysed" instead of a fake 100. */
+  runReview: (projectId: string, manuscript: Manuscript, styleGuide?: StyleGuide, pages?: LaidOutPage[]) => EditorialReport
   getReport: (projectId: string) => EditorialReport | undefined
   getFindingStatuses: (projectId: string) => Readonly<Record<string, FindingStatus>>
   getFindingStatus: (projectId: string, findingId: string) => FindingStatus
@@ -86,8 +94,8 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
   findingStatusByProject: {},
   revisionsByProject: {},
 
-  runReview: (projectId, manuscript, styleGuide) => {
-    const report = runPipeline(projectId, manuscript, styleGuide)
+  runReview: (projectId, manuscript, styleGuide, pages) => {
+    const report = runPipeline(projectId, manuscript, styleGuide, pages)
     set((state) => ({
       reportsByProject: { ...state.reportsByProject, [projectId]: report },
       findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },

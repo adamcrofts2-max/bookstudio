@@ -4,6 +4,7 @@ import { RefreshCcw, Sparkles, Wand2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
+import { useExportStore } from '@/store/exportStore'
 import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
@@ -33,6 +34,13 @@ interface VirtualEditorWorkspaceProps {
  */
 export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
+  // The real, already-computed pagination output published by
+  // `BookRenderer.tsx` after its own render effect — see
+  // `docs/VIRTUAL_EDITOR.md` § Publishing Standards & Layout checkers. Only
+  // present once the manuscript workspace has rendered at least once this
+  // session; genuinely `undefined` otherwise, which is why the caption below
+  // exists rather than silently passing nothing through.
+  const layout = useExportStore((s) => s.byProject[project.id])
   const report = useVirtualEditorStore((s) => s.reportsByProject[project.id])
   const findingStatuses = useVirtualEditorStore((s) => s.findingStatusByProject[project.id])
   const revisions = useVirtualEditorStore((s) => s.revisionsByProject[project.id] ?? EMPTY_REVISIONS)
@@ -138,15 +146,25 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               taxonomy is designed and lands incrementally — see <span className="font-medium">docs/VIRTUAL_EDITOR.md</span>.
             </p>
           </div>
-          <Button
-            variant="primary"
-            size="md"
-            className="gap-2"
-            onClick={() => runReview(project.id, manuscript, project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE)}
-          >
-            <RefreshCcw className="size-4" />
-            Review Entire Book
-          </Button>
+          <div className="flex flex-col items-end gap-1.5">
+            <Button
+              variant="primary"
+              size="md"
+              className="gap-2"
+              onClick={() =>
+                runReview(project.id, manuscript, project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE, layout?.pages)
+              }
+            >
+              <RefreshCcw className="size-4" />
+              Review Entire Book
+            </Button>
+            {!layout && (
+              <p className="max-w-[36ch] text-right text-xs text-text-secondary">
+                Layout and Publishing Quality checks need the manuscript view to have rendered at least once this
+                session — open the Chapters view, then come back and re-run the review.
+              </p>
+            )}
+          </div>
         </header>
 
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">

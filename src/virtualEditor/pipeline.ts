@@ -12,13 +12,32 @@
 
 import { generateId } from '@/utils/id'
 import type { Manuscript } from '@/types/content'
-import type { EditorialReport, StyleGuide } from '@/virtualEditor/types'
+import type { LaidOutPage } from '@/renderer/paginate'
+import type { CheckerContext, EditorialReport, StyleGuide } from '@/virtualEditor/types'
 import { ALL_CHECKERS } from '@/virtualEditor/checkers'
 import { computeCategoryScores, computeOverallScore } from '@/virtualEditor/scoring'
 
-export function runPipeline(projectId: string, manuscript: Manuscript, styleGuide?: StyleGuide): EditorialReport {
-  const findings = ALL_CHECKERS.flatMap((checker) => checker.run({ manuscript, styleGuide }))
-  const analysedCategories = new Set(ALL_CHECKERS.map((checker) => checker.category))
+export function runPipeline(
+  projectId: string,
+  manuscript: Manuscript,
+  styleGuide?: StyleGuide,
+  pages?: LaidOutPage[],
+): EditorialReport {
+  const ctx: CheckerContext = { manuscript, styleGuide, pages }
+  const findings = ALL_CHECKERS.flatMap((checker) => checker.run(ctx))
+  // A category counts as "analysed" only when at least one of its checkers
+  // could actually run against this context — not merely "is registered."
+  // `isApplicable` defaults to true (see types.ts), so every pre-existing
+  // checker (proofreading/consistency/readability/copyEditing) is unaffected
+  // by this change: it was always "applicable" and still is. This is what
+  // lets publishingStandards/layout honestly stay `null` ("Not yet
+  // analysed") when `pages` is absent this run, instead of a fake 100 from a
+  // registered-but-inapplicable checker finding nothing.
+  const analysedCategories = new Set(
+    ALL_CHECKERS.filter((checker) => (checker.isApplicable ? checker.isApplicable(ctx) : true)).map(
+      (checker) => checker.category,
+    ),
+  )
   const categoryScores = computeCategoryScores(findings, analysedCategories)
   const overallScore = computeOverallScore(categoryScores)
 

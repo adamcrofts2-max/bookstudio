@@ -27,7 +27,8 @@ Layer 1  Project     (projectStore)        — untouched
 Layer 2  Content     (contentStore)        — read-only to Virtual Editor, except
                                               via its own updateBlock action
 Layer 3  Theme       (theme/presets)       — read-only, future typography checks
-Layer 4  Layout      (renderer/paginate)   — read-only, future publishing-standards checks
+Layer 4  Layout      (renderer/paginate)   — read-only; real publishing-standards/
+                                              layout checks since Phase 25 (see below)
 Layer 5  Rendering   (renderer/*)          — untouched; Virtual Editor is a new
                                               sibling workspace, not a rendering change
 Layer 6  PDF Export  (pdf/*)               — read-only, future print-readiness checks
@@ -38,11 +39,15 @@ NEW      Virtual Editor  (src/virtualEditor/, src/store/virtualEditorStore.ts)
 `src/virtualEditor/` is a new, independent layer, exactly like Theme or Layout
 Engine are independent of Content. It:
 
-- **reads** `Manuscript` (Layer 2) through `Checker.run({ manuscript, styleGuide })`
+- **reads** `Manuscript` (Layer 2) through `Checker.run({ manuscript, styleGuide, pages })`
   — checkers never import `contentStore`, they only see the data they're handed.
-- will eventually also read Theme/Layout/Rendering output (typography, pagination,
-  print geometry) the same way — as plain data passed into a `CheckerContext`, never
-  by reaching into those stores.
+- **since Phase 25, also reads real Layout Engine output** (`pages:
+  LaidOutPage[]`) the same way: as plain data passed into `CheckerContext`,
+  never by reaching into `renderer/*` or `exportStore` directly. See §
+  Publishing Standards & Layout checkers below for exactly how this is
+  plumbed through without a second pagination pipeline. Theme/Rendering
+  output (typography, print geometry) is still a future extension of the
+  same pattern.
 - **never mutates anything itself.** `Checker.run` and `AiReviewer.run` are pure —
   same input, same findings. The *only* place a `Finding` becomes a real edit is
   `virtualEditorStore.acceptFix`, and it does that by calling
@@ -66,10 +71,13 @@ src/virtualEditor/
   textPatch.ts          the inverse: (block, field, transform) -> Partial<ContentBlock>
                         patch, used to build SuggestedFix.apply
   checkers/
-    proofreading.ts      6 real, deterministic checkers (see below)
-    consistency.ts       2 real, deterministic checkers (term casing, unit style)
-    readability.ts       2 real, deterministic checkers (Flesch formulas, long sentences)
-    index.ts             ALL_CHECKERS registry
+    proofreading.ts        6 real, deterministic checkers (see below)
+    consistency.ts         2 real, deterministic checkers (term casing, unit style)
+    readability.ts         2 real, deterministic checkers (Flesch formulas, long sentences)
+    copyEditing.ts         1 real, Style-Guide-dependent checker (heading capitalisation)
+    publishingStandards.ts 3 real checkers reading real pagination output (Phase 25)
+    layout.ts              2 real checkers reading real pagination output (Phase 25)
+    index.ts               ALL_CHECKERS registry
   aiReviewer.ts          AiReviewer interface stub + NullAiReviewer instances for
                         every category that doesn't have a real checker yet
   scoring.ts             severity → score-deduction weights, category/overall
@@ -152,6 +160,11 @@ Every `Finding` carries a `confidence` (0–1) alongside its `severity`
 | Term-casing consistency | 0.5 | A capitalisation heuristic with no dictionary of real proper nouns — same "book-wide pattern, not certainty" caveat as quote-style consistency |
 | Metric abbreviation-style consistency | 0.5 | Same heuristic caveat as term-casing — a style pattern across the book, not a per-instance fact |
 | Heading capitalisation (Style Guide `headingCapitalisation` set) | 0.5 | No dictionary of proper nouns — a genuine proper noun later in a Sentence-case heading (e.g. "The history of London") will false-positive; directionally useful, not linguistically complete |
+| Sparse chapter ending | 0.5 | A heuristic pattern (one short paragraph alone on a chapter's final page), not a per-instance fact — a short closing line can be a deliberate stylistic choice |
+| Empty chapter | 0.9 | Nearly unambiguous — either a chapter has blocks in its pages or it doesn't; shaded slightly below 1.0 only because this codebase has no distinct "part divider" block type for a chapter deliberately meant to be title-only |
+| Consecutive blank pages | 0.85 | The detection itself (counting adjacent blank pages) is exact; shaded down slightly from 1.0 only because asserting "this is always a bug" is about a situation `paginate.ts`'s own construction has never had to reason about happening at all |
+| Inconsistent image sizing | 0.5 | A polish-nit heuristic (bucketed effective width, see `layout.ts`) — a deliberate small set of sizes vs a genuinely inconsistent spread is a judgement call, not a fact |
+| Image density imbalance | 0.5 | A simple book-average-based outlier rule, not a design judgement about whether a chapter's illustration density is actually wrong |
 
 **Score formula** (`scoring.ts`): start at 100, subtract
 `SEVERITY_WEIGHT[severity] * confidence` for every finding in a category, floor at 0.
@@ -177,19 +190,99 @@ findings still show up in the Findings list under their own category label.
 | **Proofreading** | Double spaces, repeated adjacent words, unmatched quotes, unmatched brackets, missing terminal punctuation, straight/curly quote consistency (book-wide heuristic with no Style Guide preference set, **or** a per-span preference-violation flag once `styleGuide.quoteStyle` is `'curly'`/`'straight'`) | Spelling, dash consistency, ellipsis consistency, missing/extra spaces around punctuation, broken hyperlinks, malformed URLs |
 | **Grammar** (`copyEditing`) | Heading capitalisation (Title Case / Sentence case), but **only when** `styleGuide.headingCapitalisation` is explicitly set to `'title-case'` or `'sentence-case'` — silent with no preference | Grammar, sentence flow, awkward wording, passive voice, word repetition, overly long sentences, inconsistent terminology/abbreviations, number/bullet/table formatting, italic species names |
 | *(taxonomy only)* `developmental` | — | Weak intros/conclusions, out-of-place chapters, missing explanations/diagrams/examples, poor transitions, repetition, information overload, chapter length outliers, logical inconsistencies |
-| **Publishing Quality** (`publishingStandards`) | — | Stranded chapter titles, widows, orphans, images separated from captions, captions without images, bad table splits, bad page turns, crowded/sparse pages, isolated bullets, single-line paragraphs/headings, blank pages, missing folios, running-header errors, inconsistent margins/spacing |
+| **Publishing Quality** (`publishingStandards`) | *(Phase 25, needs `ctx.pages` — real pagination output, see § below)* Sparse chapter endings (a lone short paragraph alone on a chapter's final page), empty chapters (no content at all under the title), consecutive blank pages (a sanity check — should be structurally impossible today) | Images separated from captions, captions without images, bad table splits, bad page turns, crowded pages, isolated bullets, missing folios, running-header errors, inconsistent margins/spacing. **Widows/orphans are not a future item** — `paginate.ts`'s heading-orphan guard already prevents them structurally, by construction, not something to detect after the fact. **Page-numbering-uniqueness was considered and deliberately dropped** — once structural (front/back-matter) pages are correctly excluded, `paginate.ts` numbers every real page exactly once by construction; there was nothing left to check |
 | **Readability** | Book-wide Flesch Reading Ease + Flesch-Kincaid Grade Level (real word/sentence/syllable-count formulas, informational, always reported), per-paragraph unusually-long-average-sentence-length flag | Reading age (beyond Flesch-Kincaid), passive-voice %, reading time, chapter difficulty, reading fatigue |
 | **Consistency** | Term-casing consistency ("Forest Garden" vs "forest garden", two-word terms only), metric-vs-imperial unit mixing, abbreviated-vs-spelled-out metric unit style ("5m" vs "5 metres") | "Figure 2" vs "Fig. 2", British vs American spelling, italic scientific names, heading/caption spacing, three-plus-word term casing, imperial abbreviation style ("5ft" vs "5 feet") |
 | *(taxonomy only)* `fieldGuide` | — | Species-profile completeness: scientific name, common name, family, origin, uses, wildlife value, edibility, medicinal use, propagation, care, height/spread, hardiness, light, moisture, warnings, seasonality, illustrations, references |
-| **Layout** | — | Visual imbalance, poor image placement, weak chapter openers, inconsistent image sizes, poor whitespace/hierarchy, page density |
+| **Layout** | *(Phase 25, needs `ctx.pages`)* Inconsistent image sizing within a chapter (3+ images spread across more than 3 distinct effective-width buckets), image density imbalance book-wide (a chapter with zero images when the book averages 2+, or more than double the book's average) | Visual imbalance beyond image count/size, poor image placement relative to text, weak chapter openers, poor whitespace/hierarchy. **True whitespace/fill-ratio measurement (e.g. "this page is only 20% full") is not built** — `LaidOutPage` doesn't store each block's real rendered height (that only exists transiently inside `HeightMeasurer`'s off-screen DOM pass), so a genuine page-density check needs that measurement threaded through too, which this milestone didn't do |
 | **Typography** | — | Font hierarchy, leading, tracking, kerning, hyphenation quality, line length, paragraph rhythm, heading hierarchy |
 | **Accessibility** | — | Contrast, minimum font size, colour-blindness safety, screen-reader compatibility, line spacing, print readability |
 | **Print Readiness** | — | Bleed, crop marks, embedded fonts, CMYK readiness, image resolution, trim, spine, page count, blank pages |
 | **Commercial Quality** | — | Professional appearance, educational quality, visual impact, reader engagement, market readiness, "does this feel like a £40–£60 book" |
 
-**Proofreading**, **Consistency**, **Readability**, and an honest **Overall**
-(the mean of those three analysed categories) show a real number today. Every
-other tile still renders "Not yet analysed."
+**Proofreading**, **Consistency**, **Readability**, **Grammar** (`copyEditing`,
+since Phase 24), and an honest **Overall** always show a real number today —
+this paragraph was stale from before Phase 24 landed a registered `copyEditing`
+checker and was never corrected until now. **Publishing Quality**
+(`publishingStandards`) and **Layout** (since Phase 25) show a real number
+whenever `ctx.pages` was available for that review run (see § Publishing
+Standards & Layout checkers below) — otherwise, exactly like every other
+tile that has no applicable checker for the current context, they render
+"Not yet analysed." Every other tile (`typography`, `accessibility`, `print`,
+`commercial`) still always renders "Not yet analysed" — no checker exists
+for them at all yet.
+
+## Publishing Standards & Layout checkers (Phase 25)
+
+The architectural gap that made `publishingStandards`/`layout` impossible to
+build before this phase: every `Checker` only ever received
+`{ manuscript, styleGuide }` — there was no way to see real pagination output
+(page breaks, which blocks landed on which page, blank/structural pages) at
+all. Two changes closed this gap:
+
+- **`CheckerContext.pages?: LaidOutPage[]`** (`types.ts`) — the real,
+  fully-measured pagination output. Reused, not re-derived: `BookRenderer.tsx`
+  already publishes the exact `LaidOutPage[]` it renders (via
+  `composeBookPages(frontMatter, paginatedPages, backMatter)`) into
+  `useExportStore.getState().setLayout(project.id, { pages, toc, pageBox,
+  theme })` in a `useEffect` — the same data PDF export reads. There is no
+  second pagination/measurement pipeline in the Virtual Editor;
+  `VirtualEditorWorkspace.tsx` simply reads
+  `useExportStore((s) => s.byProject[project.id])?.pages` and passes it
+  through. This is optional and genuinely `undefined` whenever the manuscript
+  workspace hasn't rendered at least once this session — a small, honest
+  caption below the "Review Entire Book" button says so when it's missing,
+  rather than silently running an incomplete review.
+- **`Checker.isApplicable?: (ctx: CheckerContext) => boolean`** (`types.ts`) —
+  defaults to "always applicable" when omitted, so every pre-existing checker
+  (proofreading/consistency/readability/copyEditing) needed zero changes.
+  Every checker in `publishingStandards.ts`/`layout.ts` declares
+  `isApplicable: (ctx) => !!ctx.pages` and returns `[]` immediately if
+  `ctx.pages` is absent. `pipeline.ts`'s `analysedCategories` now only counts
+  a category as analysed when at least one of its checkers is actually
+  applicable to the context being run — not merely "registered" — which is
+  what lets the dashboard honestly report "Not yet analysed" for these two
+  categories instead of a fabricated 100 when `pages` wasn't available for
+  that review.
+
+**The 5 checkers**, all deterministic, synchronous, and reading `ctx.pages`
+exclusively (never `ctx.manuscript`) — see each file's doc comments for the
+full reasoning, thresholds, and honestly-documented limitations:
+
+- `publishingStandards.ts`:
+  - `sparseChapterEndingChecker` (`minor`) — a chapter's last page has
+    exactly one block, it's a paragraph, and it's under 25 words: "ends with
+    a single short paragraph alone on its final page."
+  - `emptyChapterOpenerChecker` (`major`) — a chapter has zero blocks across
+    every one of its pages.
+  - `consecutiveBlankPagesChecker` (`minor`) — two or more `kind === 'blank'`
+    pages appear adjacently, which `paginate.ts` should never produce (it only
+    ever inserts one blank page at a time, to force a recto chapter start) —
+    a low-probability sanity check, not an expected common finding.
+- `layout.ts`:
+  - `inconsistentImageSizingChecker` (`suggestion`) — a chapter has 3+ images
+    spread across more than 3 distinct effective-width buckets (rounded to
+    the nearest 10, whether the unit is `widthMm` or `widthPercent` — reusing
+    the exact same `widthMm`-over-`widthPercent` precedence rule already
+    established in `src/blocks/types/image.tsx`/`exportPdf.ts`, not a new
+    one).
+  - `imageDensityImbalanceChecker` (`suggestion`) — book-wide, flags a
+    chapter with zero images when the book averages 2+ per chapter, or more
+    than double the book's own average.
+
+**Every checker filters `page.kind !== 'structural'` first** (or groups
+strictly by `page.chapterId`, which structural pages never carry) — see
+`composePages.ts`'s `toLaidOutPage`, which deliberately gives every
+front-/back-matter page `number: 0` and no chapter, per real print-book
+convention. Getting this wrong would misread every Cover/Copyright/
+Bibliography page as part of "the book's chapters." Page-numbering-uniqueness
+was considered and deliberately **not** built as a checker for exactly this
+reason — once structural pages are correctly excluded, `paginate.ts` numbers
+every real content page exactly once, by construction; there was nothing left
+to genuinely check. Likewise, **widow/orphan heading detection wasn't built
+either** — not a gap, but because `paginate.ts`'s existing heading-orphan
+guard already structurally prevents that bad state from ever being produced
+in the first place, so there's nothing to detect after the fact.
 
 ## The suggestion engine & action verbs
 
@@ -331,11 +424,19 @@ tab set). `uiStore.workspaceMode` (`'manuscript' | 'virtualEditor'`) decides wha
 `Workspace.tsx` renders; `AppShell`, `Sidebar` and `Inspector` are untouched.
 
 `VirtualEditorWorkspace.tsx` shows:
-- All 11 named scores (`SCORE_TILES` in `scoring.ts`) — real numbers for
-  Proofreading, Consistency, Readability + Overall, "Not yet analysed" for the
-  other 7.
+- All 11 named scores (`SCORE_TILES` in `scoring.ts`) — real numbers always
+  for Proofreading, Consistency, Readability, Grammar (`copyEditing`) and
+  Overall; real numbers for Publishing Quality and Layout whenever `pages`
+  was available for that review run (see § Publishing Standards & Layout
+  checkers); "Not yet analysed" for the remaining 4 (Typography,
+  Accessibility, Print Readiness, Commercial Quality) and for Publishing
+  Quality/Layout when `pages` wasn't available.
 - A "Review Entire Book" button that runs the pipeline against the project's
-  current manuscript.
+  current manuscript and its current real pagination output (read from
+  `useExportStore`, when present — see § Publishing Standards & Layout
+  checkers). A small caption beneath the button, shown only when no layout
+  has been published yet this session, explains that Publishing Quality and
+  Layout checks need the manuscript view to have rendered at least once.
 - The findings list: severity, category, confidence, a clickable location
   (switches back to the manuscript workspace and scrolls to the finding via
   `selectionStore.requestScrollToBlock`/`requestScrollToChapter` — the same
@@ -396,15 +497,19 @@ revision log) generalise to them too.
 | 6 deterministic proofreading checkers | **Real**, tested in `scripts/smoke-test.ts` |
 | 2 deterministic consistency checkers (term casing, unit style) | **Real**, tested in `scripts/smoke-test.ts` — no spell-check dictionary, no NLP-based term/proper-noun extraction, no British/American spelling check |
 | 2 deterministic readability checkers (Flesch Reading Ease/Grade Level, long sentences) | **Real**, tested in `scripts/smoke-test.ts` — heuristic vowel-group syllable counting (not a pronunciation dictionary), no reading-age estimate beyond Grade Level, no passive-voice/reading-time/fatigue metrics |
+| 1 copy editing checker (heading capitalisation, Style-Guide-dependent) | **Real** (Phase 24), tested in `scripts/smoke-test.ts` — only fires when `styleGuide.headingCapitalisation` is set; silent otherwise |
+| 3 publishing-standards checkers (sparse chapter endings, empty chapters, consecutive blank pages) | **Real** (Phase 25), tested in `scripts/smoke-test.ts` — need `CheckerContext.pages` (real pagination output); honestly `null` ("Not yet analysed") when the manuscript view hasn't rendered yet this session. No widow/orphan detection (already prevented by `paginate.ts`'s construction, not a gap), no page-numbering-uniqueness check (structural pages make it a non-finding once correctly excluded), no true whitespace/fill-ratio measurement (no per-block rendered height on `LaidOutPage`) |
+| 2 layout checkers (inconsistent image sizing, image density imbalance) | **Real** (Phase 25), tested in `scripts/smoke-test.ts` — same `ctx.pages` dependency and honest-`null` behaviour as above. No visual-imbalance/image-placement/whitespace-hierarchy checks beyond image count and size |
+| `CheckerContext.pages` + `Checker.isApplicable` | **Real** (Phase 25) — `pipeline.ts`'s `analysedCategories` only counts a category as analysed when a checker is actually applicable to the context run, not merely registered; defaults to "always applicable" so every pre-Phase-25 checker is unaffected |
 | `AiReviewer` interface | **Real** (interface only — `NullAiReviewer` is the only implementation) |
 | Score aggregation (category + overall) | **Real** |
-| Editorial Dashboard UI, 11 score tiles | **Real** (4 of 11 show real numbers: Proofreading, Consistency, Readability, Overall) |
+| Editorial Dashboard UI, 11 score tiles | **Real** (6 of 11 always show a real number: Proofreading, Consistency, Readability, Grammar, Overall — plus Publishing Quality and Layout whenever `pages` was available for that review run; the remaining 4 — Typography, Accessibility, Print Readiness, Commercial Quality — always render "Not yet analysed," no checker exists for them yet) |
 | Review Entire Book pipeline | **Real** (synchronous, deterministic-only) |
 | Fix / Reject / Ignore / Ignore Similar / Edit | **Real** (Edit disabled only for book-wide findings with no single block to jump to) |
 | Batch-apply ("Fix All" + per-category "Fix all in [Category]", replacing the original "Apply to Chapter"/"Apply to Book" placeholders — see Phase 13 in `docs/STATUS.md`) | **Real** |
 | Non-destructive revision log + restore | **Real** (linear list, in-memory only) |
 | Original/RevA/RevB/RevC side-by-side compare | **Designed, not built** |
-| Copy editing / developmental / publishing-standards / field-guide / layout / typography / accessibility / print / commercial checkers | **Designed, not built** |
+| Developmental / field-guide / typography / accessibility / print / commercial checkers | **Designed, not built** |
 | AI Learning / editorial profile | **Designed, not built** |
-| Style Guide enforcement | **Partially real (Phase 24)** — settings UI + persistence + pipeline wiring are real; `quoteStyleConsistencyChecker` and the new `headingCapitalisationChecker` consult it; `englishVariant`/`oxfordComma`/`measurementUnits`/`dateFormat` and every other checker still ignore it |
+| Style Guide enforcement | **Partially real (Phase 24)** — settings UI + persistence + pipeline wiring are real; `quoteStyleConsistencyChecker` and `headingCapitalisationChecker` consult it; `englishVariant`/`oxfordComma`/`measurementUnits`/`dateFormat` and every other checker (including all 5 new Phase 25 checkers) still ignore it |
 | Future AI modules (fact-check, indexing, glossary, etc.) | **Named as extension points, not stubbed individually** |

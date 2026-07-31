@@ -1948,3 +1948,196 @@ in a real browser (jsdom can't exercise either), (4) line-level text flow so
 paragraphs can split across pages, (5) justified text and image rotation in
 the PDF exporter, (6) proper glyph subsetting once the fontkit bug is
 understood, (7) EPUB/Kindle export.
+
+## Phase 25 — Virtual Editor: Publishing Standards + Layout checkers, real pagination data (2026-07-31)
+
+Closes the exact gap Phase 24's own "Recommended next task" named: a third
+deterministic checker engine reading `renderer/paginate.ts`'s layout output
+needed new `CheckerContext` plumbing first, since it only carried
+`manuscript`/`styleGuide` before this phase. Two full categories —
+`publishingStandards` and `layout` — go from "Designed, not built" to real.
+
+- **`CheckerContext.pages?: LaidOutPage[]`** (`types.ts`) — the real,
+  fully-measured pagination output, reused rather than re-derived. Confirmed
+  by reading `BookRenderer.tsx`: after computing `pages` (via
+  `composeBookPages(frontMatter, paginatedPages, backMatter)`), it already
+  calls `useExportStore.getState().setLayout(project.id, { pages, toc,
+  pageBox, theme })` in a `useEffect` — the exact same data PDF export
+  reads. There is no second pagination/measurement pipeline in the Virtual
+  Editor; building one would duplicate `HeightMeasurer`'s expensive,
+  React-only, off-screen DOM measurement pass for no reason. `pages` is
+  optional and genuinely `undefined` whenever the manuscript workspace
+  hasn't rendered at least once this session.
+- **`Checker.isApplicable?: (ctx: CheckerContext) => boolean`** (`types.ts`)
+  — defaults to "always applicable" when omitted, so every pre-existing
+  checker (proofreading/consistency/readability/copyEditing) needed zero
+  changes and is unaffected — confirmed by the full existing test suite
+  passing unchanged. `pipeline.ts`'s `analysedCategories` now only counts a
+  checker's category as analysed when `checker.isApplicable ? isApplicable(ctx)
+  : true` is true for the context actually being run, rather than "every
+  registered checker's category always counts." This is what lets
+  `publishingStandards`/`layout` honestly stay `null` ("Not yet analysed")
+  when `pages` is absent, instead of a fabricated 100 from a
+  registered-but-inapplicable checker finding nothing.
+- **`src/virtualEditor/checkers/publishingStandards.ts`** (new) — 3
+  checkers, all `isApplicable: (ctx) => !!ctx.pages`:
+  - `sparseChapterEndingChecker` (`minor`, confidence 0.5) — a chapter's
+    last page (matched by `page.chapterId === chapter.id && page.kind !==
+    'structural'`) has exactly one block, it's a `paragraph`, and its plain
+    text (`blockPlainText`) is under 25 words — "ends with a single short
+    paragraph alone on its final page, which will print as a nearly-blank
+    page."
+  - `emptyChapterOpenerChecker` (`major`, confidence 0.9) — a chapter has
+    zero blocks across every one of its pages (its `chapter-start` page and
+    any further `content` pages combined) — a real authoring mistake, not a
+    style nit.
+  - `consecutiveBlankPagesChecker` (`minor`, confidence 0.85) — two or more
+    `kind === 'blank'` pages appear adjacently. `paginate.ts` only ever
+    inserts exactly one blank page at a time (to force a recto chapter
+    start), so this is a low-probability sanity check flagging something
+    that should be structurally impossible today, documented honestly as
+    such rather than presented as an expected common finding. Since a blank
+    page carries no `chapterId`, the finding is attributed to the chapter
+    immediately following the blank run (falling back to the preceding
+    chapter for the edge case of a run at the very end of the book).
+- **`src/virtualEditor/checkers/layout.ts`** (new) — 2 checkers, both
+  `isApplicable: (ctx) => !!ctx.pages`:
+  - `inconsistentImageSizingChecker` (`suggestion`, confidence 0.5) — per
+    chapter, collects every `image`-block's effective width using the
+    **exact same precedence rule already established** in
+    `src/blocks/types/image.tsx`'s `ImageRender` and `exportPdf.ts`'s
+    `drawImagePdf` (`widthMm` wins when set, else `widthPercent ?? 100`) —
+    grepped both call sites first rather than inventing a second version of
+    this logic. Buckets each effective width to the nearest 10 (documented,
+    simple, explainable — not a statistics library) and flags a chapter
+    with 3+ images spread across more than 3 distinct buckets. A dedicated
+    test proves the precedence is actually honoured: 4 images sharing an
+    identical `widthPercent: 100` but 4 distinct `widthMm` values only trips
+    the checker if `widthMm` is really what's read.
+  - `imageDensityImbalanceChecker` (`suggestion`, confidence 0.5) —
+    book-wide, flags a chapter with zero images when the book's own average
+    is >= 2 per chapter, or more than double the book average — two simple,
+    explainable outlier rules, not a statistics library.
+  - **Deliberately not built, and explained positively rather than as a
+    gap**: widow/orphan detection — `paginate.ts`'s existing heading-orphan
+    guard already structurally prevents a stranded heading, so there's
+    nothing to detect after the fact. Page-numbering-uniqueness — once
+    structural (front/back-matter) pages are correctly excluded,
+    `paginate.ts` numbers every real page exactly once by construction, so
+    this was considered and dropped as a non-finding, not an oversight. True
+    whitespace/fill-ratio measurement — `LaidOutPage` doesn't store each
+    block's real rendered height (that only exists transiently inside
+    `HeightMeasurer`'s off-screen pass), so a genuine page-density check is
+    future work needing that measurement threaded through too.
+- **Registered** in `checkers/index.ts`'s `ALL_CHECKERS`, mechanically, same
+  pattern as every prior checker file.
+- **`virtualEditorStore.runReview`** gained a 4th optional parameter,
+  `pages?: LaidOutPage[]`, simply forwarded to `runPipeline` — this store
+  still never reaches into `renderer/*`/`exportStore` itself, per CLAUDE.md's
+  layer-separation rule; the caller resolves `pages` and passes it in.
+- **`VirtualEditorWorkspace.tsx`** now reads
+  `useExportStore((s) => s.byProject[project.id])` and passes `layout?.pages`
+  into `runReview(project.id, manuscript, styleGuide, layout?.pages)` — the
+  existing Phase-24 `styleGuide` resolution (`project.settings.styleGuide ??
+  DEFAULT_STYLE_GUIDE`) was read first and left untouched, not duplicated. A
+  small `text-xs text-text-secondary` caption appears beneath the "Review
+  Entire Book" button only when `!layout`, explaining that Layout/Publishing
+  Quality checks need the manuscript view to have rendered at least once
+  this session — unobtrusive, not a blocking error state, since every other
+  checker still runs fine without `pages`.
+- **Tests**: `scripts/smoke-test.ts` grew from **351 to 383** passing checks
+  (32 new) — a shared "healthy book" fixture (two real chapters, structural
+  front/back matter, exactly one legitimate blank page, a small consistent
+  image-size set, roughly balanced image counts) exercised as the
+  no-false-positive case for all 5 checkers at once, plus dedicated
+  true-positive fixtures per checker (a sparse final page, a zero-block
+  chapter, two adjacent blank pages — including the end-of-book fallback
+  edge case, 4 images at the app's own real 40/65/85/100 presets, and a
+  3-chapter book with a zero-image outlier and an 8-image outlier against a
+  3-image average). Also confirms: `isApplicable` returns `false`/`true`
+  correctly depending on whether `ctx.pages` is present; every checker
+  returns `[]` outright with no `pages` at all; `runPipeline`'s
+  `analysedCategories` keeps `publishingStandards`/`layout` `null` without
+  `pages` and produces real (100, or a real deduction) scores with `pages`;
+  `virtualEditorStore.runReview`'s new 4th parameter really does reach the
+  pipeline end-to-end, and is genuinely optional (omitting it doesn't
+  silently default to anything).
+- **Verified**: `npx tsc -b --force` clean, run directly against the real
+  repo (~18–28s). This sandbox's mounted `node_modules` has the same stray,
+  partially-installed state Phases 19–24 already documented — this time it
+  broke `npm run test` itself (a `zustand/esm/vanilla.mjs` resolution error
+  under `tsx`), not just `vite build` — so `npm run build`/`npm run
+  lint`/`npm run test` were all run from a clean scratch directory (fresh
+  `npm install`, `src/`/`scripts/` synced in), exactly the workaround Phases
+  19–24 already established; `tsc -b --force` against the real,
+  non-scratch repo independently confirmed every new/changed file typechecks
+  correctly regardless. `npm run build` clean, 2,464 modules (up from
+  2,462). `npm run lint`: 0 errors, **43 warnings — unchanged** from
+  baseline; both new files are plain logic modules (no JSX, no component
+  exports), so neither trips the `react/only-export-components` heuristic,
+  matching Phase 23's `consistency.ts`/`readability.ts` precedent exactly
+  (the task brief's own speculation of "+2 warnings" didn't materialise, for
+  the same reason). `npm run test`: **383/383 passing** (351 baseline + 32
+  new checks).
+
+### Deviations from the brief, and why
+- **Two pre-existing documentation staleness bugs were corrected while
+  editing the same tables/paragraphs this phase needed to touch anyway, not
+  as new scope creep**: `docs/VIRTUAL_EDITOR.md`'s "Editorial Dashboard"
+  section and its "quick reference" table both still said only
+  "Proofreading, Consistency, Readability, Overall" show real numbers — they
+  were never updated after Phase 24 registered `headingCapitalisationChecker`
+  under `copyEditing`, which made Grammar a real (if often-100) score too.
+  Fixed alongside this phase's own Publishing Quality/Layout updates rather
+  than left stacked on top of an already-wrong paragraph — same "found it,
+  fixed it, documented why" precedent as Phase 23's block-level-scroll
+  documentation correction.
+- **`inconsistentImageSizingChecker`'s bucketing mixes `widthMm` (a physical
+  size) and `widthPercent` (a fraction of the content column) as if they
+  were the same unit** when a chapter happens to combine both — documented
+  honestly in the file's own doc comment as a known limitation, not hidden.
+  `CheckerContext` doesn't carry page/content-column geometry (`pageBox`),
+  so there's no way to convert one into the other from inside a checker;
+  closing this would mean threading `pageBox` through the same way `pages`
+  was added this phase, which wasn't asked for.
+- **No new `CheckerContext` field for project/theme geometry** beyond
+  `pages` — deliberately the smallest plumbing change that unblocks this
+  phase's two categories, per the brief's own scope.
+
+### Explicitly deferred (per the milestone's own scope)
+- Every checker category still without a real checker at all (developmental,
+  field-guide, typography, accessibility, print, commercial) — untouched.
+- `englishVariant`/`oxfordComma`/`measurementUnits`/`dateFormat` Style Guide
+  enforcement, and AI Learning — both still exactly as deferred as Phase 24
+  left them; none of this phase's 5 new checkers consult `ctx.styleGuide` at
+  all.
+- Live-browser verification of the new "Review Entire Book" caption and of a
+  real Publishing Quality/Layout finding rendering correctly in the
+  dashboard — this sandbox session had no way to load the app in a real
+  browser; verified by build/typecheck/unit-test only, the same honest
+  caveat every prior Virtual-Editor-UI phase has carried.
+- True whitespace/fill-ratio page-density measurement, widow/orphan
+  detection, and page-numbering-uniqueness checking — all explicitly
+  considered and not built, for the positive, documented reasons given above
+  (already prevented by construction, or a non-finding once structural pages
+  are excluded, or needs real block-height data this milestone doesn't add).
+
+## Recommended next task
+The Virtual Editor's remaining designed-not-built categories are:
+Typography, Accessibility, Print Readiness, and Commercial Quality (all four
+need either real AI judgement or Theme/Print-layer data this milestone
+didn't plumb through), plus AI Learning (§ in `docs/VIRTUAL_EDITOR.md`) and
+the Original/RevA/RevB/RevC side-by-side revision-compare UI, and persisting
+the revision log (and reports) across a reload — `virtualEditorStore` is
+still deliberately non-persisted, per its own doc comment, since
+`SuggestedFix.apply` is a function value that can't round-trip through
+`localStorage`'s JSON persistence as-is. Outside the Virtual Editor track:
+(1) profile the Phase 21 structural-page mutation freeze (15–30s on a
+17-chapter project), still unaddressed across five phases now, (2) extend
+Style Guide enforcement to `englishVariant`/`oxfordComma`/`measurementUnits`/
+`dateFormat`, still unconsulted by any checker including this phase's five
+new ones, (3) manually verify the Phase 13 scroll-to-block flow and every
+dashboard tile (including this phase's two) in a real browser, (4)
+line-level text flow so paragraphs can split across pages, (5) justified
+text and image rotation in the PDF exporter, (6) proper glyph subsetting
+once the fontkit bug is understood, (7) EPUB/Kindle export.

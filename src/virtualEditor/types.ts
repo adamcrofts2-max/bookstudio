@@ -10,6 +10,7 @@
  */
 
 import type { ContentBlock, Manuscript } from '@/types/content'
+import type { LaidOutPage } from '@/renderer/paginate'
 
 /**
  * The full editorial taxonomy from the product spec. Every `Finding` is
@@ -104,10 +105,23 @@ export interface Finding {
 }
 
 /** Read-only view of the manuscript (and, later, project/theme/layout
- * context) a checker is allowed to inspect. */
+ * context) a checker is allowed to inspect.
+ *
+ * `pages` is the real, fully-measured pagination output — the exact same
+ * `LaidOutPage[]` `BookRenderer.tsx` publishes into `useExportStore` after
+ * composing front/back matter with the chapter flow, and the exact same data
+ * PDF export reads. It's optional and genuinely **absent** whenever the
+ * manuscript workspace hasn't rendered at least once this session (there is
+ * no second pagination pipeline here — see `docs/VIRTUAL_EDITOR.md` §
+ * Publishing Standards & Layout checkers for why re-deriving it would be
+ * unnecessary duplication of `HeightMeasurer`'s expensive, React-only,
+ * off-screen DOM measurement). Checkers that need real page geometry
+ * (publishing-standards, layout) must declare `isApplicable` and return `[]`
+ * immediately when `pages` is `undefined`. */
 export interface CheckerContext {
   manuscript: Manuscript
   styleGuide?: StyleGuide
+  pages?: LaidOutPage[]
 }
 
 /**
@@ -121,6 +135,18 @@ export interface Checker {
   label: string
   description: string
   run: (ctx: CheckerContext) => Finding[]
+  /**
+   * Whether this checker can actually run against the given context —
+   * distinct from "ran and found nothing." Defaults to "always applicable"
+   * when omitted, so every checker written before this field existed
+   * (proofreading/consistency/readability/copyEditing) keeps working with
+   * zero changes. Checkers that depend on `ctx.pages` (publishingStandards,
+   * layout) declare `isApplicable: (ctx) => !!ctx.pages` so `runPipeline` can
+   * honestly report "Not yet analysed" for that category instead of a fake
+   * 100 when the manuscript view hasn't rendered yet this session — see
+   * `pipeline.ts`'s `analysedCategories` computation.
+   */
+  isApplicable?: (ctx: CheckerContext) => boolean
 }
 
 /**
