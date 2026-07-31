@@ -224,6 +224,19 @@ export function moveBlockWithHistory(projectId: string, chapterId: string, block
   )
 }
 
+/** History-aware replacement for `contentStore.moveChapter` — same shape as
+ * `moveBlockWithHistory`/`movePageWithHistory` above/below. */
+export function moveChapterWithHistory(projectId: string, chapterId: string, direction: 'up' | 'down'): void {
+  useContentStore.getState().moveChapter(projectId, chapterId, direction)
+  const opposite = direction === 'up' ? 'down' : 'up'
+  useHistoryStore.getState().record(
+    projectId,
+    'Reorder chapter',
+    () => useContentStore.getState().moveChapter(projectId, chapterId, opposite),
+    () => useContentStore.getState().moveChapter(projectId, chapterId, direction),
+  )
+}
+
 /** History-aware replacement for `contentStore.renameChapter`. */
 export function renameChapterWithHistory(projectId: string, chapterId: string, title: string): void {
   const manuscript = useContentStore.getState().getManuscript(projectId)

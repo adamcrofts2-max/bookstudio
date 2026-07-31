@@ -3954,14 +3954,30 @@ exported PDF split there, saving a project then loading it back (ideally
 in a different browser/profile to confirm it's genuinely self-contained),
 and adding a chapter from an empty project.
 
+## Phase 52 — Chapter reordering (2026-07-31)
+
+Immediate follow-up: chapter add/delete/rename existed, reordering didn't.
+`contentStore.moveChapter(projectId, chapterId, direction)` is a simple
+adjacent-swap within `manuscript.chapters` — the chapter-level counterpart
+to `moveBlock` (swaps within a chapter's own blocks) and
+`structuralPageStore.movePage` (swaps within a category); no-ops at the
+start/end of the book, same convention as both. `editorActions.
+moveChapterWithHistory` wraps it for undo/redo, identical shape to
+`moveBlockWithHistory`/`movePageWithHistory`. `Sidebar.tsx`'s chapter rows
+gained up/down chevron buttons (disabled + dimmed at the first/last
+chapter, matching `BlockToolbar.tsx`'s existing disabled-button treatment
+rather than `StructuralPageRow`'s always-enabled-no-op style, since a
+264px-wide sidebar row already carries four action icons and a visibly
+disabled boundary reads clearer than a silent no-op there).
+
+`tsc -b`/`oxlint` clean.
+
 ## Recommended next task
-All five items from the "think about it" request plus the add-chapter
-follow-up are shipped. A "cover accessories" feature (decorative
-badge/seal + an icon feature-strip band, seen on the real covers the user
-shared two sessions ago) remains deliberately deferred, discussed but not
-yet built. Chapter *reordering* (drag-and-drop or up/down, matching what
-structural pages already have) doesn't exist yet either — noticed while
-building add-chapter, out of scope for that report, worth flagging as a
-natural next small gap. Absent further direction, Phase F's remaining
-items (project-creation wizard, outlining templates, word-count goals,
-distraction-free writing mode) are next per `docs/ROADMAP.md`.
+All five items from the original "think about it" request plus both
+chapter-management follow-ups (add, reorder) are shipped. A "cover
+accessories" feature (decorative badge/seal + an icon feature-strip band,
+seen on the real covers the user shared two sessions ago) remains
+deliberately deferred, discussed but not yet built. Absent further
+direction, Phase F's remaining items (project-creation wizard, outlining
+templates, word-count goals, distraction-free writing mode) are next per
+`docs/ROADMAP.md`.

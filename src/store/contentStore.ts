@@ -61,6 +61,15 @@ interface ContentStoreActions {
    */
   insertChapter: (projectId: string, afterChapterId: string | null, chapter: Chapter) => void
   /**
+   * Simple adjacent-swap reorder within `manuscript.chapters` — the
+   * chapter-level counterpart to `moveBlock`'s within-a-chapter reorder and
+   * `structuralPageStore.movePage`'s within-a-category reorder (Phase 52).
+   * No-ops at the start/end of the book. The only sanctioned way anything
+   * reorders chapters; no other layer splices `manuscript.chapters`
+   * directly.
+   */
+  moveChapter: (projectId: string, chapterId: string, direction: 'up' | 'down') => void
+  /**
    * Removes the entire chapter (title + every block it contains) from
    * `manuscript.chapters`. The only sanctioned way anything deletes a
    * chapter — no other layer reaches into `manuscript.chapters` directly.
@@ -332,6 +341,23 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
         const clone = { ...structuredClone(original), id: generateId('block') } as ContentBlock
         get().insertBlock(projectId, chapterId, blockId, clone)
         return clone.id
+      },
+
+      moveChapter: (projectId, chapterId, direction) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const index = manuscript.chapters.findIndex((c) => c.id === chapterId)
+          if (index === -1) return state
+          const swapIndex = direction === 'up' ? index - 1 : index + 1
+          if (swapIndex < 0 || swapIndex >= manuscript.chapters.length) return state // no-op at the start/end of the book
+          const chapters = manuscript.chapters.slice()
+          ;[chapters[index], chapters[swapIndex]] = [chapters[swapIndex], chapters[index]]
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
       },
 
       moveBlock: (projectId, chapterId, blockId, direction) => {

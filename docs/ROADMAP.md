@@ -107,6 +107,11 @@ daily use of everything built so far.)*
       current last one (or starts a brand-new manuscript from scratch if
       there are none yet) and drops straight into rename mode. See
       docs/STATUS.md Phase 51.
+- [x] Reorder chapters (up/down) — shipped 2026-07-31 (Phase 52), immediate
+      follow-up after add/delete shipped. Up/down chevrons on each chapter
+      row in the Sidebar, mirroring the existing block-level and
+      structural-page reorder buttons; undo/redo-safe. See docs/STATUS.md
+      Phase 52.
 - [x] Click an image-kind placeholder to upload/replace it with a real photo
       — shipped 2026-07-31 (Phase 51), plus the same upload flow added to
       the "+" block inserter's new "Image" option. See docs/STATUS.md

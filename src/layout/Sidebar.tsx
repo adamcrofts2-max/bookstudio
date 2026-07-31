@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
-import { removeAssetWithHistory, renameChapterWithHistory, deleteChapterWithHistory, addChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
+import { removeAssetWithHistory, renameChapterWithHistory, deleteChapterWithHistory, addChapterWithHistory, moveChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -334,6 +334,24 @@ export function Sidebar({ project }: SidebarProps) {
                       >
                         <span className="text-xs tabular-nums text-text-muted">{i + 1}</span>
                         <span className="truncate">{chapter.title}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveChapterWithHistory(project.id, chapter.id, 'up')}
+                        disabled={i === 0}
+                        aria-label={`Move ${chapter.title} up`}
+                        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+                      >
+                        <ChevronUp className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveChapterWithHistory(project.id, chapter.id, 'down')}
+                        disabled={!manuscript || i === manuscript.chapters.length - 1}
+                        aria-label={`Move ${chapter.title} down`}
+                        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-30"
+                      >
+                        <ChevronDown className="size-3" />
                       </button>
                       <button
                         type="button"
