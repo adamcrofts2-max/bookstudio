@@ -28,6 +28,7 @@ import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
+import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
 import { generateId } from '@/utils'
 import { cn } from '@/lib/utils'
 
@@ -102,10 +103,6 @@ interface PageProps {
   decorative?: boolean
 }
 
-const CHAPTER_NUMBER_WORDS = [
-  'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
-  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty',
-]
 
 export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bookTitle, language = 'en', decorative = false }: PageProps) {
   const select = useSelectionStore((s) => s.select)
@@ -382,14 +379,12 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
         {page.kind === 'chapter-start' && (
           <div style={{ paddingTop: theme.chapterOpener.topSpacer }}>
-            {theme.chapterOpener.numberLabel !== 'none' && (
+            {getChapterNumberLabel(theme, chapterIndex) !== null && (
               <p
                 className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
                 style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
               >
-                {theme.chapterOpener.numberLabel === 'word'
-                  ? `Chapter ${CHAPTER_NUMBER_WORDS[chapterIndex] ?? chapterIndex + 1}`
-                  : `${chapterIndex + 1}`}
+                {getChapterNumberLabel(theme, chapterIndex)}
               </p>
             )}
             {isRenamingTitle ? (

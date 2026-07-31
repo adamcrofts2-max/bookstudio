@@ -2505,9 +2505,73 @@ the Sidebar still scrolls the *main* page (not a thumbnail copy — the
 duplicate-id concern `decorative` was built to prevent), and the Virtual
 Editor's "Locate" action still lands on the real block.
 
-## Recommended next task
+## Recommended next task (Phase 30's own — superseded below by Phase 31)
 Manually verify the thumbnail rail in a real browser (per the caveat above)
 — this is the change most likely to have a subtle bug that only shows up at
 runtime. Otherwise: the cover/back-cover designer (Phase E), Phase C's
 remaining Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and
 Phase G (accounts/cloud) as the biggest remaining structural gaps.
+
+## Phase 31 — Fix chapter-opener clipping: reserve real title height in pagination (2026-07-31)
+
+Triggered by a screenshot: a chapter-opener page ("CHAPTER EIGHT" / a
+two-line-wrapping title "Chapter Six: From Map to Masterplan") with its last
+paragraph cut off mid-sentence, `BlockToolbar` visibly floating over the
+clipped remainder. User reported "chapters are still getting cut off
+occasionally" — i.e. after Phase 28's font-swap fix, which closed a
+*different* clipping cause and evidently wasn't the whole story.
+
+- **Root cause**: `paginate.ts`'s opener-page budget was
+  `contentHeightPx - chapterOpenerTopSpacerPx` — it only ever subtracted the
+  theme's fixed `topSpacer` padding above the chapter title, never the
+  number-label + `<h1>` title's *own* rendered height. That height is
+  variable: a short one-line title costs far less vertical space than a
+  long or wrapping one (like the two-line title in the screenshot). Every
+  extra title line pagination didn't know about pushed the page's last block
+  further past the actual available space, and `Page.tsx`'s clipped content
+  container hid the overflow rather than reflowing it. This is a distinct
+  bug from Phase 28's font-swap race (that one affected every page equally
+  once triggered; this one specifically worsens with title length, matching
+  "occasionally" rather than "always").
+- **Fix**: chapter opener headers are now measured off-screen exactly like
+  blocks are.
+  - `src/renderer/chapterOpenerLabel.ts` (new): factored `CHAPTER_NUMBER_WORDS`
+    and a `getChapterNumberLabel(theme, chapterIndex)` helper out of
+    `Page.tsx` (previously a private, unexported array + inline ternary) so
+    `HeightMeasurer.tsx` can render the *exact* same label text — measuring
+    a different string than what's actually displayed would silently
+    reintroduce the same class of bug.
+  - `src/renderer/HeightMeasurer.tsx`: now also renders each chapter's
+    number-label + title off-screen (identical classes/styles to
+    `Page.tsx`'s `chapter-start` markup) and reports its height keyed
+    `` `opener:${chapterId}` `` alongside the existing per-block heights.
+  - `src/renderer/paginate.ts`: new optional `getOpenerHeaderHeight`
+    parameter (defaults to `() => 0`, so any other caller stays behaviorally
+    unchanged); the opener page's `available` budget now subtracts it:
+    `contentHeightPx - chapterOpenerTopSpacerPx - getOpenerHeaderHeight(chapter)`.
+  - `src/renderer/BookRenderer.tsx`: passes `(chapter) => heights[\`opener:${chapter.id}\`] ?? 0`.
+- **`Page.tsx`** now imports `getChapterNumberLabel` instead of its own
+  private array/ternary — same visual output, one less duplicated
+  implementation (per `CLAUDE.md`'s "avoid duplicate logic").
+
+### Verification caveat — same as Phase 26/27/28/29/30
+No working `npm run build`/`lint`/`test` or GitHub/registry network access in
+this sandbox — `npm run test` additionally fails here specifically because
+`paginate.ts`'s own import chain transitively pulls in `zustand`, which hits
+the same pre-existing broken-`node_modules` artifact tracked in
+docs/ROADMAP.md Phase J (`node_modules/zustand/esm/vanilla.mjs` missing).
+Verified via `npx tsc -b --force` only (clean) plus manual review of the
+pagination math change. **Manually check a chapter with a long/wrapping
+title in a real browser and confirm no content is clipped, and spot-check
+that the opener page still looks correctly spaced (not oddly cramped) for
+short one-line titles too** — the measured height should exactly match what
+`Page.tsx` renders, but this is exactly the kind of two-places-must-agree bug
+that already went wrong once (Phase 26's original heading-orphan guard, and
+now this).
+
+## Recommended next task
+Manually verify Phase 31's fix (long/wrapping chapter titles, in a real
+browser) — pagination-affecting changes have twice now shipped with a subtle
+bug not visible to `tsc`. Otherwise: the cover/back-cover designer (Phase E),
+Phase C's remaining Virtual Editor checkers, Phase D (EPUB/Kindle, PDF
+fixes), and Phase G (accounts/cloud) as the biggest remaining structural gaps.

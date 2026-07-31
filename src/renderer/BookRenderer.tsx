@@ -75,7 +75,13 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
 
   const { pages: paginatedPages, toc } = useMemo(() => {
     if (!heights) return { pages: [] as LaidOutPage[], toc: [] }
-    return paginate(manuscript.chapters, (b) => heights[b.id] ?? 24, pageBox.contentHeightPx, theme.chapterOpener.topSpacer)
+    return paginate(
+      manuscript.chapters,
+      (b) => heights[b.id] ?? 24,
+      pageBox.contentHeightPx,
+      theme.chapterOpener.topSpacer,
+      (chapter) => heights[`opener:${chapter.id}`] ?? 0,
+    )
   }, [heights, manuscript, pageBox.contentHeightPx, theme.chapterOpener.topSpacer])
 
   // Front-/back-matter structural pages (Cover/Title Page/Copyright/Blank —

@@ -57,6 +57,19 @@ export function paginate(
   getHeight: (block: ContentBlock) => number,
   contentHeightPx: number,
   chapterOpenerTopSpacerPx: number,
+  /**
+   * True rendered height of a chapter's opener-page header (number label +
+   * title, per `Page.tsx`'s `chapter-start` markup) — measured off-screen by
+   * `HeightMeasurer.tsx` the same way block heights are. Without this, only
+   * the theme's fixed `chapterOpenerTopSpacerPx` was reserved above the
+   * blocks on a chapter's first page; the title/label's own height (which
+   * grows with a longer or line-wrapping chapter title) was never
+   * accounted for, so it silently ate into space assumed free for blocks —
+   * overflowing the page (reported 2026-07-31, "chapters are still getting
+   * cut off occasionally"). Defaults to 0 for any caller that hasn't been
+   * updated to measure it (keeps this an additive, non-breaking parameter).
+   */
+  getOpenerHeaderHeight: (chapter: Chapter) => number = () => 0,
 ): PaginationResult {
   const pages: LaidOutPage[] = []
   const tocStartPage: TocEntry[] = []
@@ -78,7 +91,7 @@ export function paginate(
     let isOpener = true
     let currentBlocks: ContentBlock[] = []
     let currentHeight = 0
-    let available = contentHeightPx - chapterOpenerTopSpacerPx
+    let available = contentHeightPx - chapterOpenerTopSpacerPx - getOpenerHeaderHeight(chapter)
 
     const flush = () => {
       pages.push({

@@ -3,6 +3,7 @@ import { useLayoutEffect, useRef } from 'react'
 import type { Chapter } from '@/types/content'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import { BlockContent } from '@/renderer/BlockContent'
+import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
 
 interface HeightMeasurerProps {
   chapters: Chapter[]
@@ -11,6 +12,11 @@ interface HeightMeasurerProps {
   dropCapBlockIds: Set<string>
   /** Recomputed whenever any of these change; identity-stable between. */
   measureKey: string
+  /**
+   * Keyed by block id for every block, and additionally by
+   * `` `opener:${chapterId}` `` for each chapter's opener-page header (number
+   * label + title) — see that key's own measurement below for why.
+   */
   onMeasured: (heights: Record<string, number>) => void
 }
 
@@ -62,13 +68,47 @@ export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockId
       aria-hidden
       style={{ position: 'fixed', top: 0, left: -100000, width: contentWidthPx, visibility: 'hidden', pointerEvents: 'none' }}
     >
-      {chapters.flatMap((chapter) =>
-        chapter.blocks.map((block) => (
-          <div key={block.id} ref={(el) => { if (el) refs.current.set(block.id, el) }}>
-            <BlockContent block={block} theme={theme} dropCap={dropCapBlockIds.has(block.id)} />
+      {chapters.map((chapter, chapterIndex) => (
+        <div key={`opener-wrap-${chapter.id}`}>
+          {/*
+           * Chapter-opener pages render a number label + title *above* the
+           * first block (see `Page.tsx`'s `chapter-start` markup) — real,
+           * variable-height content (a two-line-wrapping title takes roughly
+           * double the space of a one-line title) that `paginate.ts` needs to
+           * know about to correctly reserve space on that first page. Before
+           * this, `paginate.ts` only subtracted the theme's fixed
+           * `topSpacer` padding, never the title/label's own rendered
+           * height — so a long or wrapping chapter title silently ate into
+           * space pagination assumed was free for blocks, overflowing
+           * `Page.tsx`'s clipped content container (reported 2026-07-31,
+           * "chapters are still getting cut off occasionally"). Markup here
+           * must mirror `Page.tsx`'s exactly (same classes/styles, and the
+           * same `getChapterNumberLabel` helper for the label text) or the
+           * two heights will silently drift apart again.
+           */}
+          <div key={`opener-${chapter.id}`} ref={(el) => { if (el) refs.current.set(`opener:${chapter.id}`, el) }}>
+            {getChapterNumberLabel(theme, chapterIndex) !== null && (
+              <p
+                className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
+                style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
+              >
+                {getChapterNumberLabel(theme, chapterIndex)}
+              </p>
+            )}
+            <h1
+              className="pb-10 text-4xl"
+              style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+            >
+              {chapter.title}
+            </h1>
           </div>
-        )),
-      )}
+          {chapter.blocks.map((block) => (
+            <div key={block.id} ref={(el) => { if (el) refs.current.set(block.id, el) }}>
+              <BlockContent block={block} theme={theme} dropCap={dropCapBlockIds.has(block.id)} />
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   )
 }

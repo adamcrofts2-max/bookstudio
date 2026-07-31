@@ -89,6 +89,16 @@ daily use of everything built so far.)*
       overflowed the page's clipped container. Fixed by re-measuring once
       `document.fonts.ready` resolves. See docs/STATUS.md Phase 28 — flagged as
       needing manual cold-cache verification since it's timing-sensitive.
+- [x] Fix chapter-opener pages clipping content — a second, distinct clipping
+      bug reported after Phase 28 ("chapters are still getting cut off
+      occasionally"), worse with longer/wrapping chapter titles. Fixed
+      2026-07-31 (Phase 31): `paginate.ts` previously only reserved the
+      theme's fixed `topSpacer` above a chapter's opener content, never the
+      number-label + title's own rendered height, which grows with title
+      length. Now measured off-screen (`HeightMeasurer.tsx`) and subtracted
+      from the opener page's available space, same pattern as block
+      measurement. See docs/STATUS.md Phase 31 — flagged as needing manual
+      verification with a real long/wrapping chapter title.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 
