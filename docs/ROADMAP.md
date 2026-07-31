@@ -82,6 +82,15 @@ daily use of everything built so far.)*
       blocks pagination flowed onto them) — `PageToolbar` now offers a
       delete-only action for them that bulk-deletes exactly those blocks,
       undo-safe in one commit. See docs/STATUS.md Phase 33.
+- [x] Delete a whole chapter (title + content) — shipped 2026-07-31 (Phase 34),
+      immediate follow-up after Phase 33: "the text deletes but not the
+      chapter titles." Deliberately a separate action from page-content
+      delete (which never touches the title on purpose) rather than
+      overloading that button with ambiguous "does this nuke the title too?"
+      behaviour. Two entry points: a delete icon in the Sidebar's Chapters
+      tab (next to the existing rename pencil) and a hover-reveal icon on
+      the title itself on the chapter's opening page. See docs/STATUS.md
+      Phase 34.
 - [x] Real thumbnail previews — shipped 2026-07-31 (Phase 30): `ThumbnailPage.tsx`
       renders a genuine, lazily-mounted, CSS-scaled miniature of the real `Page`
       component (not a text-density approximation) — true WYSIWYG, stays in

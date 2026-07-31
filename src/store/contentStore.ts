@@ -49,6 +49,25 @@ interface ContentStoreActions {
   replaceBlock: (projectId: string, chapterId: string, blockId: string, block: ContentBlock) => void
   renameChapter: (projectId: string, chapterId: string, title: string) => void
   /**
+   * Removes the entire chapter (title + every block it contains) from
+   * `manuscript.chapters`. The only sanctioned way anything deletes a
+   * chapter — no other layer reaches into `manuscript.chapters` directly.
+   * See `editorActions.ts`'s `deleteChapterWithHistory` — deleting a page's
+   * body blocks (`deleteBlocks`/`deletePageBlocksWithHistory`) deliberately
+   * never touched the chapter title itself, which is a distinct, larger
+   * action a user has to reach for on purpose (see docs/STATUS.md Phase 34).
+   */
+  deleteChapter: (projectId: string, chapterId: string) => void
+  /**
+   * Full replacement of the entire `manuscript.chapters` array — the undo
+   * half of `deleteChapterWithHistory`. Restoring the whole array in one
+   * commit (rather than re-inserting the deleted chapter at a remembered
+   * index) keeps its position trivially correct, mirroring
+   * `replaceChapterBlocks`'s "snapshot the whole list, restore the whole
+   * list" pattern.
+   */
+  replaceChapters: (projectId: string, chapters: Chapter[]) => void
+  /**
    * Inserts `block` into `chapterId`'s block list, immediately after the
    * block with id `afterBlockId` — or at index 0 if `afterBlockId` is
    * `null`. The only sanctioned way anything (e.g. drag-and-drop image
@@ -172,6 +191,29 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
           const manuscript = state.byProject[projectId]
           if (!manuscript) return state
           const chapters = manuscript.chapters.map((c) => (c.id === chapterId ? { ...c, title } : c))
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      deleteChapter: (projectId, chapterId) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
+          const chapters = manuscript.chapters.filter((c) => c.id !== chapterId)
+          return {
+            byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
+            revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
+          }
+        })
+      },
+
+      replaceChapters: (projectId, chapters) => {
+        set((state) => {
+          const manuscript = state.byProject[projectId]
+          if (!manuscript) return state
           return {
             byProject: { ...state.byProject, [projectId]: { ...manuscript, chapters } },
             revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },

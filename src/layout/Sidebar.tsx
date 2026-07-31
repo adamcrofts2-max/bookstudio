@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
-import { removeAssetWithHistory, renameChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
+import { removeAssetWithHistory, renameChapterWithHistory, deleteChapterWithHistory, insertPageWithHistory, duplicatePageWithHistory, deletePageWithHistory, movePageWithHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -202,6 +202,7 @@ export function Sidebar({ project }: SidebarProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
   const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
+  const clearSelection = useSelectionStore((s) => s.clear)
 
   const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
@@ -214,6 +215,12 @@ export function Sidebar({ project }: SidebarProps) {
   const commitRename = (chapterId: string, fallback: string) => {
     renameChapterWithHistory(project.id, chapterId, titleDraft.trim() || fallback)
     setRenamingChapterId(null)
+  }
+
+  const handleDeleteChapter = (chapterId: string) => {
+    deleteChapterWithHistory(project.id, chapterId)
+    if (renamingChapterId === chapterId) setRenamingChapterId(null)
+    if (selectedChapterId === chapterId) clearSelection()
   }
 
   const assets = useAssetStore((s) => s.byProject[project.id] ?? EMPTY_ASSETS)
@@ -312,6 +319,15 @@ export function Sidebar({ project }: SidebarProps) {
                         className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-text-primary hover:opacity-100 group-hover:opacity-100"
                       >
                         <Pencil className="size-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteChapter(chapter.id)}
+                        aria-label={`Delete ${chapter.title}`}
+                        title="Delete chapter (title + all its content)"
+                        className="shrink-0 rounded-sm p-0.5 text-text-muted opacity-35 transition-opacity duration-150 hover:text-danger hover:opacity-100 group-hover:opacity-100"
+                      >
+                        <Trash2 className="size-3" />
                       </button>
                     </div>
                   ),

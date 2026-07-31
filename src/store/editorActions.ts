@@ -209,6 +209,45 @@ export function renameChapterWithHistory(projectId: string, chapterId: string, t
 }
 
 /**
+ * History-aware "delete this chapter" — title AND every block it contains.
+ * A distinct, larger action from `deletePageBlocksWithHistory` on purpose:
+ * that one only ever clears a page's *body* blocks, deliberately leaving the
+ * chapter title (and the chapter itself) untouched, since a "page" a user
+ * sees on screen is just whichever blocks pagination flowed onto it this
+ * pass — the title is the one piece of a chapter-opener page that isn't
+ * page-scoped content. A user reported this exact gap: page content could
+ * be deleted but "no way of deleting chapter titles" — this closes it by
+ * giving chapter deletion its own explicit action, rather than overloading
+ * the page-content delete button with ambiguous "does this also nuke the
+ * title?" behaviour. See docs/STATUS.md Phase 34.
+ *
+ * Snapshots the full `manuscript.chapters` array BEFORE deleting so undo
+ * restores it in one commit via `replaceChapters`, mirroring
+ * `deletePageBlocksWithHistory`'s "snapshot the whole list" pattern — this
+ * is a bigger, easier-to-regret action than most, but the app's established
+ * pattern everywhere else is "no confirm dialog, undo covers it" (structural
+ * pages, blocks, assets); a chapter delete is no less undoable than any of
+ * those, just bigger, so there's no reason to special-case a confirm
+ * prompt here.
+ */
+export function deleteChapterWithHistory(projectId: string, chapterId: string): void {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  if (!manuscript) return
+  const snapshot = manuscript.chapters
+  const chapter = snapshot.find((c) => c.id === chapterId)
+  if (!chapter) return
+
+  useContentStore.getState().deleteChapter(projectId, chapterId)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Delete chapter',
+    () => useContentStore.getState().replaceChapters(projectId, snapshot),
+    () => useContentStore.getState().deleteChapter(projectId, chapterId),
+  )
+}
+
+/**
  * History-aware replacement for `assetStore.removeAsset` — the one
  * genuinely destructive, previously-unconfirmed action this milestone
  * closes the gap on (see CLAUDE.md's "illustrations are sacred" principle).

@@ -4,6 +4,7 @@ import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import type { ContentBlock, ImageBlock } from '@/types/content'
+import { Trash2 } from 'lucide-react'
 import { BlockContent } from '@/renderer/BlockContent'
 import { BlockToolbar } from '@/renderer/BlockToolbar'
 import { PageToolbar } from '@/renderer/PageToolbar'
@@ -24,6 +25,7 @@ import {
   deletePageWithHistory,
   movePageWithHistory,
   deletePageBlocksWithHistory,
+  deleteChapterWithHistory,
 } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -397,41 +399,68 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
         {page.kind === 'chapter-start' && (
           <div style={{ paddingTop: theme.chapterOpener.topSpacer }}>
-            {getChapterNumberLabel(theme, chapterIndex) !== null && (
-              <p
-                className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
-                style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
-              >
-                {getChapterNumberLabel(theme, chapterIndex)}
-              </p>
-            )}
-            {isRenamingTitle ? (
-              <input
-                autoFocus
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={commitRenameTitle}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault()
-                    ;(e.currentTarget as HTMLInputElement).blur()
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault()
-                    setIsRenamingTitle(false)
-                  }
-                }}
-                className="mb-10 w-full rounded-sm bg-transparent text-4xl outline outline-2 outline-[var(--color-warning)]"
-                style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
-              />
-            ) : (
-              <h1
-                onDoubleClick={startRenameTitle}
-                className="cursor-pointer pb-10 text-4xl"
-                style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
-              >
-                {page.chapterTitle}
-              </h1>
-            )}
+            {/*
+             * `group/title` wraps just the number-label + title, not the
+             * whole chapter-opener div, so the delete-chapter icon below
+             * only reveals on hovering the title itself — not anywhere on
+             * this page's body content (that's `group/page`'s job, for
+             * "delete page content" — see `PageToolbar`). A plain wrapper
+             * div adds no padding/margin/border, so it doesn't change this
+             * block's total rendered height — `HeightMeasurer.tsx`'s opener-
+             * header measurement (Phase 31) stays accurate without needing
+             * to mirror this wrapper.
+             */}
+            <div className="group/title relative">
+              {getChapterNumberLabel(theme, chapterIndex) !== null && (
+                <p
+                  className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
+                  style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
+                >
+                  {getChapterNumberLabel(theme, chapterIndex)}
+                </p>
+              )}
+              {isRenamingTitle ? (
+                <input
+                  autoFocus
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={commitRenameTitle}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      ;(e.currentTarget as HTMLInputElement).blur()
+                    } else if (e.key === 'Escape') {
+                      e.preventDefault()
+                      setIsRenamingTitle(false)
+                    }
+                  }}
+                  className="mb-10 w-full rounded-sm bg-transparent text-4xl outline outline-2 outline-[var(--color-warning)]"
+                  style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+                />
+              ) : (
+                <h1
+                  onDoubleClick={startRenameTitle}
+                  className="cursor-pointer pb-10 text-4xl"
+                  style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+                >
+                  {page.chapterTitle}
+                </h1>
+              )}
+              {!decorative && page.chapterId && !isRenamingTitle && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    deleteChapterWithHistory(projectId, page.chapterId as string)
+                    clearSelection()
+                  }}
+                  aria-label={`Delete chapter ${page.chapterTitle}`}
+                  title="Delete chapter (title + all its content)"
+                  className="absolute right-0 top-0 z-10 flex size-6 items-center justify-center rounded-[var(--radius-preview)] text-text-secondary opacity-0 transition-opacity duration-150 hover:bg-hover hover:text-danger group-hover/title:opacity-100"
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              )}
+            </div>
             {renderBlocksWithDropZones(page.blocks)}
           </div>
         )}

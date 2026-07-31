@@ -2702,8 +2702,71 @@ removes exactly those blocks (not neighbors on other pages of the same
 chapter), the remaining content reflows correctly, and a single Ctrl/Cmd+Z
 restores everything that page had in one step.
 
-## Recommended next task
+## Recommended next task (Phase 33's own — superseded below by Phase 34)
 Manually verify Phase 33 live (delete a content page, confirm reflow +
 one-step undo). Otherwise: the cover/back-cover designer (Phase E), Phase
 C's remaining Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and
 Phase G (accounts/cloud) as the biggest remaining structural gaps.
+
+## Phase 34 — Delete a whole chapter, title included (2026-07-31)
+
+Immediate follow-up after the user confirmed Phase 33's page-content delete
+worked live: "that worked, but no way of deleting chapter titles. So the
+text deletes but not the chapter titles." Correct — Phase 33's
+`deletePageBlocksWithHistory` was scoped deliberately to a page's *body*
+blocks only, leaving the chapter title untouched on purpose (a page is
+pagination-computed output; the title belongs to the chapter, not to any one
+page). The user's report makes clear that gap needed its own, separate fix
+rather than being left as an intentional non-goal.
+
+- **Deliberately a distinct action, not an extension of page-content
+  delete.** Overloading the existing "Delete page content" button so it
+  *sometimes* also deletes the title (e.g. only on a chapter-start page)
+  would be genuinely ambiguous — a user couldn't predict from the button
+  alone whether clicking it nukes just this page's text or the whole
+  chapter. Chapter deletion gets its own explicit action and its own icon,
+  placed on the title itself rather than the page-content corner.
+- **`src/store/contentStore.ts`**: new `deleteChapter(projectId, chapterId)`
+  (removes the whole chapter from `manuscript.chapters`) and
+  `replaceChapters(projectId, chapters)` (full array replacement — the undo
+  half, mirroring `replaceChapterBlocks`'s "snapshot the whole list, restore
+  the whole list" pattern from Phase 33).
+- **`src/store/editorActions.ts`**: new `deleteChapterWithHistory` —
+  snapshots the full `manuscript.chapters` array before deleting, one undo
+  step restores the entire chapter (title + every block) regardless of how
+  long it was. No confirmation dialog, consistent with every other delete
+  action in the app (structural pages, blocks, assets) — a chapter delete is
+  bigger, but no less undoable, so there's no principled reason to
+  special-case a confirm prompt just for this one.
+- **Two entry points**, matching the pattern already established for
+  page-level delete (Sidebar + canvas):
+  - `src/layout/Sidebar.tsx`: a delete icon next to the existing rename
+    pencil on each chapter row (same `opacity-35` reveal styling as every
+    other Sidebar action button). Clears rename-in-progress state and/or
+    selection if the deleted chapter was either.
+  - `src/renderer/Page.tsx`: a small hover-reveal trash icon directly on the
+    chapter title on its opening page, using a new named group
+    (`group/title`) scoped to just the number-label + title wrapper — not
+    `group/page` (that's "delete page content," a different action) and not
+    an unnamed `group` (would risk the exact cross-bleed bug Phase 32 just
+    fixed). Hidden while the title is mid-rename.
+- Both call the same `deleteChapterWithHistory` — no duplicated delete logic
+  between the two entry points.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` or GitHub/registry network access in
+this sandbox. Verified via `npx tsc -b --force` only (clean) plus manual
+review against the established "snapshot whole list, restore whole list"
+undo pattern. **Manually verify in a real browser**: both the Sidebar icon
+and the canvas title icon delete the whole chapter (title gone from the
+Sidebar list, TOC, and the book itself), a single Ctrl/Cmd+Z restores
+everything, and hovering the title doesn't also reveal "delete page
+content" or vice versa (the two named groups should be fully independent,
+per Phase 32's fix).
+
+## Recommended next task
+Manually verify Phase 34 live (both delete-chapter entry points, one-step
+undo, no cross-bleed between the title's and page's hover reveals).
+Otherwise: the cover/back-cover designer (Phase E), Phase C's remaining
+Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and Phase G
+(accounts/cloud) as the biggest remaining structural gaps.
