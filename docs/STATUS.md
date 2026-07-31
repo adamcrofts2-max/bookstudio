@@ -2764,9 +2764,73 @@ everything, and hovering the title doesn't also reveal "delete page
 content" or vice versa (the two named groups should be fully independent,
 per Phase 32's fix).
 
+## Phase 35 — Style Guide values actually enforced by a checker (2026-07-31)
+
+User picked "Remaining Virtual Editor checkers" (over EPUB/Kindle export,
+accounts/cloud, and the cover designer) as the next area. Research into that
+area found a concrete, already-flagged gap: `StyleGuide` has four fields
+(`englishVariant`, `oxfordComma`, `measurementUnits`, `dateFormat`) that were
+threaded through `CheckerContext` and exposed in the settings UI, but only
+two of six fields (`quoteStyle`, `headingCapitalisation`) had a checker that
+actually read them. The other four were pure UI with no effect. This phase
+wires up all four.
+
+- **`src/virtualEditor/checkers/consistency.ts`**:
+  - `measurementUnitConsistencyChecker` gained a preference-mode branch: when
+    `ctx.styleGuide?.measurementUnits` is `'metric'` or `'imperial'`, it flags
+    any span containing a measurement in the *other* system (using the
+    existing `METRIC_ABBR`/`METRIC_FULL`/`IMPERIAL_ABBR`/`IMPERIAL_FULL`
+    patterns), separately from its original no-preference "don't mix systems
+    within one book" logic, which still runs when no preference is set. No
+    `suggestedFix` — unit conversion isn't mechanical.
+  - New `englishVariantChecker` — the one Style-Guide checker that's never
+    silent, since `englishVariant` defaults to `'british'` rather than having
+    a "no preference" option. Flags British/American spelling pairs
+    (colour/color, organise/organize, centre/center, etc. — ~30 hand-vetted
+    pairs) that don't match the project's declared variant. Deliberately
+    excludes genuinely ambiguous pairs (metre/meter, practice/practise,
+    licence/license, programme/program, kerb/curb, tyre/tire) where the
+    "wrong" spelling is also correct in a different sense in both dialects.
+    Includes a case-preserving `suggestedFix`.
+  - New `dateFormatChecker` — silent unless `dateFormat` is
+    `'day-month-year'` or `'month-day-year'`. Only flags *unambiguous*
+    violations (e.g. `13/2/2026` can't be month-first, so it's only flagged
+    when the preference is day-first, never when both halves are ≤12 and
+    genuinely ambiguous). `suggestedFix` swaps the two numbers — safe by
+    construction, since the finding only fires when the swap is the sole
+    valid reading.
+- **`src/virtualEditor/checkers/copyEditing.ts`**: new `oxfordCommaChecker` —
+  silent unless `oxfordComma` is `'require'` or `'forbid'`. Pattern
+  deliberately requires two short segments before the conjunction (not one),
+  specifically so it can't match a two-clause compound sentence's comma
+  ("It was raining, and the wind was strong") — only a genuine 3+-item list
+  has two segments before "and"/"or". No `suggestedFix`, matching the
+  existing flag-only precedent for judgement-call checkers in this file.
+- No registry changes needed — both files' exported `_CHECKERS` arrays were
+  already spread into `ALL_CHECKERS` by `checkers/index.ts`; adding to those
+  arrays was sufficient.
+
+### Verification caveat
+No working `npm run build`/`lint`/`test` in this sandbox. Verified via
+`npx tsc -b --force` only (clean) plus a manual read-through of both edited
+files. Regex-heuristic checkers like these are exactly the kind of thing
+that can typecheck clean but still misbehave against real text — same
+lesson as this session's pagination and thumbnail bugs, which `tsc` alone
+didn't catch. **Manually verify in the Virtual Editor dashboard**: set each
+of the four Style Guide fields in Project Settings, run the checks against
+a manuscript containing a deliberate violation of each (a mixed-spelling
+word, a wrong-system measurement, a non-ambiguous wrong-order date, a
+missing/extra serial comma), and confirm each produces exactly one finding
+with a sensible message — plus confirm all four stay silent when their
+field is left as "no preference."
+
 ## Recommended next task
-Manually verify Phase 34 live (both delete-chapter entry points, one-step
-undo, no cross-bleed between the title's and page's hover reveals).
-Otherwise: the cover/back-cover designer (Phase E), Phase C's remaining
-Virtual Editor checkers, Phase D (EPUB/Kindle, PDF fixes), and Phase G
-(accounts/cloud) as the biggest remaining structural gaps.
+Manually verify Phase 35's four new checkers live (see caveat above).
+Otherwise, Phase C's remaining gaps are a new checker *category*
+(Typography, Accessibility, Print Readiness, Commercial Quality,
+Developmental, Field-guide) — note Typography specifically would need a
+`CheckerContext` data-model extension first, since it currently carries no
+theme/font-metric data; that's a larger separate task, not a drop-in
+addition like this phase. Beyond Phase C: the cover/back-cover designer
+(Phase E), Phase D (EPUB/Kindle, PDF fixes), and Phase G (accounts/cloud)
+remain the biggest structural gaps.

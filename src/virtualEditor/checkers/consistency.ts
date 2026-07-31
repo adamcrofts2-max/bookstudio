@@ -13,6 +13,7 @@
 
 import type { Checker, CheckerContext, Finding } from '@/virtualEditor/types'
 import { extractTextSpans } from '@/virtualEditor/textExtract'
+import { patchTextField } from '@/virtualEditor/textPatch'
 import { generateId } from '@/utils/id'
 
 function makeFinding(partial: Omit<Finding, 'id' | 'category' | 'source'>): Finding {
@@ -155,27 +156,67 @@ const IMPERIAL_ABBR = /\b\d+(?:\.\d+)?\s?(ft|yds?|mi|lbs?|oz)\b/gi
 const IMPERIAL_FULL = /\b\d+(?:\.\d+)?\s?(feet|foot|yards?|miles?|pounds?|ounces?|inch(?:es)?)\b/gi
 
 /**
- * Book-wide measurement-unit style, split into two independent findings
- * (mirroring how `quoteStyleConsistencyChecker` counts one pattern across
- * every span in the manuscript):
+ * Book-wide measurement-unit style. Two distinct behaviours, chosen by
+ * `ctx.styleGuide?.measurementUnits` — same shape as
+ * `quoteStyleConsistencyChecker`'s preference-vs-no-preference split:
  *
- * 1. Metric vs imperial mixing — the book uses both systems with no
- *    apparent "give both" convention (e.g. "5 metres (16 feet)" pairs would
- *    still trip this, since the checker only counts totals, not adjacency —
- *    a documented simplification, not a hidden one).
- * 2. Abbreviated vs spelled-out metric style — "5m" alongside "5 metres".
- *    Imperial abbreviation-style isn't checked (only metric), since "in"
- *    for inches can't be reliably distinguished from the preposition; a
- *    future pass could add "5ft" vs "5 feet" once a safer inches pattern
- *    exists.
+ * - **`'metric'` or `'imperial'` preference set** — every text span
+ *   containing a measurement in the *other* system gets its own finding
+ *   (not one vague book-wide count), so each offending block is directly
+ *   actionable. Still no `suggestedFix` — converting "5 feet" to a metric
+ *   equivalent requires an actual unit conversion with a rounding/precision
+ *   decision, not a mechanical text substitution.
+ * - **No preference set** (`'no-preference'` or `styleGuide` absent) — the
+ *   original, unchanged behaviour below, split into two independent
+ *   findings:
+ *   1. Metric vs imperial mixing — the book uses both systems with no
+ *      apparent "give both" convention (e.g. "5 metres (16 feet)" pairs
+ *      would still trip this, since the checker only counts totals, not
+ *      adjacency — a documented simplification, not a hidden one).
+ *   2. Abbreviated vs spelled-out metric style — "5m" alongside "5 metres".
+ *      Imperial abbreviation-style isn't checked (only metric), since "in"
+ *      for inches can't be reliably distinguished from the preposition; a
+ *      future pass could add "5ft" vs "5 feet" once a safer inches pattern
+ *      exists.
  */
 export const measurementUnitConsistencyChecker: Checker = {
   id: 'consistency.measurement-units',
   category: 'consistency',
   label: 'Measurement unit consistency',
   description:
-    'Flags a book that mixes metric and imperial units, or mixes abbreviated and spelled-out metric unit styles (e.g. "5m" vs "5 metres").',
+    'Flags a book that mixes metric and imperial units, or mixes abbreviated and spelled-out metric unit styles (e.g. "5m" vs "5 metres"). When a Style Guide unit preference is set, flags any measurement in the other system instead.',
   run(ctx: CheckerContext): Finding[] {
+    const preference = ctx.styleGuide?.measurementUnits
+
+    if (preference === 'metric' || preference === 'imperial') {
+      const findings: Finding[] = []
+      const preferredLabel = preference
+      const violatingLabel = preference === 'metric' ? 'imperial' : 'metric'
+
+      for (const span of extractTextSpans(ctx.manuscript)) {
+        const violatingMatches =
+          preference === 'metric'
+            ? [...(span.text.match(IMPERIAL_ABBR) ?? []), ...(span.text.match(IMPERIAL_FULL) ?? [])]
+            : [...(span.text.match(METRIC_ABBR) ?? []), ...(span.text.match(METRIC_FULL) ?? [])]
+        if (violatingMatches.length === 0) continue
+
+        findings.push(
+          makeFinding({
+            checkerId: measurementUnitConsistencyChecker.id,
+            issueType: 'measurement-unit-preference-violation',
+            severity: 'minor',
+            confidence: 0.65,
+            location: { chapterId: span.chapterId, blockId: span.blockId },
+            message: `Found ${violatingLabel} measurement${violatingMatches.length === 1 ? '' : 's'} (e.g. "${violatingMatches[0]!.trim()}") in "${excerpt(span.text)}", but this project's Style Guide prefers ${preferredLabel} units.`,
+            whyItMatters:
+              `The project's Style Guide explicitly sets measurement units to ${preferredLabel} — a ${violatingLabel} measurement here breaks that stated rule and will read as inconsistent with the rest of the book.`,
+          }),
+        )
+      }
+      return findings
+    }
+
+    // No preference set — exactly the original book-wide mixing behaviour, unchanged.
     interface Example {
       chapterId: string
       blockId: string
@@ -251,4 +292,202 @@ export const measurementUnitConsistencyChecker: Checker = {
   },
 }
 
-export const CONSISTENCY_CHECKERS: Checker[] = [termCasingConsistencyChecker, measurementUnitConsistencyChecker]
+/**
+ * British vs American spelling. Unlike every other `StyleGuide` field,
+ * `englishVariant` has no `'no-preference'` option — `DEFAULT_STYLE_GUIDE`
+ * defaults it to `'british'` — so this checker always has an active
+ * preference and, unlike `headingCapitalisationChecker`/`oxfordCommaChecker`,
+ * never goes silent for lack of one.
+ *
+ * A deliberately small, hand-vetted list of unambiguous variant pairs, not a
+ * spelling dictionary. Several superficially-obvious pairs are left out on
+ * purpose because the "American" spelling is also correct British English in
+ * a different sense/word-class, which would make flagging it a false
+ * positive: `metre`/`meter` (a parking/gas "meter" is spelled that way in
+ * both dialects — only the length unit is `metre` in British), `practice`/
+ * `practise` (British uses `practice` for the noun regardless — only the
+ * verb is `practise`), `licence`/`license` (same noun/verb split), `programme`/
+ * `program` (a computer "program" is spelled that way in British English
+ * too — only a TV/radio "programme" differs), and `kerb`/`curb` (the verb "to
+ * curb" is spelled that way in British English too). Every pair actually
+ * included has been checked for this kind of cross-meaning collision.
+ *
+ * One known, accepted limitation left in rather than engineered around:
+ * `grey`/`gray` will false-positive on a character or place proper-named
+ * "Grey"/"Gray" — there's no proper-noun dictionary here, same honesty
+ * standard as every other heuristic in this file.
+ *
+ * One further limitation for the `-ise`/`-ize` verb family specifically:
+ * Oxford/Cambridge-style British English actually prefers `-ize` for many of
+ * these words (it's not exclusively American) — flagging `-ize` spellings as
+ * a violation of a British preference will over-fire for a writer using
+ * that convention. Kept in anyway since `-ise` is by far the more common
+ * choice in general British trade publishing.
+ */
+const VARIANT_PAIRS: [british: string, american: string][] = [
+  ['colour', 'color'], ['colours', 'colors'], ['coloured', 'colored'], ['colouring', 'coloring'],
+  ['favour', 'favor'], ['favours', 'favors'], ['favourite', 'favorite'], ['favourites', 'favorites'],
+  ['flavour', 'flavor'], ['flavours', 'flavors'], ['flavoured', 'flavored'],
+  ['honour', 'honor'], ['honours', 'honors'], ['honoured', 'honored'],
+  ['labour', 'labor'], ['labours', 'labors'], ['laboured', 'labored'],
+  ['neighbour', 'neighbor'], ['neighbours', 'neighbors'], ['neighbourhood', 'neighborhood'],
+  ['rumour', 'rumor'], ['rumours', 'rumors'],
+  ['behaviour', 'behavior'], ['behaviours', 'behaviors'],
+  ['centre', 'center'], ['centres', 'centers'], ['centred', 'centered'],
+  ['theatre', 'theater'], ['theatres', 'theaters'],
+  ['litre', 'liter'], ['litres', 'liters'],
+  ['fibre', 'fiber'], ['fibres', 'fibers'],
+  ['organise', 'organize'], ['organised', 'organized'], ['organising', 'organizing'], ['organisation', 'organization'],
+  ['realise', 'realize'], ['realised', 'realized'], ['realising', 'realizing'],
+  ['recognise', 'recognize'], ['recognised', 'recognized'], ['recognising', 'recognizing'],
+  ['apologise', 'apologize'], ['apologised', 'apologized'],
+  ['criticise', 'criticize'], ['criticised', 'criticized'],
+  ['emphasise', 'emphasize'], ['emphasised', 'emphasized'],
+  ['analyse', 'analyze'], ['analysed', 'analyzed'], ['analysing', 'analyzing'],
+  ['catalogue', 'catalog'], ['catalogues', 'catalogs'],
+  ['dialogue', 'dialog'], ['dialogues', 'dialogs'],
+  ['travelling', 'traveling'], ['traveller', 'traveler'], ['travellers', 'travelers'],
+  ['cancelled', 'canceled'], ['cancelling', 'canceling'],
+  ['modelling', 'modeling'], ['modelled', 'modeled'],
+  ['grey', 'gray'],
+  ['defence', 'defense'], ['defences', 'defenses'],
+  ['offence', 'offense'], ['offences', 'offenses'],
+  ['mould', 'mold'], ['moulded', 'molded'],
+  ['plough', 'plow'], ['ploughed', 'plowed'],
+  ['aluminium', 'aluminum'],
+  ['jewellery', 'jewelry'],
+  ['pyjamas', 'pajamas'],
+]
+
+function applyCaseLike(source: string, replacement: string): string {
+  if (source === source.toUpperCase()) return replacement.toUpperCase()
+  if (source[0] && source[0] === source[0].toUpperCase()) return replacement[0]!.toUpperCase() + replacement.slice(1)
+  return replacement
+}
+
+export const englishVariantChecker: Checker = {
+  id: 'consistency.english-variant',
+  category: 'consistency',
+  label: 'British vs American spelling',
+  description:
+    "Flags words spelled in the opposite English variant from the project's Style Guide preference (defaults to British).",
+  run(ctx: CheckerContext): Finding[] {
+    const preference = ctx.styleGuide?.englishVariant ?? 'british'
+    const findings: Finding[] = []
+
+    for (const span of extractTextSpans(ctx.manuscript)) {
+      for (const [british, american] of VARIANT_PAIRS) {
+        const violatingWord = preference === 'british' ? american : british
+        const preferredWord = preference === 'british' ? british : american
+        const pattern = new RegExp(`\\b${violatingWord}\\b`, 'i')
+        const match = pattern.exec(span.text)
+        if (!match) continue
+
+        const corrected = applyCaseLike(match[0], preferredWord)
+        findings.push(
+          makeFinding({
+            checkerId: englishVariantChecker.id,
+            issueType: 'english-variant-mismatch',
+            severity: 'minor',
+            confidence: 0.75,
+            location: { chapterId: span.chapterId, blockId: span.blockId },
+            message: `"${match[0]}" is ${preference === 'british' ? 'American' : 'British'} spelling, but this project's Style Guide prefers ${preference === 'british' ? 'British' : 'American'} English (expected "${corrected}").`,
+            whyItMatters:
+              'A book written for a single English-speaking market normally commits to one spelling variant throughout — mixing British and American spellings reads as unedited and can look like an error to readers used to the expected variant.',
+            suggestedFix: {
+              summary: `Change to "${corrected}"`,
+              apply: (block) =>
+                patchTextField(block, span.field, (text) => text.replace(new RegExp(`\\b${violatingWord}\\b`, 'i'), corrected)),
+            },
+          }),
+        )
+        // One finding per span is enough to point the user at the spot —
+        // mirrors `repeatedWordChecker`'s same-span granularity.
+        break
+      }
+    }
+
+    return findings
+  },
+}
+
+/**
+ * Numeric dates like "07/31/2026" are genuinely ambiguous whenever *both*
+ * numbers before the year are <=12 (could be read either day-first or
+ * month-first) — deliberately, this checker only ever flags the
+ * *unambiguous* case: a date whose first number is >12 (impossible as a
+ * month) when the Style Guide prefers month-day-year, or whose second
+ * number is >12 (impossible as a month) when it prefers day-month-year. A
+ * genuinely ambiguous date (both numbers <=12) is never flagged — there's
+ * no way to know which the writer intended without asking them, and a false
+ * "violation" on a correctly-ambiguous date would be worse than staying
+ * silent. This also means the fix is always safe: since the violation is
+ * only ever raised when the *other* order is the sole valid reading, the
+ * suggested reorder is provably correct, not a guess.
+ */
+const NUMERIC_DATE_SOURCE = String.raw`\b(\d{1,2})([/-])(\d{1,2})\2(\d{2,4})\b`
+
+export const dateFormatChecker: Checker = {
+  id: 'consistency.date-format',
+  category: 'consistency',
+  label: 'Date format consistency',
+  description:
+    "Flags numeric dates (e.g. \"07/31/2026\") that are structurally incompatible with the project's Style Guide date-format preference — silent on genuinely ambiguous dates.",
+  run(ctx: CheckerContext): Finding[] {
+    const preference = ctx.styleGuide?.dateFormat
+    if (preference !== 'day-month-year' && preference !== 'month-day-year') return []
+
+    const findings: Finding[] = []
+
+    for (const span of extractTextSpans(ctx.manuscript)) {
+      const pattern = new RegExp(NUMERIC_DATE_SOURCE, 'g')
+      let match: RegExpExecArray | null
+      while ((match = pattern.exec(span.text))) {
+        const first = Number(match[1])
+        const separator = match[2]!
+        const second = Number(match[3])
+        const year = match[4]
+
+        const violatesMonthDayYear = preference === 'month-day-year' && first > 12
+        const violatesDayMonthYear = preference === 'day-month-year' && second > 12
+        if (!violatesMonthDayYear && !violatesDayMonthYear) continue
+
+        const original = match[0]
+        const swapped = `${match[3]}${separator}${match[1]}${separator}${year}`
+        const expectedOrder = preference === 'month-day-year' ? 'month/day/year' : 'day/month/year'
+        const invalidNumber = violatesMonthDayYear ? first : second
+
+        findings.push(
+          makeFinding({
+            checkerId: dateFormatChecker.id,
+            issueType: 'date-format-mismatch',
+            severity: 'minor',
+            confidence: 0.9,
+            location: { chapterId: span.chapterId, blockId: span.blockId },
+            message: `"${original}" can't be a valid ${expectedOrder} date (${invalidNumber} isn't a valid month), but this project's Style Guide expects ${expectedOrder} order.`,
+            whyItMatters:
+              "A numeric date that contradicts the stated date-format preference isn't just inconsistent styling — a swapped day/month value can genuinely mislead a reader about which date is meant.",
+            suggestedFix: {
+              summary: `Reorder to "${swapped}"`,
+              apply: (block) => patchTextField(block, span.field, (text) => text.replace(original, swapped)),
+            },
+          }),
+        )
+      }
+    }
+
+    return findings
+  },
+}
+
+export const CONSISTENCY_CHECKERS: Checker[] = [
+  termCasingConsistencyChecker,
+  measurementUnitConsistencyChecker,
+  englishVariantChecker,
+  dateFormatChecker,
+]
+
+function excerpt(text: string): string {
+  const trimmed = text.trim()
+  return trimmed.length <= 60 ? trimmed : `${trimmed.slice(0, 60)}…`
+}

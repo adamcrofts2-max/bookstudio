@@ -13,6 +13,7 @@
  */
 
 import type { Checker, CheckerContext, Finding } from '@/virtualEditor/types'
+import { extractTextSpans } from '@/virtualEditor/textExtract'
 import { generateId } from '@/utils/id'
 
 function makeFinding(partial: Omit<Finding, 'id' | 'category' | 'source'>): Finding {
@@ -187,4 +188,77 @@ export const headingCapitalisationChecker: Checker = {
   },
 }
 
-export const COPY_EDITING_CHECKERS: Checker[] = [headingCapitalisationChecker]
+/**
+ * Serial (Oxford) comma — the comma before "and"/"or" in a list of three or
+ * more items ("red, white, and blue"). Only fires when
+ * `ctx.styleGuide?.oxfordComma` is `'require'` or `'forbid'` — same
+ * silent-by-default shape as `headingCapitalisationChecker` above, since
+ * there's no universally "correct" default to enforce unasked.
+ *
+ * Deliberately conservative pattern, chosen to avoid the single biggest
+ * false-positive risk for this class of check: confusing the serial comma
+ * in a list with the comma that joins two independent clauses in a compound
+ * sentence ("It was raining, and the wind was strong" — that comma has
+ * nothing to do with Oxford-comma style). The pattern requires **two**
+ * short (<=3-word) segments between the start of the match and the
+ * conjunction, not one — a compound sentence only ever has one segment
+ * before "and"/"or", so it structurally can't match. A genuine 3+-item list
+ * always has at least two.
+ *
+ * Known, documented limitations (same honesty standard as every other
+ * heuristic in this codebase): the <=3-word-per-segment cap means a list
+ * whose items are themselves longer phrases won't be recognised; and a
+ * sentence built from three short parallel clauses ("I came, I saw, and I
+ * conquered") will match even though it's arguably not a "list" in the
+ * traditional sense — most style guides apply the serial-comma rule to
+ * exactly this construction anyway, so this is treated as a feature, not a
+ * bug. No `suggestedFix`: inserting or removing a comma next to a
+ * conjunction is a judgement call this heuristic can't make with full
+ * confidence, matching `quoteStyleConsistencyChecker`'s and
+ * `termCasingConsistencyChecker`'s own "flag only" precedent.
+ */
+const OXFORD_COMMA_LIST = /([A-Za-z][\w'’-]*(?:\s[A-Za-z][\w'’-]*){0,2}),\s+([A-Za-z][\w'’-]*(?:\s[A-Za-z][\w'’-]*){0,2})(,)?\s+(and|or)\s+([A-Za-z][\w'’-]*(?:\s[A-Za-z][\w'’-]*){0,2})/g
+
+export const oxfordCommaChecker: Checker = {
+  id: 'copyEditing.oxford-comma',
+  category: 'copyEditing',
+  label: 'Serial (Oxford) comma',
+  description:
+    "Flags 3+-item lists that don't follow the project's Style Guide serial-comma preference (require or forbid the comma before \"and\"/\"or\"). Silent when no preference is set.",
+  run(ctx: CheckerContext): Finding[] {
+    const preference = ctx.styleGuide?.oxfordComma
+    if (preference !== 'require' && preference !== 'forbid') return []
+
+    const findings: Finding[] = []
+
+    for (const span of extractTextSpans(ctx.manuscript)) {
+      const pattern = new RegExp(OXFORD_COMMA_LIST.source, 'g')
+      let match: RegExpExecArray | null
+      while ((match = pattern.exec(span.text))) {
+        const hasOxfordComma = match[3] === ','
+        const violates = preference === 'require' ? !hasOxfordComma : hasOxfordComma
+        if (!violates) continue
+
+        findings.push(
+          makeFinding({
+            checkerId: oxfordCommaChecker.id,
+            issueType: 'oxford-comma-preference-violation',
+            severity: 'suggestion',
+            confidence: 0.5,
+            location: { chapterId: span.chapterId, blockId: span.blockId },
+            message:
+              preference === 'require'
+                ? `Missing serial comma before "${match[4]}" in "…${match[0]}…" — this project's Style Guide requires one.`
+                : `Unwanted serial comma before "${match[4]}" in "…${match[0]}…" — this project's Style Guide asks for no comma there.`,
+            whyItMatters:
+              `The project's Style Guide has an explicit serial-comma preference (${preference === 'require' ? 'always use one' : 'never use one'}) — an inconsistent list breaks that stated rule next to every list that does follow it.`,
+          }),
+        )
+      }
+    }
+
+    return findings
+  },
+}
+
+export const COPY_EDITING_CHECKERS: Checker[] = [headingCapitalisationChecker, oxfordCommaChecker]

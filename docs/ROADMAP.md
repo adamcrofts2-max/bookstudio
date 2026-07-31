@@ -133,7 +133,7 @@ daily use of everything built so far.)*
 - [x] Publishing Standards + Layout checkers (sparse pages, empty chapters, image balance)
 - [x] Style Guide settings UI (englishVariant/oxfordComma/measurementUnits/dateFormat fields)
 - [x] Non-destructive fixes: Accept/Reject/Ignore, revision log, restore original
-- [ ] Style Guide values actually *enforced* by a checker (fields exist, nothing reads them yet)
+- [x] Style Guide values actually *enforced* by a checker — see STATUS.md Phase 35
 - [ ] Typography checker
 - [ ] Accessibility checker
 - [ ] Print Readiness checker
