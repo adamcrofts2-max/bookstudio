@@ -9,6 +9,31 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 70 (2026-08-01) — Project-creation wizard: genre/audience template
+
+- **`ProjectCategory` is doing double duty as both "genre" and "audience," and that
+  will eventually strain.** `childrens` conflates a genre (fiction/nonfiction is
+  unspecified) with an audience (age range unspecified) into one value. It works fine
+  for today's trim-size + seed-kind mapping, but if a future feature wants to
+  distinguish "children's picture book" from "children's early reader" or "YA novel"
+  from "adult novel," this single enum won't have room. Worth watching rather than
+  fixing now — no evidence yet that finer granularity is actually needed.
+- **No UI shows what a category's template will actually seed before the user commits
+  to it.** The one-line caption ("we'll set a matching trim size and add a few example
+  Planning entries") is honest but abstract — a user can't see *which* trim size or
+  *which* entities until after clicking Create. A live preview (e.g. "6×9 · adds
+  Character, Location, Style Rule examples") next to the category picker would close
+  that gap cheaply, without needing a bigger wizard redesign.
+- **The seeded examples never expire or get flagged as unedited.** If a user creates a
+  project, ignores Planning mode entirely, and works for months, the "Example
+  Character" card sits untouched in their bible indefinitely with no nudge to either
+  delete it or use it. Low priority (it's harmless — never exported, clearly labeled),
+  but a "you have unedited starter examples" hint somewhere (maybe just in
+  `PlanningShell`'s category counts, e.g. a small dot) would be a nice low-cost polish
+  once Planning mode sees real usage data.
+
+---
+
 ## After Phase 69 (2026-08-01) — Layer 0: TimelineEvent manual reorder UI
 
 - **The Up/Down reorder pattern is now used in three places** (chapters, structural
