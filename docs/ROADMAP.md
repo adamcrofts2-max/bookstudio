@@ -163,6 +163,42 @@ daily use of everything built so far.)*
       from the opener page's available space, same pattern as block
       measurement. See docs/STATUS.md Phase 31 — flagged as needing manual
       verification with a real long/wrapping chapter title.
+- [x] Live word count in the Toolbar — shipped 2026-08-01 (Phase 64), after
+      the user pointed out its absence alongside search/spellcheck/
+      thesaurus below. `wordCount()`/`blockPlainText`-style text extraction
+      already existed internally (used by `TypographyPanel.tsx` and several
+      Virtual Editor checkers) but was never surfaced to the user — this is
+      just finally showing it, next to the project name. Deliberately NOT
+      the same thing as the still-open Phase F "word-count goals and
+      writing-session tracking" item below (a session-length daily-goal
+      tracker) — this is only the live running total.
+- [ ] Find (and find-and-replace) across the whole manuscript — flagged
+      2026-08-01 alongside the word-count gap above: there is currently no
+      way to search manuscript text at all, a real gap for a book-length
+      document (checking whether a character's name is spelled
+      consistently, jumping to a phrase). Reasonable scope: a search box in
+      the Toolbar/Sidebar that highlights matches and lets the user step
+      through them, jumping the (virtualized, lazily-mounted) page view to
+      the match — the main cost here is the jump-to-match integration with
+      `LazySpread`'s lazy mounting, not the text search itself (`
+      extractTextSpans` already exists to walk every block's text). Find-
+      and-replace is a natural, only slightly bigger follow-on once find
+      exists. Not started.
+- [ ] Real (dictionary-backed) spell-check, beyond the browser's native
+      `contentEditable` default — flagged 2026-08-01. Every editable field
+      in this codebase is a bare `contentEditable` element with the
+      `spellCheck` attribute never explicitly set (confirmed by audit), so
+      the browser's own default spellcheck likely already applies today —
+      not a bug, but also not something Book Studio controls, tests, or can
+      rely on consistently across browsers. A *real* checker (a bundled
+      dictionary via something like `nspell`/`typo-js` + Hunspell word
+      lists, surfaced as a genuine `proofreading`-category Virtual Editor
+      finding rather than only a native red squiggle) is a legitimate,
+      bigger feature — `virtualEditor/checkers/proofreading.ts`'s own doc
+      comment already explicitly scopes spelling out today ("no dictionary
+      lookup"), so this closes a gap that was a deliberate decision, not an
+      oversight, and should be revisited once there's appetite for the
+      bundle-size/licensing tradeoff a real dictionary brings. Not started.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 
@@ -438,7 +474,16 @@ daily use of everything built so far.)*
 - [ ] Project-creation wizard (genre/audience-driven starting template) — also
       decides which Layer 0 entity subset a new project starts with
 - [ ] Outlining / story-structure templates
-- [ ] Word-count goals and writing-session tracking
+- [ ] Word-count goals and writing-session tracking — the live total itself
+      shipped in Phase B (2026-08-01); this is the bigger daily-goal/
+      session-tracking layer on top of it
+- [ ] Thesaurus / synonym lookup — flagged 2026-08-01 alongside search and
+      spellcheck. Lowest priority of the three: needs either a bundled
+      synonym dataset (a compact WordNet-derived package, most
+      realistically) or an external API call, and this client-only,
+      no-backend architecture makes a bundled dataset the more consistent
+      choice with everything else in this phase (no accounts/billing
+      needed, same reasoning `ClipboardProvider` below uses). Not started.
 - [ ] Distraction-free writing mode
 - [ ] AI Workspace: scoped prompt generator (`ClipboardProvider`) — assembles the
       minimum-relevant context bundle per task (not the whole bible); user copies

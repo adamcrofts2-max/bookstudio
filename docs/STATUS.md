@@ -4678,6 +4678,49 @@ with the same sandbox-level bus error noted since Phase 59; `npm run dev`/`vite 
 still fail with the same pre-existing `vite.config.ts` load error noted since Phase 55 —
 neither is new to this phase, both re-confirmed before writing this entry.
 
+## Phase 64 — Fix off-page ProjectSettingsDialog; live word count (2026-08-01)
+
+User-reported bug plus a user-prompted product question, both handled before resuming
+Phase F.
+
+- **Off-page `ProjectSettingsDialog` fix.** Root cause: `components/ui/dialog.tsx`'s
+  `DialogContent` had no max-height or scroll — it rendered at its full natural height
+  (`ProjectSettingsDialog` alone is name + trim size + four margin fields + the whole
+  `ThemeGallery` grid + six style-guide selects), centred via `top-1/2
+  -translate-y-1/2`. Any dialog tall enough to exceed the viewport simply extended off
+  both the top and bottom, unreachable, with nothing to scroll — reported as "appears
+  off page at 100%." Fixed generically in the shared `DialogContent` component (not
+  patched per-dialog) so every dialog in the app is protected the same way, including
+  ones added this session (`WrapCoverPreviewButton`, Layer 0's entity edit dialog):
+  `max-h-[85vh]` caps the dialog to the viewport, and the padding moved from the outer
+  `fixed`-positioned element onto a new inner `overflow-y-auto` wrapper — the close
+  button stays an `absolute` sibling of that wrapper (not a child), so it stays pinned
+  top-right rather than scrolling away with the content, a well-known gotcha with
+  putting `overflow-y-auto` directly on an absolutely-positioned element's own
+  containing block.
+- **Word count / search / spellcheck / thesaurus — investigated, one shipped, three
+  roadmapped.** User asked whether Book Studio should have these; audited what
+  actually exists before answering. Findings: `wordCount()`/text-extraction already
+  existed internally (`TypographyPanel.tsx`, several Virtual Editor checkers) but was
+  never surfaced in the UI — genuinely just a "finish exposing it" gap, not a missing
+  feature, so shipped immediately: new `hooks/useManuscriptWordCount.ts` reuses
+  `virtualEditor/textExtract.ts`'s `extractTextSpans` (no new text-walking logic) and
+  is now shown live next to the project name in the Toolbar, memoized on the
+  `Manuscript` reference so it only recomputes on a real edit-commit, not per
+  keystroke or per unrelated re-render. Search (find/find-and-replace across
+  manuscript text), a real dictionary-backed spell-checker (today there's only the
+  browser's own uninstrumented `contentEditable` default — `spellCheck` is never
+  explicitly set anywhere, confirmed by grep), and a thesaurus/synonym lookup are all
+  genuinely absent — added to `docs/ROADMAP.md` as new, reasoned, unchecked items
+  (Phase B for search, Phase B for real spellcheck since `proofreading.ts`'s own doc
+  comment already explicitly scoped spelling out as "no dictionary lookup" — a
+  deliberate prior decision now flagged for revisiting, not an oversight — and Phase F
+  for thesaurus, lowest priority of the three) rather than either building all three
+  under time pressure or silently doing nothing.
+
+`tsc -b --force` clean. `oxlint`/`vite build` unchanged sandbox failures, re-confirmed
+before writing this entry, not new.
+
 ## Recommended next task
 Phase F's foundation is in place. Reasonable next steps, in roughly the order they'd
 naturally build on each other: (1) wire Layer 0 into `exportProjectFile.ts`/
@@ -4687,3 +4730,5 @@ generator — assembles a minimum-relevant context bundle from the entity bible 
 given task and copies it to the clipboard, needs no API; (3) the project-creation
 wizard and outlining/story-structure templates, the other Phase F items that don't
 depend on Layer 0. Per the settled build order, Phase F continues before Phase D/B.
+Also newly flagged and worth folding in opportunistically: manuscript search/find,
+real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, 2026-08-01).

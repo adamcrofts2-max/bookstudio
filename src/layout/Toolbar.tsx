@@ -38,6 +38,7 @@ import { useExportProjectFile } from '@/projectFile/useExportProjectFile'
 import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
+import { useManuscriptWordCount } from '@/hooks/useManuscriptWordCount'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
@@ -121,6 +122,7 @@ export function Toolbar({ project }: ToolbarProps) {
     else if (pendingExportFormat === 'epub') void runExportEpub()
     else if (pendingExportFormat === 'html') void runExportHtml()
   }
+  const wordCount = useManuscriptWordCount(project.id)
   const canUndo = useHistoryStore((s) => s.canUndo(project.id))
   const canRedo = useHistoryStore((s) => s.canRedo(project.id))
   const undoLabel = useHistoryStore((s) => s.peekUndoLabel(project.id))
@@ -157,8 +159,19 @@ export function Toolbar({ project }: ToolbarProps) {
 
       <Separator orientation="vertical" className="mx-2 h-6" />
 
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
         <p className="truncate text-sm font-medium text-text-primary">{project.name}</p>
+        {wordCount > 0 && (
+          // Live total, not a goal/session tracker — see docs/ROADMAP.md
+          // Phase F's separate "word-count goals and writing-session
+          // tracking" item for that bigger, still-open feature. This is
+          // just finally surfacing a number the app already computed
+          // internally (`wordCount()`/`extractTextSpans` — used by
+          // TypographyPanel and several checkers) but never showed anyone.
+          <p className="shrink-0 whitespace-nowrap text-xs tabular-nums text-text-secondary">
+            {wordCount.toLocaleString()} words
+          </p>
+        )}
       </div>
 
       <div className="flex items-center gap-1">

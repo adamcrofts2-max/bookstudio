@@ -35,8 +35,24 @@ const DialogContent = React.forwardRef<
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2',
-        'rounded-[var(--radius-dialog)] border border-border bg-panel p-6 shadow-[var(--shadow-md)]',
+        // `flex max-h-[85vh] flex-col` + the inner `overflow-y-auto` wrapper
+        // below are load-bearing, not cosmetic: a dialog with enough content
+        // to exceed the viewport (e.g. `ProjectSettingsDialog`'s trim size +
+        // four margins + full theme gallery + six style-guide fields) used
+        // to render at its full natural height with no scroll affordance at
+        // all — centered via `top-1/2 -translate-y-1/2`, so the excess
+        // simply extended off both the top and bottom of the viewport,
+        // unreachable, at any zoom level where the content didn't happen to
+        // fit (confirmed via user report 2026-08-01). `max-h-[85vh]` caps
+        // the whole dialog to the viewport; the padding moved from this
+        // element onto the inner wrapper so the close button below — an
+        // `absolute` sibling of that wrapper, not a child of it — stays
+        // pinned top-right regardless of scroll position, rather than
+        // scrolling away with the content (the well-known gotcha with
+        // putting `overflow-y-auto` directly on an absolutely-positioned
+        // child's own containing block).
+        'fixed left-1/2 top-1/2 z-50 flex max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 flex-col',
+        'rounded-[var(--radius-dialog)] border border-border bg-panel shadow-[var(--shadow-md)]',
         'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
         'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
         'duration-200 ease-[var(--ease-standard)]',
@@ -44,7 +60,7 @@ const DialogContent = React.forwardRef<
       )}
       {...props}
     >
-      {children}
+      <div className="min-h-0 flex-1 overflow-y-auto p-6">{children}</div>
       <DialogPrimitive.Close className="absolute right-5 top-5 rounded-full p-1 text-text-muted transition-colors duration-150 hover:bg-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]">
         <X className="size-4" />
         <span className="sr-only">Close</span>
