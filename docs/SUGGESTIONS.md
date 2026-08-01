@@ -9,6 +9,27 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 72 (2026-08-01) — Word-count goals and writing-session tracking
+
+- **The day-boundary logic is the one piece of this phase genuinely worth a live
+  sanity check.** `recordWordCount`'s "first observation on a new calendar date resets
+  the baseline" rule is straightforward on paper but untestable in this sandbox (no
+  `npm run dev`) — worth deliberately leaving a project open across an actual local
+  midnight once and confirming the log rolls over cleanly to a new date with 0, not a
+  carried-over total.
+- **No cross-project or lifetime view.** Word-count history lives entirely per-project
+  in `writingSessionStore`'s `byProject` map — a user working across several book
+  projects has no single "did I write today, across everything" view. Not clearly
+  worth building (most users likely focus on one project at a time), but worth
+  remembering if multi-project workflows turn out to be common.
+- **Streaks aren't computed or celebrated anywhere.** The last-7-days list makes a gap
+  visible, but there's no "5-day streak" number or any positive reinforcement for
+  consistency — a cheap, well-understood motivational pattern (Duolingo, GitHub's
+  contribution graph, etc.) this feature doesn't yet borrow. Worth adding once there's
+  a sense users actually open this dialog regularly.
+
+---
+
 ## After Phase 71 (2026-08-01) — Outlining / story-structure templates
 
 - **Applying two templates back-to-back interleaves nothing, but does concatenate.**
