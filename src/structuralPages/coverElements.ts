@@ -1,12 +1,13 @@
-import { rgb } from 'pdf-lib'
+import { rgb, LineCapStyle } from 'pdf-lib'
 
 import type { DrawCtx } from '@/pdf/exportPdf'
-import type { CoverElement, CoverElementKind, CoverShapeElement, CoverTextElement } from '@/types/structuralPage'
+import type { CoverElement, CoverElementKind, CoverShapeElement, CoverTextElement, CoverIconElement, CoverBadgeElement } from '@/types/structuralPage'
 import { generateId } from '@/utils/id'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { pickFont, pickItalicFont } from '@/pdf/fonts'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
+import { COVER_ICON_PDF_NODES } from '@/structuralPages/coverIcons'
 
 /**
  * Pure data helpers for `CoverElement` arrays (see `docs/COVER_CANVAS_PLAN.md`)
@@ -53,6 +54,34 @@ export function createCoverElement(kind: CoverElementKind, existingCount: number
       height: 0.02,
       stroke: '#ffffff',
       strokeWidth: 2,
+    }
+    return el
+  }
+
+  if (kind === 'icon') {
+    const el: CoverIconElement = {
+      ...base,
+      kind: 'icon',
+      width: 0.12,
+      height: 0.12,
+      iconId: 'star',
+      color: '#ffffff',
+      strokeWidth: 2,
+    }
+    return el
+  }
+
+  if (kind === 'badge') {
+    const el: CoverBadgeElement = {
+      ...base,
+      kind: 'badge',
+      width: 0.2,
+      height: 0.2,
+      shape: 'circle',
+      text: 'NEW',
+      backgroundColor: '#dc2626',
+      textColor: '#ffffff',
+      fontSize: 15,
     }
     return el
   }
@@ -160,6 +189,85 @@ export function drawCoverElementsPdf(
         end: { x: xPt + wPt, y: midYPt },
         thickness: (el.strokeWidth ?? 1) * PX_TO_PT,
         color: el.stroke ? hexToPdfColor(el.stroke) : rgb(0, 0, 0),
+      })
+    } else if (el.kind === 'icon') {
+      // Square icon centred within the element's box (an icon box need not
+      // be square itself — e.g. dragged wider than tall — but the icon
+      // inside it always keeps its own 1:1 aspect ratio, matching the
+      // screen layer's `<Icon>` render).
+      const iconSizePt = Math.min(wPt, hPt)
+      const iconScale = iconSizePt / 24
+      const iconX = xPt + (wPt - iconSizePt) / 2
+      const iconTopY = yPt + hPt - (hPt - iconSizePt) / 2
+      const color = el.color ? hexToPdfColor(el.color) : rgb(1, 1, 1)
+      // NOT pre-multiplied by `iconScale` here: `drawSvgPath` applies its
+      // own `scale(iconScale, -iconScale)` transform to the current
+      // graphics state before stroking, and per the PDF spec a stroke's
+      // line width is itself subject to the CTM in effect at stroke time —
+      // so a width already multiplied by `iconScale` gets scaled a SECOND
+      // time, producing a stroke `iconScale`× too fat (confirmed visually:
+      // rendered as solid overstroked blobs, not thin outlines, before this
+      // fix). The raw, un-scaled `strokeWidth` is correct here, matching
+      // lucide's own SVG, which also specifies `stroke-width="2"` directly
+      // in the un-scaled 24-unit viewBox and lets the viewport's own scale
+      // do the rest. `drawEllipse` below has no such transform, so its
+      // `borderWidth` is pre-multiplied by `iconScale` as normal.
+      const svgBorderWidth = el.strokeWidth ?? 2
+      const ellipseBorderWidthPt = (el.strokeWidth ?? 2) * iconScale
+      for (const node of COVER_ICON_PDF_NODES[el.iconId]) {
+        if (node.type === 'path') {
+          ctx.page.drawSvgPath(node.d, {
+            x: iconX,
+            y: iconTopY,
+            scale: iconScale,
+            borderColor: color,
+            borderWidth: svgBorderWidth,
+            borderLineCap: LineCapStyle.Round,
+          })
+        } else {
+          ctx.page.drawEllipse({
+            x: iconX + node.cx * iconScale,
+            y: iconTopY - node.cy * iconScale,
+            xScale: node.r * iconScale,
+            yScale: node.r * iconScale,
+            borderColor: color,
+            borderWidth: ellipseBorderWidthPt,
+          })
+        }
+      }
+    } else if (el.kind === 'badge') {
+      // Background shape first, then centred text on top — the same two
+      // ingredients as a `rect`/`ellipse` element plus a `text` element,
+      // just always drawn together so the text can't be repositioned away
+      // from the shape's centre (see `CoverBadgeElement`'s doc comment).
+      const bg = el.backgroundColor ? hexToPdfColor(el.backgroundColor) : undefined
+      const border = el.borderColor ? hexToPdfColor(el.borderColor) : undefined
+      const borderWidthPt = el.borderColor ? (el.borderWidth ?? 1) * PX_TO_PT : undefined
+      if (el.shape === 'circle') {
+        const rPt = Math.min(wPt, hPt) / 2
+        ctx.page.drawEllipse({
+          x: xPt + wPt / 2,
+          y: yPt + hPt / 2,
+          xScale: rPt,
+          yScale: rPt,
+          color: bg,
+          borderColor: border,
+          borderWidth: borderWidthPt,
+        })
+      } else {
+        ctx.page.drawRectangle({ x: xPt, y: yPt, width: wPt, height: hPt, color: bg, borderColor: border, borderWidth: borderWidthPt })
+      }
+
+      const fontFamily = resolveCoverFontFamily({ fontChoice: el.fontChoice }, ctx.theme.fonts.body)
+      const font = pickFont(ctx.fonts, fontFamily, 600)
+      const size = (el.fontSize ?? 15) * PX_TO_PT
+      const textWidth = font.widthOfTextAtSize(el.text, size)
+      ctx.page.drawText(el.text, {
+        x: xPt + (wPt - textWidth) / 2,
+        y: yPt + hPt / 2 - size * 0.35,
+        size,
+        font,
+        color: el.textColor ? hexToPdfColor(el.textColor) : rgb(1, 1, 1),
       })
     } else if (el.kind === 'text') {
       // An explicit check here (not a bare `else`) is deliberate, not

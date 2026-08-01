@@ -5,6 +5,7 @@ import type { CoverElement } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
 import { updateElement, bringToFront, sendToBack, removeElement } from '@/structuralPages/coverElements'
+import { COVER_ICON_COMPONENTS } from '@/structuralPages/coverIcons'
 import { cn } from '@/lib/utils'
 
 function clamp(value: number, min: number, max: number): number {
@@ -225,6 +226,41 @@ function ElementBody({ element, theme }: { element: CoverElement; theme: Resolve
     return (
       <div className="flex h-full w-full items-center">
         <div className="w-full" style={{ borderTop: `${element.strokeWidth ?? 1}px solid ${element.stroke ?? '#ffffff'}` }} />
+      </div>
+    )
+  }
+
+  if (element.kind === 'icon') {
+    // `size-full` on the icon itself (not a wrapper) relies on SVG's default
+    // `preserveAspectRatio="xMidYMid meet"` to keep the icon square and
+    // centred even when the element's own box isn't — the same "square icon
+    // inside a possibly non-square box" behaviour `drawCoverElementsPdf`
+    // computes explicitly via `Math.min(wPt, hPt)` for the PDF.
+    const Icon = COVER_ICON_COMPONENTS[element.iconId]
+    return (
+      <div className="flex size-full items-center justify-center">
+        <Icon className="size-full" color={element.color ?? '#ffffff'} strokeWidth={element.strokeWidth ?? 2} />
+      </div>
+    )
+  }
+
+  if (element.kind === 'badge') {
+    const fontFamily = resolveCoverFontFamily({ fontChoice: element.fontChoice }, theme.fonts.body)
+    return (
+      <div
+        className="flex size-full items-center justify-center overflow-hidden text-center"
+        style={{
+          background: element.backgroundColor ?? '#dc2626',
+          border: element.borderColor ? `${element.borderWidth ?? 1}px solid ${element.borderColor}` : undefined,
+          borderRadius: element.shape === 'circle' ? '50%' : undefined,
+        }}
+      >
+        <span
+          className="px-[8%]"
+          style={{ fontFamily, fontWeight: 600, fontSize: element.fontSize ?? 15, color: element.textColor ?? '#ffffff' }}
+        >
+          {element.text || 'NEW'}
+        </span>
       </div>
     )
   }

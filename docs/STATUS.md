@@ -4127,13 +4127,89 @@ same pre-existing sandbox `node_modules` corruption documented in Phase 53's ver
 caveat — not re-litigated here, still unresolved, still needs a real environment to get a
 green build/lint signal before the next deploy.
 
+## Phase 55 — Cover Canvas Milestone 2: icons + badges (2026-08-01)
+
+Closes the long-deferred "cover accessories" item (Phase E) now that Milestone 1's
+element/layer system exists. Two new `CoverElement` kinds — decorative line-icons
+(seals/marks) and text badges (circular seal or ribbon with centred text, e.g.
+"Bestseller"/"2nd Edition") — following the exact same additive pattern as Milestone 1
+(purely optional entries in the same `elements` array; an existing project renders
+identically until a user adds one).
+
+- **Data model** (`types/structuralPage.ts`): `CoverElementKind` gained `'icon' | 'badge'`.
+  `CoverIconElement` (`iconId`, `color`, `strokeWidth`) and `CoverBadgeElement` (`shape:
+  'circle' | 'rect'`, `text`, `backgroundColor`, `textColor`, `borderColor`/`borderWidth`,
+  `fontSize`, `fontChoice`) both extend the same `BaseCoverElement`, `kind` still declared
+  independently on each leaf type per Milestone 1's narrowing note. `CoverIconId` is a
+  curated 14-icon union (star/award/crown/leaf/feather/book-open/shield/sparkles/quote/
+  heart/medal/trophy/badge-check/gem) — deliberately not "any lucide icon"; every id has
+  matching PDF geometry (below), so adding an id without also registering its geometry is a
+  compile error at the draw call site, not a silently blank icon.
+- **Icon registry** (`structuralPages/coverIcons.ts`, new): `COVER_ICON_COMPONENTS` (the
+  real `lucide-react` components, for on-screen rendering) and `COVER_ICON_PDF_NODES` (raw
+  path/circle geometry for the PDF renderer). The PDF geometry is hand-transcribed verbatim
+  from this project's installed `lucide-react` v1.27.0 source
+  (`node_modules/lucide-react/dist/esm/icons/*.mjs`'s exact `__iconNode` arrays), not
+  reconstructed from memory — guarantees the printed icon is the same geometry as the
+  on-screen one, not an approximation. Flagged in that file's doc comment: if
+  `lucide-react` is ever upgraded and an icon's path data changes upstream, this registry
+  will silently drift — there's no automated check tying the two together today.
+- **A real bug caught by rendering and visually inspecting a test PDF, not just `tsc`.**
+  `drawCoverElementsPdf`'s icon branch initially pre-multiplied the SVG stroke width by
+  the icon's own render scale before passing it to `drawSvgPath`. But `drawSvgPath`
+  applies its own `scale()` to the current transform matrix before stroking, and per the
+  PDF spec a stroke's line width is *itself* subject to the CTM in effect at stroke time —
+  so the pre-scaled width got scaled a second time, rendering every icon as a solid
+  overstroked blob instead of a thin outline (confirmed by rendering a standalone
+  reproduction with `pdf-lib` + rasterising it with `pdftoppm`/Ghostscript, both available
+  in this sandbox, and looking at the actual pixels). Fixed by passing the *raw*,
+  un-scaled stroke width to `drawSvgPath` (matching how `lucide-react`'s own SVG source
+  specifies `stroke-width="2"` directly in the un-scaled 24-unit viewBox and lets the
+  viewport's own scale do the rest) — re-rendered and visually confirmed clean outlines
+  before considering this shipped. `drawEllipse` calls (for icons like `award`/`sparkles`
+  that include a circle sub-node) have no equivalent transform and keep the pre-multiplied
+  width, which was already correct.
+- **PDF drawing** (`structuralPages/coverElements.ts`): icon — a square icon
+  (`Math.min(wPt, hPt)`) centred within the element's own possibly-non-square box, every
+  sub-path/circle drawn in `zIndex` order with `LineCapStyle.Round` to match `lucide`'s
+  default cap style; badge — background shape (`drawEllipse` for `'circle'`,
+  `drawRectangle` for `'rect'`) then centred text on top, sharing the same
+  `resolveCoverFontFamily`/`pickFont` path the free-text element already uses.
+- **On-screen rendering** (`structuralPages/coverElementLayer.tsx`'s `ElementBody`): icon
+  renders the actual `lucide-react` component at `size-full`, relying on SVG's default
+  `preserveAspectRatio="xMidYMid meet"` to stay square and centred inside a non-square box
+  — deliberately the same "square icon inside a possibly non-square box" behaviour as the
+  PDF path, verified by inspection rather than assumed to match. Badge renders a
+  background `div` (rounded-full for `'circle'`) with a centred `span`.
+  
+- **Add-element menu + Inspector panel**: `coverElementToolbar.tsx` gained Icon/Badge
+  entries (default star icon / default red "NEW" circle badge, immediately selected and
+  restyleable, same convention as every other element kind). `CoverElementPanel.tsx`
+  gained a 5-per-row icon picker + colour + stroke-width slider for icons, and
+  text/shape/background/text-colour/size/border fields for badges — following the
+  existing `element.kind === X` branch pattern (extended from the old `!== 'text'`
+  catch-all, which would otherwise have wrongly tried to render fill/stroke controls for
+  the two new non-shape kinds).
+
+`tsc -b` clean. The icon stroke-width bug above was caught and fixed via a real rendered
+PDF, not just typechecking or code review — see the smoke-test methodology note. Live
+interactive verification in the running app (drag/resize/style an icon or badge on an
+actual Cover page in Chrome) was **not possible in this sandbox**: `npm run dev` fails to
+even start, for the same pre-existing reason `npm run build` fails (Phase 53's
+verification caveat — `node_modules/@tailwindcss/node/dist/index.mjs` is truncated,
+breaking Vite's config load). Recommend a quick manual check in a normal dev environment
+before the next deploy: add one of each new kind to a Cover, drag/resize it, change its
+icon/colour/badge text, and export a PDF to confirm the on-screen and printed results
+still match.
+
 ## Recommended next task
 All five items from the original "think about it" request plus both
 chapter-management follow-ups (add, reorder) are shipped, plus Phase 53's five audit
-fixes and Phase 54's cover-canvas Milestone 1. The highest-leverage remaining items
-surfaced along the way: the real fix for the Phase J renderer-freeze item (worker-based
-or otherwise), and Milestone 2 of the cover canvas (icons/badges, closing the
-long-deferred "cover accessories" item now that the element system exists). Absent
+fixes, Phase 54's cover-canvas Milestone 1, and Phase 55's Milestone 2 (icons/badges).
+The highest-leverage remaining items: the real fix for the Phase J renderer-freeze item
+(worker-based or otherwise), and the next cover-canvas follow-ups now that icons/badges
+are done — rotation, secondary images, smart alignment/snap guides, or the wrap-aware
+front+spine+back view (see `docs/ROADMAP.md` Phase E for the full deferred list). Absent
 further direction, Phase F's remaining items
 (project-creation wizard, outlining templates, word-count goals,
 distraction-free writing mode) are next per `docs/ROADMAP.md`.

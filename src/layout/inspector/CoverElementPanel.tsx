@@ -5,8 +5,16 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import type { CoverElement, CoverFontChoice } from '@/types/structuralPage'
+import type { CoverElement, CoverFontChoice, CoverIconId } from '@/types/structuralPage'
 import { updateElement, removeElement, bringToFront, sendToBack } from '@/structuralPages/coverElements'
+import { COVER_ICON_COMPONENTS, COVER_ICON_LABELS } from '@/structuralPages/coverIcons'
+
+const ICON_OPTIONS = Object.keys(COVER_ICON_LABELS) as CoverIconId[]
+
+const BADGE_SHAPE_OPTIONS: { id: NonNullable<Extract<CoverElement, { kind: 'badge' }>['shape']>; label: string }[] = [
+  { id: 'circle', label: 'Circle' },
+  { id: 'rect', label: 'Ribbon' },
+]
 
 const FONT_CHOICE_OPTIONS: { id: CoverFontChoice; label: string }[] = [
   { id: 'theme', label: "Book's theme" },
@@ -32,6 +40,8 @@ const KIND_LABEL: Record<CoverElement['kind'], string> = {
   ellipse: 'Ellipse',
   line: 'Line',
   text: 'Text box',
+  icon: 'Icon',
+  badge: 'Badge',
 }
 
 interface CoverElementPanelProps {
@@ -151,7 +161,137 @@ export function CoverElementPanel({ element, elements, onChange, onDeselect }: C
         </>
       )}
 
-      {element.kind !== 'text' && (
+      {element.kind === 'icon' && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label>Icon</Label>
+            <div className="grid grid-cols-5 gap-1.5">
+              {ICON_OPTIONS.map((id) => {
+                const Icon = COVER_ICON_COMPONENTS[id]
+                return (
+                  <Button
+                    key={id}
+                    type="button"
+                    variant={element.iconId === id ? 'primary' : 'secondary'}
+                    size="icon"
+                    title={COVER_ICON_LABELS[id]}
+                    onClick={() => patch({ iconId: id })}
+                  >
+                    <Icon className="size-4" />
+                  </Button>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Colour</Label>
+            <input
+              type="color"
+              aria-label="Icon colour"
+              className="h-9 w-12 shrink-0 rounded-[var(--radius-control)] border border-border"
+              value={element.color ?? '#ffffff'}
+              onChange={(e) => patch({ color: e.target.value })}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Stroke width ({element.strokeWidth ?? 2}px)</Label>
+            <input
+              type="range"
+              min={1}
+              max={4}
+              step={0.5}
+              value={element.strokeWidth ?? 2}
+              onChange={(e) => patch({ strokeWidth: Number(e.target.value) })}
+              className="w-full accent-accent"
+            />
+          </div>
+        </>
+      )}
+
+      {element.kind === 'badge' && (
+        <>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="cover-el-badge-text">Text</Label>
+            <Input id="cover-el-badge-text" value={element.text} onChange={(e) => patch({ text: e.target.value })} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Shape</Label>
+            <div className="flex gap-1.5">
+              {BADGE_SHAPE_OPTIONS.map((option) => (
+                <Button
+                  key={option.id}
+                  type="button"
+                  variant={element.shape === option.id ? 'primary' : 'secondary'}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => patch({ shape: option.id })}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Background</Label>
+              <input
+                type="color"
+                aria-label="Badge background colour"
+                className="h-9 w-12 shrink-0 rounded-[var(--radius-control)] border border-border"
+                value={element.backgroundColor ?? '#dc2626'}
+                onChange={(e) => patch({ backgroundColor: e.target.value })}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Text colour</Label>
+              <input
+                type="color"
+                aria-label="Badge text colour"
+                className="h-9 w-12 shrink-0 rounded-[var(--radius-control)] border border-border"
+                value={element.textColor ?? '#ffffff'}
+                onChange={(e) => patch({ textColor: e.target.value })}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Size ({element.fontSize ?? 15}px)</Label>
+            <input
+              type="range"
+              min={8}
+              max={40}
+              step={1}
+              value={element.fontSize ?? 15}
+              onChange={(e) => patch({ fontSize: Number(e.target.value) })}
+              className="w-full accent-accent"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Border</Label>
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                aria-label="Badge border colour"
+                className="h-9 w-12 shrink-0 rounded-[var(--radius-control)] border border-border"
+                value={element.borderColor ?? '#ffffff'}
+                onChange={(e) => patch({ borderColor: e.target.value })}
+              />
+              {element.borderColor && (
+                <Button type="button" variant="ghost" size="sm" onClick={() => patch({ borderColor: undefined })}>
+                  Remove border
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {(element.kind === 'rect' || element.kind === 'ellipse' || element.kind === 'line') && (
         <>
           <div className="flex flex-col gap-1.5">
             <Label>Fill</Label>

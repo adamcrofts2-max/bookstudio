@@ -146,7 +146,7 @@ export type BackCoverTextFieldId = 'blurb' | 'authorBio'
  * `structuralPages/registry.ts`'s `StructuralPageTypeDefinition` doc comment
  * warns about).
  */
-export type CoverElementKind = 'rect' | 'ellipse' | 'line' | 'text'
+export type CoverElementKind = 'rect' | 'ellipse' | 'line' | 'text' | 'icon' | 'badge'
 
 /**
  * Shared fields, deliberately WITHOUT `kind` — the discriminant is declared
@@ -209,7 +209,61 @@ export interface CoverTextElement extends BaseCoverElement {
   align?: 'left' | 'center' | 'right'
 }
 
-export type CoverElement = CoverShapeElement | CoverTextElement
+/** A curated set of decorative line-icons for cover badges/seals/feature
+ * strips (Milestone 2 of the free-form element canvas — see
+ * `docs/COVER_CANVAS_PLAN.md`). Deliberately a small hand-picked list, not
+ * "any lucide icon" — every id here has matching geometry hand-transcribed
+ * into `structuralPages/coverIcons.ts`'s PDF registry from the exact
+ * installed `lucide-react` version, so screen and print render identically.
+ * Adding an id to this union without also adding it to that registry is a
+ * type error at the PDF draw call site, not a silent blank icon. */
+export type CoverIconId =
+  | 'star'
+  | 'award'
+  | 'crown'
+  | 'leaf'
+  | 'feather'
+  | 'book-open'
+  | 'shield'
+  | 'sparkles'
+  | 'quote'
+  | 'heart'
+  | 'medal'
+  | 'trophy'
+  | 'badge-check'
+  | 'gem'
+
+/** A single decorative icon (see `CoverIconId`) — e.g. an award seal or a
+ * leaf mark for a nature-themed cover's feature strip. */
+export interface CoverIconElement extends BaseCoverElement {
+  kind: 'icon'
+  iconId: CoverIconId
+  color?: string
+  /** px, in the icon's native 24×24 viewBox — same physical convention as
+   * `CoverShapeElement.strokeWidth`, scaled proportionally with the icon's
+   * own rendered size rather than treated as a fixed line weight. */
+  strokeWidth?: number
+}
+
+/** A circular seal or rectangular ribbon with centred text — "Bestseller",
+ * "2nd Edition", "Award Winner" and similar cover call-outs. A specialised
+ * combination of a filled shape + text rather than composing a shape element
+ * and a text element separately, since the two always move/resize together
+ * and a real badge's text needs to stay centred as the shape resizes. */
+export interface CoverBadgeElement extends BaseCoverElement {
+  kind: 'badge'
+  shape: 'circle' | 'rect'
+  text: string
+  backgroundColor?: string
+  textColor?: string
+  borderColor?: string
+  borderWidth?: number
+  /** px, same convention as `CoverTextElement.fontSize`. */
+  fontSize?: number
+  fontChoice?: CoverFontChoice
+}
+
+export type CoverElement = CoverShapeElement | CoverTextElement | CoverIconElement | CoverBadgeElement
 
 export interface CoverPage extends BaseStructuralPage {
   type: 'cover'

@@ -1,4 +1,4 @@
-import { Shapes, Square, Circle, Minus, Type } from 'lucide-react'
+import { Shapes, Square, Circle, Minus, Type, Star, Award } from 'lucide-react'
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { CoverElement, CoverElementKind } from '@/types/structuralPage'
@@ -9,6 +9,11 @@ const ADD_OPTIONS: { kind: CoverElementKind; label: string; Icon: typeof Square 
   { kind: 'ellipse', label: 'Ellipse', Icon: Circle },
   { kind: 'line', label: 'Line', Icon: Minus },
   { kind: 'text', label: 'Text box', Icon: Type },
+  // Adds with a fixed default (a star icon / a red "NEW" circle) — both are
+  // fully re-styled afterward in `CoverElementPanel`, same as how a fresh
+  // rectangle always starts white before the user picks a real fill.
+  { kind: 'icon', label: 'Icon', Icon: Star },
+  { kind: 'badge', label: 'Badge', Icon: Award },
 ]
 
 interface CoverElementToolbarProps {

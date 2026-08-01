@@ -276,11 +276,13 @@ daily use of everything built so far.)*
       icons/badges, secondary images, smart alignment/snap guides,
       grouping, on-canvas double-click text editing, and the wrap-aware
       front+spine+back view.
-- [ ] Cover elements: icons/badges (decorative badge/seal + an icon
-      feature-strip band, as seen on real published non-fiction covers —
-      the exact pattern used in the user's own "Forest Gardening for
-      Beginners" test cover) — Milestone 2 of the free-form element canvas
-      above, now that the underlying element/layer system exists
+- [x] Cover elements: icons/badges — Milestone 2 shipped 2026-08-01 (Phase
+      55): a 14-icon curated set (star, award, crown, leaf, feather, open
+      book, shield, sparkles, quote, heart, medal, trophy, verified badge,
+      gem) plus a circle/ribbon text badge (e.g. "Bestseller", "2nd
+      Edition"). See docs/STATUS.md Phase 55 — also documents a real
+      stroke-width double-scaling bug caught by rendering and visually
+      inspecting a test PDF before shipping.
 - [ ] Cover elements: rotation (data model deliberately has no `rotation`
       field yet — see `docs/COVER_CANVAS_PLAN.md` for why one shouldn't be
       added without a rotate handle in the same milestone)
