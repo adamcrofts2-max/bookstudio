@@ -48,9 +48,49 @@ function splitIntoSentences(text: string): string[] {
     .filter(Boolean)
 }
 
+/** Common short words that show up inside entity names/titles ("The
+ * Lighthouse", "House of Ash") but are themselves near-universal in
+ * ordinary prose — matching on these alone would flag almost every
+ * sentence a user pastes, defeating the point of a *suggestion*. Excluded
+ * from `matchableTokens`, not from the full-label match (the full label —
+ * "The Lighthouse" — still needs to work, only the bare word "The" doesn't
+ * count as a standalone signal). */
+const STOPWORDS = new Set([
+  'the', 'a', 'an', 'of', 'and', 'or', 'in', 'on', 'at', 'to', 'is', 'it', 'he', 'she',
+  'they', 'we', 'you', 'i', 'that', 'this', 'for', 'with', 'as', 'by', 'from', 'but',
+  'not', 'so', 'if', 'be', 'are', 'was', 'were', 'been', 'has', 'have', 'had', 'will',
+  'would', 'can', 'could', 'shall', 'should', 'may', 'might', 'must', 'do', 'does',
+  'did', 'no', 'yes', 'all', 'any', 'our', 'your', 'his', 'her', 'its', 'their', 'my',
+  'me', 'him', 'them', 'us', 'de', 'van', 'von',
+])
+
+/** Word-ish tokens (2+ letters, not a `STOPWORD`) worth matching on their
+ * own, longest first so a longer/more distinctive token doesn't get
+ * shadowed by a short one in the alternation below. Skips a bare single
+ * initial ("J.") — too likely to false-positive on ordinary prose to be
+ * worth surfacing as a suggestion. */
+function matchableTokens(label: string): string[] {
+  const tokens = label
+    .split(/\s+/)
+    .filter((t) => t.replace(/[^\p{L}]/gu, '').length >= 2 && !STOPWORDS.has(t.toLowerCase()))
+  return [...new Set(tokens)].sort((a, b) => b.length - a.length)
+}
+
 /** One entity's suggestion candidates: every unique sentence in `sentences`
- * that mentions `label` as a whole word/phrase (case-insensitive), same
- * word-boundary regex approach `detectMentionedEntityIds` already uses. */
+ * that mentions `label` — either the full label as a whole phrase, or any
+ * individual word within it (case-insensitive, word-boundary matched, same
+ * approach `detectMentionedEntityIds` already uses for the full-phrase
+ * case). Matching on individual words too (not just the complete label) is
+ * deliberate: a `Character.name` is typically stored as a full name like
+ * "Wren Ashgrove", but prose almost always refers back to a character by
+ * first name alone after their first introduction — full-label-only
+ * matching missed the overwhelming majority of real mentions. Found via a
+ * live first-time-author UX audit (docs/STATUS.md, Phase 78, 2026-08-02):
+ * pasting a paragraph that only ever said "Wren" produced zero suggestions.
+ * Broader matching costs nothing here since every suggestion is reviewed
+ * and explicitly accepted before it touches the bible (see this file's own
+ * doc comment) — a false-positive candidate is a two-second dismissal, not
+ * a silent bad write. */
 function suggestionsForEntity(
   kind: BibleSuggestionKind,
   entityId: string,
@@ -59,7 +99,8 @@ function suggestionsForEntity(
 ): BibleSuggestion[] {
   const trimmedLabel = label.trim()
   if (!trimmedLabel) return []
-  const pattern = new RegExp(`\\b${escapeRegExp(trimmedLabel)}\\b`, 'i')
+  const alternatives = [trimmedLabel, ...matchableTokens(trimmedLabel)].map(escapeRegExp)
+  const pattern = new RegExp(`\\b(?:${alternatives.join('|')})\\b`, 'i')
   const seen = new Set<string>()
   const results: BibleSuggestion[] = []
   let index = 0

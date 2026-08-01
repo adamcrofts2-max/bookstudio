@@ -5329,16 +5329,71 @@ as the still-outstanding Phase 55 push. Recommend pushing all of
 main branch's currently-unpushed commits (Phase 76 + this Phase 77 fix) together next
 time the user is at a terminal.
 
+## Phase 78 — Two more fixes from the first-time-author UX audit, + full report (2026-08-02)
+
+Continued the live Chrome UX audit from Phase 77 (role-playing a first-time author
+with no prior book-writing experience, working through Planning mode's fiction
+workflow live on the deployed build, then reading the equivalent non-fiction code
+paths after Chrome's action-safety classifier became unavailable partway through
+— see the full report for exactly what was and wasn't live-verified). Two more real,
+reproducible bugs came out of it, both fixed and verified today; the complete
+findings, prioritised, are written up in `docs/PLANNING_MODE_UX_AUDIT.md`.
+
+- **Pre-filled example text didn't select on focus, anywhere it appeared.** Every
+  seeded example entity (`projectTemplates.ts`'s `seedExampleEntity`, one per category
+  — Character, Location, Style Rule, Reference, Research Note, Glossary Term, etc.)
+  and a brand-new chapter's "Untitled Chapter" title both pre-fill a real, editable
+  value rather than an empty field. Clicking in and typing merges into that text
+  instead of replacing it — confirmed live: typing over the Character "Description"
+  example produced garbled merged text, and renaming a new chapter produced "Untitled
+  ChapterThe Lighting". Fixed two ways, deliberately not the same way everywhere:
+  - `Sidebar.tsx`'s chapter-rename `<input>` now selects its full value
+    unconditionally on focus (`onFocus={(e) => e.currentTarget.select()}`) — this is
+    a pure rename-in-place field, so select-on-focus is correct every single time,
+    matching every desktop file browser's rename convention.
+  - `EntityListPanel.tsx`'s form fields are different: after a user's first real
+    edit, the same field holds their own prose, where select-on-focus-always would be
+    actively annoying (it would nuke their cursor position and any deliberate partial
+    edit). So instead, `projectTemplates.ts` now exports its `EXAMPLE_SUFFIX` marker
+    string, and a new `selectIfUneditedExample` focus handler in `EntityListPanel.tsx`
+    only selects the field when its current value still ends in that exact marker —
+    i.e. only for a genuinely untouched example, never for the user's own content.
+- **`PasteBackPanel`'s mention detection only matched an entity's complete stored
+  name, missing the overwhelming majority of real mentions.** A `Character.name` is
+  stored as a full name ("Wren Ashgrove"), but prose almost always refers back to a
+  character by first name alone after introducing them — confirmed live via A/B
+  testing: pasting "Wren's hands trembled..." produced "No mentions found"; only
+  "Wren Ashgrove's hands trembled..." worked. `pasteBackSuggestions.ts`'s
+  `suggestionsForEntity` now matches the full label OR any individual word within it
+  (new `matchableTokens` helper), so "Wren" alone now correctly surfaces a suggestion
+  for "Wren Ashgrove". Added a `STOPWORDS` set (the, a, of, and, ...) so this doesn't
+  over-fire on names/titles that happen to contain a common word (a location named
+  "The Lighthouse" no longer produces a suggestion for every sentence containing the
+  word "the") — caught by the standalone smoke test below before it ever reached
+  Chrome. Broader matching is safe here specifically because every suggestion is
+  reviewed and explicitly accepted before it touches the bible (this file's own doc
+  comment) — worse case is one extra dismissal, not a bad write.
+
+`tsc -b --force` clean. Verified via a new standalone `tsx` smoke script
+(`pasteback_smoke.mjs`): first-name-only, last-name-only, full-name, and
+single-word-location mentions all correctly produce exactly one suggestion each;
+unrelated text produces none. The `EntityListPanel`/`Sidebar` focus fixes were
+reasoned through against the actual pre-fill values in `projectTemplates.ts` (same
+`EXAMPLE_SUFFIX` constant on both sides) rather than live-verified in Chrome, for the
+same tool-availability reason noted above — worth a quick manual click-through next
+session to be sure.
+
 ## Recommended next task
-Push the currently-unpushed local commits (Phase 76, Phase 77) so the live deployment
+Push the currently-unpushed local commits (Phase 76, 77, 78) so the live deployment
 matches `main` — the sandbox has no git push credentials, so this needs the user's own
-terminal, same constraint as the still-open #105 task. Once pushed, live-verify the
-Phase 77 empty-chapter fix in Chrome. Phase B's remaining item: real
-(dictionary-backed) spell-check (flagged 2026-08-01 — needs a bundled dictionary via
-something like `nspell`/`typo-js`, a bigger bundle-size/licensing tradeoff than recent
-phases' work). Phase F still has two deliberately-deferred items (`ApiKeyProvider`,
-waiting on a real cost/accounts story; a thesaurus/synonym lookup, lowest priority of
-the three text-tooling gaps). Also still open: the bigger "insert AI-drafted prose
-into the manuscript with a reviewable diff" feature flagged in Phase 68's
-STATUS.md/SUGGESTIONS.md entries. The live first-time-author UX audit of Planning
-mode continues in the next STATUS.md entry.
+terminal, same constraint as the still-open #105 task. Once pushed, live-verify all
+three of this batch's fixes in Chrome (empty-chapter "Start writing" prompt,
+select-on-focus for pre-filled fields, first-name-only paste-back mention detection).
+Read `docs/PLANNING_MODE_UX_AUDIT.md` for the full first-time-author audit report and
+its prioritised recommendations — the single highest-priority open item it flags is
+still the pre-existing "insert AI-drafted prose into the manuscript with a reviewable
+diff" gap (Phase 68's STATUS.md/SUGGESTIONS.md entries), now confirmed by live testing
+to be the actual bottleneck between "Book Studio helped me plan" and "Book Studio
+helped me write." Phase B's remaining item: real (dictionary-backed) spell-check
+(flagged 2026-08-01). Phase F still has two deliberately-deferred items
+(`ApiKeyProvider`; a thesaurus/synonym lookup).

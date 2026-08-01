@@ -49,6 +49,18 @@ export const CATEGORY_TEMPLATES: Record<ProjectCategory, CategoryTemplate> = {
   other: { trimSize: '6x9', seedKinds: ['character'] },
 }
 
+/**
+ * Marks the tail of every seeded example entity's free-text field. Exported
+ * (not a local inside `seedExampleEntity`) so `EntityListPanel.tsx` can
+ * detect "this field still holds its unedited starter text" and select it
+ * on focus — found needed during a live first-time-author UX audit
+ * (docs/STATUS.md, Phase 78, 2026-08-02): clicking into a pre-filled
+ * example field and typing merged into the placeholder instead of
+ * replacing it, because nothing here signals "this whole value is meant to
+ * be replaced" the way an empty field does.
+ */
+export const EXAMPLE_SUFFIX = 'This is a starter example — edit or delete it.'
+
 /** Adds one clearly-marked example entity of `kind` to `projectId`'s
  * bible, through the same history-wrapped action every other Layer 0 write
  * goes through (undo/redo works on these exactly like a user's own edit —
@@ -61,7 +73,6 @@ export const CATEGORY_TEMPLATES: Record<ProjectCategory, CategoryTemplate> = {
 function seedExampleEntity(projectId: string, kind: Layer0EntityKind): void {
   const now = new Date().toISOString()
   const base = { id: generateId(kind), createdAt: now, updatedAt: now }
-  const EXAMPLE_SUFFIX = 'This is a starter example — edit or delete it.'
 
   switch (kind) {
     case 'character':

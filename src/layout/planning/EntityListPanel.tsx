@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type FocusEvent } from 'react'
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,24 @@ import {
 import { generateId } from '@/utils'
 import { LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, type Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
+import { EXAMPLE_SUFFIX } from '@/data/projectTemplates'
+
+/**
+ * Selects a field's entire value the first time it's focused, but only
+ * while that value still ends in the seeded-example marker — i.e. only for
+ * an unedited starter field ("Describe your protagonist here. This is a
+ * starter example — edit or delete it."), never for a user's own real
+ * content. Scoped this narrowly (rather than selecting on every focus,
+ * which would be actively annoying once real prose exists) because the
+ * only failure this fixes is a first-time user's very first edit to a
+ * pre-filled example — found via a live first-time-author UX audit
+ * (docs/STATUS.md, Phase 78, 2026-08-02): clicking into the example
+ * Description field and typing merged into the placeholder text instead
+ * of replacing it.
+ */
+function selectIfUneditedExample(e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
+  if (e.currentTarget.value.trim().endsWith(EXAMPLE_SUFFIX)) e.currentTarget.select()
+}
 
 interface EntityListPanelProps {
   projectId: string
@@ -216,6 +234,7 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
                     placeholder={field.placeholder}
                     value={draft[field.key] ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
+                    onFocus={selectIfUneditedExample}
                   />
                 ) : (
                   <Input
@@ -223,6 +242,7 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
                     placeholder={field.placeholder}
                     value={draft[field.key] ?? ''}
                     onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
+                    onFocus={selectIfUneditedExample}
                   />
                 )}
               </div>

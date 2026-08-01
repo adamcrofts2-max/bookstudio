@@ -304,6 +304,17 @@ export function Sidebar({ project }: SidebarProps) {
                       <input
                         autoFocus
                         value={titleDraft}
+                        // Selects the pre-filled title (e.g. "Untitled
+                        // Chapter") the instant this input gains focus, so
+                        // the very next keystroke replaces it outright
+                        // rather than merging into it — the same rename-
+                        // in-place convention every desktop file browser
+                        // uses. Found missing during a live first-time-
+                        // author UX audit (docs/STATUS.md, Phase 78,
+                        // 2026-08-02): typing a new chapter title produced
+                        // "Untitled ChapterThe Lighting" instead of
+                        // replacing the placeholder.
+                        onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => setTitleDraft(e.target.value)}
                         onBlur={() => commitRename(chapter.id, chapter.title)}
                         onKeyDown={(e) => {

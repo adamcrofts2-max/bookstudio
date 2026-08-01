@@ -450,6 +450,15 @@ daily use of everything built so far.)*
 
 ## Phase F — Planning & Writing Tools
 
+- [x] Live first-time-author UX audit of Planning mode's full fiction and
+      non-fiction workflows, in Chrome against the deployed build — 2026-08-02
+      (Phase 77/78). Full findings, prioritised, in
+      `docs/PLANNING_MODE_UX_AUDIT.md`. Found and fixed one severe bug (empty
+      chapters had no way to add a first block) and two real UX bugs (pre-filled
+      example text not selecting on focus; paste-back mention detection missing
+      first-name-only mentions); confirmed one already-known gap (no assisted
+      manuscript-insertion flow) as the actual highest-priority item, not just a
+      theoretical one.
 - [x] Editorial notes — select any paragraph/block or structural page and
       leave a note in the Inspector's "Notes" tab; shipped 2026-07-31
       (Phase 47). A small badge on the block/page shows while it has
@@ -609,6 +618,20 @@ daily use of everything built so far.)*
       writes to the bible until accepted. Wired into `PlanningShell.tsx` as a
       second AI-Workspace nav entry ("Paste Response") alongside "Generate
       Prompt."
+- [x] Fix: mention detection required an entity's exact full stored name, missing
+      first-name-only/last-name-only mentions (the large majority of real prose) —
+      found via live first-time-author UX audit, fixed with per-word matching plus a
+      stopword list. Phase 78 (2026-08-02). See `docs/PLANNING_MODE_UX_AUDIT.md`.
+- [x] Fix: pre-filled example text (every seeded Planning entity field, plus a new
+      chapter's "Untitled Chapter" title) didn't select on focus, so typing merged
+      into it instead of replacing it. Phase 78 (2026-08-02). See
+      `docs/PLANNING_MODE_UX_AUDIT.md`.
+- [ ] **Highest-priority open gap, confirmed by live audit**: no assisted way to
+      insert AI-drafted prose into the manuscript — Generate Prompt's own copy says
+      "paste the result back into your manuscript yourself," but that's currently a
+      fully manual, unassisted, block-by-block process. See
+      `docs/PLANNING_MODE_UX_AUDIT.md` finding #2 and Phase 68's SUGGESTIONS.md entry
+      for the original scoping.
 - [x] AI Workspace: continuity checker over Layer 0 data, extending the Virtual
       Editor's checker architecture (Phase C) — shipped 2026-08-01 (Phase 74).
       New `layer0Bible?: Layer0Bible` field threaded through `CheckerContext`
