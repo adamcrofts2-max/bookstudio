@@ -6,6 +6,7 @@ import { useStructuralPageStore } from '@/store/structuralPageStore'
 import { useNotesStore } from '@/store/notesStore'
 import { useCustomThemeStore } from '@/store/customThemeStore'
 import { useAssetStore } from '@/store/assetStore'
+import { useLayer0Store } from '@/store/layer0Store'
 
 /**
  * Drives "Load from file" (`Toolbar.tsx` and `ProjectsPage.tsx`, Phase 51):
@@ -18,7 +19,7 @@ import { useAssetStore } from '@/store/assetStore'
  * instead of reusing whatever id the file was originally exported under:
  * the same file could be imported twice, or into a browser that already has
  * a different project sitting at that id, and per-project data here is
- * keyed by id across five separate stores — reusing the original id risks
+ * keyed by id across six separate stores — reusing the original id risks
  * silently clobbering unrelated existing data in any one of them. Assets
  * are the one exception to "everything gets a fresh id": `assetStore.
  * restoreAsset` keeps each asset's own original id (only its `projectId`
@@ -35,6 +36,7 @@ export function useImportProjectFile() {
   const replaceAllNotes = useNotesStore((s) => s.replaceAllNotes)
   const importCustomTheme = useCustomThemeStore((s) => s.importCustomTheme)
   const restoreAsset = useAssetStore((s) => s.restoreAsset)
+  const replaceLayer0Bible = useLayer0Store((s) => s.replaceBible)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,6 +55,7 @@ export function useImportProjectFile() {
       setManuscript(project.id, bundle.manuscript)
       replaceAllPages(project.id, bundle.structuralPages)
       replaceAllNotes(project.id, bundle.notes)
+      replaceLayer0Bible(project.id, bundle.layer0Bible)
       if (bundle.customTheme) importCustomTheme(bundle.customTheme)
       for (const { asset, blob } of bundle.assets) {
         await restoreAsset(project.id, { ...asset, projectId: project.id }, blob)

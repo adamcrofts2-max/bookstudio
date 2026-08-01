@@ -4721,14 +4721,40 @@ Phase F.
 `tsc -b --force` clean. `oxlint`/`vite build` unchanged sandbox failures, re-confirmed
 before writing this entry, not new.
 
+## Phase 65 — Wire Layer 0 into project-file save/load (2026-08-01)
+
+Closes the gap flagged when the Layer 0 store shipped (Phase 63): a saved
+`.bookstudio` file didn't include Planning data, so "Save to file" → "Load" on another
+machine would silently drop the story bible even though everything else round-tripped.
+
+- **`types/projectFile.ts`.** `ProjectFileBundle` gained `layer0Bible: Layer0Bible`.
+  Deliberately no `PROJECT_FILE_VERSION` bump — same additive-field convention every
+  other purely-additive field in this codebase already uses (e.g. `CoverElement
+  .rotation`); a file saved before this shipped just has no `layer0.json` entry.
+- **`exportProjectFile.ts`/`useExportProjectFile.ts`.** One new ZIP entry
+  (`layer0.json`), read from `useLayer0Store` with the usual `EMPTY_LAYER0_BIBLE`
+  fallback for a project that never touched Planning mode — same pattern every other
+  per-project store's export wiring already follows.
+- **`importProjectFile.ts`.** New `optionalJson` helper alongside the existing
+  throwing `json` helper — `layer0.json` is read leniently (missing entry → empty
+  bible) rather than treated as file corruption, so every `.bookstudio` file saved
+  before this phase still opens without error.
+- **`useImportProjectFile.ts`.** Calls `layer0Store.replaceBible` alongside the other
+  five stores' bulk-replace actions — now six per-project stores a fresh imported
+  project's data gets written into, doc comment updated to match.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end via a real save→load round trip
+(same sandbox `npm run dev`/`vite build` blocker as every phase since 55) — the change
+mirrors the exact existing `notes.json`/`customTheme.json` pattern closely enough that
+this is a reasonable confidence level, but flagging the gap honestly rather than
+claiming a live-tested guarantee.
+
 ## Recommended next task
-Phase F's foundation is in place. Reasonable next steps, in roughly the order they'd
-naturally build on each other: (1) wire Layer 0 into `exportProjectFile.ts`/
-`importProjectFile.ts` so Planning data survives a project-file round-trip — a real gap
-flagged above, not deferred forever; (2) the scoped `ClipboardProvider` prompt
+Layer 0's data-integrity gap is closed. Per the settled build order (Phase F before
+D/B), reasonable next Phase F pieces: (1) the scoped `ClipboardProvider` prompt
 generator — assembles a minimum-relevant context bundle from the entity bible for a
-given task and copies it to the clipboard, needs no API; (3) the project-creation
-wizard and outlining/story-structure templates, the other Phase F items that don't
-depend on Layer 0. Per the settled build order, Phase F continues before Phase D/B.
-Also newly flagged and worth folding in opportunistically: manuscript search/find,
-real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, 2026-08-01).
+given task and copies it to the clipboard, needs no API; (2) the project-creation
+wizard and outlining/story-structure templates, the Phase F items that don't depend on
+Layer 0 at all. Also still open and worth folding in opportunistically: manuscript
+search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, flagged
+2026-08-01).

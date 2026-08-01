@@ -5,6 +5,8 @@ import type { StructuralPage } from '@/types/structuralPage'
 import type { Note } from '@/store/notesStore'
 import type { CustomTheme } from '@/store/customThemeStore'
 import type { ImageAsset } from '@/types/asset'
+import type { Layer0Bible } from '@/types/layer0'
+import { EMPTY_LAYER0_BIBLE } from '@/store/layer0Store'
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   png: 'image/png',
@@ -33,6 +35,15 @@ export async function parseProjectFile(bytes: Uint8Array): Promise<ProjectFileBu
     if (!data) throw new Error(`This project file is missing "${name}" — it may be corrupt or from an unsupported source.`)
     return JSON.parse(decoder.decode(data)) as T
   }
+  /** Same as `json` but tolerant of a missing entry — for fields added
+   * after a project file was already saved (see `ProjectFileBundle
+   * .layer0Bible`'s doc comment). A file from before that field existed
+   * simply has no matching entry; that's not corruption, just an older
+   * export. */
+  const optionalJson = <T,>(name: string, fallback: T): T => {
+    const data = byName.get(name)
+    return data ? (JSON.parse(decoder.decode(data)) as T) : fallback
+  }
 
   const manifest = json<ProjectFileManifest>('manifest.json')
   if (manifest.formatVersion > PROJECT_FILE_VERSION) {
@@ -44,6 +55,7 @@ export async function parseProjectFile(bytes: Uint8Array): Promise<ProjectFileBu
   const notes = json<Note[]>('notes.json')
   const customTheme = json<CustomTheme | null>('customTheme.json')
   const assetMetadata = json<ImageAsset[]>('assets/manifest.json')
+  const layer0Bible = optionalJson<Layer0Bible>('layer0.json', EMPTY_LAYER0_BIBLE)
 
   const assets: ProjectFileBundle['assets'] = []
   for (const asset of assetMetadata) {
@@ -54,5 +66,5 @@ export async function parseProjectFile(bytes: Uint8Array): Promise<ProjectFileBu
     assets.push({ asset, blob: new Blob([entry.data as BlobPart], { type: mimeType }) })
   }
 
-  return { manifest, manuscript, structuralPages, notes, customTheme, assets }
+  return { manifest, manuscript, structuralPages, notes, customTheme, assets, layer0Bible }
 }

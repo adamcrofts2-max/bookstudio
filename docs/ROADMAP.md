@@ -463,11 +463,14 @@ daily use of everything built so far.)*
       and the Continuity checker below all need no API/backend/billing (the
       user copies the prompt to their own Claude/ChatGPT and pastes the
       response back) — only `ApiKeyProvider` is genuinely API-gated.
-- [ ] Layer 0: wire the entity bible into `exportProjectFile.ts`/
+- [x] Layer 0: wire the entity bible into `exportProjectFile.ts`/
       `importProjectFile.ts` so "Save to file"/"Load" round-trip Planning
-      data along with the manuscript/structural pages/notes — currently
-      Layer 0 only persists to this browser's `localStorage`, flagged as a
-      known gap when the store shipped (Phase 63)
+      data along with the manuscript/structural pages/notes — shipped
+      2026-08-01 (Phase 65), closing the gap flagged when the store shipped
+      (Phase 63). A new `layer0.json` archive entry, read leniently (defaults
+      to an empty bible, not an error) so older `.bookstudio` files without
+      it still open fine — no `PROJECT_FILE_VERSION` bump needed, same
+      additive-field convention as `CoverElement.rotation`.
 - [ ] Layer 0: `TimelineEvent` manual drag-reorder UI — `order` exists on the
       data model and new events append at the end, but there's no reorder
       affordance in `PlanningShell` yet

@@ -4,6 +4,7 @@ import type { StructuralPage } from '@/types/structuralPage'
 import type { Note } from '@/store/notesStore'
 import type { CustomTheme } from '@/store/customThemeStore'
 import type { ImageAsset } from '@/types/asset'
+import type { Layer0Bible } from '@/types/layer0'
 
 /**
  * The ".bookstudio" project file format (Phase 51) — a portable, self-
@@ -46,4 +47,13 @@ export interface ProjectFileBundle {
   notes: Note[]
   customTheme: CustomTheme | null
   assets: { asset: ImageAsset; blob: Blob }[]
+  /** Layer 0's planning bible (Character/Location/Timeline/etc. — see
+   * `types/layer0.ts`). Added after `PROJECT_FILE_VERSION` 1 shipped, but
+   * deliberately NOT a version bump — same additive-field convention every
+   * other purely-additive field in this codebase uses (e.g. `CoverElement
+   * .rotation`): a `.bookstudio` file saved before Layer 0 existed simply
+   * has no `layer0.json` entry, and `importProjectFile.ts`'s
+   * `parseProjectFile` reads that case as an empty bible rather than
+   * failing to open the file at all. */
+  layer0Bible: Layer0Bible
 }
