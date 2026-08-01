@@ -9,6 +9,42 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 77/78 (2026-08-02) — first-time-author UX audit
+
+Full findings in `docs/PLANNING_MODE_UX_AUDIT.md`; this is the lower-priority residue
+that didn't rise to "fix it in the same session."
+
+- **"Paste Response" and "Generate Prompt" are easy to conflate at a glance.** Both
+  live in the same sidebar section, both involve an external AI, and only their body
+  copy (not their labels) makes clear that one assembles a bible-context bundle to
+  copy out, and the other only proposes bible-note updates from what comes back —
+  neither one inserts anything into the manuscript. A first-time user skimming labels
+  rather than reading the paragraph under each could reasonably expect "Paste
+  Response" to be where their finished chapter goes. Cheap fix: a clearer subtitle on
+  "Paste Response" (e.g. "Updates your character/location notes only — not your
+  manuscript") would close most of this gap for free, well before the bigger
+  insert-into-manuscript feature (audit finding #2) is built.
+- **Planning mode's eight-category sidebar has no suggested order or first-run
+  framing.** A first-time author lands on whichever category is first with zero
+  indication of where to start, what's optional, or why any of it matters before a
+  word is written. Audit finding #5 has more detail; even something as small as
+  moving "Outline Templates" above the flat entity list (structure-first feels more
+  natural than character-cataloguing-first for someone starting from nothing) would
+  help.
+- **Every project shows all eight Planning categories regardless of category**,
+  including two (Characters, Locations) that a non-fiction project's own template
+  deliberately doesn't seed. Not a bug — `projectTemplates.ts`'s own comment says
+  this is a deliberate, minimal-scope choice — but worth a look if/when Planning
+  mode's category list gets a genre-aware pass. Audit finding #6.
+- **`selectIfUneditedExample`'s exact-suffix-match check is a little brittle.** It
+  requires the field's value to end in the literal `EXAMPLE_SUFFIX` string exactly —
+  correct for the seeded examples as they exist today, but if a future seed entity's
+  copy changes without updating this check in lockstep, the select-on-focus behaviour
+  silently stops firing for that field (fails safe — worst case is the old
+  merge-into-placeholder bug returns for that one field, not a crash). Not worth a
+  more elaborate detection scheme for two call sites; just flagging so a future
+  wording change to `projectTemplates.ts`'s example copy doesn't quietly regress this.
+
 ## After Phase 76 (2026-08-02) — Actioned Phase 74/75 suggestions
 
 - **Chapter titles are now searchable, but still not the only non-block text a
