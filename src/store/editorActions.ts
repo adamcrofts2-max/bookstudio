@@ -4,9 +4,11 @@ import { useContentStore } from '@/store/contentStore'
 import { useHistoryStore } from '@/store/historyStore'
 import { useStructuralPageStore } from '@/store/structuralPageStore'
 import { useNotesStore, type Note } from '@/store/notesStore'
+import { useLayer0Store } from '@/store/layer0Store'
 import { generateId } from '@/utils'
 import type { Chapter, ContentBlock } from '@/types/content'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
+import type { Layer0Bible } from '@/types/layer0'
 
 /**
  * History-aware wrapper functions around the real `contentStore`/
@@ -555,5 +557,85 @@ export function deleteNoteWithHistory(projectId: string, noteId: string): void {
     'Delete note',
     () => useNotesStore.getState().addNote(projectId, snapshot),
     () => useNotesStore.getState().deleteNote(projectId, noteId),
+  )
+}
+
+// --- Layer 0 (Planning) -----------------------------------------------------
+//
+// One generic add/update/delete triplet covering all eight entity kinds —
+// same "generic over `collection`, not eight near-identical wrappers" call
+// `layer0Store.ts` already makes, extended through the history layer. Every
+// wrapper below follows the exact snapshot → mutate-via-published-action →
+// `historyStore.record` shape every wrapper above it does.
+
+/** Adds a fully-formed entity (id/timestamps already set by the caller —
+ * see `LAYER0_KIND_TO_COLLECTION`/`generateId` at the call site, same
+ * division of responsibility as `addNoteWithHistory`) to one collection.
+ * `label` is the undo-stack's display string (e.g. "Add character"),
+ * supplied by the caller since only it knows which entity kind this is in
+ * human terms. */
+export function addLayer0EntityWithHistory<K extends keyof Layer0Bible>(
+  projectId: string,
+  collection: K,
+  entity: Layer0Bible[K][number],
+  label: string,
+): void {
+  useLayer0Store.getState().addEntity(projectId, collection, entity)
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => useLayer0Store.getState().deleteEntity(projectId, collection, entity.id),
+    () => useLayer0Store.getState().addEntity(projectId, collection, entity),
+  )
+}
+
+/** Edits one entity — snapshots the old value so undo restores it exactly,
+ * same shape as `updateNoteTextWithHistory`. Intended to be called once per
+ * edit session (a form's save/blur), not per keystroke. */
+export function updateLayer0EntityWithHistory<K extends keyof Layer0Bible>(
+  projectId: string,
+  collection: K,
+  id: string,
+  updates: Partial<Layer0Bible[K][number]>,
+  label: string,
+): void {
+  const oldEntity = useLayer0Store
+    .getState()
+    .getBible(projectId)
+    [collection].find((e) => e.id === id)
+  if (!oldEntity) return
+
+  useLayer0Store.getState().updateEntity(projectId, collection, id, updates)
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => useLayer0Store.getState().updateEntity(projectId, collection, id, oldEntity),
+    () => useLayer0Store.getState().updateEntity(projectId, collection, id, updates),
+  )
+}
+
+/** Snapshots the full entity before deleting so undo can re-`addEntity` it
+ * back byte-for-byte, same pattern as `deleteNoteWithHistory`. */
+export function deleteLayer0EntityWithHistory<K extends keyof Layer0Bible>(
+  projectId: string,
+  collection: K,
+  id: string,
+  label: string,
+): void {
+  const snapshot = useLayer0Store
+    .getState()
+    .getBible(projectId)
+    [collection].find((e) => e.id === id)
+  if (!snapshot) return
+
+  useLayer0Store.getState().deleteEntity(projectId, collection, id)
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => useLayer0Store.getState().addEntity(projectId, collection, snapshot),
+    () => useLayer0Store.getState().deleteEntity(projectId, collection, id),
   )
 }

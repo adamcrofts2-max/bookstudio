@@ -11,6 +11,16 @@ export type BookViewMode = 'single' | 'spread'
  * centre column's contents, never the shell itself. */
 export type WorkspaceMode = 'manuscript' | 'virtualEditor'
 
+/** Which top-level shell the app renders — `editor` is the existing fixed
+ * three-column `AppShell` (Sidebar/Toolbar+Workspace/Inspector); `planning`
+ * is Layer 0's own shell (`PlanningShell.tsx`), a structurally separate
+ * screen entirely, per `docs/AI_WORKSPACE_VISION.md`'s decided "new
+ * top-level mode/tab, not a sidebar section" placement. Distinct from
+ * `WorkspaceMode` above, which only ever swaps `AppShell`'s centre column —
+ * this instead swaps which shell renders at all, one level higher up (see
+ * `EditorPage.tsx`). */
+export type AppMode = 'editor' | 'planning'
+
 interface UiStoreState {
   appearance: AppearanceMode
   sidebarCollapsed: boolean
@@ -32,6 +42,7 @@ interface UiStoreState {
    * Deliberately excluded from persistence (see `partialize` below): a
    * dialog shouldn't reopen itself after a page reload. */
   projectSettingsOpen: boolean
+  appMode: AppMode
 }
 
 interface UiStoreActions {
@@ -45,6 +56,7 @@ interface UiStoreActions {
   setWorkspaceMode: (mode: WorkspaceMode) => void
   toggleCoverSafeZone: () => void
   setProjectSettingsOpen: (open: boolean) => void
+  setAppMode: (mode: AppMode) => void
 }
 
 /**
@@ -65,6 +77,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       workspaceMode: 'manuscript',
       showCoverSafeZone: false,
       projectSettingsOpen: false,
+      appMode: 'editor',
 
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -76,6 +89,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
       toggleCoverSafeZone: () => set((state) => ({ showCoverSafeZone: !state.showCoverSafeZone })),
       setProjectSettingsOpen: (open) => set({ projectSettingsOpen: open }),
+      setAppMode: (mode) => set({ appMode: mode }),
     }),
     {
       name: 'book-studio.ui',

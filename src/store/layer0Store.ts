@@ -1,0 +1,116 @@
+import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+import type { BaseLayer0Entity, Layer0Bible } from '@/types/layer0'
+
+/**
+ * Layer 0 (Planning) persistence — one `Layer0Bible` per project, the exact
+ * same `byProject: Record<projectId, X>` shape every other per-project
+ * store in this codebase already uses (`notesStore.ts`, `structuralPageStore
+ * .ts`). Deliberately its own store, not folded into `contentStore`: Layer 0
+ * is upstream of and structurally separate from Layer 2 (Content) — see
+ * `types/layer0.ts`'s doc comment for the full one-way-boundary reasoning.
+ */
+export const EMPTY_LAYER0_BIBLE: Layer0Bible = {
+  characters: [],
+  locations: [],
+  timelineEvents: [],
+  glossaryTerms: [],
+  references: [],
+  illustrationBriefs: [],
+  styleRules: [],
+  researchNotes: [],
+}
+
+interface Layer0StoreState {
+  byProject: Record<string, Layer0Bible>
+}
+
+interface Layer0StoreActions {
+  getBible: (projectId: string) => Layer0Bible
+  /** Low-level "insert this exact object" primitive — same naming/shape
+   * convention as `notesStore.addNote`, so `editorActions.ts`'s history
+   * wrapper can restore an exact snapshot at undo/redo without generating a
+   * fresh id each time. Generic over `collection` rather than one function
+   * per entity kind (`addCharacter`/`addLocation`/...) — eight near-
+   * identical CRUD triplets would be exactly the duplicate logic
+   * `CLAUDE.md`'s Code Standards ask to avoid; the generic signature keeps
+   * every call site fully typed (`collection`'s literal type narrows
+   * `entity`/`updates` automatically) with one implementation instead of
+   * eight. */
+  addEntity: <K extends keyof Layer0Bible>(projectId: string, collection: K, entity: Layer0Bible[K][number]) => void
+  updateEntity: <K extends keyof Layer0Bible>(
+    projectId: string,
+    collection: K,
+    id: string,
+    updates: Partial<Layer0Bible[K][number]>,
+  ) => void
+  deleteEntity: <K extends keyof Layer0Bible>(projectId: string, collection: K, id: string) => void
+  /** Wholesale replacement of one project's whole bible — reserved for a
+   * future project-file import's bulk-load primitive, mirrors
+   * `notesStore.replaceAllNotes`/`structuralPageStore.replaceAllPages`. Not
+   * a tracked user edit, deliberately outside `editorActions.ts`'s
+   * undo/redo history. Not wired into `exportProjectFile.ts`/
+   * `importProjectFile.ts` yet — see `docs/STATUS.md`'s Phase F entry for
+   * why that's a flagged, deliberate follow-up rather than an oversight. */
+  replaceBible: (projectId: string, bible: Layer0Bible) => void
+}
+
+type Layer0Store = Layer0StoreState & Layer0StoreActions
+
+/** The four generic CRUD methods all touch an array keyed by a generic
+ * `K extends keyof Layer0Bible` — TypeScript can't statically prove that
+ * every `Layer0Bible[K]` element extends `BaseLayer0Entity` from inside a
+ * function generic over `K` (that fact is only true because all eight
+ * concrete collections happen to share that base, not something expressible
+ * as a constraint on an indexed-access type). This narrow, local cast is the
+ * accepted escape hatch for that gap — every public method signature above
+ * stays fully generic and type-safe for callers; only this internal helper
+ * needs to assert what's already true by construction. */
+function asEntities(collection: unknown): BaseLayer0Entity[] {
+  return collection as BaseLayer0Entity[]
+}
+
+export const useLayer0Store = create<Layer0Store>()(
+  persist(
+    (set, get) => ({
+      byProject: {},
+
+      getBible: (projectId) => get().byProject[projectId] ?? EMPTY_LAYER0_BIBLE,
+
+      addEntity: (projectId, collection, entity) => {
+        set((state) => {
+          const bible = state.byProject[projectId] ?? EMPTY_LAYER0_BIBLE
+          const nextCollection = [...asEntities(bible[collection]), entity]
+          return { byProject: { ...state.byProject, [projectId]: { ...bible, [collection]: nextCollection } } }
+        })
+      },
+
+      updateEntity: (projectId, collection, id, updates) => {
+        set((state) => {
+          const bible = state.byProject[projectId] ?? EMPTY_LAYER0_BIBLE
+          const nextCollection = asEntities(bible[collection]).map((entity) =>
+            entity.id === id ? { ...entity, ...updates, updatedAt: new Date().toISOString() } : entity,
+          )
+          return { byProject: { ...state.byProject, [projectId]: { ...bible, [collection]: nextCollection } } }
+        })
+      },
+
+      deleteEntity: (projectId, collection, id) => {
+        set((state) => {
+          const bible = state.byProject[projectId] ?? EMPTY_LAYER0_BIBLE
+          const nextCollection = asEntities(bible[collection]).filter((entity) => entity.id !== id)
+          return { byProject: { ...state.byProject, [projectId]: { ...bible, [collection]: nextCollection } } }
+        })
+      },
+
+      replaceBible: (projectId, bible) => {
+        set((state) => ({ byProject: { ...state.byProject, [projectId]: bible } }))
+      },
+    }),
+    {
+      name: 'book-studio.layer0',
+      version: 1,
+    },
+  ),
+)

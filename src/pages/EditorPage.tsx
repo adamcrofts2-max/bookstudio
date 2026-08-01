@@ -2,16 +2,24 @@ import { useEffect } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 
 import { AppShell } from '@/layout/AppShell'
+import { PlanningShell } from '@/layout/planning/PlanningShell'
 import { useProjectStore } from '@/store/projectStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useUiStore } from '@/store/uiStore'
 
-/** Resolves the active project from the route and renders the editor shell. */
+/** Resolves the active project from the route and renders the editor shell.
+ * Branches on `uiStore.appMode` to decide *which* top-level shell to render
+ * — `AppShell` (the manuscript editor) or `PlanningShell` (Layer 0) — per
+ * the "new top-level mode/tab, not a sidebar section" decision in
+ * `docs/AI_WORKSPACE_VISION.md`. A pure-manuscript user who never switches
+ * modes never mounts `PlanningShell` at all. */
 export function EditorPage() {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
   const project = useProjectStore((s) => (projectId ? s.getProject(projectId) : undefined))
   const setActiveProject = useProjectStore((s) => s.setActiveProject)
   const clearSelection = useSelectionStore((s) => s.clear)
+  const appMode = useUiStore((s) => s.appMode)
 
   useEffect(() => {
     if (projectId) setActiveProject(projectId)
@@ -30,5 +38,5 @@ export function EditorPage() {
 
   if (!project) return null
 
-  return <AppShell project={project} />
+  return appMode === 'planning' ? <PlanningShell project={project} /> : <AppShell project={project} />
 }

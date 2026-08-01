@@ -9,6 +9,7 @@ import {
   Keyboard,
   Loader2,
   Moon,
+  NotebookPen,
   PanelLeft,
   Redo2,
   Save,
@@ -82,6 +83,7 @@ export function Toolbar({ project }: ToolbarProps) {
   const toggleInspector = useUiStore((s) => s.toggleInspector)
   const workspaceMode = useUiStore((s) => s.workspaceMode)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
+  const setAppMode = useUiStore((s) => s.setAppMode)
   // Lifted to uiStore (not local state) so the Inspector's Theme tab can
   // open this same dialog — see uiStore.ts's `projectSettingsOpen` comment.
   const settingsOpen = useUiStore((s) => s.projectSettingsOpen)
@@ -182,6 +184,16 @@ export function Toolbar({ project }: ToolbarProps) {
           <TooltipContent>
             {workspaceMode === 'virtualEditor' ? 'Back to the manuscript preview' : 'Open the Editorial Dashboard'}
           </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setAppMode('planning')}>
+              <NotebookPen className="size-3.5" />
+              Planning
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Character/location/timeline bible — Layer 0's own screen</TooltipContent>
         </Tooltip>
 
         <IconButton label="Version history" onClick={() => setVersionHistoryOpen(true)}>

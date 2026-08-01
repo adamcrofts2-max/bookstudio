@@ -4607,11 +4607,83 @@ not just once at the end). `oxlint` still crashes with the same sandbox-level bu
 noted since Phase 59. Not independently verified live in Chrome — same sandbox `npm run
 dev` blocker as every phase since 55.
 
+## Phase 63 — Layer 0 (AI Publishing Workspace): entity schema + store + Planning
+mode (2026-08-01)
+
+First Phase F item, per the settled E → F → D → B build order. Builds the foundation
+`docs/AI_WORKSPACE_VISION.md` calls for — a structured entity bible, not a folder-of-
+files — plus a genuinely usable (not just inert data-layer) new top-level "Planning"
+screen, since a store nothing reads isn't really a shipped milestone.
+
+- **`types/layer0.ts`.** Eight entity interfaces (`Character`, `Location`,
+  `TimelineEvent`, `GlossaryTerm`, `ReferenceEntry`, `IllustrationBrief`, `StyleRule`,
+  `ResearchNote`), all extending `BaseLayer0Entity` (`id`/`createdAt`/`updatedAt`, same
+  shape `notesStore.ts`'s `Note` already uses). Deliberately a single lean v1 schema,
+  not a per-genre variant — `docs/AI_WORKSPACE_VISION.md`'s own "Open questions for a
+  future session" explicitly leaves "exact entity schema per genre template" open for
+  its own design pass, not assumed here. `TimelineEvent.when` is free text ("Day 3",
+  "Spring, Year 1") rather than a calendar date — most fiction timelines aren't real
+  dates at all — with a separate numeric `order` as the actual manual-reorder source of
+  truth (reorder UI itself is deferred, see below). `Layer0Bible` bundles all eight
+  collections for one project; `LAYER0_KIND_TO_COLLECTION`/`LAYER0_KIND_LABELS`/
+  `LAYER0_ENTITY_KINDS` are the one place kind↔collection↔display-label mapping lives,
+  so the store/UI code goes kind → collection generically instead of each writing its
+  own switch statement.
+- **`store/layer0Store.ts`.** One `Layer0Bible` per project (`byProject`), the same
+  shape every other per-project store already uses. `addEntity`/`updateEntity`/
+  `deleteEntity` are each ONE generic method parameterized by `collection: K extends
+  keyof Layer0Bible`, not eight near-identical CRUD triplets — the exact duplicate-logic
+  CLAUDE.md's Code Standards ask to avoid. TypeScript can't statically prove every
+  `Layer0Bible[K]` element extends `BaseLayer0Entity` from inside a function generic
+  over `K` (indexed-access types don't carry that constraint), so one small, documented,
+  internal `asEntities` cast bridges that gap — every public method signature stays
+  fully generic and type-safe for callers regardless.
+- **History wrappers in `editorActions.ts`.** `addLayer0EntityWithHistory`/
+  `updateLayer0EntityWithHistory`/`deleteLayer0EntityWithHistory` — again one generic
+  triplet, not eight — following the exact snapshot → mutate-via-published-action →
+  `historyStore.record` shape the Notes wrappers already established. Every Layer 0 edit
+  is undoable exactly like every other kind of edit in this app; there was no real
+  "per-item CRUD with deliberately no history" precedent anywhere in the codebase to
+  follow instead (confirmed by research before building — the only no-history
+  precedent found was bulk *replace-all* for project-file import, a different
+  operation).
+- **`uiStore.appMode: 'editor' | 'planning'`.** A new, separate concept from the
+  existing `workspaceMode` (which only ever swaps `AppShell`'s centre column) — `appMode`
+  decides which top-level *shell* renders at all, one level higher up, in `EditorPage
+  .tsx`. This is the concrete implementation of the "new top-level mode/tab, not a
+  sidebar section" placement decided with the user 2026-08-01 (`AI_WORKSPACE_VISION.md`).
+- **`layout/planning/PlanningShell.tsx` + `EntityListPanel.tsx`.** A structurally
+  separate screen (its own header bar with a "Back to editor" button, not a fourth
+  column bolted onto `AppShell`) — a pure-manuscript user who never clicks the new
+  "Planning" toolbar button never mounts any of this. Left-hand category list (all
+  eight kinds, with live counts) + one generic list/add/edit/delete pane on the right,
+  covering all eight entity kinds through a single component rather than eight near-
+  duplicate list+form screens — `layout/planning/layer0FormConfig.ts` is the one place
+  each kind's editable fields (`{ key, label, type }`) are declared, since every field
+  across all eight kinds is plain text or optional plain text. Add/edit uses a `Dialog`
+  form; delete is immediate (no confirmation step — matches this codebase's existing
+  convention for low-stakes, easily-undoable deletes, e.g. cover elements' Delete key).
+- **Deliberately deferred, flagged in `docs/ROADMAP.md` as new unchecked items rather
+  than silently left out:** Layer 0 isn't wired into `exportProjectFile.ts`/
+  `importProjectFile.ts` yet, so a saved `.bookstudio` file won't include Planning data
+  (it still persists locally via the store's own `localStorage` persistence — not lost,
+  just not in the portable file yet); `TimelineEvent` has no drag-reorder UI (new events
+  append at the end via `order`). Also out of scope for this foundation pass, per
+  `docs/AI_WORKSPACE_VISION.md` itself: the scoped AI prompt generator
+  (`ClipboardProvider`), the paste-response-back diff, and the Continuity checker — all
+  build on top of this store, not part of it.
+
+`tsc -b --force` clean throughout (checked after each piece). `oxlint` still crashes
+with the same sandbox-level bus error noted since Phase 59; `npm run dev`/`vite build`
+still fail with the same pre-existing `vite.config.ts` load error noted since Phase 55 —
+neither is new to this phase, both re-confirmed before writing this entry.
+
 ## Recommended next task
-Phase E is now closed out — every item from Phase 59's brainstorm and Phase 61's
-follow-up list has shipped. Per the settled build order (E → F → D → B), next is Phase F:
-the Layer 0 (AI Publishing Workspace) entity schema + store, the foundation piece for
-everything else in `docs/AI_WORKSPACE_VISION.md` — a new top-level mode/tab (per the
-2026-08-01 decision recorded in `docs/ROADMAP.md`), Character/Location/Timeline Event/
-Glossary Term/Reference/Illustration Brief/Style Rule/Research Note entities, and a
-`ClipboardProvider`-based prompt layer that needs no backend or API cost for V1.
+Phase F's foundation is in place. Reasonable next steps, in roughly the order they'd
+naturally build on each other: (1) wire Layer 0 into `exportProjectFile.ts`/
+`importProjectFile.ts` so Planning data survives a project-file round-trip — a real gap
+flagged above, not deferred forever; (2) the scoped `ClipboardProvider` prompt
+generator — assembles a minimum-relevant context bundle from the entity bible for a
+given task and copies it to the clipboard, needs no API; (3) the project-creation
+wizard and outlining/story-structure templates, the other Phase F items that don't
+depend on Layer 0. Per the settled build order, Phase F continues before Phase D/B.

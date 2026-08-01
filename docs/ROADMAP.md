@@ -402,19 +402,39 @@ daily use of everything built so far.)*
       obvious marker, never a silent gap. A `commercial` Virtual Editor
       checker flags every unresolved placeholder as `critical`, which
       auto-blocks the pre-export readiness dialog with zero extra UI wiring.
-- [ ] AI Publishing Workspace ("Layer 0 — Planning") — entity schema + store
-      (Character, Location, Timeline Event, Glossary Term, Reference, Illustration
-      Brief, Style Rule, Research Note). No AI involved yet; this is the foundation
-      every AI-Workspace item below depends on (and what the project-creation
-      wizard picks a subset from). Lives in its own new top-level mode/tab
-      (decided 2026-08-01 with the user, resolving `AI_WORKSPACE_VISION.md`'s
-      open question — not a sidebar section or a separate project type),
-      invisible to a pure-manuscript user — must never slow down Import →
-      Design → Export. See `docs/AI_WORKSPACE_VISION.md` for the full decision
-      record and rationale. `ClipboardProvider`, the paste-response-back diff,
+- [x] AI Publishing Workspace ("Layer 0 — Planning") — entity schema + store —
+      shipped 2026-08-01 (Phase 63): `types/layer0.ts` (8 entity interfaces —
+      Character, Location, Timeline Event, Glossary Term, Reference,
+      Illustration Brief, Style Rule, Research Note — sharing a `BaseLayer0Entity`
+      id/timestamp shape), `store/layer0Store.ts` (one `Layer0Bible` per
+      project, generic add/update/delete methods parameterized by collection
+      rather than eight near-duplicate CRUD triplets), and generic history-
+      wrapped actions in `editorActions.ts` so every Layer 0 edit is undoable
+      exactly like manuscript edits. A new top-level "Planning" mode/tab
+      (`uiStore.appMode`, `layout/planning/PlanningShell.tsx`, rendered by
+      `EditorPage.tsx` instead of `AppShell` — resolving `AI_WORKSPACE_VISION
+      .md`'s "new top-level mode/tab" decision) with a category list + a
+      generic list/add/edit/delete form pane covering all eight kinds. No AI
+      involved yet — this is the foundation every AI-Workspace item below
+      depends on. See `docs/AI_WORKSPACE_VISION.md` for the full decision
+      record. Deliberately deferred, flagged explicitly rather than
+      overlooked: NOT yet wired into `exportProjectFile.ts`/
+      `importProjectFile.ts` (a saved `.bookstudio` file won't include Layer 0
+      data yet — it still persists locally via the store's own
+      `localStorage` persistence, just not in the portable file), and
+      `TimelineEvent` reordering (new events append at the end; no drag-
+      reorder UI yet). `ClipboardProvider`, the paste-response-back diff,
       and the Continuity checker below all need no API/backend/billing (the
       user copies the prompt to their own Claude/ChatGPT and pastes the
       response back) — only `ApiKeyProvider` is genuinely API-gated.
+- [ ] Layer 0: wire the entity bible into `exportProjectFile.ts`/
+      `importProjectFile.ts` so "Save to file"/"Load" round-trip Planning
+      data along with the manuscript/structural pages/notes — currently
+      Layer 0 only persists to this browser's `localStorage`, flagged as a
+      known gap when the store shipped (Phase 63)
+- [ ] Layer 0: `TimelineEvent` manual drag-reorder UI — `order` exists on the
+      data model and new events append at the end, but there's no reorder
+      affordance in `PlanningShell` yet
 - [ ] Project-creation wizard (genre/audience-driven starting template) — also
       decides which Layer 0 entity subset a new project starts with
 - [ ] Outlining / story-structure templates
