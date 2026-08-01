@@ -1,8 +1,12 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  ChevronUp,
+  ChevronDown,
   Copy,
   Trash2,
+  ImagePlus,
+  X,
   AlignHorizontalJustifyStart,
   AlignHorizontalJustifyCenter,
   AlignHorizontalJustifyEnd,
@@ -11,15 +15,13 @@ import {
   AlignVerticalJustifyEnd,
 } from 'lucide-react'
 
-import { ImagePlus, X } from 'lucide-react'
-
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import type { CoverElement, CoverFontChoice, CoverIconId } from '@/types/structuralPage'
-import { updateElement, removeElement, bringToFront, sendToBack, duplicateElement } from '@/structuralPages/coverElements'
+import { updateElement, removeElement, bringToFront, sendToBack, bringForward, sendBackward, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS, COVER_ICON_LABELS } from '@/structuralPages/coverIcons'
 import { useImageUpload } from '@/hooks/useImageUpload'
 
@@ -94,10 +96,23 @@ export function CoverElementPanel({ element, elements, projectId, onChange, onDe
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-medium text-text-primary">{KIND_LABEL[element.kind]}</p>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" title="Send backward" onClick={() => onChange(sendToBack(elements, element.id))}>
+          {/* One-step nudges (Phase 61's layers-panel follow-up) next to the
+           * pre-existing jump-to-front/back buttons — same "click nudge vs.
+           * jump to the end" pairing align-to-page already established for
+           * position. Titles below were corrected at the same time: these
+           * two buttons always jumped straight to the front/back, so
+           * "Send backward"/"Bring forward" were misleading once true
+           * one-step versions existed too. */}
+          <Button variant="ghost" size="icon" title="Send backward" onClick={() => onChange(sendBackward(elements, element.id))}>
+            <ChevronDown className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" title="Bring forward" onClick={() => onChange(bringForward(elements, element.id))}>
+            <ChevronUp className="size-3.5" />
+          </Button>
+          <Button variant="ghost" size="icon" title="Send to back" onClick={() => onChange(sendToBack(elements, element.id))}>
             <ArrowDownToLine className="size-3.5" />
           </Button>
-          <Button variant="ghost" size="icon" title="Bring forward" onClick={() => onChange(bringToFront(elements, element.id))}>
+          <Button variant="ghost" size="icon" title="Bring to front" onClick={() => onChange(bringToFront(elements, element.id))}>
             <ArrowUpToLine className="size-3.5" />
           </Button>
           <Button

@@ -142,6 +142,45 @@ export function sendToBack(elements: CoverElement[] | undefined, id: string): Co
   return updateElement(elements, id, { zIndex: minZ - 1 })
 }
 
+/** Moves an element exactly one step forward (toward the front) in paint
+ * order — swaps `zIndex` with whichever element is immediately above it in
+ * the current stack, rather than jumping straight to the front like
+ * `bringToFront`. A plain `+1` to `zIndex` isn't safe here: `bringToFront`/
+ * `sendToBack` deliberately leave gaps (`max + 1`, `min - 1`), so two
+ * elements can be many zIndex units apart while still being adjacent in
+ * paint order — swapping with the actual sorted neighbour is the only way
+ * to guarantee moving exactly one step. No-op if already topmost. Part of
+ * the Phase 59 brainstorm's layers-panel follow-up (`CoverLayersPanel`). */
+export function bringForward(elements: CoverElement[] | undefined, id: string): CoverElement[] {
+  const list = elements ?? []
+  const sorted = [...list].sort((a, b) => a.zIndex - b.zIndex)
+  const index = sorted.findIndex((e) => e.id === id)
+  if (index === -1 || index === sorted.length - 1) return list
+  const current = sorted[index]
+  const next = sorted[index + 1]
+  return list.map((e) => {
+    if (e.id === current.id) return { ...e, zIndex: next.zIndex } as CoverElement
+    if (e.id === next.id) return { ...e, zIndex: current.zIndex } as CoverElement
+    return e
+  })
+}
+
+/** Inverse of `bringForward` — swaps with the element immediately below in
+ * the stack. No-op if already at the back. */
+export function sendBackward(elements: CoverElement[] | undefined, id: string): CoverElement[] {
+  const list = elements ?? []
+  const sorted = [...list].sort((a, b) => a.zIndex - b.zIndex)
+  const index = sorted.findIndex((e) => e.id === id)
+  if (index <= 0) return list
+  const current = sorted[index]
+  const prev = sorted[index - 1]
+  return list.map((e) => {
+    if (e.id === current.id) return { ...e, zIndex: prev.zIndex } as CoverElement
+    if (e.id === prev.id) return { ...e, zIndex: current.zIndex } as CoverElement
+    return e
+  })
+}
+
 /** Clones an element with a fresh id, nudged slightly down-right (same
  * small offset `createCoverElement` uses for a freshly-added element) so
  * the copy doesn't sit exactly on top of the original and look like nothing

@@ -328,10 +328,10 @@ daily use of everything built so far.)*
       `fillOpacity` rather than replacing it)
 - [x] Cover elements: focal point + zoom for secondary image elements —
       shipped 2026-08-01 (Phase 60), see the secondary-images item above
-- [ ] Cover elements: layers list/panel for selecting elements buried under
-      others, plus incremental (one-step) forward/backward z-order nudges and
-      multi-select/grouping — flagged in Phase 59's brainstorm as the biggest
-      open gap
+- [x] Cover elements: layers list/panel for selecting elements buried under
+      others, plus incremental (one-step) forward/backward z-order nudges —
+      shipped 2026-08-01 (Phase 61). Multi-select/grouping remains open —
+      deliberately not attempted in the same pass, see docs/STATUS.md
 - [ ] Cover elements: per-element accessibility/contrast checking — the
       existing Accessibility checker doesn't know free-form cover text
       elements exist yet — flagged in Phase 59's brainstorm

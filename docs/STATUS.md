@@ -4465,13 +4465,53 @@ noted in Phase 59 — unrelated to these changes, flagging again for a future se
 a working `oxlint`. Not independently verified live in Chrome — same sandbox `npm run
 dev` blocker as every phase since 55.
 
+## Phase 61 — Cover elements: layers panel + incremental z-order (2026-08-01)
+
+Build order for the next stretch of work settled with the user 2026-08-01: Phase E
+(finish) → Phase F → Phase D → Phase B, nothing that needs an API/LLM until further
+notice. Two open roadmap questions were also resolved first (see the commit right before
+this one): Kindle/MOBI export dropped from Phase D, and Layer 0 (AI Publishing Workspace)
+will live in its own new top-level mode/tab. This phase is the first concrete Phase E
+item against that plan — the layers-list panel flagged in Phase 59's brainstorm as the
+biggest remaining gap.
+
+- **`bringForward`/`sendBackward`** (`coverElements.ts`): move an element exactly one
+  step in paint order by swapping `zIndex` with its actual sorted neighbour, not by
+  adding/subtracting 1 — `bringToFront`/`sendToBack` deliberately leave gaps (`max + 1`,
+  `min - 1`), so two adjacent-in-stacking-order elements can be many `zIndex` units
+  apart. A naive `±1` would sometimes no-op and sometimes jump past several elements
+  depending on those gaps; swapping with the sorted neighbour is correct regardless.
+- **`CoverLayersPanel`** (new `layout/inspector/CoverLayersPanel.tsx`): lists every
+  element topmost-first (Figma/Canva convention), each row showing a kind icon + a
+  content-aware label (a text/badge element's own text, not just "Text box" — useless
+  for telling five text elements apart in a list). Click selects; per-row chevrons call
+  `bringForward`/`sendBackward`, disabled at the top/bottom of the stack. Rendered in
+  `StructuralPagePanel.tsx` whenever the Cover/Back Cover has any elements at all,
+  deliberately *not* gated behind "an element is already selected" — it's a picker as
+  much as a status display, so gating it behind a precondition it exists to solve would
+  defeat the point.
+- **One-step nudges added to `CoverElementPanel`'s existing toolbar row too** —
+  alongside the pre-existing jump-to-front/jump-to-back buttons, not replacing them.
+  Caught and fixed a real (if minor) pre-existing UX bug while here: those two buttons
+  were labelled "Send backward"/"Bring forward" but always jumped straight to the
+  back/front — accurate now that true one-step versions exist alongside them under
+  "Send to back"/"Bring to front".
+- **Deliberately not attempted this pass:** multi-select and grouping, the other half
+  of Phase 59's "biggest open gap" framing. The layers list and incremental z-order
+  solve the concrete "can't find/reorder a buried element" pain on their own; multi-
+  select is a materially bigger interaction-model change (drag-selection rectangle or
+  shift-click, a shared-transform gesture across several elements at once) better
+  scoped as its own pass rather than folded in here.
+
+`tsc -b --force` clean. Not independently verified live in Chrome — same sandbox `npm
+run dev` blocker as every phase since 55 (confirmed still broken this phase: `vite
+--config-loader runner` fails with a syntax error loading `vite.config.ts`, consistent
+with the pre-existing `node_modules` corruption documented since Phase 53).
+
 ## Recommended next task
-Both Phase 59 and Phase 60 are fully closed — nothing mid-flight. From the Phase 59
-brainstorm's "bigger, real design decisions" tier: the layers-list panel (selecting
-elements buried under others, plus incremental z-order nudges and the groundwork for
-multi-select/grouping) is probably the highest-leverage next cover-canvas item, followed
-by the Back Cover free-positioning parity decision and per-element accessibility/contrast
-checking. Outside the cover canvas, `docs/ROADMAP.md` Phase E still has rotation and the
-wrap-aware front+spine+back view open, and Phase F's planning/writing tools
-(project-creation wizard, outlining templates, word-count goals, distraction-free writing
-mode) are next absent further direction from the user.
+Continuing the settled build order (E → F → D → B). Remaining Phase E items: rotation,
+on-canvas double-click text editing, snap-to-other-elements/safe-zone guides,
+per-element accessibility/contrast checking, the Back Cover free-positioning parity
+decision, and the wrap-aware front+spine+back view — any of these is reasonable next: pick one, or if Phase E feels sufficiently
+"finished" for now, move on to Phase F (Layer 0 entity schema + store is the
+foundation piece, per `docs/AI_WORKSPACE_VISION.md`).

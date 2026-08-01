@@ -25,6 +25,7 @@ import { COVER_LAYOUT_OPTIONS } from '@/structuralPages/coverLayout'
 import { computeSpineWidthIn, PAPER_TYPE_LABELS, MIN_PAGE_COUNT_FOR_SPINE_TEXT, type CoverPaperType } from '@/cover/spineWidth'
 import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
 import { CoverElementPanel } from '@/layout/inspector/CoverElementPanel'
+import { CoverLayersPanel } from '@/layout/inspector/CoverLayersPanel'
 import type {
   StructuralPage,
   CoverTextLayout,
@@ -447,6 +448,22 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
       </div>
 
       <Separator />
+
+      {(page.type === 'cover' || page.type === 'back-cover') && page.content.elements && page.content.elements.length > 0 && (
+        <>
+          {/* Always visible once elements exist, independent of selection —
+           * a picker as much as a status display, so an element buried
+           * under others is reachable by name without hunting through the
+           * visual stack. See `CoverLayersPanel`'s own doc comment. */}
+          <CoverLayersPanel
+            elements={page.content.elements}
+            selectedId={selectedCoverElementId}
+            onSelect={selectCoverElement}
+            onChange={(elements) => patch({ elements })}
+          />
+          <Separator />
+        </>
+      )}
 
       {selectedElement && (page.type === 'cover' || page.type === 'back-cover') && (
         <>
