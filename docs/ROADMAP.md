@@ -193,9 +193,10 @@ daily use of everything built so far.)*
 ## Phase D — Publishing Output Expansion
 
 - [x] EPUB export — see STATUS.md Phase 40
-- [ ] Kindle / MOBI export — worth confirming priority first: Amazon's KDP
-      pipeline now primarily ingests EPUB and converts it internally, so a
-      separate legacy MOBI writer may not be worth building
+- Kindle / MOBI export — **decided 2026-08-01: not building.** Confirmed with
+      the user: Amazon's KDP pipeline now primarily ingests EPUB and converts
+      it internally, so a separate legacy MOBI writer isn't worth the effort.
+      Removed from Phase D's scope rather than left as an open checkbox.
 - [x] HTML / web-book export — see STATUS.md Phase 42
 - [x] ISBN + barcode field and placement — already shipped as dedicated
       `isbn-page`/`barcode` structural page types (Phase 21) with real PDF
@@ -380,12 +381,36 @@ daily use of everything built so far.)*
       obvious marker, never a silent gap. A `commercial` Virtual Editor
       checker flags every unresolved placeholder as `critical`, which
       auto-blocks the pre-export readiness dialog with zero extra UI wiring.
-- [ ] Project-creation wizard (genre/audience-driven starting template)
+- [ ] AI Publishing Workspace ("Layer 0 — Planning") — entity schema + store
+      (Character, Location, Timeline Event, Glossary Term, Reference, Illustration
+      Brief, Style Rule, Research Note). No AI involved yet; this is the foundation
+      every AI-Workspace item below depends on (and what the project-creation
+      wizard picks a subset from). Lives in its own new top-level mode/tab
+      (decided 2026-08-01 with the user, resolving `AI_WORKSPACE_VISION.md`'s
+      open question — not a sidebar section or a separate project type),
+      invisible to a pure-manuscript user — must never slow down Import →
+      Design → Export. See `docs/AI_WORKSPACE_VISION.md` for the full decision
+      record and rationale. `ClipboardProvider`, the paste-response-back diff,
+      and the Continuity checker below all need no API/backend/billing (the
+      user copies the prompt to their own Claude/ChatGPT and pastes the
+      response back) — only `ApiKeyProvider` is genuinely API-gated.
+- [ ] Project-creation wizard (genre/audience-driven starting template) — also
+      decides which Layer 0 entity subset a new project starts with
 - [ ] Outlining / story-structure templates
 - [ ] Word-count goals and writing-session tracking
 - [ ] Distraction-free writing mode
-- [ ] AI writing assistance for drafting/brainstorming (separate from Virtual Editor's
-      review-only role — keep the "AI assists, never replaces" rule from `CLAUDE.md`)
+- [ ] AI Workspace: scoped prompt generator (`ClipboardProvider`) — assembles the
+      minimum-relevant context bundle per task (not the whole bible); user copies
+      the prompt into their own Claude/ChatGPT subscription rather than a
+      Book-Studio-hosted AI, keeping "AI assists, never replaces" from `CLAUDE.md`
+- [ ] AI Workspace: paste-response-back with reviewable diff, reusing the Virtual
+      Editor's Accept/Reject/Ignore pattern (Phase C) — nothing commits to the
+      bible without approval
+- [ ] AI Workspace: continuity checker over Layer 0 data, extending the Virtual
+      Editor's checker architecture (Phase C) — flags mismatches between the
+      manuscript and the character/timeline/world-bible data
+- [ ] AI Workspace: `ApiKeyProvider` (direct API call, streamed diff) — deferred
+      until there's a real story for cost/accounts (Phase G/H)
 
 ## Phase G — Accounts, Cloud & Collaboration
 
