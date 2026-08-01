@@ -488,10 +488,24 @@ daily use of everything built so far.)*
       choice with everything else in this phase (no accounts/billing
       needed, same reasoning `ClipboardProvider` below uses). Not started.
 - [ ] Distraction-free writing mode
-- [ ] AI Workspace: scoped prompt generator (`ClipboardProvider`) — assembles the
-      minimum-relevant context bundle per task (not the whole bible); user copies
-      the prompt into their own Claude/ChatGPT subscription rather than a
-      Book-Studio-hosted AI, keeping "AI assists, never replaces" from `CLAUDE.md`
+- [x] AI Workspace: scoped prompt generator (`ClipboardProvider`) — shipped
+      2026-08-01 (Phase 66). `types/aiProvider.ts` defines the swappable
+      `AiProvider` interface (`sendPrompt(text)`) plus the v1
+      `clipboardProvider` implementation (Clipboard API, no backend/billing).
+      `layout/planning/promptContext.ts` is the actual context-curation logic
+      — deterministic, no-dictionary/no-NLP word-boundary name matching
+      (`detectMentionedEntityIds`) against a chapter's plain text to
+      pre-select "mentioned" characters/locations/glossary terms, plus
+      `buildPromptText` which assembles task + selected entities only (never
+      the whole bible) + an optional previous-chapter tail excerpt (600 chars)
+      for continuity. `layout/planning/PromptGeneratorPanel.tsx` is the UI —
+      task textarea, chapter picker, per-kind checkbox lists with a
+      "mentioned" badge on auto-detected entities, and a live prompt preview
+      with one-click copy. Wired into `PlanningShell.tsx` as a new
+      "Generate Prompt" nav entry alongside the eight entity categories. User
+      copies the prompt into their own Claude/ChatGPT subscription rather
+      than a Book-Studio-hosted AI, keeping "AI assists, never replaces" from
+      `CLAUDE.md`.
 - [ ] AI Workspace: paste-response-back with reviewable diff, reusing the Virtual
       Editor's Accept/Reject/Ignore pattern (Phase C) — nothing commits to the
       bible without approval

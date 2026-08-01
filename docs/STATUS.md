@@ -4749,12 +4749,66 @@ mirrors the exact existing `notes.json`/`customTheme.json` pattern closely enoug
 this is a reasonable confidence level, but flagging the gap honestly rather than
 claiming a live-tested guarantee.
 
+## Phase 66 — AI Workspace: `ClipboardProvider` scoped prompt generator (2026-08-01)
+
+The first real AI-Workspace feature on top of Layer 0: turns the entity bible into a
+prompt the user takes to their own Claude/ChatGPT, rather than Book Studio calling an
+AI itself. Three new files plus one `PlanningShell.tsx` wiring change.
+
+- **`types/aiProvider.ts`.** The swappable `AiProvider` interface
+  (`{ id, label, sendPrompt(text): Promise<void> }`) `docs/AI_WORKSPACE_VISION.md`
+  called for, plus the v1 `clipboardProvider` implementation — `navigator.clipboard
+  .writeText`, no backend, no billing. `ApiKeyProvider` (direct call, streamed diff)
+  stays deferred to Phase G/H; nothing about `promptContext.ts` or the panel UI will
+  need to change when it eventually exists, since both only ever call
+  `provider.sendPrompt(text)`.
+- **`layout/planning/promptContext.ts`.** The actual context-curation logic —
+  `docs/AI_WORKSPACE_VISION.md`'s "the actual hard problem: context curation, not
+  storage." `detectMentionedEntityIds` is a deliberately deterministic, no-dictionary/
+  no-NLP word-boundary regex match of each character/location/glossary-term name
+  against a chapter's plain text (reusing the Virtual Editor's own `blockPlainText`
+  extractor) — the same cheap/predictable idiom every Virtual Editor checker already
+  follows, not a new kind of logic. Timeline events/references/illustration briefs/
+  research notes/style rules are excluded from auto-detection (their labels aren't
+  literal recurring prose the way a name is) and left for manual opt-in; style rules
+  are pre-checked by default instead, since they're meant to always apply.
+  `buildPromptText` assembles the final markdown prompt: task description, optionally
+  the target chapter's title, an optional previous-chapter tail excerpt (last 600
+  characters, for continuity/tone reference — not a duplicate full copy), then only
+  the user-selected entities grouped by kind. Deliberately never the whole bible,
+  keeping the "minimum-relevant bundle" framing from the vision doc rather than
+  dumping every entity into every prompt.
+- **`layout/planning/PromptGeneratorPanel.tsx`.** The UI — task textarea, chapter
+  picker (defaults to "no specific chapter"), a checkbox list per entity kind with a
+  live "mentioned" badge on auto-detected rows, a "include previous chapter tail"
+  toggle, and a live-updating prompt preview with one-click copy (via
+  `clipboardProvider.sendPrompt`, not a second clipboard implementation). An
+  `EmptyState` guards the case where the bible has nothing in it yet, pointing the
+  user back to the entity categories.
+- **`layout/planning/PlanningShell.tsx`.** Left nav gained a `Separator` and a
+  "Generate Prompt" entry below the eight entity categories, backed by a new
+  `activeView: Layer0EntityKind | 'prompt-generator'` union (renamed from the old
+  `activeKind`). Selecting it swaps the right pane from `EntityListPanel` to
+  `PromptGeneratorPanel`.
+
+One implementation note: the generic `bible[LAYER0_KIND_TO_COLLECTION[kind]]` reads in
+`promptContext.ts` needed `as unknown as Record<string, unknown>[]` (not a direct `as`)
+to satisfy the compiler — TypeScript can't prove a union of the eight concrete entity
+array types structurally overlaps `Record<string, unknown>[]` from inside a function
+generic over `kind`, the same limitation `layer0Store.ts`'s `asEntities()` helper
+already works around elsewhere in this codebase. `EntityListPanel.tsx` uses the
+identical two-step cast for the same reason.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox `npm run dev`/
+`vite build` blocker as every phase since 55) — the clipboard-copy path is standard
+Web API usage with no unusual browser-support risk, but flagging the gap honestly.
+
 ## Recommended next task
-Layer 0's data-integrity gap is closed. Per the settled build order (Phase F before
-D/B), reasonable next Phase F pieces: (1) the scoped `ClipboardProvider` prompt
-generator — assembles a minimum-relevant context bundle from the entity bible for a
-given task and copies it to the clipboard, needs no API; (2) the project-creation
-wizard and outlining/story-structure templates, the Phase F items that don't depend on
-Layer 0 at all. Also still open and worth folding in opportunistically: manuscript
-search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, flagged
-2026-08-01).
+Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
+paste-response-back-with-reviewable-diff flow, reusing the Virtual Editor's Accept/
+Reject/Ignore pattern — the natural follow-up now that a prompt can be generated; (2)
+the project-creation wizard and outlining/story-structure templates, which don't
+depend on any of the Layer 0 AI-Workspace pieces; (3) the Continuity checker, extending
+the Virtual Editor's checker architecture over Layer 0 data. Also still open and worth
+folding in opportunistically: manuscript search/find, real spellcheck, and a thesaurus
+(docs/ROADMAP.md Phase B/F, flagged 2026-08-01).

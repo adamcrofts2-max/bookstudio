@@ -1,18 +1,26 @@
 import { useState } from 'react'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
 import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type Layer0EntityKind } from '@/types/layer0'
 import { EntityListPanel } from '@/layout/planning/EntityListPanel'
+import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
 import type { Project } from '@/types'
 
 interface PlanningShellProps {
   project: Project
 }
+
+/** The left-hand nav's selection: one of the eight entity categories, or
+ * the "Generate Prompt" tool — a second, non-entity view living in the
+ * same nav rather than a separate top-level control, since it's still
+ * squarely part of Layer 0's own screen. */
+type PlanningView = Layer0EntityKind | 'prompt-generator'
 
 /**
  * Layer 0's own top-level shell — structurally separate from `AppShell`
@@ -34,7 +42,7 @@ interface PlanningShellProps {
 export function PlanningShell({ project }: PlanningShellProps) {
   const setAppMode = useUiStore((s) => s.setAppMode)
   const bible = useLayer0Store((s) => s.getBible(project.id))
-  const [activeKind, setActiveKind] = useState<Layer0EntityKind>('character')
+  const [activeView, setActiveView] = useState<PlanningView>('character')
 
   return (
     <div className="flex h-dvh w-full flex-col bg-background">
@@ -53,12 +61,12 @@ export function PlanningShell({ project }: PlanningShellProps) {
             <nav className="flex flex-col gap-0.5 p-2">
               {LAYER0_ENTITY_KINDS.map((kind) => {
                 const count = bible[LAYER0_KIND_TO_COLLECTION[kind]].length
-                const active = activeKind === kind
+                const active = activeView === kind
                 return (
                   <button
                     key={kind}
                     type="button"
-                    onClick={() => setActiveKind(kind)}
+                    onClick={() => setActiveView(kind)}
                     className={cn(
                       'flex items-center justify-between rounded-[var(--radius-button)] px-3 py-2 text-left text-sm transition-colors duration-150',
                       active
@@ -71,12 +79,32 @@ export function PlanningShell({ project }: PlanningShellProps) {
                   </button>
                 )
               })}
+
+              <Separator className="my-2" />
+
+              <button
+                type="button"
+                onClick={() => setActiveView('prompt-generator')}
+                className={cn(
+                  'flex items-center gap-2 rounded-[var(--radius-button)] px-3 py-2 text-left text-sm transition-colors duration-150',
+                  activeView === 'prompt-generator'
+                    ? 'bg-[var(--color-accent)]/10 font-medium text-[var(--color-accent)]'
+                    : 'text-text-secondary hover:bg-hover hover:text-text-primary',
+                )}
+              >
+                <Sparkles className="size-3.5 shrink-0" />
+                <span>Generate Prompt</span>
+              </button>
             </nav>
           </ScrollArea>
         </aside>
 
         <ScrollArea className="h-full min-w-0 flex-1">
-          <EntityListPanel projectId={project.id} kind={activeKind} />
+          {activeView === 'prompt-generator' ? (
+            <PromptGeneratorPanel projectId={project.id} />
+          ) : (
+            <EntityListPanel projectId={project.id} kind={activeView} />
+          )}
         </ScrollArea>
       </div>
     </div>
