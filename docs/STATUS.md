@@ -4879,17 +4879,42 @@ not this one).
 `tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
 phase since 55).
 
+## Phase 69 — Layer 0: TimelineEvent manual reorder UI (2026-08-01)
+
+Closes the gap flagged when the Layer 0 store shipped (Phase 63): `TimelineEvent
+.order` existed on the data model and new events appended at the end, but nothing in
+`PlanningShell` let the user actually reorder one. Mirrors the codebase's established
+reorder pattern (chapters, structural pages) rather than introducing native HTML5
+drag-and-drop — Up/Down buttons, not a drag handle.
+
+- **`layer0Store.ts`.** New `moveTimelineEvent(projectId, id, direction)`: sorts
+  `timelineEvents` by `order`, swaps the target with its immediate by-order neighbour,
+  renumbers the whole array sequentially (0..n-1). Same adjacent-swap-then-renumber
+  shape as `structuralPageStore.movePage` — there scoped per category, here across the
+  whole timeline (there's only one timeline, no sub-grouping to respect). No-ops at a
+  boundary or a missing id, matching `movePage`'s own boundary handling.
+- **`editorActions.ts`.** `moveTimelineEventWithHistory` wraps it exactly like
+  `movePageWithHistory`/`moveChapterWithHistory` — the swap primitive is its own
+  inverse, so undo calls the same function with `direction` flipped and redo repeats
+  the original call, no snapshot needed.
+- **`EntityListPanel.tsx`.** For `kind === 'timelineEvent'` only: the displayed list is
+  now sorted by `order` (previously just insertion order, which happened to usually
+  match but wasn't guaranteed once entries could ever be reordered), and each row
+  gains `ChevronUp`/`ChevronDown` buttons (disabled at the first/last position),
+  calling the new history-wrapped action. Every other entity kind is untouched — no
+  `order` field, no buttons rendered.
+
+`tsc -b --force` clean.
+
 ## Recommended next task
-Per the settled build order (Phase F before D/B), the AI-Workspace round trip
-(generate → paste back → review) is now complete for its V1 scope. Reasonable next
-pieces: (1) the Continuity checker, extending the Virtual Editor's checker
-architecture over Layer 0 data — the natural next AI-Workspace item, and doesn't
-depend on anything not already built; (2) the project-creation wizard and outlining/
-story-structure templates, which don't depend on any Layer 0 AI-Workspace piece at
-all; (3) the bigger "insert AI-drafted prose into the manuscript with a reviewable
-diff" feature flagged above — genuinely valuable, but distinct from bible-sync and
-worth its own scoping pass (probably reusing `src/parser/`'s import pipeline per
-`AI_WORKSPACE_VISION.md`'s "handed to the existing parser" note) rather than bolting
-onto this phase. Also still open and worth folding in opportunistically: manuscript
-search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, flagged
-2026-08-01).
+The AI-Workspace round trip (generate → paste back → review) and Layer 0's one
+remaining structural gap (timeline reordering) are both done. Reasonable next pieces,
+in rough priority order: (1) the Continuity checker, extending the Virtual Editor's
+checker architecture over Layer 0 data — the natural next AI-Workspace item; (2) the
+project-creation wizard and outlining/story-structure templates, which don't depend on
+any Layer 0 AI-Workspace piece at all; (3) the bigger "insert AI-drafted prose into the
+manuscript with a reviewable diff" feature flagged in Phase 68 — distinct from
+bible-sync, needs its own scoping pass (reusing `src/parser/`'s import pipeline per
+`AI_WORKSPACE_VISION.md`). Also still open and worth folding in opportunistically:
+manuscript search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F,
+flagged 2026-08-01).

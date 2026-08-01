@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil, Plus, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -8,7 +8,12 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useLayer0Store } from '@/store/layer0Store'
-import { addLayer0EntityWithHistory, deleteLayer0EntityWithHistory, updateLayer0EntityWithHistory } from '@/store/editorActions'
+import {
+  addLayer0EntityWithHistory,
+  deleteLayer0EntityWithHistory,
+  moveTimelineEventWithHistory,
+  updateLayer0EntityWithHistory,
+} from '@/store/editorActions'
 import { generateId } from '@/utils'
 import { LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, type Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
@@ -48,7 +53,14 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
 
   // See `EntityRecord`'s doc comment for why this cast is the one
   // deliberately loosely-typed read in an otherwise fully-typed store.
-  const entities = useLayer0Store((s) => s.getBible(projectId)[collection]) as unknown as EntityRecord[]
+  const rawEntities = useLayer0Store((s) => s.getBible(projectId)[collection]) as unknown as EntityRecord[]
+  // Timeline Events are the one kind with a manual `order` field — the raw
+  // array itself isn't guaranteed sorted (`addEntity` always appends), so
+  // this is what makes the on-screen list, and the up/down buttons' notion
+  // of "adjacent," match `layer0Store.moveTimelineEvent`'s own by-`order`
+  // swap. Every other kind displays in the store's natural (insertion)
+  // order, unchanged.
+  const entities = kind === 'timelineEvent' ? [...rawEntities].sort((a, b) => (a.order as number) - (b.order as number)) : rawEntities
 
   // `null` = dialog closed; `NEW_ENTITY_SENTINEL` = composing a new entity;
   // any other string = editing that entity's id. `draft` holds the form's
@@ -139,7 +151,7 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
         />
       ) : (
         <div className="flex flex-col gap-2">
-          {entities.map((entity) => (
+          {entities.map((entity, i) => (
             <div
               key={entity.id}
               className="flex items-start justify-between gap-3 rounded-[var(--radius-card)] border border-border bg-panel p-3"
@@ -153,6 +165,28 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
                 )}
               </button>
               <div className="flex shrink-0 items-center gap-1">
+                {kind === 'timelineEvent' && (
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Move earlier"
+                      disabled={i === 0}
+                      onClick={() => moveTimelineEventWithHistory(projectId, entity.id, 'up')}
+                    >
+                      <ChevronUp className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Move later"
+                      disabled={i === entities.length - 1}
+                      onClick={() => moveTimelineEventWithHistory(projectId, entity.id, 'down')}
+                    >
+                      <ChevronDown className="size-3.5" />
+                    </Button>
+                  </>
+                )}
                 <Button variant="ghost" size="icon" aria-label={`Edit ${singularLower}`} onClick={() => openEdit(entity)}>
                   <Pencil className="size-3.5" />
                 </Button>

@@ -471,9 +471,16 @@ daily use of everything built so far.)*
       to an empty bible, not an error) so older `.bookstudio` files without
       it still open fine — no `PROJECT_FILE_VERSION` bump needed, same
       additive-field convention as `CoverElement.rotation`.
-- [ ] Layer 0: `TimelineEvent` manual drag-reorder UI — `order` exists on the
-      data model and new events append at the end, but there's no reorder
-      affordance in `PlanningShell` yet
+- [x] Layer 0: `TimelineEvent` manual reorder UI — shipped 2026-08-01 (Phase 69).
+      `layer0Store.moveTimelineEvent` swaps an event with its by-`order`
+      neighbour and renumbers sequentially, mirroring
+      `structuralPageStore.movePage`'s adjacent-swap-then-renumber shape (per
+      category there, across the whole timeline here); `moveTimelineEventWithHistory`
+      in `editorActions.ts` wraps it the same symmetric way
+      `movePageWithHistory`/`moveChapterWithHistory` already do. `EntityListPanel.tsx`
+      now sorts by `order` for this one kind and adds Up/Down buttons — the
+      established `ChevronUp`/`ChevronDown` reorder pattern already used for chapters
+      and structural pages, not new drag-and-drop machinery.
 - [ ] Project-creation wizard (genre/audience-driven starting template) — also
       decides which Layer 0 entity subset a new project starts with
 - [ ] Outlining / story-structure templates

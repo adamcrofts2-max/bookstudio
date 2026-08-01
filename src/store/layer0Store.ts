@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { BaseLayer0Entity, Layer0Bible } from '@/types/layer0'
+import type { BaseLayer0Entity, Layer0Bible, TimelineEvent } from '@/types/layer0'
 
 /**
  * Layer 0 (Planning) persistence — one `Layer0Bible` per project, the exact
@@ -54,6 +54,15 @@ interface Layer0StoreActions {
    * `importProjectFile.ts` yet — see `docs/STATUS.md`'s Phase F entry for
    * why that's a flagged, deliberate follow-up rather than an oversight. */
   replaceBible: (projectId: string, bible: Layer0Bible) => void
+  /** `TimelineEvent`'s manual reorder — not part of the four generic CRUD
+   * methods above since `order` only exists on this one collection, same
+   * reasoning `structuralPageStore.movePage` (adjacent-swap-then-renumber
+   * within a scope, there per category, here across the whole timeline)
+   * isn't part of that store's own generic surface either. Swaps this event
+   * with its immediate neighbour by *current `order`*, not array position —
+   * the array itself isn't guaranteed sorted (`addEntity` always appends),
+   * so sorting first is what makes "up"/"down" match what the UI displays. */
+  moveTimelineEvent: (projectId: string, id: string, direction: 'up' | 'down') => void
 }
 
 type Layer0Store = Layer0StoreState & Layer0StoreActions
@@ -106,6 +115,19 @@ export const useLayer0Store = create<Layer0Store>()(
 
       replaceBible: (projectId, bible) => {
         set((state) => ({ byProject: { ...state.byProject, [projectId]: bible } }))
+      },
+
+      moveTimelineEvent: (projectId, id, direction) => {
+        set((state) => {
+          const bible = state.byProject[projectId] ?? EMPTY_LAYER0_BIBLE
+          const sorted = [...bible.timelineEvents].sort((a, b) => a.order - b.order)
+          const idx = sorted.findIndex((event) => event.id === id)
+          const swapIdx = direction === 'up' ? idx - 1 : idx + 1
+          if (idx < 0 || swapIdx < 0 || swapIdx >= sorted.length) return state // no-op at a boundary or missing id
+          ;[sorted[idx], sorted[swapIdx]] = [sorted[swapIdx], sorted[idx]]
+          const renumbered: TimelineEvent[] = sorted.map((event, i) => ({ ...event, order: i }))
+          return { byProject: { ...state.byProject, [projectId]: { ...bible, timelineEvents: renumbered } } }
+        })
       },
     }),
     {

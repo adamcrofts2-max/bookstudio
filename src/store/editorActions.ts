@@ -639,3 +639,19 @@ export function deleteLayer0EntityWithHistory<K extends keyof Layer0Bible>(
     () => useLayer0Store.getState().deleteEntity(projectId, collection, id),
   )
 }
+
+/** History-aware wrapper for `layer0Store.moveTimelineEvent` — same
+ * symmetric-opposite-direction shape as `movePageWithHistory`/
+ * `moveChapterWithHistory` above: the adjacent-swap primitive is its own
+ * inverse, so undo/redo are just the same call with `direction` flipped
+ * (undo) or repeated (redo), with no snapshot needed. */
+export function moveTimelineEventWithHistory(projectId: string, id: string, direction: 'up' | 'down'): void {
+  useLayer0Store.getState().moveTimelineEvent(projectId, id, direction)
+  const opposite = direction === 'up' ? 'down' : 'up'
+  useHistoryStore.getState().record(
+    projectId,
+    'Reorder timeline event',
+    () => useLayer0Store.getState().moveTimelineEvent(projectId, id, opposite),
+    () => useLayer0Store.getState().moveTimelineEvent(projectId, id, direction),
+  )
+}
