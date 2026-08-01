@@ -248,16 +248,36 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       return idx > 0 ? chapter.blocks[idx - 1].id : null
     }
 
-    const renderGap = (afterId: string | null) => (
+    const renderGap = (afterId: string | null, emptyChapter?: boolean) => (
       <div key={`gap-${afterId ?? 'start'}`}>
+        {/* Already self-hides unless an image is actively being dragged
+         * (returns `null` otherwise) — safe to always render, including for
+         * the empty-chapter prompt below, so dropping a photo still works
+         * as a chapter's very first block. */}
         <ImageDropZone onDropAsset={(assetId) => handleDropAsset(chapterId, afterId, assetId)} />
         <InsertBlockButton
           projectId={projectId}
           onInsert={(type) => handleInsertBlock(chapterId, afterId, type)}
           onInsertImage={(assetId) => handleDropAsset(chapterId, afterId, assetId)}
+          emptyChapter={emptyChapter}
         />
       </div>
     )
+
+    // A brand-new chapter (just added via the Sidebar's "+", never written
+    // in) has a title but zero blocks — `page.blocks` is `[]`. The loop
+    // below only ever renders a gap adjacent to an existing block, so with
+    // no blocks to iterate it silently rendered nothing at all: a new
+    // chapter had no visible way to add its first paragraph, not even on
+    // hover, since there was no drop zone anywhere on the page. One
+    // explicit "start" gap (the same button every other gap uses, just
+    // with no preceding block) fixes that — found during a live UX audit
+    // of Planning mode (docs/STATUS.md, 2026-08-02): a first-time author
+    // following the "outline in Planning, then write" workflow got stuck
+    // at the very first sentence of a fresh chapter.
+    if (blocks.length === 0) {
+      return [renderGap(null, true)]
+    }
 
     const nodes: React.ReactNode[] = []
     blocks.forEach((block, i) => {

@@ -5288,14 +5288,57 @@ than force them into scope.
 `tsc -b --force` clean. Verified via the extended standalone `tsx` smoke script
 (chapter-title search/replace, list/table occurrence-indexed replace) — see above.
 
+## Phase 77 — Fix: brand-new empty chapters had no way to add a first block (2026-08-02)
+
+Found via the live first-time-author UX audit of Planning mode (role-playing someone
+who has never written a book before, working through the app in Chrome against the
+deployed build): create a new chapter via the Chapters sidebar's "+", and its content
+area renders nothing at all — no visible control, no hover-reveal dot, nothing. A
+first-time author has no way to discover how to start writing at all in a fresh
+chapter. This is as close to a launch-blocking bug as this app has had — it breaks
+the single most basic action (write a paragraph) for the single most common starting
+state (a chapter with no content yet).
+
+Root cause: `Page.tsx`'s `renderBlocksWithDropZones(blocks)` only ever emits an
+insert-gap adjacent to an *existing* block (`blocks.forEach(...)` plus a trailing gap
+after the last block). With `blocks.length === 0` the function returns an empty
+array — not even the normal invisible-until-hover "+" strip renders, because there's
+no block for it to sit next to.
+
+Fix, two parts:
+- `Page.tsx`: added an explicit `if (blocks.length === 0) return [renderGap(null,
+  true)]` branch before the loop. `renderGap` gained an optional second
+  `emptyChapter` parameter it forwards to `InsertBlockButton`, and now always renders
+  `ImageDropZone` too (confirmed safe — it already self-hides via `if
+  (!draggingAssetId) return null`, so this doesn't add a visible element, only makes
+  image drag-and-drop work into an empty chapter as well).
+- `InsertBlockButton.tsx`: new `emptyChapter?: boolean` prop. When true, renders a
+  visible, always-shown "Start writing" button (dashed border, `Plus` icon, `py-6`
+  padding, hover accent colour) instead of the normal tiny opacity-0-until-hover dot —
+  matching this app's own `EmptyState` convention used elsewhere, rather than
+  shipping a fix that's technically present but just as undiscoverable as the bug it
+  replaces. The dropdown menu content (image upload + insertable block types) was
+  refactored into a shared `menu` variable so both render paths use the exact same
+  options — no behavioural fork beyond which trigger renders.
+
+`tsc -b --force` clean. **Not yet live-verified** — the deployed build
+(`bookstudio-rose.vercel.app`) is on an earlier commit than this fix; this sandbox has
+no push credentials (same constraint as the pending #105 task), so verifying the fix
+actually renders correctly needs the user to `git push` from their own terminal, same
+as the still-outstanding Phase 55 push. Recommend pushing all of
+main branch's currently-unpushed commits (Phase 76 + this Phase 77 fix) together next
+time the user is at a terminal.
+
 ## Recommended next task
-Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01 —
-needs a bundled dictionary via something like `nspell`/`typo-js`, a bigger
-bundle-size/licensing tradeoff than recent phases' work). Immediately next, per the
-user's explicit request: a live UX audit of Planning mode via Chrome, role-playing a
-first-time author writing a few pages of both a fiction and a non-fiction project —
-see whichever STATUS.md entry follows this one for findings. Phase F still has two
-deliberately-deferred items (`ApiKeyProvider`, waiting on a real cost/accounts story;
-a thesaurus/synonym lookup, lowest priority of the three text-tooling gaps). Also
-still open: the bigger "insert AI-drafted prose into the manuscript with a reviewable
-diff" feature flagged in Phase 68's STATUS.md/SUGGESTIONS.md entries.
+Push the currently-unpushed local commits (Phase 76, Phase 77) so the live deployment
+matches `main` — the sandbox has no git push credentials, so this needs the user's own
+terminal, same constraint as the still-open #105 task. Once pushed, live-verify the
+Phase 77 empty-chapter fix in Chrome. Phase B's remaining item: real
+(dictionary-backed) spell-check (flagged 2026-08-01 — needs a bundled dictionary via
+something like `nspell`/`typo-js`, a bigger bundle-size/licensing tradeoff than recent
+phases' work). Phase F still has two deliberately-deferred items (`ApiKeyProvider`,
+waiting on a real cost/accounts story; a thesaurus/synonym lookup, lowest priority of
+the three text-tooling gaps). Also still open: the bigger "insert AI-drafted prose
+into the manuscript with a reviewable diff" feature flagged in Phase 68's
+STATUS.md/SUGGESTIONS.md entries. The live first-time-author UX audit of Planning
+mode continues in the next STATUS.md entry.

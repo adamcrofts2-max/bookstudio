@@ -14,6 +14,18 @@ interface InsertBlockButtonProps {
    * block even exists, unlike every other type's blank starting point).
    * Phase 51. */
   onInsertImage: (assetId: string) => void
+  /**
+   * True only for a brand-new chapter's very first block — there's no
+   * existing content to hover between yet, and nothing on the page hints
+   * that an (otherwise invisible-until-hover) insert point exists at all.
+   * Renders as a visible, labelled "Start writing" prompt instead of the
+   * compact hover-reveal dot every other gap uses, matching this app's own
+   * empty-state convention elsewhere (`EmptyState`'s icon+label shape) —
+   * found missing during a live first-time-author UX audit of the
+   * Planning → Writing workflow (docs/STATUS.md, 2026-08-02): a fresh
+   * chapter had no discoverable way to add its first paragraph at all.
+   */
+  emptyChapter?: boolean
 }
 
 /**
@@ -32,8 +44,49 @@ interface InsertBlockButtonProps {
  * same click-to-upload flow the Cover designer and placeholder-to-real-
  * image conversion also use.
  */
-export function InsertBlockButton({ projectId, onInsert, onInsertImage }: InsertBlockButtonProps) {
+export function InsertBlockButton({ projectId, onInsert, onInsertImage, emptyChapter }: InsertBlockButtonProps) {
   const { openPicker, inputProps } = useImageUpload(projectId, onInsertImage)
+
+  const menu = (
+    <DropdownMenuContent align="center">
+      <DropdownMenuItem onClick={openPicker} className="gap-2">
+        <ImagePlus className="size-3.5" />
+        Image
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      {INSERTABLE_BLOCK_TYPES.map((type) => {
+        const def = getBlockTypeDefinition(type)
+        if (!def) return null
+        const Icon = def.icon
+        return (
+          <DropdownMenuItem key={type} onClick={() => onInsert(type)} className="gap-2">
+            {Icon && <Icon className="size-3.5" />}
+            {def.label ?? type}
+          </DropdownMenuItem>
+        )
+      })}
+    </DropdownMenuContent>
+  )
+
+  if (emptyChapter) {
+    return (
+      <div className="flex justify-center py-6">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors duration-150 hover:border-[var(--color-accent)] hover:text-[var(--color-accent)]"
+            >
+              <Plus className="size-4" />
+              Start writing
+            </button>
+          </DropdownMenuTrigger>
+          {menu}
+        </DropdownMenu>
+        <input {...inputProps} />
+      </div>
+    )
+  }
 
   return (
     <div className="group/insert relative -my-1.5 flex h-3 items-center justify-center">
@@ -49,24 +102,7 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage }: Insert
             <Plus className="size-3" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="center">
-          <DropdownMenuItem onClick={openPicker} className="gap-2">
-            <ImagePlus className="size-3.5" />
-            Image
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {INSERTABLE_BLOCK_TYPES.map((type) => {
-            const def = getBlockTypeDefinition(type)
-            if (!def) return null
-            const Icon = def.icon
-            return (
-              <DropdownMenuItem key={type} onClick={() => onInsert(type)} className="gap-2">
-                {Icon && <Icon className="size-3.5" />}
-                {def.label ?? type}
-              </DropdownMenuItem>
-            )
-          })}
-        </DropdownMenuContent>
+        {menu}
       </DropdownMenu>
       <input {...inputProps} />
     </div>

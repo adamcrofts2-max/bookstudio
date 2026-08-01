@@ -68,6 +68,10 @@ daily use of everything built so far.)*
 - [x] "+" inserter to add a new block of any type at any position — shipped 2026-07-31
       (Phase 26), 12 of 14 types (image/gallery excluded — both need a real asset
       picked first, which the inserter doesn't do yet)
+- [x] Fix: brand-new empty chapters had no insert affordance at all (zero blocks meant
+      `renderBlocksWithDropZones` returned nothing) — a first-time author had no way
+      to write their first paragraph. Found via live UX audit, fixed with a visible
+      "Start writing" prompt for the empty-chapter case. Phase 77 (2026-08-02).
 - [ ] Drag-to-reorder for all blocks — deprioritised in favour of the move-up/down
       buttons above, which solve the same need with less risk (full drag-and-drop
       across `LazySpread`'s lazily-mounted spreads is a materially bigger change)
