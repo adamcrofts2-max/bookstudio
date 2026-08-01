@@ -9,6 +9,35 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 73 (2026-08-01) — Distraction-free writing mode + reading mode
+
+- **Reading mode has no page-turn/navigation affordance of its own.** It's a plain
+  scrollable canvas — fine for a straight-through read, but there's no jump-to-chapter
+  control once the Sidebar is hidden (a user has to scroll manually, or exit focus mode
+  to navigate, then re-enter). A minimal floating chapter-jump menu (reusing the same
+  TOC data `BookRenderer` already computes) would make this meaningfully more useful
+  for spot-checking a specific chapter rather than only full read-throughs.
+- **No keyboard shortcut to *enter* either mode, only to exit.** Both modes are
+  reachable solely through the new Toolbar dropdown; a power user has no `W`/`R`-style
+  key to jump straight in. Deliberately not added this phase to keep `docs
+  /ROADMAP.md`'s existing `V` (spread toggle) precedent from getting crowded with new
+  single-letter bindings without checking for collisions across every dialog/panel
+  first — worth a small follow-up once there's a sense which shortcut letters are
+  actually free.
+- **One small, confirmed cosmetic leftover on structural pages in reading mode.**
+  Traced through `Page.tsx`'s structural-page branch: `onSelect`/`onCommit` correctly
+  become no-ops and `selected` is forced `false` when `decorative`, so nothing on any
+  structural page is actually clickable or interactive in reading mode — but every one
+  of the 18 structural page types (`structuralPages/types/*.tsx`) hardcodes a static
+  `cursor-pointer` class on its root div regardless of `decorative`, so hovering any
+  structural page in reading mode shows a clickable-looking cursor that does nothing.
+  Purely cosmetic and pre-existing (not introduced this phase), but genuinely 18 files
+  to touch for a one-line-each fix (`cursor-pointer` conditional on `!decorative`) —
+  scoped out of this phase deliberately rather than bundled in, worth a dedicated small
+  pass later.
+
+---
+
 ## After Phase 72 (2026-08-01) — Word-count goals and writing-session tracking
 
 - **The day-boundary logic is the one piece of this phase genuinely worth a live
