@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CaseSensitive, Replace, ReplaceAll, Search as SearchIcon } from 'lucide-react'
+import { CaseSensitive, Heading, Replace, ReplaceAll, Search as SearchIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useContentStore } from '@/store/contentStore'
@@ -17,10 +17,14 @@ interface SearchPanelProps {
 }
 
 /** One match row — excerpt with the matched text highlighted, click to
- * jump to it (reusing `requestScrollToBlock`, the same mechanism the
- * Virtual Editor's Locate/Edit actions already use to force-mount a
- * `LazySpread` page that hasn't scrolled into view yet), plus a per-match
- * Replace button once a replacement is entered. */
+ * jump to it, plus a per-match Replace button once a replacement is
+ * entered. A block match jumps via `requestScrollToBlock` (the same
+ * mechanism the Virtual Editor's Locate/Edit actions already use to
+ * force-mount a `LazySpread` page that hasn't scrolled into view yet); a
+ * chapter-title match jumps via `requestScrollToChapter` instead, since
+ * there's no block to select — a small heading icon distinguishes the two
+ * kinds inline, since a bare chapter title otherwise looks identical to a
+ * short line of body text. */
 function MatchRow({
   match,
   query,
@@ -34,22 +38,32 @@ function MatchRow({
 }) {
   const select = useSelectionStore((s) => s.select)
   const requestScrollToBlock = useSelectionStore((s) => s.requestScrollToBlock)
+  const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
 
   const before = match.excerpt.slice(0, match.excerptMatchStart)
   const highlighted = match.excerpt.slice(match.excerptMatchStart, match.excerptMatchStart + match.excerptMatchLength)
   const after = match.excerpt.slice(match.excerptMatchStart + match.excerptMatchLength)
 
   const handleClick = () => {
+    if (match.kind === 'chapterTitle') {
+      requestScrollToChapter(match.chapterId)
+      return
+    }
     select(match.chapterId, match.blockId)
     requestScrollToBlock(match.chapterId, match.blockId)
   }
 
   return (
     <div className="group flex items-center gap-1 rounded-[var(--radius-button)] px-2.5 py-1.5 text-text-secondary transition-colors duration-150 hover:bg-hover">
-      <button type="button" onClick={handleClick} className="min-w-0 flex-1 text-left text-[13px] leading-snug">
-        {before}
-        <mark className="rounded-sm bg-[var(--color-warning)]/40 px-0.5 text-text-primary">{highlighted}</mark>
-        {after}
+      <button type="button" onClick={handleClick} className="flex min-w-0 flex-1 items-center gap-1.5 text-left text-[13px] leading-snug">
+        {match.kind === 'chapterTitle' && (
+          <Heading className="size-3 shrink-0 text-text-muted" aria-label="Chapter title match" />
+        )}
+        <span className="min-w-0">
+          {before}
+          <mark className="rounded-sm bg-[var(--color-warning)]/40 px-0.5 text-text-primary">{highlighted}</mark>
+          {after}
+        </span>
       </button>
       {query && (
         <button

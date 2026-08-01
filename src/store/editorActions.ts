@@ -87,8 +87,11 @@ export function editBlock(
  * the affected block's current raw field text via `virtualEditor/textPatch
  * .ts`'s `getRawFieldText` (indirectly, via `patchTextField`), replaces just
  * that match's occurrence, and applies it through `editBlock` above so it's
- * undoable exactly like any other content edit. No-op if the block can no
- * longer be found (e.g. deleted since the search results were computed).
+ * undoable exactly like any other content edit. A `kind: 'chapterTitle'`
+ * match instead routes through `renameChapterWithHistory` below — a chapter
+ * title isn't a `ContentBlock` field, so it needs the title-rename action,
+ * not a block patch. No-op if the block/chapter can no longer be found
+ * (e.g. deleted since the search results were computed).
  */
 export function replaceMatchWithHistory(
   projectId: string,
@@ -99,7 +102,15 @@ export function replaceMatchWithHistory(
 ): void {
   const manuscript = useContentStore.getState().getManuscript(projectId)
   const chapter = manuscript?.chapters.find((c) => c.id === match.chapterId)
-  const block = chapter?.blocks.find((b) => b.id === match.blockId)
+  if (!chapter) return
+
+  if (match.kind === 'chapterTitle') {
+    const newTitle = replaceOccurrence(chapter.title, query, match.occurrenceIndexInField, replacement, caseSensitive)
+    renameChapterWithHistory(projectId, match.chapterId, newTitle)
+    return
+  }
+
+  const block = chapter.blocks.find((b) => b.id === match.blockId)
   if (!block) return
 
   const patch = patchTextField(block, match.field, (text) =>
@@ -110,9 +121,11 @@ export function replaceMatchWithHistory(
 
 /**
  * Replaces every current Search-panel match at once (Replace All). Groups
- * matches by their `(blockId, field)` pair first so a field with several
- * occurrences gets exactly one `editBlock` call — one history entry, one
- * undo step — rather than one per occurrence.
+ * block matches by their `(blockId, field)` pair first so a field with
+ * several occurrences gets exactly one `editBlock` call — one history
+ * entry, one undo step — rather than one per occurrence. Chapter-title
+ * matches are grouped by `chapterId` the same way, through
+ * `renameChapterWithHistory`.
  */
 export function replaceAllMatchesWithHistory(
   projectId: string,
@@ -125,13 +138,25 @@ export function replaceAllMatchesWithHistory(
   if (!manuscript) return
 
   const seenFields = new Set<string>()
+  const seenChapterTitles = new Set<string>()
+
   for (const match of matches) {
+    const chapter = manuscript.chapters.find((c) => c.id === match.chapterId)
+    if (!chapter) continue
+
+    if (match.kind === 'chapterTitle') {
+      if (seenChapterTitles.has(match.chapterId)) continue
+      seenChapterTitles.add(match.chapterId)
+      const newTitle = replaceAllOccurrences(chapter.title, query, replacement, caseSensitive)
+      renameChapterWithHistory(projectId, match.chapterId, newTitle)
+      continue
+    }
+
     const fieldKey = `${match.blockId}:${match.field}`
     if (seenFields.has(fieldKey)) continue
     seenFields.add(fieldKey)
 
-    const chapter = manuscript.chapters.find((c) => c.id === match.chapterId)
-    const block = chapter?.blocks.find((b) => b.id === match.blockId)
+    const block = chapter.blocks.find((b) => b.id === match.blockId)
     if (!block) continue
 
     const patch = patchTextField(block, match.field, (text) => replaceAllOccurrences(text, query, replacement, caseSensitive))

@@ -5241,15 +5241,61 @@ Sidebar "Search" tab's layout/scroll behaviour at the Sidebar's fixed 264px widt
 the actual click-to-jump-and-highlight behaviour against a real, lazily-mounted
 `LazySpread` haven't been seen rendered.
 
+## Phase 76 — Actioned Phase 74/75 suggestions (2026-08-02)
+
+The user asked to act on `docs/SUGGESTIONS.md`'s Phase 74/75 entries before starting a
+live UX audit of Planning mode. Picked the concrete, low-risk items; left the
+genuinely bigger/lower-priority ones (next/previous match step-through, a
+checkbox-per-match Replace-All opt-out model) as still-documented suggestions rather
+than force them into scope.
+
+- **Search now covers chapter titles**, closing the Phase 75 entry's "most likely real
+  gap" — a chapter title isn't a `ContentBlock`, so `extractTextSpans` (and therefore
+  the original `findMatches`) never saw it. `src/search/manuscriptSearch.ts`'s
+  `SearchMatch` is now a discriminated union (`kind: 'block' | 'chapterTitle'`);
+  `findMatches` scans every chapter's `title` the same way it scans block text (via a
+  new shared `scanOccurrences` helper, extracted so the two scan sites — chapter
+  titles and block spans — don't duplicate the excerpt/occurrence-counting logic).
+  `store/editorActions.ts`'s `replaceMatchWithHistory`/`replaceAllMatchesWithHistory`
+  both branch on `match.kind`: a `chapterTitle` match computes its replacement string
+  via the same `replaceOccurrence`/`replaceAllOccurrences` helpers and applies it
+  through the existing `renameChapterWithHistory` (not `patchTextField`+`editBlock`,
+  which only ever work on manuscript blocks). `SearchPanel.tsx`'s `MatchRow` branches
+  the same way for jump-to-match: a chapter-title match calls
+  `requestScrollToChapter` instead of `select`+`requestScrollToBlock`, and shows a
+  small `Heading` icon inline so a bare chapter title in the results list doesn't read
+  as an ordinary line of body text.
+- **Verified (not just asserted) that the occurrence-index replace scheme works for
+  every block type, not only the paragraph case the Phase 75 smoke test covered** —
+  extended the standalone `tsx` smoke script with a list block (`items[i]`) and a
+  table block (`header[i]`/`rows[r][c]`), confirmed multi-field matching correctly
+  numbers occurrences per-field (a list with "Alice" in two different `items[N]`
+  entries reports each as occurrence 0 of its own field, not occurrence 0/1 of one
+  shared counter), and confirmed `replaceOccurrence`/`replaceAllOccurrences` both
+  produce the right text for a list item and a table cell. This was flagged as
+  reasoned-about-but-unverified in the Phase 75 entry; now genuinely verified.
+- **Checked the search-highlight colour question the Phase 75 entry raised** (reusing
+  `--color-warning` at 40% opacity for `<mark>` rather than a dedicated "highlight"
+  token) — confirmed via `grep` that `docs/UI_DESIGN_SYSTEM.md` has no token for this
+  specific purpose, and on reflection the warning/amber tone is actually the
+  conventional colour for a search-match highlight (matches the browser's own native
+  `<mark>` default and most editors' find-highlight colour), applied through an
+  existing token via the same `bg-[var(--token)]/opacity` pattern already used
+  elsewhere in this codebase (e.g. the case-sensitive toggle's `bg-accent/10`) — not
+  an invented ad-hoc value. Left unchanged; the suggestion's real concern (not having
+  checked the design system first) is now resolved by having actually checked it.
+
+`tsc -b --force` clean. Verified via the extended standalone `tsx` smoke script
+(chapter-title search/replace, list/table occurrence-indexed replace) — see above.
+
 ## Recommended next task
-Phase B's remaining items: real (dictionary-backed) spell-check (flagged 2026-08-01
-alongside this one — needs a bundled dictionary via something like `nspell`/`typo-js`,
-a bigger bundle-size/licensing tradeoff than this phase's work) and drag-to-reorder
-for all blocks (already deprioritised in favour of the existing move-up/down buttons,
-so not a real next-task candidate). Phase F still has two deliberately-deferred items
-(`ApiKeyProvider`, waiting on a real cost/accounts story; a thesaurus/synonym lookup,
-lowest priority of the three text-tooling gaps). Also still open and worth folding in
-opportunistically: the bigger "insert AI-drafted prose into the manuscript with a
-reviewable diff" feature flagged in Phase 68's STATUS.md/SUGGESTIONS.md entries as a
-distinct, still-open feature (likely higher day-to-day value than the bible-sync half
-that already shipped).
+Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01 —
+needs a bundled dictionary via something like `nspell`/`typo-js`, a bigger
+bundle-size/licensing tradeoff than recent phases' work). Immediately next, per the
+user's explicit request: a live UX audit of Planning mode via Chrome, role-playing a
+first-time author writing a few pages of both a fiction and a non-fiction project —
+see whichever STATUS.md entry follows this one for findings. Phase F still has two
+deliberately-deferred items (`ApiKeyProvider`, waiting on a real cost/accounts story;
+a thesaurus/synonym lookup, lowest priority of the three text-tooling gaps). Also
+still open: the bigger "insert AI-drafted prose into the manuscript with a reviewable
+diff" feature flagged in Phase 68's STATUS.md/SUGGESTIONS.md entries.

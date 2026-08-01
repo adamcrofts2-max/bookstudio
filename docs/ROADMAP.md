@@ -200,6 +200,13 @@ daily use of everything built so far.)*
       content edit. No confirm dialog on Replace All — undo covers it, the
       same "no confirm needed, undo covers it" policy this codebase already
       states explicitly (`Sidebar.tsx`'s `StructuralPageRow` doc comment).
+      Extended 2026-08-02 (Phase 76) to also search/replace chapter titles —
+      flagged the same day in `docs/SUGGESTIONS.md`'s Phase 75 entry as the
+      most likely real gap, since a chapter title isn't a `ContentBlock` and
+      was invisible to `extractTextSpans`. `SearchMatch` gained a `kind:
+      'block' | 'chapterTitle'` discriminant; a chapter-title match routes
+      through `renameChapterWithHistory` instead of `patchTextField`+
+      `editBlock`.
 - [ ] Real (dictionary-backed) spell-check, beyond the browser's native
       `contentEditable` default — flagged 2026-08-01. Every editable field
       in this codebase is a bare `contentEditable` element with the
