@@ -4238,14 +4238,56 @@ blocker as Phase 55 (Phase 53's verification caveat). Worth a 30-second manual c
 (long chapter title in Sidebar, add several cover elements and scroll the Inspector)
 before the next deploy.
 
+## Phase 57 — Cover canvas: fix element-drag/focal-point conflict + snap-to-centre (2026-08-01)
+
+User report: "you can't move an element if an image is added as it just wants to change
+the focal point." Root-caused before fixing (not guessed at).
+
+- **Root cause.** `CoverFocalPointPicker` (`structuralPages/shared.tsx`) renders a
+  full-page `absolute inset-0 z-[5]` click-catcher for setting the background image's
+  focal point, with no pointer-events exclusion of its own. `CoverElementLayer`'s
+  container had no `z-index` at all (`z-index: auto`) — per CSS stacking rules, an
+  explicit positive z-index always paints above an unset one regardless of DOM order, so
+  the picker intercepted every click across the *entire* cover, including directly on top
+  of an element, once an image existed (the picker only renders when `selected &&
+  imageUrl`, matching exactly when the bug appeared).
+- **Fix** (`structuralPages/coverElementLayer.tsx`): the container is now
+  `pointer-events-none` (click-through by default, inherited by children) with `z-10`
+  (above the picker's `z-5`), and each individual element's own div opts back in with
+  `pointer-events-auto` — the same "click-through overlay, clickable hotspots" pattern
+  `CoverElementToolbar`'s button already used elsewhere in this file. Empty cover area
+  still reaches the focal-point picker underneath; clicking an actual element now reaches
+  that element first. Shared by both `cover.tsx` and `backCover.tsx` (one component, no
+  duplicate fix needed).
+- **Snap-to-centre** (same file): a move-drag now snaps an element's centre exactly onto
+  the page's horizontal/vertical centre line, independently per axis, once it comes
+  within ~1.2% of the trim box of that line — plus a thin accent-coloured guide line while
+  snapped, matching Figma/Canva's alignment-guide convention. Closes part of
+  `docs/ROADMAP.md` Phase E's long-deferred "smart alignment/snap guides" item (snapping
+  to *other elements'* edges, not just page centre, remains open).
+- **Deliberately not done in this phase** (discussed with the user, not built pending
+  their direction): converting the background image and/or the title/subtitle/author
+  text block into full `CoverElement`s so they're draggable/resizable the same way
+  shapes are. Real trade-off, not just extra work — existing projects store
+  image/focalPoint/title/subtitle/author as dedicated typed `CoverPage.content` fields,
+  not `CoverElement`s, plus real feature-specific behaviour on top of them (focal-point
+  crop, text-visibility toggles + colour overrides from Phase 49, the layout-preset
+  system) that a generic element wouldn't automatically carry over. A full conversion
+  needs a real migration path to avoid the exact "never modify existing projects" risk
+  `CLAUDE.md`'s non-negotiables warn about, not just new UI.
+
+`tsc -b` clean. Not independently verified live in Chrome — same sandbox `npm run dev`
+blocker as Phases 55–56.
+
 ## Recommended next task
 All five items from the original "think about it" request plus both
 chapter-management follow-ups (add, reorder) are shipped, plus Phase 53's five audit
-fixes, Phase 54's cover-canvas Milestone 1, Phase 55's Milestone 2 (icons/badges), and
-Phase 56's two small UX fixes. Distraction-free reading mode was discussed with the user
-(2026-08-01) but deliberately not built yet, pending their direction on scope — see the
-chat log/`docs/READING_MODE_PLAN.md` if that gets written up. The highest-leverage
-remaining items otherwise: the real fix for the Phase J renderer-freeze item
+fixes, Phase 54's cover-canvas Milestone 1, Phase 55's Milestone 2 (icons/badges),
+Phase 56's two small UX fixes, and Phase 57's element-drag fix + snap-to-centre.
+Distraction-free reading mode and whether to convert the cover's image/text fields into
+full `CoverElement`s were both discussed with the user (2026-08-01) but deliberately not
+built yet, pending their direction on scope. The highest-leverage remaining items
+otherwise: the real fix for the Phase J renderer-freeze item
 (worker-based or otherwise), and the next cover-canvas follow-ups now that icons/badges
 are done — rotation, secondary images, smart alignment/snap guides, or the wrap-aware
 front+spine+back view (see `docs/ROADMAP.md` Phase E for the full deferred list). Absent

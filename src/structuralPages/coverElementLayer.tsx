@@ -16,6 +16,10 @@ function clamp(value: number, min: number, max: number): number {
  * gesture from collapsing an element to nothing. */
 const MIN_SIZE = 0.03
 
+/** How close an element's own centre needs to get to the page's centre line
+ * (as a fraction of the trim box) before a move-drag snaps onto it. */
+const SNAP_THRESHOLD = 0.012
+
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se'
 type DragMode = 'move' | ResizeHandle
 
@@ -39,12 +43,19 @@ type Rect = Pick<CoverElement, 'x' | 'y' | 'width' | 'height'>
  * never disagree about where an element ends up. */
 function applyDelta(mode: DragMode, origin: Rect, dx: number, dy: number): Rect {
   if (mode === 'move') {
-    return {
-      x: clamp(origin.x + dx, 0, 1 - origin.width),
-      y: clamp(origin.y + dy, 0, 1 - origin.height),
-      width: origin.width,
-      height: origin.height,
-    }
+    let x = clamp(origin.x + dx, 0, 1 - origin.width)
+    let y = clamp(origin.y + dy, 0, 1 - origin.height)
+
+    // Snap-to-centre: independently on each axis, if the element's own
+    // centre lands within `SNAP_THRESHOLD` of the page's centre line, snap
+    // it exactly onto that line rather than leaving the user to eyeball
+    // pixel-perfect centring by hand. `CoverElementLayer`'s render path
+    // detects the snap by comparing the resulting centre back to 0.5, so it
+    // can show a guide line — see `isCentered` below.
+    if (Math.abs(x + origin.width / 2 - 0.5) < SNAP_THRESHOLD) x = 0.5 - origin.width / 2
+    if (Math.abs(y + origin.height / 2 - 0.5) < SNAP_THRESHOLD) y = 0.5 - origin.height / 2
+
+    return { x, y, width: origin.width, height: origin.height }
   }
 
   let { x, y, width, height } = origin
@@ -144,8 +155,31 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
 
   const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex)
 
+  // Drives the centre guide lines below — only meaningful mid-`move`-drag
+  // (resize gestures don't recentre), and only lit up once `applyDelta` has
+  // actually snapped that axis (compared back to an exact 0.5, safe because
+  // `applyDelta` sets it to precisely `0.5 - width / 2`, not an
+  // approximation).
+  const draggingRect = drag && drag.mode === 'move' ? applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY) : null
+  const snappedX = draggingRect ? Math.abs(draggingRect.x + draggingRect.width / 2 - 0.5) < 1e-9 : false
+  const snappedY = draggingRect ? Math.abs(draggingRect.y + draggingRect.height / 2 - 0.5) < 1e-9 : false
+
   return (
-    <div ref={containerRef} className="absolute inset-0" onPointerMove={handlePointerMove}>
+    // `pointer-events-none` + `z-10` together are the fix for a real bug: once a
+    // Cover has a background image, `CoverFocalPointPicker` (shared.tsx) renders
+    // a full-page `absolute inset-0 z-[5]` click-catcher for setting the focal
+    // point, with no pointer-events exclusion of its own — it painted above this
+    // layer (whose container previously had no z-index at all) and intercepted
+    // every click/drag on the whole cover, including directly on top of an
+    // element, so elements became impossible to move once an image existed.
+    // Making this container itself click-through (`pointer-events-none`, which
+    // is inherited by default) and opting each element's own div back in with
+    // `pointer-events-auto` — the same "click-through overlay, clickable
+    // hotspots" pattern `CoverElementToolbar`'s button already uses — lets clicks
+    // on empty cover area still reach the focal-point picker underneath, while
+    // clicks that land on an actual element go to that element first, now that
+    // `z-10` also puts it above the picker's `z-5` in paint order.
+    <div ref={containerRef} className="absolute inset-0 z-10 pointer-events-none" onPointerMove={handlePointerMove}>
       {sorted.map((el) => {
         const rect: Rect = drag?.id === el.id ? applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY) : el
         const isSelected = pageSelected && selectedElementId === el.id
@@ -153,7 +187,11 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
         return (
           <div
             key={el.id}
-            className={cn('absolute', pageSelected && 'cursor-move', isSelected && 'outline outline-2 outline-[var(--color-accent)] outline-offset-2')}
+            className={cn(
+              'pointer-events-auto absolute',
+              pageSelected && 'cursor-move',
+              isSelected && 'outline outline-2 outline-[var(--color-accent)] outline-offset-2',
+            )}
             style={{
               left: `${rect.x * 100}%`,
               top: `${rect.y * 100}%`,
@@ -194,6 +232,13 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
           </div>
         )
       })}
+
+      {/* Centre guide lines — shown only while a move-drag is actively snapped
+       * onto the page's horizontal/vertical centre, same visual language as
+       * Figma/Canva's alignment guides. Purely visual (`pointer-events-none`,
+       * inherited from the container anyway, stated explicitly for clarity). */}
+      {snappedX && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-20 w-px -translate-x-1/2 bg-[var(--color-accent)]" />}
+      {snappedY && <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-px -translate-y-1/2 bg-[var(--color-accent)]" />}
     </div>
   )
 }

@@ -288,8 +288,16 @@ daily use of everything built so far.)*
       added without a rotate handle in the same milestone)
 - [ ] Cover elements: secondary images (author photo, publisher/series
       logo) as their own element kind, reusing `CoverImageFocalPoint`
-- [ ] Cover elements: smart alignment/snap guides (to the safe-zone guide,
-      trim/bleed edges, and other elements) and grouping
+- [ ] Cover elements: smart alignment/snap guides — snap-to-page-centre
+      (both axes, with a guide line) shipped 2026-08-01 (Phase 57). Still
+      open: snapping to the safe-zone guide, trim/bleed edges, and other
+      elements' edges, plus grouping
+- [ ] Cover elements: fix the element-drag/image-focal-point pointer
+      conflict — **fixed 2026-08-01 (Phase 57)**, see docs/STATUS.md.
+      Deliberately not decided: whether to go further and convert the
+      background image and/or title/subtitle/author into full
+      `CoverElement`s so they're draggable the same way shapes are — real
+      migration-risk trade-off, discussed with the user, not yet resolved
 - [ ] Cover elements: on-canvas double-click text editing (Milestone 1
       edits text content via the Inspector panel only — see
       `docs/COVER_CANVAS_PLAN.md`'s interaction section for why)
