@@ -9,6 +9,45 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 74 (2026-08-01) — Continuity checker over Layer 0 data
+
+- **Both checks are name-matching, so a renamed or nicknamed entity is a guaranteed
+  false positive.** If a user's bible has "Alexandra" but the manuscript only ever
+  calls her "Lex," the unmentioned-entity checker will flag her as never mentioned
+  even though she's in every chapter. There's no fix for this within the "cheap,
+  predictable, no dictionary/NLP" idiom this codebase deliberately stays inside —
+  worth being upfront that this checker's real job is "give a shortlist worth a
+  glance," not "reliably prove an entity is missing." The 0.4 confidence score is
+  meant to signal exactly that, but it's worth watching whether users read the
+  finding as more authoritative than that.
+- **No check yet catches the reverse case: a name that recurs often in the
+  manuscript but has no bible entry at all.** This was considered and deliberately
+  cut from this phase — reliably distinguishing "a character who should be in the
+  bible" from "a common capitalized word, a place name used once on purpose, a
+  chapter title reused in prose" without real NLP has a much higher false-positive
+  ceiling than the two checks that shipped, and this phase's whole point was
+  staying honest about what deterministic matching can and can't do. Worth
+  revisiting if a future phase adds even a lightweight allow-list or frequency
+  threshold that could bring the false-positive rate down to something usable.
+- **Timeline Events are excluded from both checks, which is correct today but
+  worth revisiting once cross-linking exists.** `promptContext.ts`'s own
+  `AUTO_DETECTABLE_KINDS` comment already flags this same gap: a timeline beat's
+  title ("The bridge collapses") isn't text that recurs in prose the way a name
+  does. Phase 71's SUGGESTIONS.md entry already flagged wanting a chapter↔beat
+  link — if that ships, a genuinely different continuity check becomes possible
+  ("this chapter is linked to a beat with no corresponding timeline event yet," or
+  vice versa), distinct from name-matching entirely.
+- **The Virtual Editor dashboard's category grouping was verified by reading
+  `formatCategory`'s logic, not by seeing a `continuity` finding actually render in
+  the running app** (no `npm run dev` in this sandbox). It's driven entirely by
+  whatever categories are present in `report.findings` with no hardcoded category
+  list to have missed updating, so it's expected to Just Work — but this is exactly
+  the kind of "should work" claim worth a two-minute live check the next time
+  someone has the app open, rather than trusting it indefinitely on reasoning
+  alone.
+
+---
+
 ## After Phase 73 (2026-08-01) — Distraction-free writing mode + reading mode
 
 - **Reading mode has no page-turn/navigation affordance of its own.** It's a plain
