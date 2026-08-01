@@ -191,6 +191,31 @@ export function CoverElementPanel({ element, elements, projectId, onChange, onDe
         />
       </div>
 
+      {/* Precision complement to the on-canvas rotate handle
+       * (`coverElementLayer.tsx`'s `RotateHandleDot`) — same "click/type
+       * exact value vs. drag" pairing already established for position
+       * (align-to-page buttons vs. drag-to-move) and size. Also declared
+       * once on `BaseCoverElement`, applies to every kind uniformly. */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Rotation ({Math.round(element.rotation ?? 0)}°)</Label>
+        <div className="flex items-center gap-2">
+          <input
+            type="range"
+            min={-180}
+            max={180}
+            step={1}
+            value={element.rotation ?? 0}
+            onChange={(e) => patch({ rotation: Number(e.target.value) })}
+            className="w-full accent-accent"
+          />
+          {(element.rotation ?? 0) !== 0 && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => patch({ rotation: 0 })}>
+              Reset
+            </Button>
+          )}
+        </div>
+      </div>
+
       {element.kind === 'text' && (
         <>
           <div className="flex flex-col gap-1.5">

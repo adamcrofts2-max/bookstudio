@@ -182,6 +182,19 @@ interface BaseCoverElement {
    * primarily meant for the kinds that had no opacity control at all
    * (icon/badge/image). */
   opacity?: number
+  /** Degrees, CSS `transform: rotate()` convention (clockwise-positive,
+   * pivoting on the element's own centre). Absent means 0. Declared on the
+   * base type, not added in Milestone 1, per `docs/COVER_CANVAS_PLAN.md`'s
+   * reasoning: a `rotation` field only some renderers honoured would be
+   * exactly the WYSIWYG-drift risk that plan's rule against half-shipped
+   * visible properties exists to prevent — this ships together with a real
+   * rotate handle (`coverElementLayer.tsx`) and matching PDF export
+   * (`drawCoverElementsPdf`) in the same change. PDF space is
+   * counter-clockwise-positive (the mirror image of CSS, same Y-flip every
+   * other cover measurement already accounts for) — `-rotation` is used at
+   * that boundary, verified empirically with a rasterized test PDF before
+   * shipping (see docs/STATUS.md). */
+  rotation?: number
 }
 
 /** A rectangle, ellipse, or straight horizontal line. `cornerRadius` only
@@ -456,6 +469,16 @@ export interface BackCoverPage extends BaseStructuralPage {
   content: {
     blurb?: string
     authorBio?: string
+    /** Independent free-position override for `blurb`/`authorBio` — same
+     * `CoverFieldPosition` convention as Cover's title/subtitle/author
+     * (normalised 0..1 fraction of the trim box, anchored at the field's own
+     * centre). Absent means the field stays in the shared flex layout
+     * (`layout` + `verticalNudge`), the pre-existing behaviour. Added to
+     * close a documented asymmetry: Front Cover's fields have had
+     * free-positioning since Phase 59, Back Cover's didn't. See
+     * `structuralPages/shared.tsx`'s `DraggableCoverField`. */
+    blurbPosition?: CoverFieldPosition
+    authorBioPosition?: CoverFieldPosition
     imageAssetId?: string
     layout?: CoverTextLayout
     verticalNudge?: number

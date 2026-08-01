@@ -284,9 +284,15 @@ daily use of everything built so far.)*
       Edition"). See docs/STATUS.md Phase 55 — also documents a real
       stroke-width double-scaling bug caught by rendering and visually
       inspecting a test PDF before shipping.
-- [ ] Cover elements: rotation (data model deliberately has no `rotation`
-      field yet — see `docs/COVER_CANVAS_PLAN.md` for why one shouldn't be
-      added without a rotate handle in the same milestone)
+- [x] Cover elements: rotation — shipped 2026-08-01 (Phase 62): `rotation?`
+      on `BaseCoverElement`, a drag-to-rotate handle above the selected
+      element (Shift snaps to 15°) in `coverElementLayer.tsx`, and matching
+      PDF export via a `translate→rotate→translate` graphics-state wrap
+      around the whole per-element draw dispatch in `coverElements.ts` —
+      verified with rasterized test PDFs (bounding-box swap, asymmetric-
+      marker rotation-direction, and a rect+image-clip integration test)
+      before shipping, per the item's own "not without a rotate handle in
+      the same milestone" note above
 - [x] Cover elements: secondary images (author photo, publisher/series
       logo) as their own element kind — shipped 2026-08-01 (Phase 59), reusing
       `coverImageFit.ts`'s cover-fit math scoped to the element's own box, with
@@ -294,10 +300,11 @@ daily use of everything built so far.)*
       box. Focal point + zoom followed 2026-08-01 (Phase 60) — X/Y + zoom
       sliders in the Inspector, deliberately not an on-canvas click-to-set
       picker (would conflict with the element's own drag-to-move gesture)
-- [ ] Cover elements: smart alignment/snap guides — snap-to-page-centre
-      (both axes, with a guide line) shipped 2026-08-01 (Phase 57). Still
-      open: snapping to the safe-zone guide, trim/bleed edges, and other
-      elements' edges, plus grouping
+- [x] Cover elements: smart alignment/snap guides — snap-to-page-centre
+      (both axes, with a guide line) shipped 2026-08-01 (Phase 57).
+      Snap-to-other-elements' edges/centres and the safe-zone inset shipped
+      2026-08-01 (Phase 62), reusing the same guide-line rendering. Grouping
+      remains open — deliberately not attempted in the same pass
 - [x] Cover elements: fix the element-drag/image-focal-point pointer
       conflict — fixed 2026-08-01 (Phase 57), see docs/STATUS.md. Phase 58
       shipped a lighter-weight middle ground first (2D drag for
@@ -314,9 +321,12 @@ daily use of everything built so far.)*
       and "Add cover image"/"Add element" buttons being unclickable once an
       element sat on top — both shipped 2026-08-01 (Phase 59); root cause was
       pointer-events/z-index conflicts, see docs/STATUS.md
-- [ ] Cover elements: on-canvas double-click text editing (Milestone 1
-      edits text content via the Inspector panel only — see
-      `docs/COVER_CANVAS_PLAN.md`'s interaction section for why)
+- [x] Cover elements: on-canvas double-click text editing — shipped
+      2026-08-01 (Phase 62) for text/badge elements, via an `EditingTextField`
+      overlay with Enter-to-commit/Escape-to-cancel (a `cancelledRef` guard
+      prevents the unmount-triggered blur from re-committing after Escape).
+      Fixed a pre-existing bug found along the way: every plain click on an
+      element was writing a spurious no-op "move" entry to undo history
 - [x] Cover elements: Delete/Backspace keyboard shortcut for the selected
       element — shipped 2026-08-01 (Phase 60), same keydown handler as
       arrow-nudge, same input/textarea/contenteditable guard
@@ -332,17 +342,28 @@ daily use of everything built so far.)*
       others, plus incremental (one-step) forward/backward z-order nudges —
       shipped 2026-08-01 (Phase 61). Multi-select/grouping remains open —
       deliberately not attempted in the same pass, see docs/STATUS.md
-- [ ] Cover elements: per-element accessibility/contrast checking — the
-      existing Accessibility checker doesn't know free-form cover text
-      elements exist yet — flagged in Phase 59's brainstorm
-- [ ] Back Cover: deliberate decision on whether blurb/author-bio ever get the
-      same free-positioning Front Cover's title/subtitle/author gained in
-      Phase 59, rather than leaving it an unstated asymmetry
-- [ ] Wrap-aware front+spine+back cover view — a toggle showing Cover/
-      spine-gutter/Back Cover side by side (using the spine width already
-      calculated live) so a user can eyeball whether an image or rule
-      would look continuous across the wrap, without merging the two
-      pages' underlying data
+- [x] Cover elements: per-element accessibility/contrast checking — shipped
+      2026-08-01 (Phase 62): a new `accessibility.cover-element-contrast`
+      checker does real WCAG 1.4.3 contrast-ratio math (relative luminance,
+      no third-party library) for Cover/Back Cover's `text`/`badge`
+      elements against a computable background (a solid shape/badge
+      beneath it, or the page's own flat tint when no image is set),
+      flagging failures at `major` and reporting text-over-a-photo or a
+      translucent element as unverifiable at low confidence rather than
+      guessing — see `src/virtualEditor/checkers/accessibility.ts`. Title/
+      subtitle/author/blurb/author-bio's own automatic-colour-fallback rule
+      is a separate follow-up, not covered by this pass
+- [x] Back Cover: decided — free-positioning parity shipped 2026-08-01
+      (Phase 62): `blurbPosition`/`authorBioPosition` on `BackCoverPage
+      .content`, wired through `DraggableCoverField`/`ResetFieldPositionButton`
+      on screen and a `fieldPdfXY`-equivalent anchor in `drawBackCoverPdf`,
+      closing the asymmetry noted above
+- [x] Wrap-aware front+spine+back cover view — shipped 2026-08-01 (Phase 62):
+      a "Preview cover wrap" dialog (`WrapCoverPreviewButton`) in the Cover/
+      Back Cover Inspector panel renders Back Cover, a spine strip sized
+      from `cover/spineWidth.ts`'s live page-count calculation, and Cover
+      side by side (scaled down, read-only) — reuses `coverPageType.Render`/
+      `backCoverPageType.Render` directly rather than merging any data
 - [x] More cover font families beyond Inter/Source Serif 4 — shipped
       2026-07-31 (Phase 50): the user downloaded and dropped in 7 Google
       Fonts families (Anton, Bebas Neue, Oswald, Playfair Display, DM

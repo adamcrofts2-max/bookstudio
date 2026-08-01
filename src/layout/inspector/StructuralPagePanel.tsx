@@ -26,6 +26,7 @@ import { computeSpineWidthIn, PAPER_TYPE_LABELS, MIN_PAGE_COUNT_FOR_SPINE_TEXT, 
 import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
 import { CoverElementPanel } from '@/layout/inspector/CoverElementPanel'
 import { CoverLayersPanel } from '@/layout/inspector/CoverLayersPanel'
+import { WrapCoverPreviewButton } from '@/structuralPages/WrapCoverPreview'
 import type {
   StructuralPage,
   CoverTextLayout,
@@ -448,6 +449,18 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
       </div>
 
       <Separator />
+
+      {(page.type === 'cover' || page.type === 'back-cover') && (
+        <>
+          {/* Shown from whichever of Cover/Back Cover is currently
+           * selected — the dialog itself always shows both together, so one
+           * insertion point here covers both panels rather than duplicating
+           * it into each type-specific block below. Silently renders
+           * nothing (see `WrapCoverPreviewButton`) until both pages exist. */}
+          <WrapCoverPreviewButton projectId={projectId} />
+          <Separator />
+        </>
+      )}
 
       {(page.type === 'cover' || page.type === 'back-cover') && page.content.elements && page.content.elements.length > 0 && (
         <>

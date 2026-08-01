@@ -4508,10 +4508,110 @@ run dev` blocker as every phase since 55 (confirmed still broken this phase: `vi
 --config-loader runner` fails with a syntax error loading `vite.config.ts`, consistent
 with the pre-existing `node_modules` corruption documented since Phase 53).
 
+## Phase 62 — Cover elements: rotation, double-click editing, snap guides; Back Cover
+parity; per-element contrast checking; wrap preview (2026-08-01)
+
+Closes out every remaining Phase E item from Phase 59's brainstorm and Phase 61's
+"what's left" list, per the user's "finish the phase, then decide what's next"
+instruction — six pieces of work, in the order built:
+
+- **Rotation.** `rotation?: number` added to `BaseCoverElement` (CSS `transform:
+  rotate()` convention, clockwise-positive, pivoting on the element's own centre). A new
+  rotate handle in `coverElementLayer.tsx` (a circular dot above the selected element,
+  `RotateCw` icon) computes drag angle from the pointer's position relative to the
+  element's screen-space centre; Shift snaps to 15° steps. PDF export wraps the whole
+  per-element draw dispatch in a `pushGraphicsState()` → `translate(centre)` →
+  `rotateRadians` → `translate(-centre)` → *(unchanged draw calls)* → `popGraphicsState()`
+  transform in `coverElements.ts`, rather than computing per-shape corner-pivot offsets —
+  this makes image+clip rotation work for free, since the clip rectangle is drawn inside
+  the already-rotated coordinate frame. PDF's rotation convention is counter-clockwise-
+  positive (the mirror of CSS), so `pdfRotationRad = -rotationDeg`; verified empirically
+  with three separate rasterized test PDFs (a bounding-box swap test, an asymmetric-
+  marker test to unambiguously pin down rotation *direction* — a symmetric shape's
+  bounding box can't distinguish CW from CCW — and a rect+image-clip integration test
+  showing a clean diamond with no spillover) before shipping, per the roadmap item's own
+  "not without empirical verification" note. Also added a Rotation slider (-180°..180°,
+  with a conditional Reset button) to `CoverElementPanel.tsx`.
+- **On-canvas double-click text editing.** Double-clicking a `text`/`badge` element now
+  swaps its display span for an `EditingTextField` — a styled `<input>` matching the
+  element's own font/size/colour/alignment, autofocused with the text pre-selected.
+  Enter blurs (commits); Escape cancels via a `cancelledRef` flag set synchronously
+  before calling the cancel callback directly — needed because React's unmount-
+  triggered blur would otherwise still fire the commit-on-blur handler *after* the
+  explicit cancel, silently saving the discarded edit. Found and fixed a real
+  pre-existing bug along the way: every plain click on an element (not just double-
+  clicks) was writing a spurious no-op "move" entry to undo history, because
+  `startDrag`/`commitDrag` had no guard against a drag gesture that moved nothing —
+  fixed with an equality-check guard before committing, in both `commitDrag` and the
+  new `commitRotate`.
+- **Snap-to-other-elements + safe-zone guides.** Extended the existing snap-to-page-
+  centre logic (`applyDelta`'s 'move' branch) to also collect each other element's
+  leading-edge/centre/trailing-edge and the safe-zone inset (both axes) as snap targets,
+  picking the closest match within a threshold and rendering a guide line at whichever
+  target fraction was hit (`guideX`/`guideY` now carry the actual fraction rather than a
+  hardcoded `left-1/2`). `COVER_SAFE_ZONE_MM` exported from `shared.tsx` for this; the
+  safe-zone-to-trim-fraction conversion is `(COVER_SAFE_ZONE_MM * PX_PER_MM) / trimSizePx`
+  — the bleed term cancels out since both the safe-zone inset and the trim edge are
+  measured from the same bleed-box reference edge, confirmed numerically (0.25in KDP
+  margin ⇒ `frac × trimWidthInches = 0.25`).
+- **Back Cover free-positioning parity.** `blurbPosition?`/`authorBioPosition?:
+  CoverFieldPosition` added to `BackCoverPage.content`, closing the asymmetry Phase 59
+  left open (Front Cover's title/subtitle/author got independent free-drag positioning;
+  Back Cover's two fields didn't). Wired through the same `DraggableCoverField`/
+  `ResetFieldPositionButton` components `cover.tsx` already uses, with a `rootRef` added
+  to `BackCoverRender`'s root div. PDF export gained a `fieldPdfXY`-equivalent helper in
+  `drawBackCoverPdf`; the blurb (a multi-paragraph wrapped block, unlike title/subtitle/
+  author's single line) anchors its position at the block's own centre — matching the
+  screen's `translate(-50%, -50%)` — keeping the pre-existing `contentWidthPt` wrapping
+  column width recentred under the drag point rather than attempting to replicate the
+  screen's shrink-to-fit auto-width for a dragged block, a documented, honest
+  simplification (see the code comment in `backCover.tsx`) rather than a silent
+  approximation.
+- **Per-element accessibility/contrast checking.** New checker
+  `accessibility.cover-element-contrast` in `virtualEditor/checkers/accessibility.ts`
+  does real WCAG 1.4.3 contrast-ratio math (sRGB relative luminance, from scratch — no
+  existing contrast/luminance utility existed anywhere in the codebase) for Cover/Back
+  Cover's `text`/`badge` `CoverElement`s. Background resolution: a badge's own
+  `backgroundColor` is always self-contained; a plain text element looks for the nearest
+  fully-opaque `rect`/`ellipse`/`badge` beneath it (lower `zIndex`, its own centre point
+  falling inside that candidate's box), falling back to the page's flat tint colour when
+  no image is set (`tintHex(theme.page.accent, 0.85 | 0.92)` — the exact literal amounts
+  `cover.tsx`/`backCover.tsx` themselves paint). Text over a photo, or over a translucent
+  element, is reported as a `suggestion`-severity, low-confidence "unverifiable" finding
+  rather than a guess — the same soft-uncertainty idiom
+  `galleryMissingDescriptionsChecker` already established, since this codebase's
+  `Severity` type has no dedicated "info" tier. Verified the luminance/contrast formula
+  against known WCAG reference values in a standalone Node script (white/black = 21:1
+  exact; `#767676` vs white ≈ 4.54:1, a commonly-cited "just passes AA" boundary colour)
+  before wiring it into the checker. Deliberately out of scope: Cover's own title/
+  subtitle/author/blurb/author-bio fields, whose colour has a more involved automatic-
+  fallback rule (`resolveCoverColor`) this pass doesn't attempt to replicate.
+- **Wrap-aware front+spine+back cover view.** New `WrapCoverPreviewButton`
+  (`structuralPages/WrapCoverPreview.tsx`), surfaced once in `StructuralPagePanel.tsx`
+  whenever a Cover or Back Cover page is selected (and both exist — otherwise renders
+  nothing). Opens a dialog rendering Back Cover, a spine strip, and Cover side by side —
+  the order a real printed wraparound cover reads left to right laid flat with the spine
+  centred — reusing `coverPageType.Render`/`backCoverPageType.Render` directly (the
+  exact components `Page.tsx` renders in the normal flow) with `selected={false}` and
+  no-op `onSelect`/`onCommit`, the same "render for display only" convention `Page.tsx`'s
+  own `decorative` prop already established, scaled down with the `absolute` +
+  `origin-top-left` + `scale()` technique `ThumbnailPage.tsx` established rather than
+  inventing a second one. Spine width reuses `cover/spineWidth.ts`'s existing live-page-
+  count calculation (already shipped for the text-only estimate in `SpineWidthInfo`) —
+  genuinely read-only, no merged wraparound file or shared data model between the two
+  pages, per the roadmap item's own "without merging the two pages' underlying data"
+  scope note.
+
+`tsc -b --force` clean throughout (checked after each of the six pieces individually,
+not just once at the end). `oxlint` still crashes with the same sandbox-level bus error
+noted since Phase 59. Not independently verified live in Chrome — same sandbox `npm run
+dev` blocker as every phase since 55.
+
 ## Recommended next task
-Continuing the settled build order (E → F → D → B). Remaining Phase E items: rotation,
-on-canvas double-click text editing, snap-to-other-elements/safe-zone guides,
-per-element accessibility/contrast checking, the Back Cover free-positioning parity
-decision, and the wrap-aware front+spine+back view — any of these is reasonable next: pick one, or if Phase E feels sufficiently
-"finished" for now, move on to Phase F (Layer 0 entity schema + store is the
-foundation piece, per `docs/AI_WORKSPACE_VISION.md`).
+Phase E is now closed out — every item from Phase 59's brainstorm and Phase 61's
+follow-up list has shipped. Per the settled build order (E → F → D → B), next is Phase F:
+the Layer 0 (AI Publishing Workspace) entity schema + store, the foundation piece for
+everything else in `docs/AI_WORKSPACE_VISION.md` — a new top-level mode/tab (per the
+2026-08-01 decision recorded in `docs/ROADMAP.md`), Character/Location/Timeline Event/
+Glossary Term/Reference/Illustration Brief/Style Rule/Research Note entities, and a
+`ClipboardProvider`-based prompt layer that needs no backend or API cost for V1.

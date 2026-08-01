@@ -1,4 +1,4 @@
-import { rgb, LineCapStyle, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } from 'pdf-lib'
+import { rgb, LineCapStyle, pushGraphicsState, popGraphicsState, rectangle, clip, endPath, translate, rotateRadians } from 'pdf-lib'
 
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { CoverElement, CoverElementKind, CoverShapeElement, CoverTextElement, CoverIconElement, CoverBadgeElement, CoverImageElement } from '@/types/structuralPage'
@@ -243,6 +243,32 @@ export async function drawCoverElementsPdf(
     // nested-opacity treatment.
     const elementOpacity = el.opacity ?? 1
 
+    // Rotation (Phase 61) — rather than computing a per-kind pivot offset
+    // for every different draw call's own anchor convention (a rectangle's
+    // bottom-left, an ellipse's already-centred x/y, text's baseline
+    // anchor, an image's clip rectangle...), wrap the ENTIRE per-element
+    // draw dispatch in a graphics-state rotation around the element's own
+    // centre, using the exact `translate(centre) -> rotate -> translate
+    // (-centre)` composition (every draw call below keeps using its
+    // original, unrotated xPt/yPt/wPt/hPt coordinates unchanged). This is
+    // the standard "rotate around an arbitrary pivot" technique and,
+    // crucially, also correctly rotates the 'image' branch's clip
+    // rectangle along with the image it clips — solving that interaction
+    // for free instead of needing separate rotated-clip math. PDF's
+    // rotation is counter-clockwise-positive (mirroring CSS's
+    // clockwise-positive the same way `yPt` above mirrors CSS's top-down
+    // `y`), hence the negation. Verified empirically with a standalone
+    // rasterized test PDF (an off-centre marker point at a small positive
+    // `rotation` swung toward positive-x, matching CSS `rotate()`'s visual
+    // direction) before landing this — see docs/STATUS.md Phase 61.
+    const rotationDeg = el.rotation ?? 0
+    if (rotationDeg !== 0) {
+      const centerXPt = xPt + wPt / 2
+      const centerYPt = yPt + hPt / 2
+      const pdfRotationRad = (-rotationDeg * Math.PI) / 180
+      ctx.page.pushOperators(pushGraphicsState(), translate(centerXPt, centerYPt), rotateRadians(pdfRotationRad), translate(-centerXPt, -centerYPt))
+    }
+
     if (el.kind === 'rect') {
       ctx.page.drawRectangle({
         x: xPt,
@@ -438,6 +464,10 @@ export async function drawCoverElementsPdf(
         })
         ctx.page.pushOperators(popGraphicsState())
       }
+    }
+
+    if (rotationDeg !== 0) {
+      ctx.page.pushOperators(popGraphicsState())
     }
   }
 }

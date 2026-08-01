@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Book } from 'lucide-react'
 
-import type { StructuralPage } from '@/types/structuralPage'
+import type { StructuralPage, CoverFieldPosition } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { DrawCtx } from '@/pdf/exportPdf'
@@ -14,6 +14,8 @@ import {
   CoverFocalPointPicker,
   CoverSafeZoneGuide,
   FieldVisibilityToggle,
+  DraggableCoverField,
+  ResetFieldPositionButton,
 } from '@/structuralPages/shared'
 import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY, COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
 import { computeCoverImageScreenStyle, computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
@@ -66,12 +68,23 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
   // See `cover.tsx`'s identical field for why this stays local until
   // pointer-up.
   const [liveNudge, setLiveNudge] = useState<number | null>(null)
+  // Free-position live-drag preview for `blurb`/`authorBio` — same
+  // null-means-"not dragging" convention as `liveNudge`, one per field since
+  // they can each be mid-drag independently. See `cover.tsx`'s matching
+  // `liveTitlePos`/etc. for the pattern this replicates.
+  const [liveBlurbPos, setLiveBlurbPos] = useState<CoverFieldPosition | null>(null)
+  const [liveAuthorBioPos, setLiveAuthorBioPos] = useState<CoverFieldPosition | null>(null)
+  // `DraggableCoverField`'s 0..1 fraction space is measured against this
+  // page's own root element — same reference frame `cover.tsx` uses.
+  const rootRef = useRef<HTMLDivElement>(null)
   if (page.type !== 'back-cover') return null
 
   const imageUrl = page.content.imageAssetId ? getObjectUrl(page.content.imageAssetId) : undefined
   const paragraphs = splitParagraphs(page.content.blurb ?? '')
   const committedNudge = page.content.verticalNudge ?? 0
   const effectiveNudge = liveNudge ?? committedNudge
+  const effectiveBlurbPos = liveBlurbPos ?? page.content.blurbPosition
+  const effectiveAuthorBioPos = liveAuthorBioPos ?? page.content.authorBioPosition
   const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
   const imageStyle = computeCoverImageScreenStyle(page.content.imageFocalPoint, page.content.imageZoom)
   const overlayStyle = computeCoverOverlayScreenStyle(page.content.overlayStyle, page.content.overlayOpacity ?? BACK_COVER_DEFAULT_OVERLAY_OPACITY)
@@ -88,6 +101,7 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
 
   return (
     <div
+      ref={rootRef}
       onClick={onSelect}
       className={cn('relative h-full w-full cursor-pointer overflow-hidden', outlineClass(selected, false))}
       style={{ background: imageUrl ? theme.page.background : tintHex(theme.page.accent, 0.92) }}
@@ -143,6 +157,7 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
       <CoverElementLayer
         elements={page.content.elements}
         theme={theme}
+        pageBox={pageBox}
         pageSelected={selected}
         selectedElementId={selectedElementId}
         onSelectElement={selectCoverElement}
@@ -183,22 +198,37 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
               )}
             </div>
           )}
-          {(paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]).map((paragraph, i) => (
-            <p
-              key={i}
-              style={{
-                fontFamily: blurbFontFamily,
-                fontWeight: blurbWeight,
-                fontSize: `${1.05 * blurbSizeScale}em`,
-                lineHeight: theme.typography.lineHeight,
-                color: ink,
-                fontStyle: blurbHidden ? 'italic' : paragraphs.length > 0 ? (typography?.italic ? 'italic' : 'normal') : 'italic',
-                opacity: blurbHidden ? 0.45 : 1,
-              }}
-            >
-              {paragraph}
-            </p>
-          ))}
+          <DraggableCoverField
+            position={effectiveBlurbPos}
+            onLiveMove={setLiveBlurbPos}
+            onCommitMove={(pos) => onCommit({ blurbPosition: pos })}
+            containerRef={rootRef}
+            pageSelected={selected}
+          >
+            <div className="flex flex-col gap-4">
+              {(paragraphs.length > 0 ? paragraphs : [BLURB_PLACEHOLDER]).map((paragraph, i) => (
+                <p
+                  key={i}
+                  style={{
+                    fontFamily: blurbFontFamily,
+                    fontWeight: blurbWeight,
+                    fontSize: `${1.05 * blurbSizeScale}em`,
+                    lineHeight: theme.typography.lineHeight,
+                    color: ink,
+                    fontStyle: blurbHidden ? 'italic' : paragraphs.length > 0 ? (typography?.italic ? 'italic' : 'normal') : 'italic',
+                    opacity: blurbHidden ? 0.45 : 1,
+                  }}
+                >
+                  {paragraph}
+                </p>
+              ))}
+              {selected && page.content.blurbPosition && (
+                <div className="flex justify-center" onPointerDown={(e) => e.stopPropagation()}>
+                  <ResetFieldPositionButton onReset={() => onCommit({ blurbPosition: undefined })} />
+                </div>
+              )}
+            </div>
+          </DraggableCoverField>
         </div>
       )}
       {(page.content.authorBio || !imageUrl) && !(authorBioHidden && !selected) && (
@@ -212,17 +242,32 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
               />
             </div>
           )}
-          <p
-            style={{
-              fontFamily: theme.fonts.body,
-              fontSize: '0.78em',
-              color: mutedInk,
-              fontStyle: 'italic',
-              opacity: authorBioHidden ? 0.45 : 1,
-            }}
+          <DraggableCoverField
+            position={effectiveAuthorBioPos}
+            onLiveMove={setLiveAuthorBioPos}
+            onCommitMove={(pos) => onCommit({ authorBioPosition: pos })}
+            containerRef={rootRef}
+            pageSelected={selected}
           >
-            {page.content.authorBio}
-          </p>
+            <div className="flex items-center gap-2">
+              <p
+                style={{
+                  fontFamily: theme.fonts.body,
+                  fontSize: '0.78em',
+                  color: mutedInk,
+                  fontStyle: 'italic',
+                  opacity: authorBioHidden ? 0.45 : 1,
+                }}
+              >
+                {page.content.authorBio}
+              </p>
+              {selected && page.content.authorBioPosition && (
+                <div onPointerDown={(e) => e.stopPropagation()}>
+                  <ResetFieldPositionButton onReset={() => onCommit({ authorBioPosition: undefined })} />
+                </div>
+              )}
+            </div>
+          </DraggableCoverField>
         </div>
       )}
     </div>
@@ -323,8 +368,35 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
   // No `BLURB_PLACEHOLDER` fallback here (fixed Phase 49) — same reasoning
   // as `cover.tsx`'s title fix: that placeholder is an on-screen-only
   // editing cue, never something a real export should print literally.
+  //
+  // Independently-positioned fields (`blurbPosition`/`authorBioPosition`) —
+  // same `fieldPdfXY` convention `cover.tsx` uses for title/subtitle/author:
+  // the fraction is relative to the TRIM box, offset by `bleedPt`, Y flipped
+  // since PDF points grow upward.
+  function fieldPdfXY(pos: CoverFieldPosition): { x: number; y: number } {
+    return { x: bleedPt + pos.x * trimWidthPt, y: bleedPt + trimHeightPt - pos.y * trimHeightPt }
+  }
+
   if (!blurbHidden && paragraphs.length > 0) {
-    const drawCtx: DrawCtx = { ...ctx, contentX, contentWidthPt, cursorY: startCursorY }
+    let blurbContentX = contentX
+    let blurbCursorY = startCursorY
+    if (page.content.blurbPosition) {
+      const { x, y } = fieldPdfXY(page.content.blurbPosition)
+      // Anchor is the block's own centre — matches the on-screen
+      // `DraggableCoverField`'s `translate(-50%, -50%)`. The wrapped column
+      // keeps its normal `contentWidthPt` width, now centred under `x`
+      // instead of sitting at the fixed content margin; vertically this
+      // reuses the 'centered' layout formula above (half the block's height
+      // above the anchor for the first baseline), with `y` standing in for
+      // `mediaHeightPt / 2`. A dragged block's on-screen width shrinks to
+      // fit its own text rather than staying pinned to `contentWidthPt` — a
+      // known, minor divergence from pixel-perfect WYSIWYG for this one
+      // field, not worth a deeper layout-model change for a multi-paragraph
+      // block that's usually left near its default position anyway.
+      blurbContentX = x - contentWidthPt / 2
+      blurbCursorY = y + (paragraphs.length * lineHeight) / 2
+    }
+    const drawCtx: DrawCtx = { ...ctx, contentX: blurbContentX, contentWidthPt, cursorY: blurbCursorY }
     for (const paragraph of paragraphs) {
       const lines = wrapRuns([{ text: paragraph, bold: false }], bodyFont, bodyFont, bodySize, contentWidthPt)
       drawWrappedLines(drawCtx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont)
@@ -335,8 +407,14 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
   if (page.content.authorBio && !authorBioHidden) {
     const bioFont = pickFont(ctx.fonts, theme.fonts.body, 400)
     const bioSize = theme.typography.bodySize * 0.78 * PX_TO_PT
-    const bioY = bleedPt + pageBox.marginBottomPx * PX_TO_PT + bioSize
-    ctx.page.drawText(page.content.authorBio, { x: contentX, y: bioY, size: bioSize, font: bioFont, color: mutedInk })
+    if (page.content.authorBioPosition) {
+      const { x, y } = fieldPdfXY(page.content.authorBioPosition)
+      const bioWidth = bioFont.widthOfTextAtSize(page.content.authorBio, bioSize)
+      ctx.page.drawText(page.content.authorBio, { x: x - bioWidth / 2, y: y - bioSize * 0.35, size: bioSize, font: bioFont, color: mutedInk })
+    } else {
+      const bioY = bleedPt + pageBox.marginBottomPx * PX_TO_PT + bioSize
+      ctx.page.drawText(page.content.authorBio, { x: contentX, y: bioY, size: bioSize, font: bioFont, color: mutedInk })
+    }
   }
 }
 

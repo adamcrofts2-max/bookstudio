@@ -161,6 +161,7 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
       <CoverElementLayer
         elements={page.content.elements}
         theme={theme}
+        pageBox={pageBox}
         pageSelected={selected}
         selectedElementId={selectedElementId}
         onSelectElement={selectCoverElement}

@@ -470,8 +470,10 @@ export function CoverFocalPointPicker({ focalPoint, onChange }: CoverFocalPointP
 
 /** Amazon KDP's published minimum distance text should stay from the trim
  * edge on a cover (0.25in) — a first-time author has no reason to already
- * know this, and there's no other guide anywhere in the app showing it. */
-const COVER_SAFE_ZONE_MM = 6.35
+ * know this, and there's no other guide anywhere in the app showing it.
+ * Exported so `coverElementLayer.tsx` can snap element drags to this same
+ * boundary (Phase 61), not just draw it. */
+export const COVER_SAFE_ZONE_MM = 6.35
 
 /**
  * Toggleable dashed guide showing the safe text zone on a Cover/Back Cover

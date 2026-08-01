@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trash2, ArrowUpToLine, ArrowDownToLine, Copy, ImagePlus } from 'lucide-react'
+import { Trash2, ArrowUpToLine, ArrowDownToLine, Copy, ImagePlus, RotateCw } from 'lucide-react'
 
 import type { CoverElement } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
+import type { PageBox } from '@/renderer/pageGeometry'
+import { PX_PER_MM } from '@/renderer/pageGeometry'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
 import { updateElement, bringToFront, sendToBack, removeElement, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS } from '@/structuralPages/coverIcons'
 import { computeCoverImageScreenStyle } from '@/structuralPages/coverImageFit'
+import { COVER_SAFE_ZONE_MM } from '@/structuralPages/shared'
 import { useAssetStore } from '@/store/assetStore'
 import { cn } from '@/lib/utils'
 
@@ -18,8 +21,11 @@ function clamp(value: number, min: number, max: number): number {
  * gesture from collapsing an element to nothing. */
 const MIN_SIZE = 0.03
 
-/** How close an element's own centre needs to get to the page's centre line
- * (as a fraction of the trim box) before a move-drag snaps onto it. */
+/** How close one of a dragged element's own edges/centre needs to get to a
+ * snap target (the page centre, the safe-zone inset, or another element's
+ * own edge/centre) — as a fraction of the trim box — before a move-drag
+ * snaps onto it. Originally page-centre-only; generalised in Phase 61 to
+ * the full set of "smart guide" targets `snapTargetsFor` builds. */
 const SNAP_THRESHOLD = 0.012
 
 /** Arrow-key nudge step, as a fraction of the trim box — plain arrow for a
@@ -44,25 +50,109 @@ interface DragState {
 
 type Rect = Pick<CoverElement, 'x' | 'y' | 'width' | 'height'>
 
+/** Live state for a rotate-handle drag — kept separate from `DragState`
+ * rather than folded into `applyDelta`'s move/resize modes, since rotation
+ * doesn't touch x/y/width/height at all and works off pointer *angle*
+ * around the element's centre, not a fraction delta. */
+interface RotateState {
+  id: string
+  /** Element centre in viewport pixels, captured once at gesture start —
+   * rotation never moves the element, so this stays valid for the whole
+   * gesture without re-measuring on every pointer move. */
+  centerX: number
+  centerY: number
+  /** Pointer angle (degrees, `atan2`) at gesture start. */
+  startPointerAngle: number
+  /** The element's committed rotation when the gesture started. */
+  startRotation: number
+  /** Live preview value, updated on every pointer move. */
+  liveRotation: number
+}
+
+/** Keeps a rotation value inside `(-180, 180]` — matters because the drag
+ * gesture accumulates `startRotation + (pointerAngle delta)` across the
+ * whole drag, which would otherwise grow unboundedly across multiple full
+ * turns instead of wrapping like a real angle. */
+function normalizeRotation(deg: number): number {
+  let r = deg % 360
+  if (r > 180) r -= 360
+  if (r <= -180) r += 360
+  return r
+}
+
+/** Every fraction-space position a move-drag can snap onto, on one axis —
+ * built once per gesture (`snapTargetsFor`), not recomputed per pointer
+ * move. Includes the page centre, the safe-zone guide's inset boundary on
+ * each side, and every OTHER element's own edges/centre — the "smart
+ * guides" Figma/Canva show while dragging one object near another. */
+interface SnapTargets {
+  x: number[]
+  y: number[]
+}
+
+/** Builds this gesture's snap targets once: the dragged element's own
+ * position obviously isn't a target for itself, so `excludeId` filters it
+ * out of `elements`. `safeZoneFracX`/`safeZoneFracY` are the safe-zone
+ * guide's inset converted from `COVER_SAFE_ZONE_MM` to a fraction of the
+ * trim box — see `computeSafeZoneFraction` below for why the bleed cancels
+ * out of that conversion. */
+function snapTargetsFor(elements: CoverElement[], excludeId: string, safeZoneFracX: number, safeZoneFracY: number): SnapTargets {
+  const x = [0.5, safeZoneFracX, 1 - safeZoneFracX]
+  const y = [0.5, safeZoneFracY, 1 - safeZoneFracY]
+  for (const el of elements) {
+    if (el.id === excludeId) continue
+    x.push(el.x, el.x + el.width / 2, el.x + el.width)
+    y.push(el.y, el.y + el.height / 2, el.y + el.height)
+  }
+  return { x, y }
+}
+
+/** The safe-zone guide's inset (`CoverSafeZoneGuide`'s `insetPx = bleedPx +
+ * COVER_SAFE_ZONE_MM * PX_PER_MM`, measured from the bleed-box edge)
+ * re-expressed as a fraction of the TRIM box — the coordinate space every
+ * `CoverElement.x/y` already lives in. The trim edge itself sits `bleedPx`
+ * from the bleed-box edge, so subtracting it back out cancels the bleed
+ * term entirely: the safe-zone's distance from the TRIM edge is just
+ * `COVER_SAFE_ZONE_MM * PX_PER_MM`, independent of bleed size. */
+function safeZoneFraction(trimSizePx: number): number {
+  return (COVER_SAFE_ZONE_MM * PX_PER_MM) / trimSizePx
+}
+
+/** Tries snapping one axis of a move-drag: checks the dragged element's own
+ * leading edge, centre, and trailing edge against every candidate target,
+ * and applies whichever match is closest if any is within
+ * `SNAP_THRESHOLD`. Returns the (possibly adjusted) position and, when a
+ * snap fired, the exact fraction-space coordinate to draw a guide line at —
+ * distinct from the old page-centre-only version, which only ever needed to
+ * check back against a hardcoded `0.5`. */
+function snapAxis(pos: number, size: number, targets: number[]): { pos: number; guide?: number } {
+  let best: { delta: number; target: number } | undefined
+  for (const point of [pos, pos + size / 2, pos + size]) {
+    for (const target of targets) {
+      const delta = target - point
+      if (Math.abs(delta) < SNAP_THRESHOLD && (!best || Math.abs(delta) < Math.abs(best.delta))) {
+        best = { delta, target }
+      }
+    }
+  }
+  return best ? { pos: pos + best.delta, guide: best.target } : { pos }
+}
+
 /** Applies a drag/resize gesture's total fraction delta to an element's
  * original rect, producing the live (or final, at commit time) rect. Pure —
  * used identically by the render path and by `commitDrag`, so the two can
- * never disagree about where an element ends up. */
-function applyDelta(mode: DragMode, origin: Rect, dx: number, dy: number): Rect {
+ * never disagree about where an element ends up. `snapTargets` is only
+ * consulted for `mode === 'move'`; resize handles don't snap (Milestone 1
+ * scope, unchanged). */
+function applyDelta(mode: DragMode, origin: Rect, dx: number, dy: number, snapTargets: SnapTargets): Rect & { guideX?: number; guideY?: number } {
   if (mode === 'move') {
-    let x = clamp(origin.x + dx, 0, 1 - origin.width)
-    let y = clamp(origin.y + dy, 0, 1 - origin.height)
+    const x = clamp(origin.x + dx, 0, 1 - origin.width)
+    const y = clamp(origin.y + dy, 0, 1 - origin.height)
 
-    // Snap-to-centre: independently on each axis, if the element's own
-    // centre lands within `SNAP_THRESHOLD` of the page's centre line, snap
-    // it exactly onto that line rather than leaving the user to eyeball
-    // pixel-perfect centring by hand. `CoverElementLayer`'s render path
-    // detects the snap by comparing the resulting centre back to 0.5, so it
-    // can show a guide line — see `isCentered` below.
-    if (Math.abs(x + origin.width / 2 - 0.5) < SNAP_THRESHOLD) x = 0.5 - origin.width / 2
-    if (Math.abs(y + origin.height / 2 - 0.5) < SNAP_THRESHOLD) y = 0.5 - origin.height / 2
+    const xSnap = snapAxis(x, origin.width, snapTargets.x)
+    const ySnap = snapAxis(y, origin.height, snapTargets.y)
 
-    return { x, y, width: origin.width, height: origin.height }
+    return { x: xSnap.pos, y: ySnap.pos, width: origin.width, height: origin.height, guideX: xSnap.guide, guideY: ySnap.guide }
   }
 
   let { x, y, width, height } = origin
@@ -89,6 +179,11 @@ function applyDelta(mode: DragMode, origin: Rect, dx: number, dy: number): Rect 
 interface CoverElementLayerProps {
   elements: CoverElement[] | undefined
   theme: ResolvedBookTheme
+  /** Trim/bleed dimensions in px — used only to convert the safe-zone
+   * guide's `COVER_SAFE_ZONE_MM` inset into a trim-box fraction for smart
+   * snapping (`safeZoneFraction`), the same conversion `CoverSafeZoneGuide`
+   * already does for drawing the guide itself. */
+  pageBox: PageBox
   /** Whether the parent Cover/Back Cover page itself is selected — every
    * interactive affordance (selection outline, resize handles, the
    * delete/layer toolbar) is gated on this, same as every other cover
@@ -114,21 +209,37 @@ interface CoverElementLayerProps {
  * between the background image/overlay (below) and the title/subtitle/author
  * text block (above) in the DOM.
  *
- * Text content itself is edited via the Inspector's Page panel (a plain text
- * input), not by double-clicking on canvas — a deliberate Milestone 1 scope
- * cut, since the whole element box is also this layer's drag target and the
- * two gestures (click-to-select-and-drag vs. double-click-to-edit-text)
- * would otherwise fight each other. On-canvas inline editing is a natural
- * follow-up once that's worth solving properly.
+ * Text content of a 'text'/'badge' element can also be edited directly by
+ * double-clicking it on canvas (Phase 61), alongside the pre-existing
+ * Inspector text field — the two gestures don't actually fight each other
+ * the way Milestone 1's doc comment worried they might: a real `dblclick`
+ * only fires after two non-moving clicks, so it's naturally distinct from a
+ * drag, and once editing starts the wrapper's own drag-start is disabled for
+ * that element (see the `onPointerDown` guard below) so a click inside the
+ * input just places the caret. See `EditingTextField`.
  *
  * Drag/resize math is done entirely in container-relative fractions via
  * `getBoundingClientRect()` at gesture start, not `pageBox.widthPx` pixel
  * math — the preview can be shown at any zoom level, and this is the same
  * zoom-agnostic approach `CoverFocalPointPicker` already uses.
  */
-export function CoverElementLayer({ elements, theme, pageSelected, selectedElementId, onSelectElement, onCommitElements }: CoverElementLayerProps) {
+export function CoverElementLayer({ elements, theme, pageBox, pageSelected, selectedElementId, onSelectElement, onCommitElements }: CoverElementLayerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [rotateDrag, setRotateDrag] = useState<RotateState | null>(null)
+  // On-canvas double-click text editing (Phase 61) — the Milestone 1 scope
+  // cut this closes (see this file's top doc comment): editing was
+  // Inspector-only because the whole element box already doubles as the
+  // drag target, so click-to-select-and-drag and double-click-to-edit would
+  // fight over the same gesture. Resolved the same way `DraggableCoverField`
+  // resolves an analogous conflict elsewhere in the cover canvas: a real
+  // browser `dblclick` only fires after two clicks that don't move the
+  // pointer, so it's naturally distinct from a drag — no threshold needed
+  // here, just `commitDrag`'s no-op-move guard (above) so a double-click's
+  // two clicks don't themselves spam undo history before `dblclick` fires.
+  // Only 'text'/'badge' kinds have inline text to edit at all.
+  const [editingElementId, setEditingElementId] = useState<string | null>(null)
+  const [editingText, setEditingText] = useState('')
 
   // Arrow-key nudge (Shift for a bigger step) plus Delete/Backspace to
   // remove the selected element — the toolbar trash icon was previously the
@@ -189,6 +300,13 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
 
   if (!elements || elements.length === 0) return null
 
+  // Computed once per render, reused by every `applyDelta` call below —
+  // cheap even for a few dozen elements, and keeps `applyDelta` itself pure
+  // (no need to thread `elements`/`pageBox` through it directly). Excludes
+  // whichever element is currently being dragged (if any) from its own
+  // snap targets; harmless to compute even when nothing is being dragged.
+  const snapTargets = snapTargetsFor(elements, drag?.id ?? '', safeZoneFraction(pageBox.widthPx), safeZoneFraction(pageBox.heightPx))
+
   function fracFromEvent(e: React.PointerEvent): { x: number; y: number } {
     const rect = containerRef.current!.getBoundingClientRect()
     return { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height }
@@ -204,29 +322,108 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
     ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
   }
 
+  /** Element centre in viewport pixels, from its current fractional rect —
+   * the same container-relative-fraction-to-pixel conversion `fracFromEvent`
+   * does in reverse, so the rotate handle stays correct at any zoom level. */
+  function centerClient(rect: Rect): { x: number; y: number } {
+    const containerRect = containerRef.current!.getBoundingClientRect()
+    return {
+      x: containerRect.left + (rect.x + rect.width / 2) * containerRect.width,
+      y: containerRect.top + (rect.y + rect.height / 2) * containerRect.height,
+    }
+  }
+
+  function startRotate(e: React.PointerEvent, id: string, origin: Rect, currentRotation: number) {
+    if (!pageSelected) return
+    e.stopPropagation()
+    e.preventDefault()
+    onSelectElement(id)
+    const center = centerClient(origin)
+    const startPointerAngle = (Math.atan2(e.clientY - center.y, e.clientX - center.x) * 180) / Math.PI
+    setRotateDrag({ id, centerX: center.x, centerY: center.y, startPointerAngle, startRotation: currentRotation, liveRotation: currentRotation })
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }
+
   function handlePointerMove(e: React.PointerEvent) {
-    if (!drag) return
-    const frac = fracFromEvent(e)
-    setDrag((prev) => (prev ? { ...prev, curFracX: frac.x, curFracY: frac.y } : prev))
+    if (drag) {
+      const frac = fracFromEvent(e)
+      setDrag((prev) => (prev ? { ...prev, curFracX: frac.x, curFracY: frac.y } : prev))
+    }
+    if (rotateDrag) {
+      const angle = (Math.atan2(e.clientY - rotateDrag.centerY, e.clientX - rotateDrag.centerX) * 180) / Math.PI
+      let next = rotateDrag.startRotation + (angle - rotateDrag.startPointerAngle)
+      // Shift snaps to 15° increments — same "hold a modifier for precision
+      // snapping" convention Figma/Canva use for rotation specifically.
+      if (e.shiftKey) next = Math.round(next / 15) * 15
+      setRotateDrag((prev) => (prev ? { ...prev, liveRotation: next } : prev))
+    }
   }
 
   function commitDrag() {
     if (!drag) return
-    const rect = applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY)
-    onCommitElements(updateElement(elements, drag.id, rect))
+    const rect = applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY, snapTargets)
+    // Skip the commit entirely when nothing actually moved — every plain
+    // click on an element goes through this same pointerdown-then-pointerup
+    // path (`startDrag` unconditionally begins a 'move' drag on
+    // pointerdown), so without this guard a simple click-to-select was
+    // silently writing a no-op "move" into undo history on every click.
+    // Caught while adding double-click-to-edit below, where the same gap
+    // would otherwise double up (two no-op commits before the browser's
+    // `dblclick` fires).
+    const changed = rect.x !== drag.origin.x || rect.y !== drag.origin.y || rect.width !== drag.origin.width || rect.height !== drag.origin.height
+    if (changed) onCommitElements(updateElement(elements, drag.id, rect))
     setDrag(null)
+  }
+
+  function commitRotate() {
+    if (!rotateDrag) return
+    // Same no-op guard as `commitDrag` — a plain click on the rotate handle
+    // (no actual drag) shouldn't write a history entry either.
+    if (rotateDrag.liveRotation !== rotateDrag.startRotation) {
+      onCommitElements(updateElement(elements, rotateDrag.id, { rotation: normalizeRotation(rotateDrag.liveRotation) }))
+    }
+    setRotateDrag(null)
+  }
+
+  function startEditing(el: CoverElement) {
+    if (el.kind !== 'text' && el.kind !== 'badge') return
+    onSelectElement(el.id)
+    setEditingElementId(el.id)
+    setEditingText(el.text)
+  }
+
+  function commitEditing() {
+    if (!editingElementId) return
+    const id = editingElementId
+    setEditingElementId(null)
+    const current = elements?.find((e) => e.id === id)
+    // Only 'text'/'badge' ever start editing (`startEditing` guards on
+    // kind), so `current` is always one of those two here — but `.text`
+    // isn't on `BaseCoverElement`, so this still needs its own narrowing
+    // check for `updateElement`'s generic `Partial<CoverElement>` patch.
+    if (current && (current.kind === 'text' || current.kind === 'badge') && current.text !== editingText) {
+      onCommitElements(updateElement(elements, id, { text: editingText }))
+    }
+  }
+
+  /** Escape discards in-progress edits — exits without ever calling
+   * `onCommitElements`, unlike blur/Enter which save. */
+  function cancelEditing() {
+    setEditingElementId(null)
   }
 
   const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex)
 
-  // Drives the centre guide lines below — only meaningful mid-`move`-drag
-  // (resize gestures don't recentre), and only lit up once `applyDelta` has
-  // actually snapped that axis (compared back to an exact 0.5, safe because
-  // `applyDelta` sets it to precisely `0.5 - width / 2`, not an
-  // approximation).
-  const draggingRect = drag && drag.mode === 'move' ? applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY) : null
-  const snappedX = draggingRect ? Math.abs(draggingRect.x + draggingRect.width / 2 - 0.5) < 1e-9 : false
-  const snappedY = draggingRect ? Math.abs(draggingRect.y + draggingRect.height / 2 - 0.5) < 1e-9 : false
+  // Drives the guide lines below — only meaningful mid-`move`-drag (resize
+  // gestures don't snap). `guideX`/`guideY` are the exact fraction-space
+  // coordinate a snap fired at (page centre, safe-zone edge, or another
+  // element's own edge/centre) — `undefined` when that axis isn't currently
+  // snapped, same "only lit up while actually snapped" behaviour the
+  // page-centre-only version had, just generalised to any target instead of
+  // a single hardcoded `0.5`.
+  const draggingRect = drag && drag.mode === 'move' ? applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY, snapTargets) : null
+  const guideX = draggingRect?.guideX
+  const guideY = draggingRect?.guideY
 
   return (
     // `pointer-events-none` + `z-10` together are the fix for a real bug: once a
@@ -245,8 +442,9 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
     // `z-10` also puts it above the picker's `z-5` in paint order.
     <div ref={containerRef} className="absolute inset-0 z-10 pointer-events-none" onPointerMove={handlePointerMove}>
       {sorted.map((el) => {
-        const rect: Rect = drag?.id === el.id ? applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY) : el
+        const rect: Rect = drag?.id === el.id ? applyDelta(drag.mode, drag.origin, drag.curFracX - drag.startFracX, drag.curFracY - drag.startFracY, snapTargets) : el
         const isSelected = pageSelected && selectedElementId === el.id
+        const displayRotation = rotateDrag?.id === el.id ? rotateDrag.liveRotation : (el.rotation ?? 0)
 
         return (
           <div
@@ -262,18 +460,45 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
               width: `${rect.width * 100}%`,
               height: `${rect.height * 100}%`,
               zIndex: el.zIndex,
+              // Pivots on the box's own centre (CSS's default
+              // `transform-origin`) — matches the PDF export's rotation
+              // pivot exactly (`drawCoverElementsPdf`'s
+              // `translate(centre) -> rotate -> translate(-centre)`), so
+              // rotating an off-centre element looks identical on screen
+              // and in the exported PDF. Resize handles/toolbar are
+              // children of this div, so they rotate along with it — the
+              // same behaviour Figma/Canva use for a selected rotated
+              // object's own handles.
+              transform: displayRotation !== 0 ? `rotate(${displayRotation}deg)` : undefined,
             }}
-            onPointerDown={(e) => startDrag(e, el.id, 'move', { x: el.x, y: el.y, width: el.width, height: el.height })}
+            onPointerDown={(e) => {
+              // While this element is being edited, let pointer-down inside
+              // it behave like a normal text field (place the caret, drag to
+              // select) instead of starting a move drag — the input itself
+              // is what's rendered below, so this only matters for clicks
+              // that land on it.
+              if (editingElementId === el.id) return
+              startDrag(e, el.id, 'move', { x: el.x, y: el.y, width: el.width, height: el.height })
+            }}
             onPointerUp={commitDrag}
             onClick={(e) => {
               if (!pageSelected) return
               e.stopPropagation()
               onSelectElement(el.id)
             }}
+            onDoubleClick={(e) => {
+              if (!pageSelected) return
+              e.stopPropagation()
+              startEditing(el)
+            }}
           >
-            <ElementBody element={el} theme={theme} />
+            {editingElementId === el.id && (el.kind === 'text' || el.kind === 'badge') ? (
+              <EditingTextField element={el} theme={theme} value={editingText} onChange={setEditingText} onCommit={commitEditing} onCancel={cancelEditing} />
+            ) : (
+              <ElementBody element={el} theme={theme} />
+            )}
 
-            {isSelected && (
+            {isSelected && !editingElementId && (
               <>
                 <ElementToolbar
                   onDelete={() => {
@@ -297,19 +522,109 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
                     onPointerUp={commitDrag}
                   />
                 ))}
+                <RotateHandleDot
+                  onPointerDown={(e) => startRotate(e, el.id, { x: el.x, y: el.y, width: el.width, height: el.height }, el.rotation ?? 0)}
+                  onPointerUp={commitRotate}
+                />
               </>
             )}
           </div>
         )
       })}
 
-      {/* Centre guide lines — shown only while a move-drag is actively snapped
-       * onto the page's horizontal/vertical centre, same visual language as
-       * Figma/Canva's alignment guides. Purely visual (`pointer-events-none`,
-       * inherited from the container anyway, stated explicitly for clarity). */}
-      {snappedX && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-20 w-px -translate-x-1/2 bg-[var(--color-accent)]" />}
-      {snappedY && <div className="pointer-events-none absolute inset-x-0 top-1/2 z-20 h-px -translate-y-1/2 bg-[var(--color-accent)]" />}
+      {/* Smart guide lines — shown only while a move-drag is actively
+       * snapped onto a target (the page centre, the safe-zone inset, or
+       * another element's own edge/centre), positioned at whichever exact
+       * fraction-space coordinate `guideX`/`guideY` fired on, not always
+       * the page's middle any more. Same Figma/Canva alignment-guide visual
+       * language as before. Purely visual (`pointer-events-none`, inherited
+       * from the container anyway, stated explicitly for clarity). */}
+      {guideX !== undefined && (
+        <div className="pointer-events-none absolute inset-y-0 z-20 w-px bg-[var(--color-accent)]" style={{ left: `${guideX * 100}%` }} />
+      )}
+      {guideY !== undefined && (
+        <div className="pointer-events-none absolute inset-x-0 z-20 h-px bg-[var(--color-accent)]" style={{ top: `${guideY * 100}%` }} />
+      )}
     </div>
+  )
+}
+
+/**
+ * On-canvas inline text editor for a 'text'/'badge' element, swapped in for
+ * `ElementBody` while that element is being edited (Phase 61 — closes the
+ * Milestone 1 scope cut documented at this file's top). Styled to match
+ * `ElementBodyContent`'s own font/size/colour/align for that kind as
+ * closely as an `<input>` can, so entering/leaving edit mode doesn't cause
+ * a jarring visual swap.
+ *
+ * Blur or Enter saves (`onCommit`, reading the latest `value` at that
+ * moment); Escape discards (`onCancel`). The `cancelledRef` flag exists
+ * because Escape's `onCancel` unmounts this input (the parent's
+ * `editingElementId` becomes `null`), and React may still fire a blur
+ * event through that unmount — without the flag, that blur would call
+ * `onCommit` right after `onCancel` already decided to discard, silently
+ * saving the very edit the user just pressed Escape to reject.
+ */
+function EditingTextField({
+  element,
+  theme,
+  value,
+  onChange,
+  onCommit,
+  onCancel,
+}: {
+  element: Extract<CoverElement, { kind: 'text' | 'badge' }>
+  theme: ResolvedBookTheme
+  value: string
+  onChange: (value: string) => void
+  onCommit: () => void
+  onCancel: () => void
+}) {
+  const cancelledRef = useRef(false)
+  const fontFamily = resolveCoverFontFamily({ fontChoice: element.fontChoice }, theme.fonts.body)
+  const isBadge = element.kind === 'badge'
+
+  return (
+    <input
+      // eslint-disable-next-line jsx-a11y/no-autofocus -- entering edit mode
+      // via double-click is itself the explicit user action that should
+      // move focus here; there's no other reasonable place for it to go.
+      autoFocus
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={() => {
+        if (cancelledRef.current) return
+        onCommit()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          e.currentTarget.blur()
+        } else if (e.key === 'Escape') {
+          e.preventDefault()
+          cancelledRef.current = true
+          onCancel()
+        }
+      }}
+      // Edit mode intentionally disables the wrapper's drag-to-move (see
+      // the `onPointerDown` guard in the caller) so a click here just
+      // places the caret like a normal text field, but `stopPropagation`
+      // is kept too as a second line of defence — cheap insurance against
+      // any future change to that guard silently reintroducing the
+      // pointer-conflict class of bug Phase 57/59 already fixed twice.
+      onPointerDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      className="size-full border-none bg-transparent text-center outline-none"
+      style={{
+        fontFamily,
+        fontWeight: isBadge ? 600 : (element.weight ?? 400),
+        fontStyle: !isBadge && element.italic ? 'italic' : 'normal',
+        fontSize: isBadge ? (element.fontSize ?? 15) : (element.fontSize ?? 24),
+        color: isBadge ? (element.textColor ?? '#ffffff') : (element.color ?? '#ffffff'),
+        textAlign: isBadge ? 'center' : (element.align ?? 'center'),
+      }}
+    />
   )
 }
 
@@ -503,5 +818,34 @@ function ResizeHandleDot({
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
     />
+  )
+}
+
+/**
+ * Rotate handle — a small round grip above the element's top-centre,
+ * further out than `ElementToolbar` (`-top-9`) so the two don't collide.
+ * Rotates with the element (it's a child of the same wrapper `div` that
+ * gets the `rotate()` transform), same as the resize handles — after a 90°
+ * rotation this handle now sits to the side rather than above, matching
+ * Figma/Canva's own behaviour for a rotated selection's handles. Hold
+ * Shift while dragging to snap to 15° increments (`CoverElementLayer`'s
+ * `handlePointerMove`).
+ */
+function RotateHandleDot({
+  onPointerDown,
+  onPointerUp,
+}: {
+  onPointerDown: (e: React.PointerEvent) => void
+  onPointerUp: (e: React.PointerEvent) => void
+}) {
+  return (
+    <div
+      title="Drag to rotate — hold Shift to snap to 15°"
+      className="absolute -top-16 left-1/2 z-20 flex size-6 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white bg-[var(--color-accent)] shadow-[var(--shadow-sm)] active:cursor-grabbing"
+      onPointerDown={onPointerDown}
+      onPointerUp={onPointerUp}
+    >
+      <RotateCw className="size-3 text-white" />
+    </div>
   )
 }
