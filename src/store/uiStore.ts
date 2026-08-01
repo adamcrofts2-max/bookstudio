@@ -82,7 +82,19 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
       toggleInspector: () => set((state) => ({ inspectorCollapsed: !state.inspectorCollapsed })),
-      setInspectorTab: (tab) => set({ inspectorTab: tab }),
+      // Also un-collapses the Inspector. Every caller of `setInspectorTab`
+      // is responding to the user selecting something on the canvas (a
+      // structural page, a block, a cover element) and wants its editor
+      // visible right now — see `Page.tsx`/`cover.tsx`'s `onSelect`
+      // handlers. Before this, selecting a Cover page while the Inspector
+      // happened to be collapsed silently switched the tab behind a hidden
+      // panel: the click "worked" internally but nothing appeared, so a
+      // user in that state would reasonably conclude clicking the page
+      // does nothing and go hunting for another way in (e.g. the Sidebar's
+      // Structure tab) — flagged 2026-08-01. Collapsing the Inspector
+      // remains a one-click, explicit choice via `toggleInspector`; this
+      // only ever re-opens it, never closes it.
+      setInspectorTab: (tab) => set({ inspectorTab: tab, inspectorCollapsed: false }),
       setViewMode: (mode) => set({ viewMode: mode }),
       setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)) }),
       toggleThumbnails: () => set((state) => ({ showThumbnails: !state.showThumbnails })),

@@ -159,8 +159,18 @@ export function Toolbar({ project }: ToolbarProps) {
 
       <Separator orientation="vertical" className="mx-2 h-6" />
 
-      <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
-        <p className="truncate text-sm font-medium text-text-primary">{project.name}</p>
+      {/* `overflow-hidden` is load-bearing: without it, once this row runs out
+       * of room (many buttons now live in the fixed-width group to the
+       * right — Planning/Save/Load/Export/etc.), the word-count `<p>` (fixed
+       * width, `shrink-0`) visually spilled past this container's right edge
+       * and overlapped the light/dark mode button next to it instead of
+       * yielding space, since flex children with `overflow: visible` don't
+       * get clipped by their own box. Both children now shrink and truncate
+       * instead of one staying rigid — the project name still gets priority
+       * (its own row is more valuable than the word count), but neither can
+       * bleed into a sibling button anymore. */}
+      <div className="flex min-w-0 flex-1 items-baseline gap-2.5 overflow-hidden">
+        <p className="min-w-0 shrink truncate text-sm font-medium text-text-primary">{project.name}</p>
         {wordCount > 0 && (
           // Live total, not a goal/session tracker — see docs/ROADMAP.md
           // Phase F's separate "word-count goals and writing-session
@@ -168,7 +178,7 @@ export function Toolbar({ project }: ToolbarProps) {
           // just finally surfacing a number the app already computed
           // internally (`wordCount()`/`extractTextSpans` — used by
           // TypographyPanel and several checkers) but never showed anyone.
-          <p className="shrink-0 whitespace-nowrap text-xs tabular-nums text-text-secondary">
+          <p className="min-w-0 shrink-[2] truncate whitespace-nowrap text-xs tabular-nums text-text-secondary">
             {wordCount.toLocaleString()} words
           </p>
         )}

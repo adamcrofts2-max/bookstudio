@@ -4803,6 +4803,41 @@ identical two-step cast for the same reason.
 `vite build` blocker as every phase since 55) — the clipboard-copy path is standard
 Web API usage with no unusual browser-support risk, but flagging the gap honestly.
 
+## Phase 67 — Toolbar overflow fix; auto-expand Inspector on selection (2026-08-01)
+
+Two user-reported UX issues, fixed together as a small batch rather than folded
+silently into the next feature phase.
+
+- **Word count overlapping the theme toggle.** `Toolbar.tsx`'s project-name/
+  word-count group sat in a `flex-1` div with no `overflow-hidden`; the word-count
+  `<p>` was `shrink-0 whitespace-nowrap`, so once the fixed-width button group to
+  its right grew crowded (Planning/Version History/Save/Load/Project Settings/
+  Export/Inspector-toggle/Keyboard-shortcuts all now live there), the word count had
+  nowhere to shrink to and visually spilled past its container's edge into the
+  adjacent light/dark mode button instead of yielding space — flex children with
+  `overflow: visible` aren't clipped by their own box. Fix: `overflow-hidden` on the
+  wrapping div (hard guarantee against any future overlap, regardless of how tight
+  this row gets) plus both the project name and word count now `min-w-0 shrink
+  truncate` (word count at `shrink-[2]` so it yields first — the project name stays
+  legible longer, since it's the more identifying piece of the two).
+- **Clicking a page/block did nothing if the Inspector was collapsed.** Investigated
+  the reported "have to navigate to Structure then Cover to edit" friction. Turned
+  out clicking a structural page (Cover, Back Cover, etc.) or a manuscript block
+  directly in the main canvas *already* called `selectStructuralPage`/`select` +
+  `setInspectorTab(...)` — every structural page type's `Render` wires `onClick`
+  straight to `onSelect` (confirmed across all 18 types in `structuralPages/types/`).
+  The real gap: `uiStore.setInspectorTab` only ever set the tab, never touched
+  `inspectorCollapsed` — so if the Inspector happened to be collapsed, the click
+  silently succeeded internally while showing nothing, and a user in that state would
+  reasonably conclude clicking the page does nothing at all and go looking for
+  another way in. Fix: `setInspectorTab` now also sets `inspectorCollapsed: false`,
+  so selecting anything on the canvas is guaranteed to surface its editor
+  immediately — one click, no separate discovery of the Sidebar's Structure tab
+  required. `toggleInspector` (the explicit collapse control) is untouched; this
+  change only ever re-opens the panel, never closes it.
+
+`tsc -b --force` clean.
+
 ## Recommended next task
 Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
 paste-response-back-with-reviewable-diff flow, reusing the Virtual Editor's Accept/
