@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { RefreshCcw, Sparkles, Wand2 } from 'lucide-react'
+import { Loader2, RefreshCcw, Sparkles, Wand2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -54,6 +54,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   const structuralPages = useStructuralPageStore((s) => s.byProject[project.id]) ?? EMPTY_STRUCTURAL_PAGES
   const assets = useAssetStore((s) => s.byProject[project.id]) ?? EMPTY_ASSETS
   const report = useVirtualEditorStore((s) => s.reportsByProject[project.id])
+  const isReviewing = useVirtualEditorStore((s) => s.reviewingByProject[project.id] ?? false)
   const findingStatuses = useVirtualEditorStore((s) => s.findingStatusByProject[project.id])
   const revisions = useVirtualEditorStore((s) => s.revisionsByProject[project.id] ?? EMPTY_REVISIONS)
   const runReview = useVirtualEditorStore((s) => s.runReview)
@@ -181,6 +182,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               variant="primary"
               size="md"
               className="gap-2"
+              disabled={isReviewing}
               onClick={() =>
                 runReview(
                   project.id,
@@ -193,8 +195,8 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                 )
               }
             >
-              <RefreshCcw className="size-4" />
-              Review Entire Book
+              {isReviewing ? <Loader2 className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
+              {isReviewing ? 'Reviewing…' : 'Review Entire Book'}
             </Button>
             {!layout && (
               <p className="max-w-[36ch] text-right text-xs text-text-secondary">

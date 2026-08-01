@@ -65,6 +65,14 @@ interface VirtualEditorState {
   reportsByProject: Record<string, EditorialReport | undefined>
   findingStatusByProject: Record<string, Record<string, FindingStatus>>
   revisionsByProject: Record<string, Revision[]>
+  /** True while a "Review Entire Book" run is in flight for this project.
+   * `runPipeline` is synchronous and genuinely blocks the main thread for
+   * real seconds on a large manuscript (see docs/ROADMAP.md Phase J's
+   * "structural-page mutation freeze" entry) — without this, the button
+   * gave zero feedback while it ran, which a live audit found made the app
+   * look hung rather than working. Excluded from persistence by
+   * `partialize` below, same as `reportsByProject`. */
+  reviewingByProject: Record<string, boolean>
 }
 
 interface VirtualEditorActions {
@@ -90,7 +98,10 @@ interface VirtualEditorActions {
     project?: Project,
     structuralPages?: StructuralPage[],
     assets?: ImageAsset[],
-  ) => EditorialReport
+  ) => void
+  /** True while `runReview` is running for this project — see
+   * `reviewingByProject`'s comment above. */
+  isReviewing: (projectId: string) => boolean
   getReport: (projectId: string) => EditorialReport | undefined
   getFindingStatuses: (projectId: string) => Readonly<Record<string, FindingStatus>>
   getFindingStatus: (projectId: string, findingId: string) => FindingStatus
@@ -120,15 +131,26 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
       reportsByProject: {},
       findingStatusByProject: {},
       revisionsByProject: {},
+      reviewingByProject: {},
 
       runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets) => {
-        const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets)
-        set((state) => ({
-          reportsByProject: { ...state.reportsByProject, [projectId]: report },
-          findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },
-        }))
-        return report
+        set((state) => ({ reviewingByProject: { ...state.reviewingByProject, [projectId]: true } }))
+        // Deferred one tick so the "Reviewing…" state set above actually
+        // paints before `runPipeline` (still synchronous — see this file's
+        // top doc comment) blocks the main thread. Doesn't shorten the run
+        // itself, but replaces "the app looks frozen" with a visible,
+        // honest busy state.
+        window.setTimeout(() => {
+          const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets)
+          set((state) => ({
+            reportsByProject: { ...state.reportsByProject, [projectId]: report },
+            findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },
+            reviewingByProject: { ...state.reviewingByProject, [projectId]: false },
+          }))
+        }, 0)
       },
+
+      isReviewing: (projectId) => get().reviewingByProject[projectId] ?? false,
 
       getReport: (projectId) => get().reportsByProject[projectId],
 

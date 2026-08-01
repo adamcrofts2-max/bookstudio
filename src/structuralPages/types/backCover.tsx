@@ -27,8 +27,12 @@ import {
 } from '@/structuralPages/coverTypography'
 import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
 import { splitParagraphs } from '@/structuralPages/longForm'
+import { CoverElementLayer } from '@/structuralPages/coverElementLayer'
+import { CoverElementToolbar } from '@/structuralPages/coverElementToolbar'
+import { drawCoverElementsPdf } from '@/structuralPages/coverElements'
 import { useAssetStore } from '@/store/assetStore'
 import { useUiStore } from '@/store/uiStore'
+import { useSelectionStore } from '@/store/selectionStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
 import { pickFont, pickItalicFont } from '@/pdf/fonts'
@@ -57,6 +61,8 @@ const BACK_COVER_DEFAULT_OVERLAY_OPACITY = 0.4
 function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const showSafeZone = useUiStore((s) => s.showCoverSafeZone)
+  const selectedElementId = useSelectionStore((s) => s.selectedCoverElementId)
+  const selectCoverElement = useSelectionStore((s) => s.selectCoverElement)
   // See `cover.tsx`'s identical field for why this stays local until
   // pointer-up.
   const [liveNudge, setLiveNudge] = useState<number | null>(null)
@@ -117,7 +123,28 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
           />
         </div>
       )}
+      {selected && (
+        <div className="absolute right-4 top-4 z-10">
+          <CoverElementToolbar
+            elements={page.content.elements}
+            onAdd={(elements, newId) => {
+              onCommit({ elements })
+              selectCoverElement(newId)
+            }}
+          />
+        </div>
+      )}
       {showSafeZone && <CoverSafeZoneGuide pageBox={pageBox} />}
+      {/* Free-form shapes/text (docs/COVER_CANVAS_PLAN.md) — same stacking
+       * order as `cover.tsx`. */}
+      <CoverElementLayer
+        elements={page.content.elements}
+        theme={theme}
+        pageSelected={selected}
+        selectedElementId={selectedElementId}
+        onSelectElement={selectCoverElement}
+        onCommitElements={(elements) => onCommit({ elements })}
+      />
       {!(blurbHidden && !selected) && (
         <div
           className="absolute inset-0 flex flex-col gap-4 px-16 py-24"
@@ -232,6 +259,12 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
       color: hexToPdfColor(tintHex(theme.page.accent, 0.92)),
     })
   }
+
+  // Free-form shapes/text — see `cover.tsx`'s identical block for the
+  // shared reasoning.
+  const trimWidthPt = pageBox.widthPx * PX_TO_PT
+  const trimHeightPt = pageBox.heightPx * PX_TO_PT
+  drawCoverElementsPdf(ctx, page.content.elements, bleedPt, trimWidthPt, trimHeightPt)
 
   const typography = page.content.typography
   // Same override-wins, else-automatic rule as `cover.tsx` — Phase 49.

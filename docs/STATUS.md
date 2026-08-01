@@ -3972,12 +3972,168 @@ disabled boundary reads clearer than a silent no-op there).
 
 `tsc -b`/`oxlint` clean.
 
+## Phase 53 — Live-audit fixes (2026-07-31)
+
+A live, end-to-end Chrome audit of the deployed app (real 16-chapter
+manuscript, every workspace exercised as a real author would) surfaced five
+issues, written up in `UX_Audit_2026-07-31.md` at the project root. Three
+were real, fixable bugs; one was a genuine UX gap around a pre-existing,
+known perf issue; one turned out not to be a bug at all. Fixed/resolved:
+
+- **Chapters sidebar icon crowding.** `Sidebar.tsx`'s chapter rows used
+  `gap-2.5` between the title button and its four action icons
+  (up/down/rename/delete) — the same row `StructuralPageRow` uses `gap-1`
+  for. Fine with the two icons this row had before Phase 52 added
+  reordering; with four, the wider gap left too little room for real
+  chapter titles, which truncated on hover. Changed to `gap-1` to match, and
+  added a native `title` attribute to the truncated `<span>` so the full
+  title is always reachable via hover tooltip regardless of available width.
+- **Inspector's dead "Theme" tab.** Permanently showed a stale "Theme
+  editing arrives in Phase 4" placeholder, even though a full Theme Gallery
+  has existed in Project Settings since Phase 43 — misleading, since a user
+  on this tab had no way to know theme switching was possible anywhere.
+  `ProjectSettingsDialog`'s open state was `Toolbar`-local, so it couldn't
+  be reached from `Inspector`; lifted to `uiStore.projectSettingsOpen` (a
+  new field, deliberately excluded from persistence via `partialize` — a
+  dialog shouldn't reopen itself after a reload). The Theme tab now shows
+  the resolved current theme's real name (`resolveTheme(settings.themeId).name`,
+  not the previous raw `themeId.replace('-', ' ')`) plus a "Change theme…"
+  button that opens the real gallery.
+- **Inspector's 5-tab row overflow.** At the panel's fixed 300px width, the
+  shared `Tabs`/`TabsTrigger` component's default `px-3`/`text-sm`/`gap-1`
+  genuinely overflowed with 5 tabs (Page/Type/Image/Notes/Theme) — labels
+  truncated on both edges depending on scroll position, confirmed live.
+  Didn't touch the shared component (Sidebar's own 3-tab row fits fine at
+  the defaults); overrode just this instance's `TabsList`/`TabsTrigger`
+  classNames to `gap-0.5`/`px-1.5`/`text-xs`, which fits comfortably.
+- **Virtual Editor's "Review Entire Book" gives zero feedback while it
+  runs.** `runPipeline` (`virtualEditor/pipeline.ts`) is genuinely
+  synchronous and blocks the main thread for real seconds on a large
+  manuscript — confirmed live, repeatedly, CDP screenshot timeouts and all,
+  and consistent with the freeze `docs/ROADMAP.md` Phase J already flags
+  ("Profile and fix the structural-page mutation freeze"). The click
+  handler called `runPipeline` with no state change beforehand, so nothing
+  ever told the user a review was in progress — the app just looked hung.
+  Didn't attempt the deep fix (moving the pipeline to a Web Worker would
+  need `Finding.suggestedFix.apply` — a function value — and other
+  non-serialisable context to cross a `postMessage` boundary, a materially
+  bigger and riskier change than could be verified live in this session).
+  Instead added `virtualEditorStore.reviewingByProject` + `isReviewing`:
+  `runReview` now sets the flag, defers the actual `runPipeline` call one
+  tick via `setTimeout`, and the button shows the same `Loader2`
+  spin+"Reviewing…" pattern `Toolbar.tsx`'s Export/Save/Load buttons already
+  use. Doesn't shorten the freeze — turns "looks broken" into "visibly
+  working," which is what the live audit actually flagged. The real fix
+  stays exactly where `docs/ROADMAP.md` Phase J already has it.
+- **Version History showing zero autosaved versions — investigated, not a
+  bug.** `useAutosaveSnapshots.ts` already runs a real 5-minute
+  `setInterval`, correctly gated on `contentStore`'s revision counter so it
+  skips a tick if nothing changed. The audit session repeatedly recreated
+  Chrome tabs (working around unrelated CDP screenshot timeouts on the
+  large manuscript), which reloads the SPA and restarts that interval from
+  zero each time — no single tab session ran uninterrupted for a full 5
+  minutes, so no autosave tick ever had the chance to fire. `UX_Audit_2026-
+  07-31.md`'s claim on this point was wrong and should be read as
+  superseded by this entry.
+
+### Verification caveat
+`tsc -b` is clean (typechecks the whole project, these five files
+included). `npm run build`'s bundling stage and `npx oxlint` could not be
+run to completion in this sandbox: `vite build` fails loading
+`vite.config.ts` because `node_modules/@tailwindcss/node/dist/index.mjs` is
+truncated mid-file (confirmed by inspecting the file directly — it ends
+mid-string-literal), and `oxlint`'s native binding crashes with a bus
+error. Both reproduce identically against an untouched copy of the repo in
+a scratch directory with none of this phase's changes present, so they're
+pre-existing sandbox/`node_modules` corruption — likely the same thing
+`docs/ROADMAP.md` Phase J's "stray partially-installed `node_modules`
+artifact" item already flags — not a regression from this phase. No
+network access to `npm install` a repair in this sandbox (registry request
+returned 403). Recommend re-running `npm run build`/`npm run lint` in a
+normal (non-sandboxed) dev environment before the next deploy to get a real
+green signal on this phase's changes.
+
+## Phase 54 — Cover Canvas Milestone 1: free-form drag-and-drop elements (2026-08-01)
+
+Requested directly: "the front and back cover should have truly drag and drop elements
+like canva, such as rectangles." Full design in `docs/COVER_CANVAS_PLAN.md` — short
+version below. Purely additive alongside every existing Cover/Back Cover field (Phases
+45–50); an existing project's cover renders identically until a user actually adds an
+element.
+
+- **Data model** (`types/structuralPage.ts`): a new `CoverElement` discriminated union
+  (`CoverShapeElement` for `'rect' | 'ellipse' | 'line'`, `CoverTextElement` for `'text'`),
+  each with normalised 0..1 `x`/`y`/`width`/`height` (same portable-across-trim-sizes
+  convention as the existing `verticalNudge`) plus a `zIndex`. `CoverPage.content` and
+  `BackCoverPage.content` each gained an optional `elements?: CoverElement[]`. No
+  `rotation` field yet — deliberately: Milestone 1 ships no rotate handle, and a property
+  only some renderers honoured would be exactly the WYSIWYG-drift risk
+  `structuralPages/registry.ts`'s `StructuralPageTypeDefinition` doc comment warns against.
+- **A real TypeScript narrowing gotcha, confirmed and worked around.** The installed `tsc`
+  (6.0.3) doesn't reliably narrow a discriminated union to its final member via a bare
+  trailing `else` when that union has a member whose own discriminant is itself a
+  multi-value literal type (`CoverShapeElement.kind: 'rect' | 'ellipse' | 'line'`) — an
+  `if (el.kind === 'rect') ... else if (... === 'ellipse') ... else if (... === 'line')
+  ... else { /* should be CoverTextElement here */ }` chain left `el` as the full,
+  unnarrowed union inside that final `else`, breaking on every `CoverTextElement`-only
+  field access. Confirmed with a minimal standalone repro against this exact `tsc` binary
+  before concluding it wasn't a mistake in the type definitions themselves. Fixed by giving
+  every branch an explicit positive `el.kind === 'text'` check instead of relying on the
+  trailing `else` — see the comment in `structuralPages/coverElements.ts`'s
+  `drawCoverElementsPdf`.
+- **Pure data helpers + PDF drawing** (`structuralPages/coverElements.ts`):
+  `createCoverElement`/`addElement`/`updateElement`/`removeElement`/`bringToFront`/
+  `sendToBack`, all pure functions over the array, plus `drawCoverElementsPdf` (draws
+  rect/ellipse/line/text into the PDF at the same normalised-fraction → point conversion
+  every other cover measurement already uses, offset by `bleedPt` since the media box
+  extends past the trim edge). No new history-store wiring needed anywhere: every mutation
+  is a full `elements` array replacement handed to the existing `onCommit({ elements })` →
+  `updatePageContentWithHistory`, which already snapshots/restores whole `content` objects
+  generically.
+- **Interactive on-screen layer** (`structuralPages/coverElementLayer.tsx`): drag-to-move
+  and 4-corner drag-to-resize, computed entirely in container-relative fractions via
+  `getBoundingClientRect()` at gesture start (zoom-agnostic — the same approach
+  `CoverFocalPointPicker` already uses, not `pageBox.widthPx` pixel math), live-previewing
+  locally and committing exactly once on pointer-up (one undo step per gesture, matching
+  `CoverNudgeHandle`'s existing convention). A small floating toolbar (send back/bring
+  forward/delete) appears above the selected element. Used identically by `cover.tsx` and
+  `backCover.tsx`, sandwiched between the background image/overlay and the title/
+  subtitle/author text block in the DOM, same stacking order in both.
+- **Add-element menu** (`structuralPages/coverElementToolbar.tsx`): a small dropdown
+  (Rectangle/Ellipse/Line/Text box), shown top-right whenever the page is selected —
+  adding an element also selects it immediately so a user can start styling/dragging it
+  without a second click.
+- **Inspector property panel** (`layout/inspector/CoverElementPanel.tsx`): shown above the
+  rest of the Cover/Back Cover fields whenever `selectionStore.selectedCoverElementId` is
+  set. Text elements get content/font/align/italic/size/colour; shapes get fill/fill
+  opacity/stroke/stroke width, plus corner radius for rectangles. Position/size are
+  deliberately not editable here — dragging on canvas is the intended gesture, matching
+  `docs/COVER_CANVAS_PLAN.md`'s interaction design.
+- **Selection state** (`store/selectionStore.ts`): new `selectedCoverElementId` +
+  `selectCoverElement`, cleared by every existing selection action
+  (`select`/`selectForEdit`/`selectStructuralPage`/`clear`) so switching away from a cover
+  can never leave a stale element "selected" against the wrong page.
+- **Deliberately deferred past Milestone 1** (now tracked in `docs/ROADMAP.md` Phase E):
+  rotation, icons/badges (the pre-existing "cover accessories" item — closing this is
+  Milestone 2, now that the underlying element/layer system exists), secondary images,
+  smart alignment/snap guides, grouping, on-canvas double-click text editing (the whole
+  element box already doubles as this layer's drag target, so click-to-select-and-drag and
+  double-click-to-edit-text would fight each other on the same surface — text is edited via
+  the Inspector panel instead), and the wrap-aware front+spine+back view.
+
+`tsc -b` clean (see the narrowing-gotcha note above for the one real issue hit and fixed
+along the way). `npm run build`'s bundling stage and `npx oxlint` remain blocked by the
+same pre-existing sandbox `node_modules` corruption documented in Phase 53's verification
+caveat — not re-litigated here, still unresolved, still needs a real environment to get a
+green build/lint signal before the next deploy.
+
 ## Recommended next task
 All five items from the original "think about it" request plus both
-chapter-management follow-ups (add, reorder) are shipped. A "cover
-accessories" feature (decorative badge/seal + an icon feature-strip band,
-seen on the real covers the user shared two sessions ago) remains
-deliberately deferred, discussed but not yet built. Absent further
-direction, Phase F's remaining items (project-creation wizard, outlining
-templates, word-count goals, distraction-free writing mode) are next per
-`docs/ROADMAP.md`.
+chapter-management follow-ups (add, reorder) are shipped, plus Phase 53's five audit
+fixes and Phase 54's cover-canvas Milestone 1. The highest-leverage remaining items
+surfaced along the way: the real fix for the Phase J renderer-freeze item (worker-based
+or otherwise), and Milestone 2 of the cover canvas (icons/badges, closing the
+long-deferred "cover accessories" item now that the element system exists). Absent
+further direction, Phase F's remaining items
+(project-creation wizard, outlining templates, word-count goals,
+distraction-free writing mode) are next per `docs/ROADMAP.md`.

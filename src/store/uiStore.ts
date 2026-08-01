@@ -26,6 +26,12 @@ interface UiStoreState {
    * the user opens, same reasoning as `showThumbnails`. See
    * docs/STATUS.md Phase 46. */
   showCoverSafeZone: boolean
+  /** Whether `ProjectSettingsDialog` (rendered once, in `Toolbar`) is open.
+   * Lifted here — rather than kept as `Toolbar`-local state — so the
+   * Inspector's Theme tab can open it too, e.g. its "Change theme…" button.
+   * Deliberately excluded from persistence (see `partialize` below): a
+   * dialog shouldn't reopen itself after a page reload. */
+  projectSettingsOpen: boolean
 }
 
 interface UiStoreActions {
@@ -38,6 +44,7 @@ interface UiStoreActions {
   toggleThumbnails: () => void
   setWorkspaceMode: (mode: WorkspaceMode) => void
   toggleCoverSafeZone: () => void
+  setProjectSettingsOpen: (open: boolean) => void
 }
 
 /**
@@ -57,6 +64,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       showThumbnails: true,
       workspaceMode: 'manuscript',
       showCoverSafeZone: false,
+      projectSettingsOpen: false,
 
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -67,10 +75,12 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       toggleThumbnails: () => set((state) => ({ showThumbnails: !state.showThumbnails })),
       setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
       toggleCoverSafeZone: () => set((state) => ({ showCoverSafeZone: !state.showCoverSafeZone })),
+      setProjectSettingsOpen: (open) => set({ projectSettingsOpen: open }),
     }),
     {
       name: 'book-studio.ui',
       version: 1,
+      partialize: ({ projectSettingsOpen: _projectSettingsOpen, ...rest }) => rest,
     },
   ),
 )

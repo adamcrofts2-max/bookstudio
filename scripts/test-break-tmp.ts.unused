@@ -1,0 +1,18 @@
+import { paginate } from '../src/renderer/paginate'
+import type { Chapter, ContentBlock } from '../src/types/content'
+
+const blocks: ContentBlock[] = [
+  { id: 'b1', type: 'heading', text: 'Section', level: 3 },
+  { id: 'b2', type: 'paragraph', html: 'First para', breakAfter: true } as ContentBlock,
+  { id: 'b3', type: 'paragraph', html: 'Second para' } as ContentBlock,
+  { id: 'b4', type: 'paragraph', html: 'Third para' } as ContentBlock,
+]
+
+const chapter: Chapter = { id: 'ch1', title: 'Chapter One', order: 0, blocks }
+
+const result = paginate([chapter], () => 20, 1000, 0)
+
+console.log('Total pages:', result.pages.length)
+for (const p of result.pages) {
+  console.log(p.kind, p.blocks.map((b) => b.id))
+}

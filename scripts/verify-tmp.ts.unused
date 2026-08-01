@@ -1,0 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { parseMarkdown } from '../src/parser/markdown'
+
+const source = readFileSync(process.argv[2], 'utf-8')
+const chapters = parseMarkdown(source, 'Fallback Title')
+console.log(`Total chapters: ${chapters.length}`)
+console.log(chapters.map((c) => c.title).join('\n'))

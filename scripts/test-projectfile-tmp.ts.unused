@@ -1,0 +1,72 @@
+import { buildProjectFile } from '../src/projectFile/exportProjectFile'
+import { parseProjectFile } from '../src/projectFile/importProjectFile'
+import type { Manuscript } from '../src/types/content'
+import type { Project } from '../src/types/project'
+import { DEFAULT_PROJECT_SETTINGS } from '../src/types/project'
+
+async function main() {
+  const manuscript: Manuscript = {
+    chapters: [
+      {
+        id: 'ch1',
+        title: 'Chapter One',
+        order: 0,
+        blocks: [
+          { id: 'b1', type: 'heading', text: 'Intro', level: 2 },
+          { id: 'b2', type: 'paragraph', html: 'Hello <strong>world</strong>.' },
+          { id: 'b3', type: 'image', assetId: 'asset1', rotation: 0, widthPercent: 100 },
+        ],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'test.md',
+  }
+
+  const project: Project = {
+    id: 'proj1',
+    name: 'Test Book',
+    category: 'novel',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    settings: { ...DEFAULT_PROJECT_SETTINGS },
+  }
+
+  const fakeImageBytes = new Uint8Array([137, 80, 78, 71, 1, 2, 3, 4, 5]) // not a real PNG, just test bytes
+  const asset = {
+    id: 'asset1',
+    projectId: 'proj1',
+    name: 'photo.png',
+    mimeType: 'image/png',
+    size: fakeImageBytes.length,
+    width: 100,
+    height: 100,
+    createdAt: new Date().toISOString(),
+  }
+
+  const blob = await buildProjectFile({
+    project,
+    manuscript,
+    structuralPages: [],
+    notes: [],
+    customTheme: null,
+    assets: [asset],
+    getAssetBlob: async (id) => (id === 'asset1' ? new Blob([fakeImageBytes as BlobPart]) : undefined),
+  })
+
+  console.log('Zip blob size:', blob.size)
+
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  const bundle = await parseProjectFile(bytes)
+
+  console.log('Manifest:', bundle.manifest)
+  console.log('Chapters:', bundle.manuscript.chapters.length)
+  console.log('Blocks:', bundle.manuscript.chapters[0].blocks.map((b) => b.type))
+  console.log('Assets restored:', bundle.assets.length)
+  const restoredBytes = new Uint8Array(await bundle.assets[0].blob.arrayBuffer())
+  console.log('Asset bytes match:', restoredBytes.length === fakeImageBytes.length && restoredBytes.every((b, i) => b === fakeImageBytes[i]))
+}
+
+main().catch((err) => {
+  console.error('FAILED:', err)
+  process.exit(1)
+})

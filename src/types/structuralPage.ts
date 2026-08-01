@@ -135,6 +135,82 @@ export type CoverTextFieldId = 'title' | 'subtitle' | 'author'
  * elements. Phase 49. */
 export type BackCoverTextFieldId = 'blurb' | 'authorBio'
 
+/**
+ * A free-form drag-and-drop element on a Cover/Back Cover, layered above the
+ * background image/overlay and below the title/subtitle/author text block
+ * (matching the DOM order `cover.tsx`/`backCover.tsx` already render in).
+ * Purely additive alongside every other `CoverPage`/`BackCoverPage` field —
+ * see `docs/COVER_CANVAS_PLAN.md` for the full design and why there's no
+ * `rotation` field yet (Milestone 1 ships no rotate handle, and a field only
+ * some renderers honoured would be exactly the WYSIWYG-drift risk
+ * `structuralPages/registry.ts`'s `StructuralPageTypeDefinition` doc comment
+ * warns about).
+ */
+export type CoverElementKind = 'rect' | 'ellipse' | 'line' | 'text'
+
+/**
+ * Shared fields, deliberately WITHOUT `kind` — the discriminant is declared
+ * independently on each leaf type below instead, exactly matching how
+ * `StructuralPage`'s own `type` discriminant is only ever declared on each
+ * leaf interface (`CoverPage`, `TitlePage`, ...), never on
+ * `BaseStructuralPage`. Declaring a discriminant in a shared base and
+ * re-narrowing it in each `extends`-ing subtype is a known TypeScript
+ * control-flow-narrowing pitfall — `if (el.kind === 'rect') ... else if
+ * (el.kind === 'ellipse') ... else if (el.kind === 'line') ... else { ... }`
+ * silently fails to narrow the final `else` to `CoverTextElement` when
+ * `kind` is declared (then overridden) in a common base, even though the
+ * exact same check narrows correctly when each leaf declares `kind`
+ * independently, as it does here.
+ */
+interface BaseCoverElement {
+  id: string
+  /** Normalised 0..1 fractions of the TRIM box (not the bleed box) — same
+   * convention as `verticalNudge` below, so an element stays in the same
+   * proportional place across trim-size changes and converts identically to
+   * both the screen coordinate space and the PDF's point space. */
+  x: number
+  y: number
+  width: number
+  height: number
+  /** Paint order among elements only. */
+  zIndex: number
+}
+
+/** A rectangle, ellipse, or straight horizontal line. `cornerRadius` only
+ * applies to `'rect'`; ignored for the other two kinds. */
+export interface CoverShapeElement extends BaseCoverElement {
+  kind: 'rect' | 'ellipse' | 'line'
+  fill?: string
+  /** `0..1`; absent means fully opaque. */
+  fillOpacity?: number
+  stroke?: string
+  /** px — same physical convention as `theme.typography.bodySize`
+   * (calibrated to real mm via `PX_PER_MM`, not an arbitrary CSS unit), so
+   * it converts to PDF points via the same `PX_TO_PT` every other size in
+   * this codebase already uses. */
+  strokeWidth?: number
+  cornerRadius?: number
+}
+
+/** A free, independently-positioned text box — distinct from Cover's own
+ * title/subtitle/author fields, which stay exactly as they are. */
+export interface CoverTextElement extends BaseCoverElement {
+  kind: 'text'
+  text: string
+  color?: string
+  fontChoice?: CoverFontChoice
+  weight?: number
+  italic?: boolean
+  /** px, same convention as `CoverShapeElement.strokeWidth` — deliberately
+   * an absolute size, not a scale multiplier like `CoverTypographyOverride
+   * .sizeScale`, since a free text box has no existing fixed size to scale
+   * from. */
+  fontSize?: number
+  align?: 'left' | 'center' | 'right'
+}
+
+export type CoverElement = CoverShapeElement | CoverTextElement
+
 export interface CoverPage extends BaseStructuralPage {
   type: 'cover'
   content: {
@@ -164,6 +240,10 @@ export interface CoverPage extends BaseStructuralPage {
      * Absent/empty means everything shows, the pre-existing behaviour.
      * Phase 49. */
     hiddenFields?: CoverTextFieldId[]
+    /** Free-form drag-and-drop shapes/text — see `CoverElement` above and
+     * `docs/COVER_CANVAS_PLAN.md`. Absent/empty renders identically to
+     * every project created before this milestone. */
+    elements?: CoverElement[]
   }
 }
 
@@ -285,6 +365,8 @@ export interface BackCoverPage extends BaseStructuralPage {
     /** See `CoverPage.content.hiddenFields` — same idea, the Back Cover's
      * own two text elements. Phase 49. */
     hiddenFields?: BackCoverTextFieldId[]
+    /** See `CoverPage.content.elements`. */
+    elements?: CoverElement[]
   }
 }
 

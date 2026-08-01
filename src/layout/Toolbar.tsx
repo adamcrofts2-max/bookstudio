@@ -71,7 +71,6 @@ function IconButton({
 
 /** Fixed top toolbar: project identity, editing controls, appearance, export. */
 export function Toolbar({ project }: ToolbarProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
@@ -83,6 +82,10 @@ export function Toolbar({ project }: ToolbarProps) {
   const toggleInspector = useUiStore((s) => s.toggleInspector)
   const workspaceMode = useUiStore((s) => s.workspaceMode)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
+  // Lifted to uiStore (not local state) so the Inspector's Theme tab can
+  // open this same dialog — see uiStore.ts's `projectSettingsOpen` comment.
+  const settingsOpen = useUiStore((s) => s.projectSettingsOpen)
+  const setSettingsOpen = useUiStore((s) => s.setProjectSettingsOpen)
   const { canExport, busy: exporting, error: exportError, runExport } = useExportPdf(project)
   const { canExport: canExportEpub, busy: exportingEpub, error: epubExportError, runExport: runExportEpub } = useExportEpub(project)
   const { canExport: canExportHtml, busy: exportingHtml, runExport: runExportHtml } = useExportHtmlBook(project)

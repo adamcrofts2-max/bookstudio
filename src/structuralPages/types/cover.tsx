@@ -26,8 +26,12 @@ import {
   resolveCoverSecondaryColor,
 } from '@/structuralPages/coverTypography'
 import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
+import { CoverElementLayer } from '@/structuralPages/coverElementLayer'
+import { CoverElementToolbar } from '@/structuralPages/coverElementToolbar'
+import { drawCoverElementsPdf } from '@/structuralPages/coverElements'
 import { useAssetStore } from '@/store/assetStore'
 import { useUiStore } from '@/store/uiStore'
+import { useSelectionStore } from '@/store/selectionStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
 import { pickFont, pickItalicFont } from '@/pdf/fonts'
@@ -46,6 +50,8 @@ import { cn } from '@/lib/utils'
 function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const showSafeZone = useUiStore((s) => s.showCoverSafeZone)
+  const selectedElementId = useSelectionStore((s) => s.selectedCoverElementId)
+  const selectCoverElement = useSelectionStore((s) => s.selectCoverElement)
   // Live-drag preview state — never persisted until the handle's pointer-up
   // fires `onCommit`, so undo history gets exactly one entry per drag
   // gesture. `null` while not dragging, meaning "use the page's committed
@@ -111,7 +117,29 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
           />
         </div>
       )}
+      {selected && (
+        <div className="absolute right-4 top-4 z-10">
+          <CoverElementToolbar
+            elements={page.content.elements}
+            onAdd={(elements, newId) => {
+              onCommit({ elements })
+              selectCoverElement(newId)
+            }}
+          />
+        </div>
+      )}
       {showSafeZone && <CoverSafeZoneGuide pageBox={pageBox} />}
+      {/* Free-form shapes/text (docs/COVER_CANVAS_PLAN.md) — above the
+       * background image/overlay, below the title/subtitle/author block
+       * below, matching every existing cover element's stacking order. */}
+      <CoverElementLayer
+        elements={page.content.elements}
+        theme={theme}
+        pageSelected={selected}
+        selectedElementId={selectedElementId}
+        onSelectElement={selectCoverElement}
+        onCommitElements={(elements) => onCommit({ elements })}
+      />
       <div
         className="absolute inset-0 flex flex-col items-center gap-5 text-center"
         style={{
@@ -220,6 +248,15 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
       color: hexToPdfColor(tintHex(theme.page.accent, 0.85)),
     })
   }
+
+  // Free-form shapes/text — above the background/overlay, below the title
+  // block drawn below, matching the on-screen `CoverElementLayer`'s
+  // stacking order. Trim-box points (not the bleed-extended media box) are
+  // what `CoverElement.x/y/width/height`'s normalised 0..1 fractions are
+  // relative to.
+  const trimWidthPt = pageBox.widthPx * PX_TO_PT
+  const trimHeightPt = pageBox.heightPx * PX_TO_PT
+  drawCoverElementsPdf(ctx, page.content.elements, bleedPt, trimWidthPt, trimHeightPt)
 
   const typography = page.content.typography
   // Same override-wins, else-automatic rule as the on-screen renderer —

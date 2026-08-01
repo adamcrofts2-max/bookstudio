@@ -1,0 +1,17 @@
+import { readFileSync } from 'node:fs'
+import { parseMarkdown } from '../src/parser/markdown'
+
+const source = readFileSync(process.argv[2], 'utf-8')
+const chapters = parseMarkdown(source, 'Fallback Title')
+
+console.log(`Total chapters: ${chapters.length}\n`)
+for (const c of chapters) {
+  const kinds = c.blocks.map((b) => b.type)
+  const headingOnly = kinds.length > 0 && kinds.every((k) => k === 'heading')
+  console.log(`- "${c.title}" — ${c.blocks.length} blocks [${[...new Set(kinds)].join(', ')}]${headingOnly ? '  <-- HEADING ONLY' : ''}`)
+}
+
+const hasContentsList = chapters.some((c) =>
+  c.blocks.some((b) => b.type === 'list' && b.items.some((item) => /^\[.*\]\(#/.test(item))),
+)
+console.log(`\nContains a broken markdown-link list (old bug symptom): ${hasContentsList}`)

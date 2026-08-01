@@ -3,11 +3,12 @@ import { Palette } from 'lucide-react'
 import { useUiStore, type InspectorTab } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
-import { EmptyState } from '@/components/common/EmptyState'
+import { Button } from '@/components/ui/button'
 import { TypographyPanel } from '@/layout/inspector/TypographyPanel'
 import { ImagePanel } from '@/layout/inspector/ImagePanel'
 import { StructuralPagePanel } from '@/layout/inspector/StructuralPagePanel'
 import { NotesPanel } from '@/layout/inspector/NotesPanel'
+import { resolveTheme } from '@/theme/presets'
 import type { Project } from '@/types'
 
 interface InspectorProps {
@@ -36,6 +37,7 @@ export function Inspector({ project }: InspectorProps) {
   const collapsed = useUiStore((s) => s.inspectorCollapsed)
   const activeTab = useUiStore((s) => s.inspectorTab)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
+  const setProjectSettingsOpen = useUiStore((s) => s.setProjectSettingsOpen)
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
 
   if (collapsed) return null
@@ -46,9 +48,13 @@ export function Inspector({ project }: InspectorProps) {
     <aside className="flex h-full w-[300px] shrink-0 flex-col border-l border-border bg-panel">
       <div className="p-3">
         <Tabs value={activeTab} onValueChange={(v) => setInspectorTab(v as InspectorTab)}>
-          <TabsList className="w-full">
+          {/* px-1.5/text-xs/gap-0.5 (tighter than this component's px-3/text-sm/gap-1
+           * defaults) — with 5 tabs in a 300px panel, the default padding genuinely
+           * overflowed the row (labels truncated on both edges depending on scroll
+           * position). See docs/STATUS.md's audit-fixes entry. */}
+          <TabsList className="w-full gap-0.5">
             {TABS.map((tab) => (
-              <TabsTrigger key={tab.id} value={tab.id} className="flex-1">
+              <TabsTrigger key={tab.id} value={tab.id} className="flex-1 px-1.5 text-xs">
                 {tab.label}
               </TabsTrigger>
             ))}
@@ -80,11 +86,24 @@ export function Inspector({ project }: InspectorProps) {
           </TabsContent>
 
           <TabsContent value="theme">
-            <EmptyState
-              icon={Palette}
-              title="Theme editing arrives in Phase 4"
-              description={`Currently using "${settings.themeId.replace('-', ' ')}".`}
-            />
+            {/* Previously a permanent "Theme editing arrives in Phase 4" placeholder,
+             * even though a full Theme Gallery has existed in Project Settings since
+             * Phase 43 — misleading, since a user landing on this tab had no way to
+             * know changing themes was possible at all. Now opens that same real
+             * gallery instead of duplicating it here. See docs/STATUS.md's
+             * audit-fixes entry. */}
+            <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
+              <Palette className="size-6 text-text-muted" />
+              <div className="flex flex-col gap-1">
+                <p className="text-sm font-medium text-text-primary">{resolveTheme(settings.themeId).name}</p>
+                <p className="text-xs text-text-secondary">
+                  Themes control colour, type and layout — switching one never touches your manuscript.
+                </p>
+              </div>
+              <Button variant="secondary" size="sm" onClick={() => setProjectSettingsOpen(true)}>
+                Change theme…
+              </Button>
+            </div>
           </TabsContent>
         </Tabs>
       </div>

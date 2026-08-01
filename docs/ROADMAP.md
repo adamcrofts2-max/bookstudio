@@ -267,11 +267,35 @@ daily use of everything built so far.)*
       export bugs: the PDF previously printed a literal "Untitled"/blurb
       placeholder string when those fields were left empty, which a
       genuinely photo-only cover would otherwise have shipped with
-- [ ] Cover "accessories" — decorative badge/seal and an icon feature-strip
-      band (as seen on real published non-fiction covers) — a new kind of
-      overlay element, not a property on the existing title/subtitle/
-      author fields; scoped out of Phase 49 deliberately. Would reuse the
-      same colour/font system once built
+- [x] Free-form drag-and-drop cover elements (Canva-style rectangles/
+      ellipses/lines/text boxes) — Milestone 1 shipped 2026-08-01 (Phase
+      54): `CoverPage`/`BackCoverPage` gained an additive `elements` array,
+      drag-to-move + corner-drag-to-resize on canvas, an Inspector property
+      panel, and matching PDF export. See `docs/COVER_CANVAS_PLAN.md`.
+      Deliberately deferred out of Milestone 1 (tracked below): rotation,
+      icons/badges, secondary images, smart alignment/snap guides,
+      grouping, on-canvas double-click text editing, and the wrap-aware
+      front+spine+back view.
+- [ ] Cover elements: icons/badges (decorative badge/seal + an icon
+      feature-strip band, as seen on real published non-fiction covers —
+      the exact pattern used in the user's own "Forest Gardening for
+      Beginners" test cover) — Milestone 2 of the free-form element canvas
+      above, now that the underlying element/layer system exists
+- [ ] Cover elements: rotation (data model deliberately has no `rotation`
+      field yet — see `docs/COVER_CANVAS_PLAN.md` for why one shouldn't be
+      added without a rotate handle in the same milestone)
+- [ ] Cover elements: secondary images (author photo, publisher/series
+      logo) as their own element kind, reusing `CoverImageFocalPoint`
+- [ ] Cover elements: smart alignment/snap guides (to the safe-zone guide,
+      trim/bleed edges, and other elements) and grouping
+- [ ] Cover elements: on-canvas double-click text editing (Milestone 1
+      edits text content via the Inspector panel only — see
+      `docs/COVER_CANVAS_PLAN.md`'s interaction section for why)
+- [ ] Wrap-aware front+spine+back cover view — a toggle showing Cover/
+      spine-gutter/Back Cover side by side (using the spine width already
+      calculated live) so a user can eyeball whether an image or rule
+      would look continuous across the wrap, without merging the two
+      pages' underlying data
 - [x] More cover font families beyond Inter/Source Serif 4 — shipped
       2026-07-31 (Phase 50): the user downloaded and dropped in 7 Google
       Fonts families (Anton, Bebas Neue, Oswald, Playfair Display, DM
@@ -356,10 +380,21 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] Real browser end-to-end tests (today's `smoke-test.ts` is jsdom-only)
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
-- [ ] Fix/confirm the stray partially-installed `node_modules` artifact
+- [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
+      confirmed concretely in Phase 53 (2026-07-31): `@tailwindcss/node/dist/
+      index.mjs` is truncated mid-file in this sandbox, breaking `vite
+      build`'s config load, and `oxlint`'s native binding bus-errors. No
+      registry access to `npm install` a repair here — needs a real
+      `npm install` in a normal dev environment. See STATUS.md Phase 53's
+      verification caveat.
 - [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
 - [ ] Full virtualisation of `LazySpread` (currently mount-only, never unmounts)
-- [ ] Profile and fix the structural-page mutation freeze (15–30s on a 17-chapter project)
+- [ ] Profile and fix the structural-page mutation freeze (15–30s on a
+      17-chapter project) — Phase 53 (2026-07-31) added a "Reviewing…"
+      loading state to the Virtual Editor's "Review Entire Book" button so
+      the freeze is at least visible/honest instead of looking hung, but
+      the underlying synchronous main-thread block is unfixed; this item
+      stays open
 - [ ] Automated accessibility (WCAG) audit beyond Radix's built-in semantics
 - [ ] UI internationalisation / localisation
 

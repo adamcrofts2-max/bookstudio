@@ -320,7 +320,13 @@ export function Sidebar({ project }: SidebarProps) {
                     <div
                       key={chapter.id}
                       className={cn(
-                        'group flex items-center gap-2.5 rounded-[var(--radius-button)] px-2.5 py-2 text-left text-sm font-medium transition-colors duration-150',
+                        // gap-1 (not gap-2.5) between the title button and the four
+                        // action icons — matches StructuralPageRow above. With four
+                        // icons now on this row (up/down/rename/delete, since Phase
+                        // 52 added reordering), the wider gap left too little room
+                        // for the title and truncated it on hover — see
+                        // docs/STATUS.md's audit-fixes entry.
+                        'group flex items-center gap-1 rounded-[var(--radius-button)] px-2.5 py-2 text-left text-sm font-medium transition-colors duration-150',
                         selectedChapterId === chapter.id
                           ? 'bg-selection text-text-primary'
                           : 'text-text-secondary hover:bg-hover hover:text-text-primary',
@@ -333,7 +339,9 @@ export function Sidebar({ project }: SidebarProps) {
                         className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                       >
                         <span className="text-xs tabular-nums text-text-muted">{i + 1}</span>
-                        <span className="truncate">{chapter.title}</span>
+                        {/* title attribute keeps the full title reachable via native
+                         * hover tooltip even when a very long title still truncates */}
+                        <span className="truncate" title={chapter.title}>{chapter.title}</span>
                       </button>
                       <button
                         type="button"

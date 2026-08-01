@@ -24,6 +24,7 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { COVER_LAYOUT_OPTIONS } from '@/structuralPages/coverLayout'
 import { computeSpineWidthIn, PAPER_TYPE_LABELS, MIN_PAGE_COUNT_FOR_SPINE_TEXT, type CoverPaperType } from '@/cover/spineWidth'
 import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibility'
+import { CoverElementPanel } from '@/layout/inspector/CoverElementPanel'
 import type {
   StructuralPage,
   CoverTextLayout,
@@ -411,6 +412,8 @@ function SpineWidthInfo({ projectId }: { projectId: string }) {
 export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
   const pages = useStructuralPageStore((s) => s.byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES)
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
+  const selectedCoverElementId = useSelectionStore((s) => s.selectedCoverElementId)
+  const selectCoverElement = useSelectionStore((s) => s.selectCoverElement)
   const page = pages.find((p) => p.id === selectedStructuralPageId)
 
   if (!page) {
@@ -427,6 +430,15 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
   const def = getStructuralPageTypeDefinition(page.type)
   const patch = (updates: Partial<StructuralPage['content']>) => updatePageContentWithHistory(projectId, page.id, updates)
 
+  // A selected free-form cover element (docs/COVER_CANVAS_PLAN.md) takes over
+  // this panel with its own property editor — only meaningful on Cover/Back
+  // Cover, and only while that exact element still exists (it may have just
+  // been deleted from the canvas toolbar).
+  const selectedElement =
+    (page.type === 'cover' || page.type === 'back-cover') && selectedCoverElementId
+      ? page.content.elements?.find((e) => e.id === selectedCoverElementId)
+      : undefined
+
   return (
     <div className="flex flex-col gap-4 px-1 pt-1">
       <div className="flex flex-col gap-1">
@@ -435,6 +447,18 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
       </div>
 
       <Separator />
+
+      {selectedElement && (page.type === 'cover' || page.type === 'back-cover') && (
+        <>
+          <CoverElementPanel
+            element={selectedElement}
+            elements={page.content.elements}
+            onChange={(elements) => patch({ elements })}
+            onDeselect={() => selectCoverElement(null)}
+          />
+          <Separator />
+        </>
+      )}
 
       {(page.type === 'cover' || page.type === 'title-page') && (
         <>
