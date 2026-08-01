@@ -4959,11 +4959,44 @@ new dialog step.
 `tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
 phase since 55).
 
+## Phase 71 — Outlining / story-structure templates (2026-08-01)
+
+The other half of this phase's "wizard + templates" pairing. Reuses Layer 0's
+`TimelineEvent` collection (which already has the ordered-beat shape this needs, and
+gained manual reordering in Phase 69) rather than inventing a new data model —
+"outlining" is just seeding the Timeline with a structure's beats up front instead of
+one at a time.
+
+- **`data/outlineTemplates.ts`.** Five templates as plain data (`OutlineTemplate {
+  id, label, description, beats: OutlineBeat[] }`): Three-Act Structure (8 beats), The
+  Hero's Journey (12), Save the Cat Beat Sheet (15), Problem → Solution for
+  non-fiction (9), Picture Book Arc for children's (6) — spanning the `ProjectCategory`
+  space Phase 70's wizard already established. Beat names are standard, widely-taught
+  narrative-theory/screenwriting vocabulary; every beat's one-line description is
+  original, not quoted from any source. `applyOutlineTemplate(projectId, template,
+  startOrder)` seeds each beat as a new `TimelineEvent` via `addLayer0EntityWithHistory`
+  — purely additive, always appended after `startOrder` (the current timeline length),
+  never touching or reordering events that already exist.
+- **`layout/planning/OutlineTemplatesPanel.tsx`.** A card per template (label,
+  description, beat count) with an "Apply to Timeline" button; the button label switches
+  to "Add N events to Timeline" once the project already has timeline events, so
+  applying a second template is transparently additive rather than looking like a
+  silent overwrite.
+- **`PlanningShell.tsx`.** New "Outline Templates" nav entry (`ListTree` icon) above
+  "Generate Prompt"/"Paste Response." A third copy-pasted nav-button block would have
+  repeated itself for the third time, so this phase also pulled the shared markup into
+  a small `ToolNavButton` component used by all three tool entries — the entity-kind
+  rows above stay separate since they render a count badge these never need.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
+phase since 55).
+
 ## Recommended next task
-Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
+Phase F's two "wizard + templates" items are both done. Reasonable next pieces: (1) the
 Continuity checker, extending the Virtual Editor's checker architecture over Layer 0
-data; (2) outlining/story-structure templates, the other half of this phase's
-"wizard + templates" pairing; (3) the bigger "insert AI-drafted prose into the
-manuscript with a reviewable diff" feature flagged in Phase 68. Also still open and
-worth folding in opportunistically: manuscript search/find, real spellcheck, and a
-thesaurus (docs/ROADMAP.md Phase B/F, flagged 2026-08-01).
+data — the last major unbuilt AI-Workspace item; (2) word-count goals/writing-session
+tracking, or distraction-free writing mode, both independent of everything shipped so
+far this phase; (3) the bigger "insert AI-drafted prose into the manuscript with a
+reviewable diff" feature flagged in Phase 68. Also still open and worth folding in
+opportunistically: manuscript search/find, real spellcheck, and a thesaurus
+(docs/ROADMAP.md Phase B/F, flagged 2026-08-01).

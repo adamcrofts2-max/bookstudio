@@ -496,7 +496,21 @@ daily use of everything built so far.)*
       inventing new schema. Every seeded entity's own text says "starter example, edit
       or delete," and Layer 0 is never read by export, so an unedited example can
       never leak into a shipped book.
-- [ ] Outlining / story-structure templates
+- [x] Outlining / story-structure templates — shipped 2026-08-01 (Phase 71).
+      `data/outlineTemplates.ts` holds five well-known structures (Three-Act
+      Structure, The Hero's Journey, Save the Cat Beat Sheet, Problem → Solution for
+      non-fiction, Picture Book Arc for children's) as plain beat-title/description
+      data — `applyOutlineTemplate` seeds each beat as a new `TimelineEvent`, always
+      appended after whatever's already on the timeline (never overwrites or
+      reorders existing events), through the same `addLayer0EntityWithHistory` a
+      manual add uses, so applying (and undoing) a template works exactly like any
+      other Layer 0 edit. `layout/planning/OutlineTemplatesPanel.tsx` is the picker
+      UI — a card per template with an "Apply to Timeline" button — wired into
+      `PlanningShell.tsx` as a third tool nav entry alongside "Generate Prompt"/
+      "Paste Response" (which also got refactored into a shared `ToolNavButton`
+      once a third copy-pasted nav block would have repeated itself). Directly
+      reuses Phase 69's Timeline reorder UI for fine-tuning the seeded beats
+      afterward.
 - [ ] Word-count goals and writing-session tracking — the live total itself
       shipped in Phase B (2026-08-01); this is the bigger daily-goal/
       session-tracking layer on top of it

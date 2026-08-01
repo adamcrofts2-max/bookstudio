@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowLeft, ClipboardPaste, Sparkles } from 'lucide-react'
+import { ArrowLeft, ClipboardPaste, ListTree, Sparkles } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -11,6 +12,7 @@ import { LAYER0_ENTITY_KINDS, LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, typ
 import { EntityListPanel } from '@/layout/planning/EntityListPanel'
 import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
 import { PasteBackPanel } from '@/layout/planning/PasteBackPanel'
+import { OutlineTemplatesPanel } from '@/layout/planning/OutlineTemplatesPanel'
 import type { Project } from '@/types'
 
 interface PlanningShellProps {
@@ -18,10 +20,41 @@ interface PlanningShellProps {
 }
 
 /** The left-hand nav's selection: one of the eight entity categories, or
- * one of the two AI-Workspace tools ("Generate Prompt" / "Paste Response") —
- * living in the same nav rather than a separate top-level control, since
- * they're still squarely part of Layer 0's own screen. */
-type PlanningView = Layer0EntityKind | 'prompt-generator' | 'paste-back'
+ * one of the tool views ("Generate Prompt" / "Paste Response" / "Outline
+ * Templates") — living in the same nav rather than a separate top-level
+ * control, since they're still squarely part of Layer 0's own screen. */
+type PlanningView = Layer0EntityKind | 'prompt-generator' | 'paste-back' | 'outline-templates'
+
+/** One tool-view nav row (icon + label, no count badge) — the shared markup
+ * behind "Generate Prompt"/"Paste Response"/"Outline Templates" below.
+ * Pulled out once a third copy-pasted block would have made this file
+ * repeat itself for the third time; the entity-kind rows above stay
+ * separate since they render a count badge these never need. */
+function ToolNavButton({
+  icon: Icon,
+  label,
+  active,
+  onClick,
+}: {
+  icon: LucideIcon
+  label: string
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-center gap-2 rounded-[var(--radius-button)] px-3 py-2 text-left text-sm transition-colors duration-150',
+        active ? 'bg-[var(--color-accent)]/10 font-medium text-[var(--color-accent)]' : 'text-text-secondary hover:bg-hover hover:text-text-primary',
+      )}
+    >
+      <Icon className="size-3.5 shrink-0" />
+      <span>{label}</span>
+    </button>
+  )
+}
 
 /**
  * Layer 0's own top-level shell — structurally separate from `AppShell`
@@ -83,33 +116,24 @@ export function PlanningShell({ project }: PlanningShellProps) {
 
               <Separator className="my-2" />
 
-              <button
-                type="button"
+              <ToolNavButton
+                icon={ListTree}
+                label="Outline Templates"
+                active={activeView === 'outline-templates'}
+                onClick={() => setActiveView('outline-templates')}
+              />
+              <ToolNavButton
+                icon={Sparkles}
+                label="Generate Prompt"
+                active={activeView === 'prompt-generator'}
                 onClick={() => setActiveView('prompt-generator')}
-                className={cn(
-                  'flex items-center gap-2 rounded-[var(--radius-button)] px-3 py-2 text-left text-sm transition-colors duration-150',
-                  activeView === 'prompt-generator'
-                    ? 'bg-[var(--color-accent)]/10 font-medium text-[var(--color-accent)]'
-                    : 'text-text-secondary hover:bg-hover hover:text-text-primary',
-                )}
-              >
-                <Sparkles className="size-3.5 shrink-0" />
-                <span>Generate Prompt</span>
-              </button>
-
-              <button
-                type="button"
+              />
+              <ToolNavButton
+                icon={ClipboardPaste}
+                label="Paste Response"
+                active={activeView === 'paste-back'}
                 onClick={() => setActiveView('paste-back')}
-                className={cn(
-                  'flex items-center gap-2 rounded-[var(--radius-button)] px-3 py-2 text-left text-sm transition-colors duration-150',
-                  activeView === 'paste-back'
-                    ? 'bg-[var(--color-accent)]/10 font-medium text-[var(--color-accent)]'
-                    : 'text-text-secondary hover:bg-hover hover:text-text-primary',
-                )}
-              >
-                <ClipboardPaste className="size-3.5 shrink-0" />
-                <span>Paste Response</span>
-              </button>
+              />
             </nav>
           </ScrollArea>
         </aside>
@@ -119,6 +143,8 @@ export function PlanningShell({ project }: PlanningShellProps) {
             <PromptGeneratorPanel projectId={project.id} />
           ) : activeView === 'paste-back' ? (
             <PasteBackPanel projectId={project.id} />
+          ) : activeView === 'outline-templates' ? (
+            <OutlineTemplatesPanel projectId={project.id} />
           ) : (
             <EntityListPanel projectId={project.id} kind={activeView} />
           )}
