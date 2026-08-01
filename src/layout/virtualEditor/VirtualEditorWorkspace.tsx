@@ -7,6 +7,7 @@ import { useContentStore } from '@/store/contentStore'
 import { useExportStore } from '@/store/exportStore'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
+import { EMPTY_LAYER0_BIBLE, useLayer0Store } from '@/store/layer0Store'
 import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
@@ -53,6 +54,10 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   // or `assetStore` directly. See docs/STATUS.md Phase 36.
   const structuralPages = useStructuralPageStore((s) => s.byProject[project.id]) ?? EMPTY_STRUCTURAL_PAGES
   const assets = useAssetStore((s) => s.byProject[project.id]) ?? EMPTY_ASSETS
+  // Layer 0's story bible — read here (not inside the Virtual Editor layer
+  // itself) and forwarded into `runReview`, same layer-separation pattern as
+  // `structuralPages`/`assets` above, for the Continuity checker (Phase 74).
+  const layer0Bible = useLayer0Store((s) => s.byProject[project.id]) ?? EMPTY_LAYER0_BIBLE
   const report = useVirtualEditorStore((s) => s.reportsByProject[project.id])
   const isReviewing = useVirtualEditorStore((s) => s.reviewingByProject[project.id] ?? false)
   const findingStatuses = useVirtualEditorStore((s) => s.findingStatusByProject[project.id])
@@ -192,6 +197,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                   project,
                   structuralPages,
                   assets,
+                  layer0Bible,
                 )
               }
             >

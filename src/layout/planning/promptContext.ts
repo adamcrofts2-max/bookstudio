@@ -2,6 +2,7 @@ import type { Chapter, Manuscript } from '@/types/content'
 import type { Layer0Bible, Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION } from '@/types/layer0'
 import { blockPlainText } from '@/virtualEditor/textExtract'
+import { escapeRegExp } from '@/utils/format'
 
 /**
  * Layer 0's context-curation logic — per `docs/AI_WORKSPACE_VISION.md`,
@@ -40,13 +41,6 @@ const PRIMARY_LABEL_KEY: Record<Layer0EntityKind, string> = {
  * the same reason: an event's title ("The bridge collapses") isn't text
  * that literally recurs in a chapter about its aftermath. */
 const AUTO_DETECTABLE_KINDS: Layer0EntityKind[] = ['character', 'location', 'glossaryTerm']
-
-/** Exported for `pasteBackSuggestions.ts`'s identical name-matching need —
- * one escape helper, not two copies of the same regex-special-character
- * list. */
-export function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
 
 /** One entity's display label (name/title/term/rule) — exported for the
  * picker UI's checkbox rows, which need the same label this module prints

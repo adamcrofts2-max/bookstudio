@@ -582,9 +582,29 @@ daily use of everything built so far.)*
       writes to the bible until accepted. Wired into `PlanningShell.tsx` as a
       second AI-Workspace nav entry ("Paste Response") alongside "Generate
       Prompt."
-- [ ] AI Workspace: continuity checker over Layer 0 data, extending the Virtual
-      Editor's checker architecture (Phase C) — flags mismatches between the
-      manuscript and the character/timeline/world-bible data
+- [x] AI Workspace: continuity checker over Layer 0 data, extending the Virtual
+      Editor's checker architecture (Phase C) — shipped 2026-08-01 (Phase 74).
+      New `layer0Bible?: Layer0Bible` field threaded through `CheckerContext`
+      (`virtualEditor/types.ts`) → `runPipeline` → `virtualEditorStore.runReview`,
+      with `VirtualEditorWorkspace.tsx` reading `useLayer0Store` itself and
+      forwarding it — the exact same optional-context-field pattern already used
+      for `project`/`structuralPages`/`assets`; the checker file itself only
+      imports types from `@/types/layer0`, never the store. `checkers/continuity.ts`
+      is deliberately two checks, not the full "Elena's eye colour doesn't match
+      her sheet" semantic vision from `AI_WORKSPACE_VISION.md` (that needs real
+      language understanding no checker here has) — same "small, honest start" as
+      `fieldGuide.ts`: (1) a Character/Location/Glossary Term never mentioned
+      anywhere in the manuscript (word-boundary matching, reusing
+      `promptContext.ts`'s technique book-wide instead of per-chapter, suppressed
+      below 200 characters of real manuscript text so a brand-new project isn't
+      flagged wall-to-wall), and (2) two entries of the same kind sharing a name
+      case-insensitively (almost always an accidental duplicate). New
+      `'continuity'` `IssueCategory`, registered as `CONTINUITY_CHECKERS` in
+      `checkers/index.ts` — no dedicated dashboard score tile, same as
+      `developmental`/`fieldGuide`. Also moved `escapeRegExp` out of
+      `promptContext.ts` into `utils/format.ts` so this checker (a different
+      layer) and `pasteBackSuggestions.ts` share one implementation instead of a
+      cross-layer import into `layout/planning`.
 - [ ] AI Workspace: `ApiKeyProvider` (direct API call, streamed diff) — deferred
       until there's a real story for cost/accounts (Phase G/H)
 

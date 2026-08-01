@@ -5085,11 +5085,97 @@ render-time override rather than a state mutation and should leave `uiStore
 .showThumbnails` itself alone, but this is the kind of prop-plumbing that's easy to get
 subtly wrong without seeing it run.
 
+## Phase 74 — Continuity checker over Layer 0 data (2026-08-01)
+
+The last remaining AI-Workspace item in Phase F: extends the Virtual Editor's checker
+architecture (Phase C) to read Layer 0's story bible — the first checker to cross that
+boundary, and the reason most of this phase's diff is plumbing rather than logic.
+
+- **`virtualEditor/types.ts`.** New optional `layer0Bible?: Layer0Bible` field on
+  `CheckerContext` (type-only import from `@/types/layer0`) — same optional-context
+  pattern as `project`/`structuralPages`/`assets`, documented the same way: checkers
+  that depend on it declare `isApplicable` and return `[]` when it's absent or empty.
+  New `'continuity'` value added to `IssueCategory` and `ISSUE_CATEGORIES` (purely
+  additive — `computeCategoryScores` in `scoring.ts` loops `ISSUE_CATEGORIES`
+  generically, so this needed no scoring-code changes at all). Confirmed
+  `types/layer0.ts`'s "no Layer 2 code may import this file" comment doesn't block
+  this: the Virtual Editor is an independent layer, not Layer 2, per
+  `docs/VIRTUAL_EDITOR.md`, and `AI_WORKSPACE_VISION.md` explicitly names a future
+  Continuity checker as an intended Layer 0 consumer.
+- **`virtualEditor/pipeline.ts` / `store/virtualEditorStore.ts`.** `runPipeline` and
+  `runReview` both gained a trailing optional `layer0Bible?: Layer0Bible` parameter,
+  simply forwarded into `ctx` — no new logic, matching every other optional
+  context field's plumbing exactly.
+- **`layout/virtualEditor/VirtualEditorWorkspace.tsx`.** Reads
+  `useLayer0Store((s) => s.byProject[project.id]) ?? EMPTY_LAYER0_BIBLE` itself (the
+  store's own existing `EMPTY_LAYER0_BIBLE` export, same convention as
+  `EMPTY_STRUCTURAL_PAGES`/`EMPTY_ASSETS`) and passes it through to `runReview` —
+  this workspace already legitimately holds references to every layer;
+  `virtualEditorStore`/`pipeline.ts` still never reach into `layer0Store` directly.
+- **`virtualEditor/checkers/continuity.ts`** (new). Two checkers, deliberately not
+  the full "Elena's eye colour doesn't match her character sheet" semantic-mismatch
+  vision from `AI_WORKSPACE_VISION.md` — that needs real language understanding no
+  checker in this codebase has, so building toward it would mean either faking
+  confidence this system can't earn, or quietly becoming an NLP project. Kept to the
+  same "small, honest start" `fieldGuide.ts` set (2 checkers, not a shallow rule per
+  entity kind):
+  1. **`continuity.unmentioned-bible-entity`** — a Character, Location, or Glossary
+     Term that never appears by name anywhere in the manuscript. Reuses
+     `promptContext.ts`'s word-boundary/escape-and-match technique
+     (`detectMentionedEntityIds`), just applied across every chapter's joined plain
+     text instead of one chapter at a time. `suggestion` severity, `0.4` confidence
+     — a bible entry can legitimately be planned for a later chapter, kept after
+     being cut, or mentioned under a nickname this simple matching can't see, so
+     this is framed as a nudge to check, not an assertion something's wrong.
+     Suppressed entirely below 200 characters of real manuscript text
+     (`MIN_MANUSCRIPT_CHARS_FOR_MENTION_CHECK`) so a brand-new or barely-started
+     project isn't flagged wall-to-wall on its very first review. Timeline Events,
+     References, Illustration Briefs, Style Rules, and Research Notes are excluded
+     for the same reason `promptContext.ts`'s `AUTO_DETECTABLE_KINDS` excludes
+     them — their text isn't the kind of thing that literally recurs as a name in
+     prose.
+  2. **`continuity.duplicate-entity-name`** — two entries of the same kind sharing a
+     name, case-insensitively. `minor` severity, `0.7` confidence — two bible
+     entries genuinely can't share an identity, so this is closer to an assertion
+     than a nudge, but not `major`/`critical` since it's still just a naming
+     collision, never a content problem.
+  Both checkers attribute their finding to the manuscript's first chapter
+  (`ctx.manuscript.chapters[0]?.id`) since neither describes a specific chapter —
+  same fallback `fieldGuide.ts`'s reference-apparatus checker already uses for the
+  same reason. Registered as `CONTINUITY_CHECKERS` in `checkers/index.ts`; no
+  dedicated `SCORE_TILES` entry, same precedent as `developmental`/`fieldGuide`.
+- **`utils/format.ts`.** Moved `escapeRegExp` here from `layout/planning
+  /promptContext.ts` (which re-exported it solely for `pasteBackSuggestions.ts`'s
+  identical need) so this checker — a different layer, not part of `layout/planning`
+  — could reuse the same implementation without an awkward cross-layer import.
+  `promptContext.ts` and `pasteBackSuggestions.ts` both now import it from
+  `utils/format.ts` directly; behaviour is unchanged, this is a pure move.
+- Verified the checker logic directly (not just via `tsc`) with a standalone `tsx`
+  script exercising both checkers against constructed fixtures before writing this
+  up: confirmed an unmentioned character is flagged and a mentioned one (matched via
+  its actual chapter text) isn't, confirmed a case-insensitive duplicate name pair
+  produces exactly one grouped finding, confirmed both checkers correctly return `[]`
+  for an empty bible or a manuscript with no chapters, and confirmed the 200-character
+  threshold suppresses the unmentioned-entity check on a near-empty manuscript. Left
+  untracked (not committed) per this sandbox's established smoke-test-file handling —
+  the mount doesn't support deleting a file it created, so it stays on disk excluded
+  from `git add` rather than committed.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end in the actual running app (same
+sandbox blocker as every phase since 55) — worth a live check that the "Review Entire
+Book" dashboard groups `continuity` findings correctly under `formatCategory`'s
+dynamic camelCase-to-spaced-words rendering (expected to Just Work, since it's driven
+entirely by whatever categories are present in `report.findings`, no hardcoded list to
+update — but not yet seen rendered).
+
 ## Recommended next task
-Per the settled build order (Phase F before D/B), Phase F's item list is now down to
-one: the Continuity checker, extending the Virtual Editor's checker architecture over
-Layer 0 data — the last major unbuilt AI-Workspace item, and probably the natural next
-piece of work once it's reached. Also still open and worth folding in
-opportunistically: manuscript search/find, real spellcheck, a thesaurus
-(docs/ROADMAP.md Phase B/F, flagged 2026-08-01), and the bigger "insert AI-drafted
-prose into the manuscript with a reviewable diff" feature flagged in Phase 68.
+Phase F's roadmap list is now fully closed except two deliberately-deferred items:
+`ApiKeyProvider` (direct API call, streamed diff — waiting on a real cost/accounts
+story, Phase G/H) and a thesaurus/synonym lookup (needs either a bundled dataset or an
+external API, lowest priority of the three text-tooling gaps). The natural next pieces
+of work: manuscript search/find and real dictionary-backed spellcheck
+(docs/ROADMAP.md Phase B, flagged 2026-08-01) — both client-only, no-backend features
+that fit this sandbox the same way everything else in this phase has — or the bigger
+"insert AI-drafted prose into the manuscript with a reviewable diff" feature flagged
+in Phase 68's STATUS.md/SUGGESTIONS.md entries as a distinct, still-open feature
+(likely higher day-to-day value than the bible-sync half that already shipped).

@@ -36,3 +36,13 @@ export function wordCount(text: string): number {
   const trimmed = text.trim()
   return trimmed ? trimmed.split(/\s+/).length : 0
 }
+
+/** Escapes regex special characters so a value can be dropped into a
+ * `RegExp` literally — used everywhere this codebase does word-boundary name
+ * matching (Layer 0 entity names/prompt-context detection, paste-back
+ * suggestions, and the Virtual Editor's continuity checker) so a name like
+ * "Dr. Vance" doesn't blow up matching on the unescaped `.`. One shared
+ * implementation rather than a copy per call site. */
+export function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}

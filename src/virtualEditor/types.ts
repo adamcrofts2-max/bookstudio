@@ -14,6 +14,7 @@ import type { LaidOutPage } from '@/renderer/paginate'
 import type { Project } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import type { ImageAsset } from '@/types/asset'
+import type { Layer0Bible } from '@/types/layer0'
 
 /**
  * The full editorial taxonomy from the product spec. Every `Finding` is
@@ -34,6 +35,7 @@ export type IssueCategory =
   | 'accessibility'
   | 'print'
   | 'commercial'
+  | 'continuity'
 
 export const ISSUE_CATEGORIES: IssueCategory[] = [
   'proofreading',
@@ -48,6 +50,7 @@ export const ISSUE_CATEGORIES: IssueCategory[] = [
   'accessibility',
   'print',
   'commercial',
+  'continuity',
 ]
 
 /**
@@ -145,6 +148,20 @@ export interface CheckerContext {
   project?: Project
   structuralPages?: StructuralPage[]
   assets?: ImageAsset[]
+  /**
+   * Layer 0's story bible (`docs/AI_WORKSPACE_VISION.md`) — added for the
+   * Continuity checker (docs/STATUS.md Phase 74). Optional and simply
+   * forwarded by the caller (`VirtualEditorWorkspace.tsx`, which reads
+   * `useLayer0Store` itself), same pattern as `structuralPages`/`assets`
+   * above: this layer never reaches into `layer0Store` itself, per
+   * CLAUDE.md's layer-separation rule, and `types/layer0.ts`'s own "no Layer
+   * 2 code may import this file" note doesn't apply here — the Virtual
+   * Editor is an independent layer, not Layer 2 (see
+   * `docs/VIRTUAL_EDITOR.md`). Checkers that depend on it must declare
+   * `isApplicable` and return `[]` when it's `undefined` or empty, exactly
+   * like the existing optional context fields.
+   */
+  layer0Bible?: Layer0Bible
 }
 
 /**

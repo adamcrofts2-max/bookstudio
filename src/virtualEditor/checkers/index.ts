@@ -20,6 +20,7 @@ import { PRINT_READINESS_CHECKERS } from '@/virtualEditor/checkers/printReadines
 import { COMMERCIAL_QUALITY_CHECKERS } from '@/virtualEditor/checkers/commercialQuality'
 import { DEVELOPMENTAL_CHECKERS } from '@/virtualEditor/checkers/developmental'
 import { FIELD_GUIDE_CHECKERS } from '@/virtualEditor/checkers/fieldGuide'
+import { CONTINUITY_CHECKERS } from '@/virtualEditor/checkers/continuity'
 
 export const ALL_CHECKERS: Checker[] = [
   ...PROOFREADING_CHECKERS,
@@ -34,4 +35,5 @@ export const ALL_CHECKERS: Checker[] = [
   ...COMMERCIAL_QUALITY_CHECKERS,
   ...DEVELOPMENTAL_CHECKERS,
   ...FIELD_GUIDE_CHECKERS,
+  ...CONTINUITY_CHECKERS,
 ]

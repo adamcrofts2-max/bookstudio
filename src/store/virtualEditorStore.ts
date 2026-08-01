@@ -6,6 +6,7 @@ import type { LaidOutPage } from '@/renderer/paginate'
 import type { Project } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import type { ImageAsset } from '@/types/asset'
+import type { Layer0Bible } from '@/types/layer0'
 import type { EditorialReport, Finding, FindingStatus, IssueCategory, StyleGuide } from '@/virtualEditor/types'
 import { runPipeline } from '@/virtualEditor/pipeline'
 import { useContentStore } from '@/store/contentStore'
@@ -98,6 +99,7 @@ interface VirtualEditorActions {
     project?: Project,
     structuralPages?: StructuralPage[],
     assets?: ImageAsset[],
+    layer0Bible?: Layer0Bible,
   ) => void
   /** True while `runReview` is running for this project — see
    * `reviewingByProject`'s comment above. */
@@ -133,7 +135,7 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
       revisionsByProject: {},
       reviewingByProject: {},
 
-      runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets) => {
+      runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets, layer0Bible) => {
         set((state) => ({ reviewingByProject: { ...state.reviewingByProject, [projectId]: true } }))
         // Deferred one tick so the "Reviewing…" state set above actually
         // paints before `runPipeline` (still synchronous — see this file's
@@ -141,7 +143,7 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
         // itself, but replaces "the app looks frozen" with a visible,
         // honest busy state.
         window.setTimeout(() => {
-          const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets)
+          const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets, layer0Bible)
           set((state) => ({
             reportsByProject: { ...state.reportsByProject, [projectId]: report },
             findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },

@@ -1,5 +1,5 @@
 import type { Character, Layer0Bible, Location } from '@/types/layer0'
-import { escapeRegExp } from '@/layout/planning/promptContext'
+import { escapeRegExp } from '@/utils/format'
 
 /**
  * The "bible sync must be a reviewable diff, never automatic" V1
