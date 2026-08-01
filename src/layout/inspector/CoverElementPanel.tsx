@@ -11,7 +11,7 @@ import {
   AlignVerticalJustifyEnd,
 } from 'lucide-react'
 
-import { ImagePlus } from 'lucide-react'
+import { ImagePlus, X } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -155,6 +155,25 @@ export function CoverElementPanel({ element, elements, projectId, onChange, onDe
             <AlignVerticalJustifyEnd className="size-3.5" />
           </Button>
         </div>
+      </div>
+
+      {/* Whole-element opacity — declared once on `BaseCoverElement` (not
+       * per-kind) so it applies uniformly, same reasoning as "Align to page"
+       * above. rect/ellipse also have their own `fillOpacity` further down
+       * (fill-only, leaves a stroke fully opaque); this composes with that
+       * rather than replacing it. Added in response to the Phase 59
+       * brainstorm's "icon/badge/image had no opacity control at all" gap. */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Opacity ({Math.round((element.opacity ?? 1) * 100)}%)</Label>
+        <input
+          type="range"
+          min={0.1}
+          max={1}
+          step={0.05}
+          value={element.opacity ?? 1}
+          onChange={(e) => patch({ opacity: Number(e.target.value) })}
+          className="w-full accent-accent"
+        />
       </div>
 
       {element.kind === 'text' && (
@@ -363,12 +382,73 @@ export function CoverElementPanel({ element, elements, projectId, onChange, onDe
       {element.kind === 'image' && (
         <div className="flex flex-col gap-1.5">
           <Label>Image</Label>
-          <Button type="button" variant="secondary" onClick={openPicker} className="justify-start gap-2">
-            <ImagePlus className="size-3.5" />
-            {element.imageAssetId ? 'Replace image' : 'Choose image'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="secondary" onClick={openPicker} className="flex-1 justify-start gap-2">
+              <ImagePlus className="size-3.5" />
+              {element.imageAssetId ? 'Replace image' : 'Choose image'}
+            </Button>
+            {element.imageAssetId && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                title="Remove image"
+                onClick={() => patch({ imageAssetId: undefined, imageFocalPoint: undefined, imageZoom: undefined })}
+              >
+                <X className="size-3.5 text-danger" />
+              </Button>
+            )}
+          </div>
           <input {...inputProps} />
           <p className="text-xs text-text-secondary">Cropped to fill this box — drag a corner handle in the preview to change its shape.</p>
+
+          {element.imageAssetId && (
+            <>
+              {/* X/Y sliders rather than an on-canvas click-to-set picker
+               * (like the main background image's `CoverFocalPointPicker`)
+               * — deliberately: this element's own box is already the
+               * drag-to-move/resize target, so a click-anywhere gesture on
+               * the same area would recreate the exact pointer-conflict bug
+               * Phase 57/59 just fixed. See `coverElementLayer.tsx`'s image
+               * branch for the matching reasoning. */}
+              <div className="flex flex-col gap-1.5">
+                <Label>Focal point — horizontal ({Math.round((element.imageFocalPoint?.x ?? 0.5) * 100)}%)</Label>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={element.imageFocalPoint?.x ?? 0.5}
+                  onChange={(e) => patch({ imageFocalPoint: { x: Number(e.target.value), y: element.imageFocalPoint?.y ?? 0.5 } })}
+                  className="w-full accent-accent"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Focal point — vertical ({Math.round((element.imageFocalPoint?.y ?? 0.5) * 100)}%)</Label>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={element.imageFocalPoint?.y ?? 0.5}
+                  onChange={(e) => patch({ imageFocalPoint: { x: element.imageFocalPoint?.x ?? 0.5, y: Number(e.target.value) } })}
+                  className="w-full accent-accent"
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label>Zoom ({(element.imageZoom ?? 1).toFixed(2)}×)</Label>
+                <input
+                  type="range"
+                  min={1}
+                  max={2.5}
+                  step={0.05}
+                  value={element.imageZoom ?? 1}
+                  onChange={(e) => patch({ imageZoom: Number(e.target.value) })}
+                  className="w-full accent-accent"
+                />
+              </div>
+            </>
+          )}
         </div>
       )}
 

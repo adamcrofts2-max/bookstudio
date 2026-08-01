@@ -196,6 +196,13 @@ export async function drawCoverElementsPdf(
     const wPt = el.width * trimWidthPt
     const hPt = el.height * trimHeightPt
     const yPt = bleedPt + trimHeightPt - el.y * trimHeightPt - hPt
+    // Whole-element opacity multiplier (Phase 59 brainstorm) — declared on
+    // `BaseCoverElement` so it applies uniformly regardless of kind.
+    // `rect`/`ellipse`'s pre-existing `fillOpacity` only ever affected the
+    // fill (a stroke stayed fully opaque); this composes on top of that
+    // rather than replacing it, matching the on-screen `ElementBody`'s
+    // nested-opacity treatment.
+    const elementOpacity = el.opacity ?? 1
 
     if (el.kind === 'rect') {
       ctx.page.drawRectangle({
@@ -204,9 +211,10 @@ export async function drawCoverElementsPdf(
         width: wPt,
         height: hPt,
         color: el.fill ? hexToPdfColor(el.fill) : undefined,
-        opacity: el.fill ? (el.fillOpacity ?? 1) : undefined,
+        opacity: el.fill ? (el.fillOpacity ?? 1) * elementOpacity : elementOpacity,
         borderColor: el.stroke ? hexToPdfColor(el.stroke) : undefined,
         borderWidth: el.stroke ? (el.strokeWidth ?? 1) * PX_TO_PT : undefined,
+        borderOpacity: el.stroke ? elementOpacity : undefined,
         // pdf-lib has no native rounded-rectangle primitive; a plain
         // rectangle is an honest approximation until a future milestone
         // switches this to `drawSvgPath` for a real rounded corner. Not
@@ -222,9 +230,10 @@ export async function drawCoverElementsPdf(
         xScale: wPt / 2,
         yScale: hPt / 2,
         color: el.fill ? hexToPdfColor(el.fill) : undefined,
-        opacity: el.fill ? (el.fillOpacity ?? 1) : undefined,
+        opacity: el.fill ? (el.fillOpacity ?? 1) * elementOpacity : elementOpacity,
         borderColor: el.stroke ? hexToPdfColor(el.stroke) : undefined,
         borderWidth: el.stroke ? (el.strokeWidth ?? 1) * PX_TO_PT : undefined,
+        borderOpacity: el.stroke ? elementOpacity : undefined,
       })
     } else if (el.kind === 'line') {
       const midYPt = yPt + hPt / 2
@@ -233,6 +242,7 @@ export async function drawCoverElementsPdf(
         end: { x: xPt + wPt, y: midYPt },
         thickness: (el.strokeWidth ?? 1) * PX_TO_PT,
         color: el.stroke ? hexToPdfColor(el.stroke) : rgb(0, 0, 0),
+        opacity: elementOpacity,
       })
     } else if (el.kind === 'icon') {
       // Square icon centred within the element's box (an icon box need not
@@ -267,6 +277,8 @@ export async function drawCoverElementsPdf(
             borderColor: color,
             borderWidth: svgBorderWidth,
             borderLineCap: LineCapStyle.Round,
+            opacity: elementOpacity,
+            borderOpacity: elementOpacity,
           })
         } else {
           ctx.page.drawEllipse({
@@ -276,6 +288,7 @@ export async function drawCoverElementsPdf(
             yScale: node.r * iconScale,
             borderColor: color,
             borderWidth: ellipseBorderWidthPt,
+            borderOpacity: elementOpacity,
           })
         }
       }
@@ -297,9 +310,21 @@ export async function drawCoverElementsPdf(
           color: bg,
           borderColor: border,
           borderWidth: borderWidthPt,
+          opacity: elementOpacity,
+          borderOpacity: elementOpacity,
         })
       } else {
-        ctx.page.drawRectangle({ x: xPt, y: yPt, width: wPt, height: hPt, color: bg, borderColor: border, borderWidth: borderWidthPt })
+        ctx.page.drawRectangle({
+          x: xPt,
+          y: yPt,
+          width: wPt,
+          height: hPt,
+          color: bg,
+          borderColor: border,
+          borderWidth: borderWidthPt,
+          opacity: elementOpacity,
+          borderOpacity: elementOpacity,
+        })
       }
 
       const fontFamily = resolveCoverFontFamily({ fontChoice: el.fontChoice }, ctx.theme.fonts.body)
@@ -312,6 +337,7 @@ export async function drawCoverElementsPdf(
         size,
         font,
         color: el.textColor ? hexToPdfColor(el.textColor) : rgb(1, 1, 1),
+        opacity: elementOpacity,
       })
     } else if (el.kind === 'text') {
       // An explicit check here (not a bare `else`) is deliberate, not
@@ -337,6 +363,7 @@ export async function drawCoverElementsPdf(
         size,
         font,
         color: el.color ? hexToPdfColor(el.color) : rgb(1, 1, 1),
+        opacity: elementOpacity,
       })
     } else if (el.kind === 'image' && el.imageAssetId) {
       const blob = await getAssetBlob(el.imageAssetId)
@@ -346,16 +373,16 @@ export async function drawCoverElementsPdf(
         // Same cover-fit math as the page background image
         // (`computeCoverImagePdfPlacement` is generic over any box, not
         // just the full media box), scoped down to this element's own
-        // width/height in place of `mediaWidthPt`/`mediaHeightPt`. No
-        // focal point/zoom controls on secondary images yet — always
-        // centred cover-fit, matching the on-screen `ElementBody`.
+        // width/height in place of `mediaWidthPt`/`mediaHeightPt`. Focal
+        // point + zoom (Phase 59) reuse the same `CoverImageFocalPoint`
+        // shape as the main background image.
         const placement = computeCoverImagePdfPlacement({
           mediaWidthPt: wPt,
           mediaHeightPt: hPt,
           imageWidth: width,
           imageHeight: height,
-          focalPoint: undefined,
-          zoom: undefined,
+          focalPoint: el.imageFocalPoint,
+          zoom: el.imageZoom,
         })
         // A secondary image's cover-fit-scaled source is routinely larger
         // than its own box (that's the point of "cover" fit), so — unlike
@@ -368,6 +395,7 @@ export async function drawCoverElementsPdf(
           y: yPt + placement.y,
           width: placement.width,
           height: placement.height,
+          opacity: elementOpacity,
         })
         ctx.page.pushOperators(popGraphicsState())
       }

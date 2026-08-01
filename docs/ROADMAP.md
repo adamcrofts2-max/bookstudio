@@ -290,8 +290,9 @@ daily use of everything built so far.)*
       logo) as their own element kind — shipped 2026-08-01 (Phase 59), reusing
       `coverImageFit.ts`'s cover-fit math scoped to the element's own box, with
       a real pdf-lib clip so an oversized cover-fit image can't overflow its
-      box. Centred-only for now — no focal-point/zoom control on secondary
-      images yet (open follow-up below)
+      box. Focal point + zoom followed 2026-08-01 (Phase 60) — X/Y + zoom
+      sliders in the Inspector, deliberately not an on-canvas click-to-set
+      picker (would conflict with the element's own drag-to-move gesture)
 - [ ] Cover elements: smart alignment/snap guides — snap-to-page-centre
       (both axes, with a guide line) shipped 2026-08-01 (Phase 57). Still
       open: snapping to the safe-zone guide, trim/bleed edges, and other
@@ -315,17 +316,17 @@ daily use of everything built so far.)*
 - [ ] Cover elements: on-canvas double-click text editing (Milestone 1
       edits text content via the Inspector panel only — see
       `docs/COVER_CANVAS_PLAN.md`'s interaction section for why)
-- [ ] Cover elements: Delete/Backspace keyboard shortcut for the selected
-      element (duplicate and arrow-nudge already have keyboard affordances;
-      delete is currently toolbar-only) — flagged in Phase 59's brainstorm
-- [ ] Cover elements: "remove image" action on image elements (revert to the
-      empty placeholder) — currently only "replace" exists once an image is
-      set; flagged in Phase 59's brainstorm
-- [ ] Cover elements: opacity control for icon/badge/image kinds
-      (rect/ellipse already have `fillOpacity`) — flagged in Phase 59's
-      brainstorm
-- [ ] Cover elements: focal point + zoom for secondary image elements (shipped
-      centred-only in Phase 59) — flagged in Phase 59's brainstorm
+- [x] Cover elements: Delete/Backspace keyboard shortcut for the selected
+      element — shipped 2026-08-01 (Phase 60), same keydown handler as
+      arrow-nudge, same input/textarea/contenteditable guard
+- [x] Cover elements: "remove image" action on image elements (revert to the
+      empty placeholder) — shipped 2026-08-01 (Phase 60)
+- [x] Cover elements: opacity control — shipped 2026-08-01 (Phase 60) as a
+      single `opacity` field on `BaseCoverElement`, applying uniformly to
+      every kind (composes with rect/ellipse's existing fill-only
+      `fillOpacity` rather than replacing it)
+- [x] Cover elements: focal point + zoom for secondary image elements —
+      shipped 2026-08-01 (Phase 60), see the secondary-images item above
 - [ ] Cover elements: layers list/panel for selecting elements buried under
       others, plus incremental (one-step) forward/backward z-order nudges and
       multi-select/grouping — flagged in Phase 59's brainstorm as the biggest

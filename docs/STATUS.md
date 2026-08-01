@@ -4420,12 +4420,58 @@ Bigger, real design decisions:
   Cover ever gets the same free-positioning Front Cover just did, rather than leaving it
   an unstated asymmetry.
 
+## Phase 60 — Cover elements: delete shortcut, remove-image, opacity, secondary-image focal point/zoom (2026-08-01)
+
+The user picked the "quick-win bundle" from Phase 59's brainstorm — all four small,
+low-risk items shipped together.
+
+- **Delete/Backspace keyboard shortcut.** Extended the same `useEffect`/`handleKeyDown`
+  in `coverElementLayer.tsx` that already handles arrow-key nudge, rather than adding a
+  second listener — one `keydown` handler, one `isNudgeKey`/`isDeleteKey` branch each.
+  Same input/textarea/contenteditable guard as nudge (matters even more here, since
+  Delete/Backspace are the keys actually used to edit text elsewhere). Deselects before
+  removing, one undo entry per keypress, matching the discrete-not-batched convention
+  duplicate/nudge already established.
+- **"Remove image" action.** A small `X` button next to "Replace image" in
+  `CoverElementPanel.tsx`'s image block, shown only once `imageAssetId` is set — clears
+  `imageAssetId`/`imageFocalPoint`/`imageZoom` together, reverting to the empty
+  placeholder without deleting the whole element.
+- **Opacity control.** New `opacity?: number` on `BaseCoverElement` (not per-kind), so
+  every element kind gets it uniformly — one slider in `CoverElementPanel.tsx`, rendered
+  once alongside "Align to page" rather than duplicated per kind-specific block. On
+  screen, `coverElementLayer.tsx`'s `ElementBody` now wraps its kind-specific content
+  (renamed to `ElementBodyContent`) in a single outer div carrying this opacity, so it
+  composes correctly with `rect`/`ellipse`'s existing `fillOpacity` (nested CSS opacity
+  multiplies) without touching their pre-existing behaviour. In the PDF, every
+  `drawCoverElementsPdf` branch now passes an `elementOpacity` computed once per element
+  to its draw call(s) — verified opacity actually blends correctly in the exported PDF
+  with a standalone rasterized test (a 40%-opacity red square over white rendered as the
+  correct blended pink, not full-strength red).
+- **Focal point + zoom for secondary images.** `CoverImageElement` gained
+  `imageFocalPoint?: CoverImageFocalPoint` and `imageZoom?: number` — the exact same
+  shape the main background image already uses, so `coverImageFit.ts`'s placement math
+  needed no changes at all, just real values instead of the `undefined`/`undefined`
+  Phase 59 passed. Deliberately **not** an on-canvas click-to-set picker like the
+  background image's `CoverFocalPointPicker`: a secondary image element's whole box is
+  already the drag-to-move/resize target, so a click-anywhere-to-set-focal-point gesture
+  on the same area would recreate the exact pointer-conflict bug Phase 57/59 just fixed.
+  Used two X/Y sliders plus the same zoom slider pattern the main image's Inspector
+  control already uses instead — consistent with this canvas's established convention
+  that content/style edits go through the Inspector while position/size are dragged on
+  canvas.
+
+`tsc -b --force` clean. `oxlint` still crashes with the same sandbox-level bus error
+noted in Phase 59 — unrelated to these changes, flagging again for a future session with
+a working `oxlint`. Not independently verified live in Chrome — same sandbox `npm run
+dev` blocker as every phase since 55.
+
 ## Recommended next task
-Phase 59 closes all five parts of the user's request (two bug fixes, free-positioning,
-secondary images, this brainstorm). Nothing is mid-flight. Highest-leverage next steps,
-roughly in order: pick one of the "small, low-risk" brainstorm items above (delete
-keyboard shortcut is probably the fastest), or the layers-list panel if overlapping
-elements are becoming a real problem, or move on to a different `docs/ROADMAP.md` Phase E
-item (rotation, wrap-aware spine view) or Phase F (project-creation wizard, outlining
-templates, word-count goals, distraction-free writing mode) absent further direction from
-the user.
+Both Phase 59 and Phase 60 are fully closed — nothing mid-flight. From the Phase 59
+brainstorm's "bigger, real design decisions" tier: the layers-list panel (selecting
+elements buried under others, plus incremental z-order nudges and the groundwork for
+multi-select/grouping) is probably the highest-leverage next cover-canvas item, followed
+by the Back Cover free-positioning parity decision and per-element accessibility/contrast
+checking. Outside the cover canvas, `docs/ROADMAP.md` Phase E still has rotation and the
+wrap-aware front+spine+back view open, and Phase F's planning/writing tools
+(project-creation wizard, outlining templates, word-count goals, distraction-free writing
+mode) are next absent further direction from the user.

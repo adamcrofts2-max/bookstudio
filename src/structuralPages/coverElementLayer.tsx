@@ -6,6 +6,7 @@ import type { ResolvedBookTheme } from '@/theme/presets'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
 import { updateElement, bringToFront, sendToBack, removeElement, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS } from '@/structuralPages/coverIcons'
+import { computeCoverImageScreenStyle } from '@/structuralPages/coverImageFit'
 import { useAssetStore } from '@/store/assetStore'
 import { cn } from '@/lib/utils'
 
@@ -129,13 +130,16 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
   const containerRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
 
-  // Arrow-key nudge for the selected element — Shift for a bigger step.
-  // Declared before the `!elements` early return below (hooks must run
-  // unconditionally on every render); the listener itself no-ops via its
-  // own early returns instead, same effect without breaking hooks rules.
-  // One commit per keypress is deliberate, not batched like a drag gesture
-  // — each nudge is its own small, discrete, individually-undoable action,
-  // matching Figma/Canva's arrow-key convention.
+  // Arrow-key nudge (Shift for a bigger step) plus Delete/Backspace to
+  // remove the selected element — the toolbar trash icon was previously the
+  // only way to delete, unlike duplicate/nudge which already had keyboard
+  // affordances (Phase 59 brainstorm). Declared before the `!elements` early
+  // return below (hooks must run unconditionally on every render); the
+  // listener itself no-ops via its own early returns instead, same effect
+  // without breaking hooks rules. One commit per keypress is deliberate, not
+  // batched like a drag gesture — each nudge/delete is its own small,
+  // discrete, individually-undoable action, matching Figma/Canva's
+  // convention.
   useEffect(() => {
     if (!pageSelected || !selectedElementId) return
     // Reassigned to a local const so it stays narrowed to `string` inside
@@ -143,16 +147,28 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
     // `string | null` parameter isn't narrowed by the guard above.
     const id = selectedElementId
 
+    const isNudgeKey = (key: string) => key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight'
+    const isDeleteKey = (key: string) => key === 'Delete' || key === 'Backspace'
+
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      if (!isNudgeKey(e.key) && !isDeleteKey(e.key)) return
       const target = e.target as HTMLElement | null
-      // Don't hijack arrow keys while the user is typing elsewhere (an
+      // Don't hijack these keys while the user is typing elsewhere (an
       // Inspector text field, a contenteditable block, a title input) —
-      // only nudge when focus isn't inside a text-editing control.
+      // only act when focus isn't inside a text-editing control. This
+      // matters even more for Delete/Backspace than for arrows: those keys
+      // are the ones actually used to edit text.
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
 
       const current = elements?.find((el) => el.id === id)
       if (!current) return
+
+      if (isDeleteKey(e.key)) {
+        e.preventDefault()
+        onSelectElement(null)
+        onCommitElements(removeElement(elements, id))
+        return
+      }
 
       e.preventDefault()
       const step = e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
@@ -169,7 +185,7 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [pageSelected, selectedElementId, elements, onCommitElements])
+  }, [pageSelected, selectedElementId, elements, onCommitElements, onSelectElement])
 
   if (!elements || elements.length === 0) return null
 
@@ -297,7 +313,26 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
   )
 }
 
+/**
+ * Renders one element's visual content, wrapped once in a `size-full` div
+ * carrying `element.opacity` — declared on `BaseCoverElement` so every kind
+ * gets a uniform whole-element opacity control (Phase 59 brainstorm:
+ * rect/ellipse already had `fillOpacity`, which only fades the fill and
+ * leaves a stroke fully opaque; icon/badge/image had no opacity control at
+ * all). Applied here, once, at the outer wrapper — not on the parent
+ * `<div>` in `CoverElementLayer`'s map, which also hosts the selection
+ * outline/toolbar/resize handles that should stay fully visible regardless
+ * of the element's own opacity.
+ */
 function ElementBody({ element, theme }: { element: CoverElement; theme: ResolvedBookTheme }) {
+  return (
+    <div className="size-full" style={{ opacity: element.opacity ?? 1 }}>
+      <ElementBodyContent element={element} theme={theme} />
+    </div>
+  )
+}
+
+function ElementBodyContent({ element, theme }: { element: CoverElement; theme: ResolvedBookTheme }) {
   // Called unconditionally (hooks can't be conditional) — only read for the
   // 'image' kind below, same tradeoff every other kind-specific branch here
   // already accepts.
@@ -385,7 +420,19 @@ function ElementBody({ element, theme }: { element: CoverElement; theme: Resolve
         </div>
       )
     }
-    return <img src={url} alt="" className="size-full object-cover" draggable={false} />
+    // Same focal-point + zoom CSS the main background image already uses
+    // (`computeCoverImageScreenStyle`) — set via the Inspector's sliders
+    // rather than an on-canvas click-to-set picker like the background
+    // image's `CoverFocalPointPicker`, deliberately: this element's whole
+    // box is already the drag-to-move/resize target, so a click-anywhere
+    // focal-point gesture on the same area would recreate the exact
+    // pointer-conflict bug Phase 57/59 just fixed for the background image.
+    const { objectPosition, transform, transformOrigin } = computeCoverImageScreenStyle(element.imageFocalPoint, element.imageZoom)
+    return (
+      <div className="size-full overflow-hidden">
+        <img src={url} alt="" className="size-full object-cover" style={{ objectPosition, transform, transformOrigin }} draggable={false} />
+      </div>
+    )
   }
 
   return (

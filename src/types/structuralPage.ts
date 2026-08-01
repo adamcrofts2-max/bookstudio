@@ -174,6 +174,14 @@ interface BaseCoverElement {
   height: number
   /** Paint order among elements only. */
   zIndex: number
+  /** `0..1`; absent means fully opaque. Declared once here (not per-kind)
+   * so every element kind gets it uniformly — `rect`/`ellipse` already had
+   * their own `fillOpacity` (which only affects the fill, leaving a stroke
+   * fully opaque) before this was added; that stays as-is for backward
+   * compatibility, this `opacity` is a whole-element multiplier on top,
+   * primarily meant for the kinds that had no opacity control at all
+   * (icon/badge/image). */
+  opacity?: number
 }
 
 /** A rectangle, ellipse, or straight horizontal line. `cornerRadius` only
@@ -265,15 +273,15 @@ export interface CoverBadgeElement extends BaseCoverElement {
 
 /** A secondary image — author photo, publisher/series logo, or any other
  * additional picture beyond the one main full-bleed background image
- * (`CoverPage.content.imageAssetId`). Deliberately simpler than that main
- * image's own focal-point + zoom cropping (`CoverImageFocalPoint`) for now
- * — always a plain centred `object-fit: cover` crop; reuses
- * `coverImageFit.ts`'s existing placement math with the default centre
- * focal point rather than duplicating it, so adding focal-point control
- * here later is a small extension, not a rewrite. */
+ * (`CoverPage.content.imageAssetId`). Reuses the main image's own
+ * `CoverImageFocalPoint` + zoom shape directly (`coverImageFit.ts`'s
+ * placement math is already generic over any box, not just the full page —
+ * confirmed before adding this), rather than duplicating the concept. */
 export interface CoverImageElement extends BaseCoverElement {
   kind: 'image'
   imageAssetId?: string
+  imageFocalPoint?: CoverImageFocalPoint
+  imageZoom?: number
 }
 
 export type CoverElement = CoverShapeElement | CoverTextElement | CoverIconElement | CoverBadgeElement | CoverImageElement
