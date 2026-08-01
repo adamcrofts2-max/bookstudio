@@ -9,6 +9,24 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 76 (2026-08-02) — Actioned Phase 74/75 suggestions
+
+- **Chapter titles are now searchable, but still not the only non-block text a
+  user might expect Search to cover.** The Layer 0 story bible, structural-page
+  copy (About the Author, Copyright, etc.), and cover/back-cover text elements
+  are all still invisible to Search — this was flagged in the Phase 75 entry as
+  a broader gap, and closing chapter titles specifically (the most likely single
+  miss) doesn't close the rest. Worth a dedicated pass if user feedback says any
+  of those specifically bites.
+- **The two Phase 75 suggestions deliberately left alone** (next/previous match
+  step-through with an active-match indicator; a checkbox-per-match model for a
+  partial Replace All) are still open and still reasonable — they just didn't
+  meet the "concrete, low-risk, quick" bar this pass was scoped to. Worth
+  revisiting once there's a sense whether Search sees enough real use to justify
+  the richer interaction model.
+
+---
+
 ## After Phase 75 (2026-08-01) — Find (and find-and-replace) across the manuscript
 
 - **Search doesn't cover chapter titles, or anything outside the manuscript
