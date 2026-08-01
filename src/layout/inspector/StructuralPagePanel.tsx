@@ -455,6 +455,7 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             elements={page.content.elements}
             onChange={(elements) => patch({ elements })}
             onDeselect={() => selectCoverElement(null)}
+            onSelect={selectCoverElement}
           />
           <Separator />
         </>

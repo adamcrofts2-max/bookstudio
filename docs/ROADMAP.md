@@ -292,12 +292,18 @@ daily use of everything built so far.)*
       (both axes, with a guide line) shipped 2026-08-01 (Phase 57). Still
       open: snapping to the safe-zone guide, trim/bleed edges, and other
       elements' edges, plus grouping
-- [ ] Cover elements: fix the element-drag/image-focal-point pointer
-      conflict — **fixed 2026-08-01 (Phase 57)**, see docs/STATUS.md.
-      Deliberately not decided: whether to go further and convert the
-      background image and/or title/subtitle/author into full
-      `CoverElement`s so they're draggable the same way shapes are — real
-      migration-risk trade-off, discussed with the user, not yet resolved
+- [x] Cover elements: fix the element-drag/image-focal-point pointer
+      conflict — fixed 2026-08-01 (Phase 57), see docs/STATUS.md. Going
+      further and converting the background image and/or title/subtitle/
+      author into full `CoverElement`s was discussed and NOT taken — real
+      migration risk for existing projects, not worth it for the concrete
+      need. Phase 58 shipped the lighter-weight middle ground instead: 2D
+      drag (not just vertical) for the title/subtitle/author block as one
+      group, still via `CoverNudgeHandle`, not full per-field elements
+- [x] Cover elements: duplicate button, arrow-key nudge, align-to-page
+      buttons (left/centre/right, top/middle/bottom) — shipped 2026-08-01
+      (Phase 58), user-requested canvas conveniences alongside the 2D-drag
+      item above
 - [ ] Cover elements: on-canvas double-click text editing (Milestone 1
       edits text content via the Inspector panel only — see
       `docs/COVER_CANVAS_PLAN.md`'s interaction section for why)

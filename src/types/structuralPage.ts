@@ -283,6 +283,14 @@ export interface CoverPage extends BaseStructuralPage {
      * `NUDGE_RANGE_PX` / `drawCoverPdf`'s matching PDF-point range.
      */
     verticalNudge?: number
+    /** Same convention as `verticalNudge`, along the horizontal axis —
+     * `-1`..`1`, `0`/absent meaning no offset (the title/subtitle/author
+     * block stays exactly centred, the pre-existing behaviour). Front Cover
+     * only: Back Cover's blurb is a full-width flowing text block with no
+     * equivalent "centred column" to offset, so `BackCoverPage.content` has
+     * no matching field. See `coverLayout.ts`'s `computeCoverLayoutScreenStyle`
+     * and `CoverNudgeHandle`'s optional `horizontal` prop. */
+    horizontalNudge?: number
     imageFocalPoint?: CoverImageFocalPoint
     /** `>= 1`; `1` or absent is the pre-existing plain cover-fit crop. */
     imageZoom?: number

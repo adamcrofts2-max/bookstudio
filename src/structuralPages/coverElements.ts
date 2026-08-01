@@ -126,6 +126,34 @@ export function sendToBack(elements: CoverElement[] | undefined, id: string): Co
   return updateElement(elements, id, { zIndex: minZ - 1 })
 }
 
+/** Clones an element with a fresh id, nudged slightly down-right (same
+ * small offset `createCoverElement` uses for a freshly-added element) so
+ * the copy doesn't sit exactly on top of the original and look like nothing
+ * happened, and brought to the front (`nextZIndex`) so it's immediately
+ * visible and already the topmost/selected-feeling element. Returns the new
+ * element's id alongside the array so the caller can select it immediately,
+ * matching every other "add" action's convention (`createCoverElement` +
+ * `CoverElementToolbar`'s `onAdd`). */
+export function duplicateElement(elements: CoverElement[] | undefined, id: string): { elements: CoverElement[]; newId: string } | undefined {
+  const list = elements ?? []
+  const source = list.find((e) => e.id === id)
+  if (!source) return undefined
+
+  const DUPLICATE_OFFSET = 0.03
+  const clone: CoverElement = {
+    ...source,
+    id: generateId('cover-el'),
+    x: clampFraction(source.x + DUPLICATE_OFFSET, source.width),
+    y: clampFraction(source.y + DUPLICATE_OFFSET, source.height),
+    zIndex: nextZIndex(list),
+  }
+  return { elements: [...list, clone], newId: clone.id }
+}
+
+function clampFraction(value: number, size: number): number {
+  return Math.min(Math.max(value, 0), 1 - size)
+}
+
 /**
  * Draws every element in a Cover/Back Cover's `elements` array into the PDF,
  * in `zIndex` order. `bleedPt`/`trimWidthPt`/`trimHeightPt` mirror exactly

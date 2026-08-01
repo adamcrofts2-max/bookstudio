@@ -4279,18 +4279,61 @@ the focal point." Root-caused before fixing (not guessed at).
 `tsc -b` clean. Not independently verified live in Chrome — same sandbox `npm run dev`
 blocker as Phases 55–56.
 
+## Phase 58 — Cover canvas: 2D text-block drag, duplicate, arrow-nudge, align buttons (2026-08-01)
+
+Direct follow-up to Phase 57's discussion — the user asked for the lighter-weight
+middle-ground option (2D drag instead of full `CoverElement` conversion) plus three more
+small, low-risk canvas conveniences, all agreed rather than independently decided.
+
+- **2D drag for the Cover's title/subtitle/author block.** New `CoverPage.content.
+  horizontalNudge` (Front Cover only — Back Cover's blurb is a full-width flowing block
+  with no "centred column" to offset, so `BackCoverPage.content` has no matching field).
+  `CoverNudgeHandle` (`structuralPages/shared.tsx`) gained an optional `horizontal` prop
+  that, when passed, drags both axes in one gesture instead of vertical-only — omitted
+  entirely at Back Cover's call site, so its existing behaviour is untouched.
+  `computeCoverLayoutScreenStyle` (`coverLayout.ts`) gained a 4th optional parameter
+  (backward-compatible; existing 3-arg callers unaffected) returning a `translateXPx`
+  alongside the existing `translateYPx`. `drawCoverPdf`'s `centerX` gets the matching
+  `horizontalNudge * COVER_NUDGE_RANGE_PX * PX_TO_PT` offset, same conversion pattern
+  `computeCoverLayoutCursorY` already uses for the vertical axis — screen/PDF parity.
+- **Duplicate element** (`structuralPages/coverElements.ts`'s new `duplicateElement`):
+  clones with a fresh id, nudged down-right like a freshly-added element, brought to
+  front. Wired into both the on-canvas floating toolbar (new Copy icon next to
+  bring-forward/send-back/delete) and the Inspector panel — both immediately select the
+  new copy.
+- **Arrow-key nudge** (`coverElementLayer.tsx`): plain arrow moves the selected element a
+  small fixed fraction, Shift+arrow a bigger one, one undo entry per keypress (discrete
+  by design, not batched like a drag gesture). Ignores arrow keys while focus is in an
+  input/textarea/contenteditable, so it doesn't hijack typing elsewhere (an Inspector
+  text field, a title input). The listener is a `useEffect` declared *before* the
+  component's existing `!elements` early return — hooks must run unconditionally on
+  every render, so a hook can't go after an early return no matter how natural that
+  placement would otherwise read.
+- **Align-to-page buttons** (`layout/inspector/CoverElementPanel.tsx`): one row, 6
+  buttons (left/centre/right, top/middle/bottom), rendered once above every kind-specific
+  field block since alignment is position-only and applies identically to every element
+  kind. Precision complement to Phase 57's drag-based snap-to-centre — a click lands
+  exactly on flush-left/right/top/bottom the way a drag can't as reliably.
+
+`tsc -b` clean. Not independently verified live in Chrome — same sandbox `npm run dev`
+blocker as Phases 55–57.
+
 ## Recommended next task
 All five items from the original "think about it" request plus both
 chapter-management follow-ups (add, reorder) are shipped, plus Phase 53's five audit
 fixes, Phase 54's cover-canvas Milestone 1, Phase 55's Milestone 2 (icons/badges),
-Phase 56's two small UX fixes, and Phase 57's element-drag fix + snap-to-centre.
-Distraction-free reading mode and whether to convert the cover's image/text fields into
-full `CoverElement`s were both discussed with the user (2026-08-01) but deliberately not
-built yet, pending their direction on scope. The highest-leverage remaining items
-otherwise: the real fix for the Phase J renderer-freeze item
-(worker-based or otherwise), and the next cover-canvas follow-ups now that icons/badges
-are done — rotation, secondary images, smart alignment/snap guides, or the wrap-aware
-front+spine+back view (see `docs/ROADMAP.md` Phase E for the full deferred list). Absent
+Phase 56's two small UX fixes, Phase 57's element-drag fix + snap-to-centre, and Phase
+58's four canvas conveniences (2D text-block drag, duplicate, arrow-nudge, align
+buttons). Distraction-free reading mode was discussed with the user (2026-08-01) but
+deliberately not built yet, pending their direction on scope. Converting the cover's
+image/text fields into full `CoverElement`s was discussed and NOT taken — the 2D-drag
+middle ground in this phase covers the concrete need without the migration risk; revisit
+only if a real need for independently-draggable title/subtitle/author (not as one group)
+comes up. The highest-leverage remaining items otherwise: the real fix for the Phase J
+renderer-freeze item (worker-based or otherwise), and the next cover-canvas follow-ups —
+rotation, secondary images, snap-to-other-elements (page-centre snapping already shipped
+in Phase 57), or the wrap-aware front+spine+back
+view (see `docs/ROADMAP.md` Phase E for the full deferred list). Absent
 further direction, Phase F's remaining items
 (project-creation wizard, outlining templates, word-count goals,
 distraction-free writing mode) are next per `docs/ROADMAP.md`.

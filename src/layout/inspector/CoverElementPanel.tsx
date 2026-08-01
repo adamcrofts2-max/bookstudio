@@ -1,4 +1,15 @@
-import { ArrowDownToLine, ArrowUpToLine, Trash2 } from 'lucide-react'
+import {
+  ArrowDownToLine,
+  ArrowUpToLine,
+  Copy,
+  Trash2,
+  AlignHorizontalJustifyStart,
+  AlignHorizontalJustifyCenter,
+  AlignHorizontalJustifyEnd,
+  AlignVerticalJustifyStart,
+  AlignVerticalJustifyCenter,
+  AlignVerticalJustifyEnd,
+} from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -6,7 +17,7 @@ import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import type { CoverElement, CoverFontChoice, CoverIconId } from '@/types/structuralPage'
-import { updateElement, removeElement, bringToFront, sendToBack } from '@/structuralPages/coverElements'
+import { updateElement, removeElement, bringToFront, sendToBack, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS, COVER_ICON_LABELS } from '@/structuralPages/coverIcons'
 
 const ICON_OPTIONS = Object.keys(COVER_ICON_LABELS) as CoverIconId[]
@@ -49,6 +60,10 @@ interface CoverElementPanelProps {
   elements: CoverElement[] | undefined
   onChange: (elements: CoverElement[]) => void
   onDeselect: () => void
+  /** Selects a different element by id — used after duplicating, so the
+   * Inspector follows the new copy rather than continuing to show the
+   * original. */
+  onSelect: (id: string) => void
 }
 
 /**
@@ -60,7 +75,7 @@ interface CoverElementPanelProps {
  * properties that don't have an obvious on-canvas gesture, plus delete and
  * layer order.
  */
-export function CoverElementPanel({ element, elements, onChange, onDeselect }: CoverElementPanelProps) {
+export function CoverElementPanel({ element, elements, onChange, onDeselect, onSelect }: CoverElementPanelProps) {
   const patch = (updates: Partial<CoverElement>) => onChange(updateElement(elements, element.id, updates))
 
   return (
@@ -77,6 +92,19 @@ export function CoverElementPanel({ element, elements, onChange, onDeselect }: C
           <Button
             variant="ghost"
             size="icon"
+            title="Duplicate"
+            onClick={() => {
+              const result = duplicateElement(elements, element.id)
+              if (!result) return
+              onChange(result.elements)
+              onSelect(result.newId)
+            }}
+          >
+            <Copy className="size-3.5" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
             title="Delete"
             onClick={() => {
               onDeselect()
@@ -84,6 +112,36 @@ export function CoverElementPanel({ element, elements, onChange, onDeselect }: C
             }}
           >
             <Trash2 className="size-3.5 text-danger" />
+          </Button>
+        </div>
+      </div>
+
+      {/* One-click alignment relative to the page — a precision complement
+       * to drag-based snap-to-centre (`coverElementLayer.tsx`'s
+       * `SNAP_THRESHOLD`), for the two positions (flush left/right/top/
+       * bottom) a drag can't land on as reliably as a click can. Applies to
+       * every element kind (position-only, no kind-specific fields), so
+       * it's rendered once here rather than duplicated per branch below. */}
+      <div className="flex flex-col gap-1.5">
+        <Label>Align to page</Label>
+        <div className="flex gap-1.5">
+          <Button variant="secondary" size="icon" title="Align left" onClick={() => patch({ x: 0 })}>
+            <AlignHorizontalJustifyStart className="size-3.5" />
+          </Button>
+          <Button variant="secondary" size="icon" title="Centre horizontally" onClick={() => patch({ x: (1 - element.width) / 2 })}>
+            <AlignHorizontalJustifyCenter className="size-3.5" />
+          </Button>
+          <Button variant="secondary" size="icon" title="Align right" onClick={() => patch({ x: 1 - element.width })}>
+            <AlignHorizontalJustifyEnd className="size-3.5" />
+          </Button>
+          <Button variant="secondary" size="icon" title="Align top" onClick={() => patch({ y: 0 })}>
+            <AlignVerticalJustifyStart className="size-3.5" />
+          </Button>
+          <Button variant="secondary" size="icon" title="Centre vertically" onClick={() => patch({ y: (1 - element.height) / 2 })}>
+            <AlignVerticalJustifyCenter className="size-3.5" />
+          </Button>
+          <Button variant="secondary" size="icon" title="Align bottom" onClick={() => patch({ y: 1 - element.height })}>
+            <AlignVerticalJustifyEnd className="size-3.5" />
           </Button>
         </div>
       </div>

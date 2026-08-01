@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react'
-import { Trash2, ArrowUpToLine, ArrowDownToLine } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { Trash2, ArrowUpToLine, ArrowDownToLine, Copy } from 'lucide-react'
 
 import type { CoverElement } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
-import { updateElement, bringToFront, sendToBack, removeElement } from '@/structuralPages/coverElements'
+import { updateElement, bringToFront, sendToBack, removeElement, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS } from '@/structuralPages/coverIcons'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +19,11 @@ const MIN_SIZE = 0.03
 /** How close an element's own centre needs to get to the page's centre line
  * (as a fraction of the trim box) before a move-drag snaps onto it. */
 const SNAP_THRESHOLD = 0.012
+
+/** Arrow-key nudge step, as a fraction of the trim box — plain arrow for a
+ * small precise move, Shift+arrow for a bigger one. */
+const NUDGE_STEP = 0.004
+const NUDGE_STEP_LARGE = 0.02
 
 type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se'
 type DragMode = 'move' | ResizeHandle
@@ -123,6 +128,48 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
   const containerRef = useRef<HTMLDivElement>(null)
   const [drag, setDrag] = useState<DragState | null>(null)
 
+  // Arrow-key nudge for the selected element — Shift for a bigger step.
+  // Declared before the `!elements` early return below (hooks must run
+  // unconditionally on every render); the listener itself no-ops via its
+  // own early returns instead, same effect without breaking hooks rules.
+  // One commit per keypress is deliberate, not batched like a drag gesture
+  // — each nudge is its own small, discrete, individually-undoable action,
+  // matching Figma/Canva's arrow-key convention.
+  useEffect(() => {
+    if (!pageSelected || !selectedElementId) return
+    // Reassigned to a local const so it stays narrowed to `string` inside
+    // `handleKeyDown` below — a nested function closing over the original
+    // `string | null` parameter isn't narrowed by the guard above.
+    const id = selectedElementId
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown' && e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+      const target = e.target as HTMLElement | null
+      // Don't hijack arrow keys while the user is typing elsewhere (an
+      // Inspector text field, a contenteditable block, a title input) —
+      // only nudge when focus isn't inside a text-editing control.
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return
+
+      const current = elements?.find((el) => el.id === id)
+      if (!current) return
+
+      e.preventDefault()
+      const step = e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
+      const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
+      const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0
+
+      onCommitElements(
+        updateElement(elements, id, {
+          x: clamp(current.x + dx, 0, 1 - current.width),
+          y: clamp(current.y + dy, 0, 1 - current.height),
+        }),
+      )
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [pageSelected, selectedElementId, elements, onCommitElements])
+
   if (!elements || elements.length === 0) return null
 
   function fracFromEvent(e: React.PointerEvent): { x: number; y: number } {
@@ -215,6 +262,12 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
                   onDelete={() => {
                     onSelectElement(null)
                     onCommitElements(removeElement(elements, el.id))
+                  }}
+                  onDuplicate={() => {
+                    const result = duplicateElement(elements, el.id)
+                    if (!result) return
+                    onCommitElements(result.elements)
+                    onSelectElement(result.newId)
                   }}
                   onBringToFront={() => onCommitElements(bringToFront(elements, el.id))}
                   onSendToBack={() => onCommitElements(sendToBack(elements, el.id))}
@@ -323,7 +376,17 @@ function ElementBody({ element, theme }: { element: CoverElement; theme: Resolve
   )
 }
 
-function ElementToolbar({ onDelete, onBringToFront, onSendToBack }: { onDelete: () => void; onBringToFront: () => void; onSendToBack: () => void }) {
+function ElementToolbar({
+  onDelete,
+  onDuplicate,
+  onBringToFront,
+  onSendToBack,
+}: {
+  onDelete: () => void
+  onDuplicate: () => void
+  onBringToFront: () => void
+  onSendToBack: () => void
+}) {
   return (
     <div
       className="absolute -top-9 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-[var(--radius-button)] bg-black/70 p-1 shadow-[var(--shadow-sm)] backdrop-blur-sm"
@@ -335,6 +398,9 @@ function ElementToolbar({ onDelete, onBringToFront, onSendToBack }: { onDelete: 
       </button>
       <button type="button" title="Bring forward" onClick={onBringToFront} className="rounded-sm p-1 text-white hover:bg-white/20">
         <ArrowUpToLine className="size-3.5" />
+      </button>
+      <button type="button" title="Duplicate" onClick={onDuplicate} className="rounded-sm p-1 text-white hover:bg-white/20">
+        <Copy className="size-3.5" />
       </button>
       <button type="button" title="Delete" onClick={onDelete} className="rounded-sm p-1 text-white hover:bg-danger/70">
         <Trash2 className="size-3.5" />

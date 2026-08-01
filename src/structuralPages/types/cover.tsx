@@ -15,7 +15,7 @@ import {
   CoverFocalPointPicker,
   CoverSafeZoneGuide,
 } from '@/structuralPages/shared'
-import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY } from '@/structuralPages/coverLayout'
+import { computeCoverLayoutScreenStyle, computeCoverLayoutCursorY, COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
 import { computeCoverImageScreenStyle, computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
 import { computeCoverOverlayScreenStyle, drawCoverOverlayPdf, DEFAULT_OVERLAY_OPACITY } from '@/structuralPages/coverOverlay'
 import {
@@ -57,12 +57,15 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
   // gesture. `null` while not dragging, meaning "use the page's committed
   // value" (see `liveNudge ?? page.content.verticalNudge`).
   const [liveNudge, setLiveNudge] = useState<number | null>(null)
+  const [liveHNudge, setLiveHNudge] = useState<number | null>(null)
   if (page.type !== 'cover') return null
 
   const imageUrl = page.content.imageAssetId ? getObjectUrl(page.content.imageAssetId) : undefined
   const committedNudge = page.content.verticalNudge ?? 0
+  const committedHNudge = page.content.horizontalNudge ?? 0
   const effectiveNudge = liveNudge ?? committedNudge
-  const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge)
+  const effectiveHNudge = liveHNudge ?? committedHNudge
+  const layoutStyle = computeCoverLayoutScreenStyle(page.content.layout, pageBox, effectiveNudge, effectiveHNudge)
   const imageStyle = computeCoverImageScreenStyle(page.content.imageFocalPoint, page.content.imageZoom)
   const overlayStyle = computeCoverOverlayScreenStyle(page.content.overlayStyle, page.content.overlayOpacity ?? DEFAULT_OVERLAY_OPACITY)
   const typography = page.content.typography
@@ -148,7 +151,7 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
           paddingTop: layoutStyle.paddingTop,
           paddingBottom: layoutStyle.paddingBottom,
           justifyContent: layoutStyle.justifyContent,
-          transform: `translateY(${layoutStyle.translateYPx}px)`,
+          transform: `translate(${layoutStyle.translateXPx}px, ${layoutStyle.translateYPx}px)`,
         }}
       >
         {selected && (
@@ -158,6 +161,14 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
             onCommitFinal={(value) => {
               setLiveNudge(null)
               onCommit({ verticalNudge: value })
+            }}
+            horizontal={{
+              value: committedHNudge,
+              onLiveChange: setLiveHNudge,
+              onCommitFinal: (value) => {
+                setLiveHNudge(null)
+                onCommit({ horizontalNudge: value })
+              },
             }}
           />
         )}
@@ -293,7 +304,10 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   const title = titleHidden ? '' : (page.content.title ?? '').trim()
   const titleSize = theme.typography.bodySize * 2.2 * titleSizeScale * PX_TO_PT
   const titleWidth = title ? titleFont.widthOfTextAtSize(title, titleSize) : 0
-  const centerX = mediaWidthPt / 2
+  // Matches the on-screen `translateX` exactly — same `COVER_NUDGE_RANGE_PX`
+  // constant converted through `PX_TO_PT`, the same pattern
+  // `computeCoverLayoutCursorY` already uses for the vertical nudge below.
+  const centerX = mediaWidthPt / 2 + (page.content.horizontalNudge ?? 0) * COVER_NUDGE_RANGE_PX * PX_TO_PT
 
   // Same vertical distance the subtitle/author gaps below actually use —
   // precomputed so `computeCoverLayoutCursorY`'s 'bottom' preset can anchor

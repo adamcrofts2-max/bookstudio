@@ -188,7 +188,7 @@ export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop a
 }
 
 interface CoverNudgeHandleProps {
-  /** Currently-committed nudge value, -1..1. */
+  /** Currently-committed vertical nudge value, -1..1. */
   value: number
   /** Called continuously while dragging, for a live preview transform — the
    * caller should NOT persist this (would spam undo history with one entry
@@ -198,47 +198,72 @@ interface CoverNudgeHandleProps {
    * caller persists this via `onCommit`/`updatePageContentWithHistory`, so
    * one drag gesture is one undo step. */
   onCommitFinal: (value: number) => void
+  /** Optional horizontal companion — when provided, one drag gesture moves
+   * both axes at once (a real 2D reposition of the text block), mirroring
+   * `value`/`onLiveChange`/`onCommitFinal` exactly but for
+   * `CoverPage.content.horizontalNudge`. Omitted by Back Cover's blurb
+   * block, which has no horizontal-offset concept — its call site keeps the
+   * pre-existing vertical-only behaviour untouched. */
+  horizontal?: {
+    value: number
+    onLiveChange: (value: number) => void
+    onCommitFinal: (value: number) => void
+  }
 }
 
 /**
- * Small drag handle for fine-tuning a Cover/Back Cover text block's vertical
- * position within its chosen layout preset (`coverLayout.ts`). Deliberately
- * a single vertical-only handle, not a full draggable multi-element canvas —
- * see `docs/STATUS.md` Phase 45 for why. Only rendered while the page is
- * selected, matching this app's existing hover/selection-gated affordance
- * pattern (see `ThemeGallery.tsx`'s edit/delete icons).
+ * Small drag handle for fine-tuning a Cover/Back Cover text block's position
+ * within its chosen layout preset (`coverLayout.ts`) — vertical-only unless
+ * `horizontal` is passed, in which case it drags both axes together.
+ * Deliberately still a single handle moving the whole text block as one
+ * group, not a full per-field draggable multi-element canvas — see
+ * `docs/STATUS.md` Phase 45 for that reasoning (still holds: Front Cover's
+ * title/subtitle/author converting into independent `CoverElement`s is a
+ * bigger, separate decision, discussed but not taken as of Phase 57). Only
+ * rendered while the page is selected, matching this app's existing
+ * hover/selection-gated affordance pattern (see `ThemeGallery.tsx`'s
+ * edit/delete icons).
  */
-export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal }: CoverNudgeHandleProps) {
+export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal, horizontal }: CoverNudgeHandleProps) {
   const draggingRef = useRef(false)
-  const startRef = useRef({ y: 0, value: 0 })
+  const startRef = useRef({ y: 0, value: 0, x: 0, hValue: 0 })
 
-  function nextValue(clientY: number) {
+  function nextValueY(clientY: number) {
     const deltaPx = clientY - startRef.current.y
     return clamp(startRef.current.value + deltaPx / COVER_NUDGE_RANGE_PX, -1, 1)
+  }
+  function nextValueX(clientX: number) {
+    const deltaPx = clientX - startRef.current.x
+    return clamp(startRef.current.hValue + deltaPx / COVER_NUDGE_RANGE_PX, -1, 1)
   }
 
   return (
     <button
       type="button"
-      aria-label="Drag up or down to fine-tune this text block's vertical position"
+      aria-label={horizontal ? 'Drag to reposition this text block' : "Drag up or down to fine-tune this text block's vertical position"}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => {
         e.stopPropagation()
         e.preventDefault()
         draggingRef.current = true
-        startRef.current = { y: e.clientY, value }
+        startRef.current = { y: e.clientY, value, x: e.clientX, hValue: horizontal?.value ?? 0 }
         e.currentTarget.setPointerCapture(e.pointerId)
       }}
       onPointerMove={(e) => {
         if (!draggingRef.current) return
-        onLiveChange(nextValue(e.clientY))
+        onLiveChange(nextValueY(e.clientY))
+        horizontal?.onLiveChange(nextValueX(e.clientX))
       }}
       onPointerUp={(e) => {
         if (!draggingRef.current) return
         draggingRef.current = false
-        onCommitFinal(nextValue(e.clientY))
+        onCommitFinal(nextValueY(e.clientY))
+        horizontal?.onCommitFinal(nextValueX(e.clientX))
       }}
-      className="mx-auto flex w-fit cursor-ns-resize items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm"
+      className={cn(
+        'mx-auto flex w-fit items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm',
+        horizontal ? 'cursor-move' : 'cursor-ns-resize',
+      )}
     >
       <GripVertical className="size-3" />
       Drag to reposition

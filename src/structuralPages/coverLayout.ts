@@ -29,22 +29,30 @@ export interface CoverLayoutScreenStyle {
   paddingTop?: number
   paddingBottom?: number
   translateYPx: number
+  translateXPx: number
 }
 
 /** On-screen flex justification + zone padding (computed in px from the
  * real `pageBox`, never a CSS percentage — padding percentages resolve
  * against the containing block's *width*, not height, which would distort
- * a portrait page) + the drag handle's current offset. */
+ * a portrait page) + the drag handle's current offset.
+ *
+ * `hNudge` is optional and defaults to `0` — Back Cover's blurb block calls
+ * this with only 3 arguments (see `CoverPage.content.horizontalNudge`'s doc
+ * comment for why Back Cover has no equivalent field), so this stays a pure
+ * backward-compatible extension, not a breaking signature change. */
 export function computeCoverLayoutScreenStyle(
   layout: CoverTextLayout | undefined,
   pageBox: PageBox,
   nudge: number | undefined,
+  hNudge?: number,
 ): CoverLayoutScreenStyle {
   const zonePad = pageBox.heightPx * ZONE_PADDING_FRACTION
   const translateYPx = (nudge ?? 0) * COVER_NUDGE_RANGE_PX
-  if (layout === 'top') return { justifyContent: 'flex-start', paddingTop: zonePad, translateYPx }
-  if (layout === 'bottom') return { justifyContent: 'flex-end', paddingBottom: zonePad, translateYPx }
-  return { justifyContent: 'center', translateYPx }
+  const translateXPx = (hNudge ?? 0) * COVER_NUDGE_RANGE_PX
+  if (layout === 'top') return { justifyContent: 'flex-start', paddingTop: zonePad, translateYPx, translateXPx }
+  if (layout === 'bottom') return { justifyContent: 'flex-end', paddingBottom: zonePad, translateYPx, translateXPx }
+  return { justifyContent: 'center', translateYPx, translateXPx }
 }
 
 /**
