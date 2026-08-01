@@ -33,6 +33,8 @@ export function useKeyboardShortcuts(projectId: string | null) {
   const zoom = useUiStore((s) => s.zoom)
   const viewMode = useUiStore((s) => s.viewMode)
   const setViewMode = useUiStore((s) => s.setViewMode)
+  const focusMode = useUiStore((s) => s.focusMode)
+  const setFocusMode = useUiStore((s) => s.setFocusMode)
   const clearSelection = useSelectionStore((s) => s.clear)
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
@@ -81,6 +83,15 @@ export function useKeyboardShortcuts(projectId: string | null) {
           setViewMode(viewMode === 'spread' ? 'single' : 'spread')
           break
         case 'Escape':
+          // Exiting focus mode takes priority over deselecting — the two
+          // things Escape does are never both relevant at once in practice
+          // (Sidebar/Inspector selection has nothing to show while focus
+          // mode's chrome-free layout is active), and "get me back to the
+          // normal shell" is the more urgent of the two.
+          if (focusMode !== 'none') {
+            setFocusMode('none')
+            break
+          }
           clearSelection()
           break
         case 'Delete':
@@ -113,6 +124,8 @@ export function useKeyboardShortcuts(projectId: string | null) {
     zoom,
     viewMode,
     setViewMode,
+    focusMode,
+    setFocusMode,
     clearSelection,
     selectedChapterId,
     selectedBlockId,

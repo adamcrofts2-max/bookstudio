@@ -2,8 +2,10 @@ import { Sidebar } from '@/layout/Sidebar'
 import { Toolbar } from '@/layout/Toolbar'
 import { Workspace } from '@/layout/Workspace'
 import { Inspector } from '@/layout/Inspector'
+import { FocusModeLayout } from '@/layout/FocusModeLayout'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
+import { useUiStore } from '@/store/uiStore'
 import type { Project } from '@/types'
 
 interface AppShellProps {
@@ -14,10 +16,20 @@ interface AppShellProps {
  * The three-column editor shell: Sidebar · (Toolbar + Workspace) · Inspector.
  * Per docs/UI_DESIGN_SYSTEM.md, this layout never moves — only its
  * contents change as features (editor, layout engine, themes) land.
+ *
+ * Exception: `uiStore.focusMode !== 'none'` swaps the whole shell for
+ * `FocusModeLayout` (Phase F's distraction-free writing/reading modes) —
+ * `useKeyboardShortcuts`/`useAutosaveSnapshots` stay mounted either way, so
+ * Escape-to-exit and autosave both keep working inside focus mode too.
  */
 export function AppShell({ project }: AppShellProps) {
   useKeyboardShortcuts(project.id)
   useAutosaveSnapshots(project.id)
+  const focusMode = useUiStore((s) => s.focusMode)
+
+  if (focusMode !== 'none') {
+    return <FocusModeLayout project={project} mode={focusMode} />
+  }
 
   return (
     <div className="flex h-dvh w-full bg-background">

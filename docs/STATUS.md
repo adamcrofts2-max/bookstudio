@@ -5035,12 +5035,61 @@ never reads or writes manuscript data itself, only observes the total
 phase since 55) — in particular, the day-boundary logic is straightforward but
 untested live across an actual local-midnight rollover.
 
+## Phase 73 — Distraction-free writing mode + reading mode (2026-08-01)
+
+The user asked for a reading mode alongside the already-roadmapped distraction-free
+writing mode, so both shipped together as one shared mechanism rather than two
+independent features — they're mutually exclusive states of the same "hide the chrome"
+concept, not two unrelated additions.
+
+- **`store/uiStore.ts`.** New `FocusMode = 'none' | 'write' | 'read'`, `focusMode`
+  state (default `'none'`), `setFocusMode` action — excluded from persistence (same
+  reasoning as `projectSettingsOpen`: a focus session shouldn't resume itself after a
+  reload).
+- **`renderer/Page.tsx`'s existing `decorative` prop is the whole read-mode
+  mechanism.** It already suppressed every interactive affordance (no `BlockToolbar`,
+  no insert-block drop zones, no `PageToolbar`, no `contentEditable`, no
+  `NoteIndicatorBadge`) for `ThumbnailPage.tsx`'s tiny-scale copies — confirmed nothing
+  about it assumes thumbnail scale, so reading mode just threads the same flag through
+  at full size instead of inventing a second non-interactive rendering path.
+  `LazySpread.tsx` gained a pass-through `decorative?: boolean` prop (forwarded to
+  `Page`); `BookRenderer.tsx` gained `decorative?: boolean` and `hideThumbnails?:
+  boolean` props (the latter overrides `uiStore.showThumbnails` without touching the
+  user's actual preference, so the rail comes back exactly as they left it once they
+  exit focus mode).
+- **`layout/FocusModeLayout.tsx`** (new). Renders instead of the three-column
+  `AppShell` whenever `focusMode !== 'none'` — just `BookRenderer` full-screen with
+  `hideThumbnails` always on, plus one small floating pill (mode label, "Esc to exit"
+  hint, an explicit `X` button) as the only chrome. `write` passes `decorative=false`
+  (today's normal fully-editable behaviour); `read` passes `decorative=true`. A
+  project with no manuscript yet shows a plain "nothing to show" message with an exit
+  button rather than an empty full-screen void.
+- **`layout/AppShell.tsx`.** One new branch: `if (focusMode !== 'none') return
+  <FocusModeLayout .../>`, placed *after* `useKeyboardShortcuts`/`useAutosaveSnapshots`
+  are called so both stay active inside focus mode (Escape-to-exit and autosave both
+  keep working).
+- **`hooks/useKeyboardShortcuts.ts`.** `Escape` now checks `focusMode` first — exiting
+  takes priority over the existing deselect behaviour, since Sidebar/Inspector
+  selection has nothing to show while focus mode's chrome-free layout is active anyway.
+- **`layout/Toolbar.tsx`.** One combined `DropdownMenu` (a single `Focus`-icon button,
+  disabled when there's no manuscript) with two items, "Distraction-free writing" and
+  "Reading mode" — deliberately not two more toolbar buttons, given the crowding
+  already flagged in `docs/SUGGESTIONS.md`'s Phase 67 entry.
+- **`KeyboardShortcutsDialog.tsx`.** Updated the existing `Esc` row's label to mention
+  both behaviours.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
+phase since 55) — worth a live check that `zoom`/spread-view/thumbnail-rail state
+genuinely restores untouched after exiting focus mode, since `hideThumbnails` is a
+render-time override rather than a state mutation and should leave `uiStore
+.showThumbnails` itself alone, but this is the kind of prop-plumbing that's easy to get
+subtly wrong without seeing it run.
+
 ## Recommended next task
-Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
-Continuity checker, extending the Virtual Editor's checker architecture over Layer 0
-data — the last major unbuilt AI-Workspace item; (2) distraction-free writing mode, the
-one remaining Phase F item with no dependencies on anything else in this phase; (3) the
-bigger "insert AI-drafted prose into the manuscript with a reviewable diff" feature
-flagged in Phase 68. Also still open and worth folding in opportunistically: manuscript
-search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, flagged
-2026-08-01).
+Per the settled build order (Phase F before D/B), Phase F's item list is now down to
+one: the Continuity checker, extending the Virtual Editor's checker architecture over
+Layer 0 data — the last major unbuilt AI-Workspace item, and probably the natural next
+piece of work once it's reached. Also still open and worth folding in
+opportunistically: manuscript search/find, real spellcheck, a thesaurus
+(docs/ROADMAP.md Phase B/F, flagged 2026-08-01), and the bigger "insert AI-drafted
+prose into the manuscript with a reviewable diff" feature flagged in Phase 68.

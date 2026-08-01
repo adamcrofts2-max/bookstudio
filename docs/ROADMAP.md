@@ -529,7 +529,25 @@ daily use of everything built so far.)*
       no-backend architecture makes a bundled dataset the more consistent
       choice with everything else in this phase (no accounts/billing
       needed, same reasoning `ClipboardProvider` below uses). Not started.
-- [ ] Distraction-free writing mode
+- [x] Distraction-free writing mode, plus a reading mode (user-requested
+      alongside it, 2026-08-01) — shipped 2026-08-01 (Phase 73). One shared
+      `uiStore.focusMode: 'none' | 'write' | 'read'` rather than two independent
+      flags (a user is never in both at once). `FocusModeLayout.tsx` renders
+      instead of the three-column `AppShell` whenever `focusMode !== 'none'` —
+      just `BookRenderer` full-screen, no Sidebar/Toolbar/Inspector, plus a small
+      floating pill (mode label + Esc hint + an explicit exit button). `write`
+      keeps every page fully editable (today's normal behaviour, minus the
+      chrome); `read` passes `decorative={true}` through the newly-threaded
+      `BookRenderer` → `LazySpread` → `Page` prop chain, reusing `Page.tsx`'s
+      existing thumbnail-only interactivity flag at full size instead of
+      inventing a second non-interactive rendering path — no `BlockToolbar`, no
+      insert-block drop zones, no contentEditable, nothing clickable but plain
+      scrolling. Entry point is one combined `DropdownMenu` (`Focus` icon) in
+      `Toolbar.tsx`, not two more buttons, given the crowding already flagged in
+      `docs/SUGGESTIONS.md`'s Phase 67 entry. Escape exits (wired into
+      `useKeyboardShortcuts.ts`, which stays mounted in focus mode since it lives
+      in `AppShell.tsx` above the branch) and takes priority over its existing
+      deselect behaviour while focus mode is active.
 - [x] AI Workspace: scoped prompt generator (`ClipboardProvider`) — shipped
       2026-08-01 (Phase 66). `types/aiProvider.ts` defines the swappable
       `AiProvider` interface (`sendPrompt(text)`) plus the v1

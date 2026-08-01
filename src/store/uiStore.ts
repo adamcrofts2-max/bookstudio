@@ -21,6 +21,20 @@ export type WorkspaceMode = 'manuscript' | 'virtualEditor'
  * `EditorPage.tsx`). */
 export type AppMode = 'editor' | 'planning'
 
+/** `none` is the normal three-column shell. `write` and `read` both render
+ * `FocusModeLayout` instead (just the book canvas, full-screen, no Sidebar/
+ * Toolbar/Inspector) — the only difference between them is whether the
+ * canvas is editable. `write` is "distraction-free writing" (today's normal
+ * editing, minus the chrome); `read` is a clean, non-interactive preview
+ * (reuses `Page.tsx`'s existing `decorative` flag — no BlockToolbar, no
+ * insert-block drop zones, no contentEditable — the same flag `ThumbnailPage
+ * .tsx` already relies on, just at full size instead of thumbnail scale).
+ * Both Phase F items from `docs/ROADMAP.md` ("distraction-free writing
+ * mode" and the user-requested "reading mode") share this one piece of
+ * state rather than two independent booleans, since a user is never in both
+ * at once. */
+export type FocusMode = 'none' | 'write' | 'read'
+
 interface UiStoreState {
   appearance: AppearanceMode
   sidebarCollapsed: boolean
@@ -43,6 +57,7 @@ interface UiStoreState {
    * dialog shouldn't reopen itself after a page reload. */
   projectSettingsOpen: boolean
   appMode: AppMode
+  focusMode: FocusMode
 }
 
 interface UiStoreActions {
@@ -57,6 +72,7 @@ interface UiStoreActions {
   toggleCoverSafeZone: () => void
   setProjectSettingsOpen: (open: boolean) => void
   setAppMode: (mode: AppMode) => void
+  setFocusMode: (mode: FocusMode) => void
 }
 
 /**
@@ -78,6 +94,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       showCoverSafeZone: false,
       projectSettingsOpen: false,
       appMode: 'editor',
+      focusMode: 'none',
 
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -102,11 +119,14 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       toggleCoverSafeZone: () => set((state) => ({ showCoverSafeZone: !state.showCoverSafeZone })),
       setProjectSettingsOpen: (open) => set({ projectSettingsOpen: open }),
       setAppMode: (mode) => set({ appMode: mode }),
+      setFocusMode: (mode) => set({ focusMode: mode }),
     }),
     {
       name: 'book-studio.ui',
       version: 1,
-      partialize: ({ projectSettingsOpen: _projectSettingsOpen, ...rest }) => rest,
+      // Neither a dialog's open state nor focus mode should reopen/resume
+      // itself after a page reload — same reasoning as `projectSettingsOpen`.
+      partialize: ({ projectSettingsOpen: _projectSettingsOpen, focusMode: _focusMode, ...rest }) => rest,
     },
   ),
 )

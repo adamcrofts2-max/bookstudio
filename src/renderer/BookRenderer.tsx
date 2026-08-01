@@ -19,6 +19,17 @@ import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structur
 interface BookRendererProps {
   project: Project
   manuscript: Manuscript
+  /** Passed straight through to every rendered `Page` — see that
+   * component's own doc comment. `FocusModeLayout.tsx`'s Reading Mode is
+   * the only caller that sets this; every other caller leaves it
+   * `undefined`, preserving today's fully-editable behavior exactly. */
+  decorative?: boolean
+  /** Overrides `uiStore.showThumbnails` to force the rail off regardless of
+   * the user's normal preference — Focus Mode (both write and read) wants
+   * the full canvas, not a rail alongside it, without touching the
+   * preference itself (leaving the rail exactly as the user left it once
+   * they exit focus mode). */
+  hideThumbnails?: boolean
 }
 
 /**
@@ -47,12 +58,12 @@ function groupIntoSpreads(pages: LaidOutPage[]): LaidOutPage[][] {
   return spreads
 }
 
-export function BookRenderer({ project, manuscript }: BookRendererProps) {
+export function BookRenderer({ project, manuscript, decorative, hideThumbnails }: BookRendererProps) {
   const theme = resolveTheme(project.settings.themeId)
   const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
   const viewMode = useUiStore((s) => s.viewMode)
   const zoom = useUiStore((s) => s.zoom)
-  const showThumbnails = useUiStore((s) => s.showThumbnails)
+  const showThumbnails = useUiStore((s) => s.showThumbnails) && !hideThumbnails
 
   const dropCapBlockIds = useMemo(() => {
     const ids = new Set<string>()
@@ -221,6 +232,7 @@ export function BookRenderer({ project, manuscript }: BookRendererProps) {
                 bookTitle={project.name}
                 language={project.settings.language}
                 forceVisible={forcedSpreadIndices.has(i)}
+                decorative={decorative}
               />
             ))}
           </div>

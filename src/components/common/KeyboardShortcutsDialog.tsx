@@ -13,7 +13,7 @@ const SHORTCUTS: { keys: string; label: string }[] = [
   { keys: 'V', label: 'Toggle spread / single page view' },
   { keys: '+ / -', label: 'Zoom in / out' },
   { keys: '0', label: 'Reset zoom to 100%' },
-  { keys: 'Esc', label: 'Deselect' },
+  { keys: 'Esc', label: 'Exit focus mode, or deselect' },
 ]
 
 export function KeyboardShortcutsDialog({ open, onOpenChange }: KeyboardShortcutsDialogProps) {

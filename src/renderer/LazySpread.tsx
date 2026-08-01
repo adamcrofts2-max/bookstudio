@@ -22,6 +22,11 @@ interface LazySpreadProps {
    * never un-mounts again.
    */
   forceVisible?: boolean
+  /** Passed straight through to `Page.tsx`'s own `decorative` prop — see
+   * that file's doc comment. Used by Reading Mode (`FocusModeLayout.tsx`)
+   * to render full-size, fully non-interactive pages; `undefined`/`false`
+   * everywhere else preserves today's fully-editable behavior exactly. */
+  decorative?: boolean
 }
 
 /**
@@ -33,7 +38,7 @@ interface LazySpreadProps {
  * (no unmount-on-scroll-away) to avoid re-triggering the height
  * measurement pass and to keep scrolling smooth.
  */
-export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds, toc, bookTitle, language, forceVisible }: LazySpreadProps) {
+export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds, toc, bookTitle, language, forceVisible, decorative }: LazySpreadProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [visible, setVisible] = useState(false)
   const isVisible = visible || Boolean(forceVisible)
@@ -66,6 +71,7 @@ export function LazySpread({ projectId, spread, pageBox, theme, dropCapBlockIds,
             toc={toc}
             bookTitle={bookTitle}
             language={language}
+            decorative={decorative}
           />
         ) : (
           <div

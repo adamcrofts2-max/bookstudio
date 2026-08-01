@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  BookOpenText,
   ChevronDown,
   ChevronsRight,
   Download,
+  Focus,
   FolderOpen,
   History,
   Keyboard,
@@ -11,6 +13,7 @@ import {
   Moon,
   NotebookPen,
   PanelLeft,
+  PenLine,
   Redo2,
   Save,
   Sparkles,
@@ -28,6 +31,7 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
+import { useContentStore } from '@/store/contentStore'
 import { useUiStore } from '@/store/uiStore'
 import { Logo } from '@/components/common/Logo'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
@@ -88,6 +92,8 @@ export function Toolbar({ project }: ToolbarProps) {
   const workspaceMode = useUiStore((s) => s.workspaceMode)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setAppMode = useUiStore((s) => s.setAppMode)
+  const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const manuscript = useContentStore((s) => s.getManuscript(project.id))
   // Lifted to uiStore (not local state) so the Inspector's Theme tab can
   // open this same dialog — see uiStore.ts's `projectSettingsOpen` comment.
   const settingsOpen = useUiStore((s) => s.projectSettingsOpen)
@@ -199,6 +205,31 @@ export function Toolbar({ project }: ToolbarProps) {
         >
           {resolved === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </IconButton>
+
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" aria-label="Focus mode" disabled={!manuscript}>
+                    <Focus className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{manuscript ? 'Hide everything but the page — for writing or reading' : 'Import a manuscript first'}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem className="gap-2" onSelect={() => setFocusMode('write')}>
+              <PenLine className="size-3.5" />
+              Distraction-free writing
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setFocusMode('read')}>
+              <BookOpenText className="size-3.5" />
+              Reading mode
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <Tooltip>
           <TooltipTrigger asChild>
