@@ -9,6 +9,33 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 71 (2026-08-01) — Outlining / story-structure templates
+
+- **Applying two templates back-to-back interleaves nothing, but does concatenate.**
+  If a user applies "Three-Act Structure" and then, out of curiosity, also applies
+  "The Hero's Journey," they get 20 timeline events in a row — the two structures
+  don't merge or offer to replace, they just stack. That's the correct safe default
+  (never destructive), but there's no guardrail warning "you already have a
+  structure applied, are you sure you want to add a second one?" Low priority since
+  it's easily undone or manually deleted, but worth a lightweight warning if this
+  turns out to be a common accidental click.
+- **No connection yet between a Timeline beat and an actual manuscript chapter.**
+  Once a user outlines "Midpoint" and later writes the chapter that covers it,
+  nothing links the two — `PromptGeneratorPanel.tsx`'s chapter picker and the
+  Timeline are still totally independent. A "which beat does this chapter cover"
+  link (even just an optional field) would let the prompt generator pull in the
+  right beat's description automatically, and would make the eventual Continuity
+  checker meaningfully stronger (it could check that a chapter's events don't
+  contradict where the outline says the story should be). Worth considering once
+  the Continuity checker (next roadmap item) is scoped.
+- **Five templates is a reasonable starting set, not a ceiling.** Worth keeping an
+  eye out for requests for genre-specific ones this doesn't cover well yet — a
+  romance-specific beat sheet, a mystery/whodunit structure (clue-planting beats),
+  or a memoir/essay shape distinct from the current generic Problem→Solution
+  nonfiction template.
+
+---
+
 ## After Phase 70 (2026-08-01) — Project-creation wizard: genre/audience template
 
 - **`ProjectCategory` is doing double duty as both "genre" and "audience," and that
