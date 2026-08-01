@@ -9,6 +9,38 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 68 (2026-08-01) — AI Workspace: paste-response-back with reviewable diff
+
+- **The "insert AI-drafted prose into the manuscript" feature is still genuinely
+  open.** Phase 68 closes the bible-sync half of the AI Workspace loop (per
+  `AI_WORKSPACE_VISION.md`'s explicit scoping), but the other half — "I asked my AI
+  to draft Chapter 7's opening scene, here's the reply, put it in the manuscript with
+  something to review before it commits" — is a distinct, probably more commonly
+  wanted feature that nothing currently covers. It needs its own scoping pass (most
+  likely: hand the pasted text to `src/parser/`'s existing import pipeline to get
+  candidate blocks, then a reviewable insert-preview before committing via
+  `editorActions.ts`), not a variant of what shipped today. Worth prioritising above
+  the Continuity checker if user feedback says "draft new content" matters more than
+  "keep the bible in sync," since the former is likely the more visible day-to-day
+  value.
+- **`PasteBackPanel`'s detection is currently silent about the 6 entity kinds it
+  skips.** A user who pastes a response full of new terminology or a new timeline
+  event gets zero suggestions and no explanation of why glossary terms/timeline
+  events/references aren't covered — the empty state only fires when *nothing at
+  all* matches. A "showing suggestions for Characters and Locations only" caption
+  (even when suggestions exist) would set expectations better than silence,
+  especially before a user has read `docs/ROADMAP.md`'s reasoning.
+- **No suggestion survives a Planning-mode re-render if the user navigates away and
+  back.** `pastedText`/`statuses`/`drafts` are local component state, not persisted —
+  reasonable for a "quick paste, quick review" workflow, but if the AI's reply is
+  long and a user gets interrupted mid-review, everything is lost on navigating to
+  another Planning category and back. Not worth over-engineering into full
+  persistence, but a "you have N unreviewed suggestions" indicator (or just warning
+  before navigating away) would be a small, cheap improvement if this turns out to
+  bite in practice.
+
+---
+
 ## After Phase 67 (2026-08-01) — toolbar overflow fix; Inspector auto-expand
 
 - **Toolbar crowding is now a real constraint, not just a one-off overlap.** The
