@@ -9,6 +9,52 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 75 (2026-08-01) — Find (and find-and-replace) across the manuscript
+
+- **Search doesn't cover chapter titles, or anything outside the manuscript
+  (Layer 0 bible, structural page text, cover text).** `findMatches` is scoped to
+  `extractTextSpans`, which only ever walks `Manuscript.chapters[].blocks` — a
+  chapter's own `title` field, structural-page copy (About the Author, Copyright,
+  etc.), and cover/back-cover text elements are all invisible to Search today. A
+  user searching for a character's name won't find it if it only appears in a
+  chapter title or the back-cover blurb. Worth scoping a follow-up once there's a
+  sense how often that gap actually bites — chapter titles are probably the most
+  common miss, since renaming one to fix a typo is a very ordinary "find and check"
+  use case.
+- **No "next match" / "previous match" step-through, no active-match indicator.**
+  The results list is fully browsable and click-to-jump works, but there's no
+  single "step to the next occurrence and highlight it" affordance the way a
+  browser's native find bar has — every click is an independent jump with no
+  sense of a current position in the list. Worth adding if this feature sees
+  real use and stepping through results one at a time (rather than scanning the
+  list) turns out to be the more common workflow.
+- **The single-match Replace button's occurrence-index approach is solid for the
+  documented block/field shapes but was only checked against a paragraph with
+  inline `<strong>` markup, not every block type this codebase has (tables,
+  lists, quotes with attribution).** The left-to-right-order argument
+  (`manuscriptSearch.ts`'s own doc comment) holds structurally for all of them
+  since `patchTextField`/`getRawFieldText` already handle each field shape
+  generically, but only the paragraph case was actually exercised in the
+  standalone smoke test — worth a quick live check against a table cell or list
+  item once the app is running, just to see it work rather than only reasoning
+  about it.
+- **Replace All has no per-chapter or per-match opt-out — it's all-or-nothing
+  once triggered.** A user who searches for a common short word (e.g. "the")
+  and wants to replace most but not all occurrences currently has to use the
+  single-match Replace button one at a time rather than "replace all except
+  these three." Low priority — the single-match button already covers the
+  precise case, and Replace All covers the bulk case — but a checkbox-per-match
+  selection model is the natural richer version if this feature sees heavy use.
+- **The Search tab's `<mark>` highlight colour was picked ad hoc
+  (`bg-[var(--color-warning)]/40`) rather than sourced from a documented design
+  token for "search highlight" specifically** — `docs/UI_DESIGN_SYSTEM.md` wasn't
+  checked for a more specific token before this phase shipped. Worth a quick
+  design-system audit pass to confirm this is the intended treatment (or swap to
+  whatever token is correct) rather than assuming a reused warning colour is right
+  by default.
+
+---
+
 ## After Phase 74 (2026-08-01) — Continuity checker over Layer 0 data
 
 - **Both checks are name-matching, so a renamed or nicknamed entity is a guaranteed
