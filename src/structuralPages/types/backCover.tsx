@@ -115,7 +115,10 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
       {selected && (
-        <div className="absolute left-1/2 top-4 z-10 -translate-x-1/2">
+        // z-20, above `CoverElementLayer`'s z-10 — see `cover.tsx`'s
+        // matching fix for why (a dragged-on-top element used to block
+        // this button, same z-index with DOM order deciding the tie).
+        <div className="absolute left-1/2 top-4 z-20 -translate-x-1/2">
           <CoverImageUploadButton
             projectId={projectId}
             label={imageUrl ? 'Change image' : 'Add back-cover image'}
@@ -124,7 +127,7 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         </div>
       )}
       {selected && (
-        <div className="absolute right-4 top-4 z-10">
+        <div className="absolute right-4 top-4 z-20">
           <CoverElementToolbar
             elements={page.content.elements}
             onAdd={(elements, newId) => {
@@ -146,8 +149,14 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         onCommitElements={(elements) => onCommit({ elements })}
       />
       {!(blurbHidden && !selected) && (
+        // `pointer-events-none` — same fix as `cover.tsx`'s title block:
+        // this div is `absolute inset-0`, so its empty space (most of the
+        // page — the blurb `<p>` tags below are plain display text, never
+        // interactive) used to swallow clicks meant for "Drop a back-cover
+        // image here" underneath. The two real controls inside
+        // (`FieldVisibilityToggle`/`CoverNudgeHandle`) opt back in below.
         <div
-          className="absolute inset-0 flex flex-col gap-4 px-16 py-24"
+          className="pointer-events-none absolute inset-0 flex flex-col gap-4 px-16 py-24"
           style={{
             justifyContent: layoutStyle.justifyContent,
             paddingTop: layoutStyle.paddingTop,
@@ -156,7 +165,7 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
           }}
         >
           {selected && (
-            <div className="mx-auto flex items-center gap-2">
+            <div className="pointer-events-auto mx-auto flex items-center gap-2">
               <FieldVisibilityToggle
                 hidden={blurbHidden}
                 label="Back-cover copy"
@@ -193,13 +202,15 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         </div>
       )}
       {(page.content.authorBio || !imageUrl) && !(authorBioHidden && !selected) && (
-        <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 px-16 pb-14">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-2 px-16 pb-14">
           {selected && (
-            <FieldVisibilityToggle
-              hidden={authorBioHidden}
-              label="Author bio"
-              onToggle={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'authorBio') })}
-            />
+            <div className="pointer-events-auto">
+              <FieldVisibilityToggle
+                hidden={authorBioHidden}
+                label="Author bio"
+                onToggle={() => onCommit({ hiddenFields: toggleHiddenField(hiddenFields, 'authorBio') })}
+              />
+            </div>
           )}
           <p
             style={{
@@ -264,7 +275,7 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
   // shared reasoning.
   const trimWidthPt = pageBox.widthPx * PX_TO_PT
   const trimHeightPt = pageBox.heightPx * PX_TO_PT
-  drawCoverElementsPdf(ctx, page.content.elements, bleedPt, trimWidthPt, trimHeightPt)
+  await drawCoverElementsPdf(ctx, page.content.elements, bleedPt, trimWidthPt, trimHeightPt)
 
   const typography = page.content.typography
   // Same override-wins, else-automatic rule as `cover.tsx` — Phase 49.

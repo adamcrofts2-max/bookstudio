@@ -146,7 +146,7 @@ export type BackCoverTextFieldId = 'blurb' | 'authorBio'
  * `structuralPages/registry.ts`'s `StructuralPageTypeDefinition` doc comment
  * warns about).
  */
-export type CoverElementKind = 'rect' | 'ellipse' | 'line' | 'text' | 'icon' | 'badge'
+export type CoverElementKind = 'rect' | 'ellipse' | 'line' | 'text' | 'icon' | 'badge' | 'image'
 
 /**
  * Shared fields, deliberately WITHOUT `kind` — the discriminant is declared
@@ -263,7 +263,34 @@ export interface CoverBadgeElement extends BaseCoverElement {
   fontChoice?: CoverFontChoice
 }
 
-export type CoverElement = CoverShapeElement | CoverTextElement | CoverIconElement | CoverBadgeElement
+/** A secondary image — author photo, publisher/series logo, or any other
+ * additional picture beyond the one main full-bleed background image
+ * (`CoverPage.content.imageAssetId`). Deliberately simpler than that main
+ * image's own focal-point + zoom cropping (`CoverImageFocalPoint`) for now
+ * — always a plain centred `object-fit: cover` crop; reuses
+ * `coverImageFit.ts`'s existing placement math with the default centre
+ * focal point rather than duplicating it, so adding focal-point control
+ * here later is a small extension, not a rewrite. */
+export interface CoverImageElement extends BaseCoverElement {
+  kind: 'image'
+  imageAssetId?: string
+}
+
+export type CoverElement = CoverShapeElement | CoverTextElement | CoverIconElement | CoverBadgeElement | CoverImageElement
+
+/** Independent free-position override for one of Cover's title/subtitle/
+ * author fields — normalised 0..1 fraction of the trim box, anchored at the
+ * field's own centre (matching how `CoverElement`'s text/badge kinds anchor
+ * their text). Absent means the field stays in the shared flex layout
+ * (`layout` + `verticalNudge`/`horizontalNudge`), the pre-existing
+ * behaviour — set the first time the user drags that field directly instead
+ * of the whole-block `CoverNudgeHandle`, and cleared again by a reset
+ * action to rejoin the shared layout. See `structuralPages/shared.tsx`'s
+ * `DraggableCoverField`. */
+export interface CoverFieldPosition {
+  x: number
+  y: number
+}
 
 export interface CoverPage extends BaseStructuralPage {
   type: 'cover'
@@ -271,6 +298,11 @@ export interface CoverPage extends BaseStructuralPage {
     title?: string
     subtitle?: string
     author?: string
+    /** Independent position for `title`, overriding the shared flex layout
+     * below once set — see `CoverFieldPosition`. */
+    titlePosition?: CoverFieldPosition
+    subtitlePosition?: CoverFieldPosition
+    authorPosition?: CoverFieldPosition
     imageAssetId?: string
     layout?: CoverTextLayout
     /**

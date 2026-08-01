@@ -4318,22 +4318,114 @@ small, low-risk canvas conveniences, all agreed rather than independently decide
 `tsc -b` clean. Not independently verified live in Chrome — same sandbox `npm run dev`
 blocker as Phases 55–57.
 
+## Phase 59 — Free-positioned title/subtitle/author, pointer-conflict fixes, secondary image elements (2026-08-01)
+
+Direct response to the user's five-part request: two bug reports, one explicit reversal
+of Phase 57's "not taken" decision, one new element kind, and a request to think through
+what's still missing.
+
+- **"Drop a cover image here" / drag-to-reposition not working — root cause.** The
+  title/subtitle/author wrapper `div` (Cover) and the blurb/author-bio wrapper `div`s
+  (Back Cover) are `absolute inset-0` with no `pointer-events` restriction. A plain div's
+  hit-test area is its *whole box*, not just the pixels its text actually occupies — so
+  once that div existed (i.e. basically always), it silently caught every click/drag
+  across almost the entire page, leaving `StructuralImageDropZone` and `CoverNudgeHandle`
+  underneath unreachable except on the exact pixels covered by rendered text glyphs.
+  Fixed the same way Phase 57 fixed the element-layer/focal-point-picker conflict:
+  `pointer-events-none` on the wrapper, `pointer-events-auto` opted back in on each real
+  interactive child (the nudge handle, the visibility toggles). Same fix applied to both
+  `cover.tsx` and `backCover.tsx`.
+- **"Add cover image" / "Add element" buttons unclickable once an element sits on top" —
+  root cause.** Both buttons and `CoverElementLayer`'s container were `z-10`; at equal
+  z-index, later DOM order wins the paint (and hit-test) order, and `CoverElementLayer`
+  renders after the buttons. Bumped both buttons to `z-20` in both `cover.tsx` and
+  `backCover.tsx`.
+- **Independent free-positioning for title/subtitle/author — the Phase 57 decision
+  reversed, on explicit request.** New `CoverFieldPosition` (`{ x, y }`, trim-box
+  fractions) and three optional fields on `CoverPage.content`
+  (`titlePosition`/`subtitlePosition`/`authorPosition`), each unset until the user first
+  drags that specific field. New `DraggableCoverField` (`structuralPages/shared.tsx`):
+  wraps one field, measures its own origin via `getBoundingClientRect()` on first
+  pointer-down, live-previews via local state, commits once on release
+  (`onCommit`/`updatePageContentWithHistory`, one undo entry per drag) — and
+  distinguishes an ordinary click (select the page, double-click to edit, tap the
+  visibility toggle) from an actual drag via a 3px movement threshold, so a plain click
+  doesn't spuriously "detach" a field with zero real movement. A small
+  `ResetFieldPositionButton` (only shown once a field has a position override) clears it
+  back to the automatic layout-preset position. Wired into both screen rendering (each
+  field's wrapper switches from the shared centred-column layout to an absolute,
+  anchor-centred `transform: translate(-50%,-50%)` once positioned) and PDF export (new
+  `fieldPdfXY` helper in `cover.tsx`, same trim-box-fraction-to-points conversion every
+  other cover measurement already uses). Deliberately Front-Cover-only, matching Phase
+  58's horizontalNudge scope decision — Back Cover's blurb/author-bio stay as flowing
+  blocks, not freely repositioned.
+- **Secondary image elements — new `'image'` `CoverElementKind`.** Distinct from the
+  page's one background cover image: a freely positioned/resized/duplicated photo layered
+  on top, for things like an author headshot or a publisher/series logo. Reuses
+  `coverImageFit.ts`'s existing `computeCoverImagePdfPlacement` scoped to the element's
+  own box instead of the full media box (confirmed generic before use, no new crop math
+  needed) — always centred cover-fit for now, no focal-point/zoom controls on secondary
+  images yet. `drawCoverElementsPdf` (`coverElements.ts`) is now `async` (both call sites
+  in `cover.tsx`/`backCover.tsx` updated to `await` it) so it can `getAssetBlob` →
+  `blobToPng` → `ctx.page.doc.embedPng` per element. Because a cover-fit-scaled secondary
+  image routinely overflows its own (usually smaller-than-page) box — unlike the
+  full-bleed background image, which never overflows the page — the PDF draw wraps the
+  `drawImage` call in a real pdf-lib clip (`pushGraphicsState()` → `rectangle(...)` →
+  `clip()` → `endPath()` → draw → `popGraphicsState()`), verified with a standalone
+  rasterized test PDF (not just code review): an oversized image placed inside a small
+  clipped box painted only inside that box, and a shape drawn after `popGraphicsState()`
+  confirmed the clip doesn't leak into later drawing. On screen, `ElementBody` renders the
+  asset via `useAssetStore`'s `getObjectUrl` with `object-fit: cover`, or an empty-state
+  placeholder ("Select, then choose an image in the panel") when no asset is set yet —
+  matching `StructuralImageDropZone`'s "empty state prompts for content" pattern. Content
+  edits (choosing/replacing the image) go through the Inspector panel
+  (`CoverElementPanel`, via the shared `useImageUpload` hook), not on-canvas, consistent
+  with this canvas's existing convention that position/size are dragged on-canvas while
+  content is set in the Inspector.
+
+`tsc -b --force` clean. `oxlint` crashes with a sandbox-level bus error on this machine
+(pre-existing, unrelated to these changes) so it could not be run this phase — flagging
+so a future session with a working `oxlint` re-checks these files. Not independently
+verified live in Chrome — same sandbox `npm run dev` blocker as Phases 55–58.
+
+### Brainstorm: what else the cover/back-cover editor needs before calling it "finished"
+Asked for directly by the user. Grouped roughly by effort — see `docs/ROADMAP.md` Phase E
+for the items already tracked there (rotation, snap-to-other-elements, on-canvas
+double-click text editing, wrap-aware spine view — all still open).
+
+Small, low-risk follow-ups:
+- **Delete/Backspace keyboard shortcut** for the selected element — duplicate and nudge
+  already have keyboard affordances; delete currently only has the toolbar trash icon.
+- **A "remove image" action** on image elements (revert to the empty placeholder), not
+  just "replace" — currently the only way back to empty is deleting the whole element.
+- **Opacity control** on icon/badge/image elements — rect/ellipse already have
+  `fillOpacity`; the newer kinds don't.
+- **Focal point + zoom on secondary images** — shipped centred-only this phase; a
+  headshot or logo that isn't naturally centred in its source photo has no way to
+  recrop, unlike the page's main background image.
+
+Bigger, real design decisions:
+- **A layers list/panel.** With several elements able to fully overlap (badges over
+  images, icons over shapes), clicking through a stack to select the one underneath is
+  already awkward and will get worse as covers get more complex — a Figma/Canva-style
+  layer list solves this properly; incremental z-order nudges (forward/back one step, not
+  just all-the-way front/back) are a smaller partial fix.
+  Multi-select and grouping are the same underlying gap.
+- **Per-element accessibility/contrast checking.** The app's existing Accessibility
+  checker looks at manuscript content; it doesn't yet know free-form cover text elements
+  exist, so a white title over a light patch of a background photo currently ships
+  unflagged.
+- **Back Cover parity decision.** Blurb/author-bio deliberately stayed flowing blocks
+  this phase (matching Phase 58's scope cut) — worth a deliberate yes/no on whether Back
+  Cover ever gets the same free-positioning Front Cover just did, rather than leaving it
+  an unstated asymmetry.
+
 ## Recommended next task
-All five items from the original "think about it" request plus both
-chapter-management follow-ups (add, reorder) are shipped, plus Phase 53's five audit
-fixes, Phase 54's cover-canvas Milestone 1, Phase 55's Milestone 2 (icons/badges),
-Phase 56's two small UX fixes, Phase 57's element-drag fix + snap-to-centre, and Phase
-58's four canvas conveniences (2D text-block drag, duplicate, arrow-nudge, align
-buttons). Distraction-free reading mode was discussed with the user (2026-08-01) but
-deliberately not built yet, pending their direction on scope. Converting the cover's
-image/text fields into full `CoverElement`s was discussed and NOT taken — the 2D-drag
-middle ground in this phase covers the concrete need without the migration risk; revisit
-only if a real need for independently-draggable title/subtitle/author (not as one group)
-comes up. The highest-leverage remaining items otherwise: the real fix for the Phase J
-renderer-freeze item (worker-based or otherwise), and the next cover-canvas follow-ups —
-rotation, secondary images, snap-to-other-elements (page-centre snapping already shipped
-in Phase 57), or the wrap-aware front+spine+back
-view (see `docs/ROADMAP.md` Phase E for the full deferred list). Absent
-further direction, Phase F's remaining items
-(project-creation wizard, outlining templates, word-count goals,
-distraction-free writing mode) are next per `docs/ROADMAP.md`.
+Phase 59 closes all five parts of the user's request (two bug fixes, free-positioning,
+secondary images, this brainstorm). Nothing is mid-flight. Highest-leverage next steps,
+roughly in order: pick one of the "small, low-risk" brainstorm items above (delete
+keyboard shortcut is probably the fastest), or the layers-list panel if overlapping
+elements are becoming a real problem, or move on to a different `docs/ROADMAP.md` Phase E
+item (rotation, wrap-aware spine view) or Phase F (project-creation wizard, outlining
+templates, word-count goals, distraction-free writing mode) absent further direction from
+the user.

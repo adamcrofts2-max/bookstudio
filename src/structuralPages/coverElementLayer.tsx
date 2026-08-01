@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trash2, ArrowUpToLine, ArrowDownToLine, Copy } from 'lucide-react'
+import { Trash2, ArrowUpToLine, ArrowDownToLine, Copy, ImagePlus } from 'lucide-react'
 
 import type { CoverElement } from '@/types/structuralPage'
 import type { ResolvedBookTheme } from '@/theme/presets'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
 import { updateElement, bringToFront, sendToBack, removeElement, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS } from '@/structuralPages/coverIcons'
+import { useAssetStore } from '@/store/assetStore'
 import { cn } from '@/lib/utils'
 
 function clamp(value: number, min: number, max: number): number {
@@ -297,6 +298,11 @@ export function CoverElementLayer({ elements, theme, pageSelected, selectedEleme
 }
 
 function ElementBody({ element, theme }: { element: CoverElement; theme: ResolvedBookTheme }) {
+  // Called unconditionally (hooks can't be conditional) — only read for the
+  // 'image' kind below, same tradeoff every other kind-specific branch here
+  // already accepts.
+  const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+
   if (element.kind === 'text') {
     const fontFamily = resolveCoverFontFamily({ fontChoice: element.fontChoice }, theme.fonts.body)
     return (
@@ -361,6 +367,25 @@ function ElementBody({ element, theme }: { element: CoverElement; theme: Resolve
         </span>
       </div>
     )
+  }
+
+  if (element.kind === 'image') {
+    const url = element.imageAssetId ? getObjectUrl(element.imageAssetId) : undefined
+    if (!url) {
+      // Empty state prompts for content, same pattern as
+      // `StructuralImageDropZone`'s "Drop an image here" — the actual file
+      // picker lives in the Inspector panel (`CoverElementPanel`), not here,
+      // matching this layer's existing convention that content edits go
+      // through the Inspector while position/size are dragged on canvas
+      // (see this file's top doc comment).
+      return (
+        <div className="flex size-full flex-col items-center justify-center gap-1 overflow-hidden rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 p-1 text-center text-[10px] leading-tight text-white">
+          <ImagePlus className="size-4 shrink-0" />
+          <span>Select, then choose an image in the panel</span>
+        </div>
+      )
+    }
+    return <img src={url} alt="" className="size-full object-cover" draggable={false} />
   }
 
   return (

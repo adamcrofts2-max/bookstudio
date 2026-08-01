@@ -286,27 +286,56 @@ daily use of everything built so far.)*
 - [ ] Cover elements: rotation (data model deliberately has no `rotation`
       field yet — see `docs/COVER_CANVAS_PLAN.md` for why one shouldn't be
       added without a rotate handle in the same milestone)
-- [ ] Cover elements: secondary images (author photo, publisher/series
-      logo) as their own element kind, reusing `CoverImageFocalPoint`
+- [x] Cover elements: secondary images (author photo, publisher/series
+      logo) as their own element kind — shipped 2026-08-01 (Phase 59), reusing
+      `coverImageFit.ts`'s cover-fit math scoped to the element's own box, with
+      a real pdf-lib clip so an oversized cover-fit image can't overflow its
+      box. Centred-only for now — no focal-point/zoom control on secondary
+      images yet (open follow-up below)
 - [ ] Cover elements: smart alignment/snap guides — snap-to-page-centre
       (both axes, with a guide line) shipped 2026-08-01 (Phase 57). Still
       open: snapping to the safe-zone guide, trim/bleed edges, and other
       elements' edges, plus grouping
 - [x] Cover elements: fix the element-drag/image-focal-point pointer
-      conflict — fixed 2026-08-01 (Phase 57), see docs/STATUS.md. Going
-      further and converting the background image and/or title/subtitle/
-      author into full `CoverElement`s was discussed and NOT taken — real
-      migration risk for existing projects, not worth it for the concrete
-      need. Phase 58 shipped the lighter-weight middle ground instead: 2D
-      drag (not just vertical) for the title/subtitle/author block as one
-      group, still via `CoverNudgeHandle`, not full per-field elements
+      conflict — fixed 2026-08-01 (Phase 57), see docs/STATUS.md. Phase 58
+      shipped a lighter-weight middle ground first (2D drag for
+      title/subtitle/author as one group via `CoverNudgeHandle`); Phase 59
+      then went further, per explicit user request, and gave title/subtitle/
+      author each independent free-drag positioning (`CoverFieldPosition` +
+      `DraggableCoverField`) — Front Cover only, Back Cover's blurb/author-bio
+      deliberately left as flowing blocks (open decision below)
 - [x] Cover elements: duplicate button, arrow-key nudge, align-to-page
       buttons (left/centre/right, top/middle/bottom) — shipped 2026-08-01
       (Phase 58), user-requested canvas conveniences alongside the 2D-drag
       item above
+- [x] Fix "Drop a cover image here" / drag-to-reposition being unreachable,
+      and "Add cover image"/"Add element" buttons being unclickable once an
+      element sat on top — both shipped 2026-08-01 (Phase 59); root cause was
+      pointer-events/z-index conflicts, see docs/STATUS.md
 - [ ] Cover elements: on-canvas double-click text editing (Milestone 1
       edits text content via the Inspector panel only — see
       `docs/COVER_CANVAS_PLAN.md`'s interaction section for why)
+- [ ] Cover elements: Delete/Backspace keyboard shortcut for the selected
+      element (duplicate and arrow-nudge already have keyboard affordances;
+      delete is currently toolbar-only) — flagged in Phase 59's brainstorm
+- [ ] Cover elements: "remove image" action on image elements (revert to the
+      empty placeholder) — currently only "replace" exists once an image is
+      set; flagged in Phase 59's brainstorm
+- [ ] Cover elements: opacity control for icon/badge/image kinds
+      (rect/ellipse already have `fillOpacity`) — flagged in Phase 59's
+      brainstorm
+- [ ] Cover elements: focal point + zoom for secondary image elements (shipped
+      centred-only in Phase 59) — flagged in Phase 59's brainstorm
+- [ ] Cover elements: layers list/panel for selecting elements buried under
+      others, plus incremental (one-step) forward/backward z-order nudges and
+      multi-select/grouping — flagged in Phase 59's brainstorm as the biggest
+      open gap
+- [ ] Cover elements: per-element accessibility/contrast checking — the
+      existing Accessibility checker doesn't know free-form cover text
+      elements exist yet — flagged in Phase 59's brainstorm
+- [ ] Back Cover: deliberate decision on whether blurb/author-bio ever get the
+      same free-positioning Front Cover's title/subtitle/author gained in
+      Phase 59, rather than leaving it an unstated asymmetry
 - [ ] Wrap-aware front+spine+back cover view — a toggle showing Cover/
       spine-gutter/Back Cover side by side (using the spine width already
       calculated live) so a user can eyeball whether an image or rule

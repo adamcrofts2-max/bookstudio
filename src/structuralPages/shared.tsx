@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react'
-import { GripVertical, ImagePlus, Crosshair, Eye, EyeOff } from 'lucide-react'
+import { GripVertical, ImagePlus, Crosshair, Eye, EyeOff, RotateCcw } from 'lucide-react'
 
 import { useEditableField } from '@/blocks/shared'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { COVER_NUDGE_RANGE_PX } from '@/structuralPages/coverLayout'
 import { useImageUpload } from '@/hooks/useImageUpload'
 import { PX_PER_MM, type PageBox } from '@/renderer/pageGeometry'
-import type { CoverImageFocalPoint } from '@/types/structuralPage'
+import type { CoverImageFocalPoint, CoverFieldPosition } from '@/types/structuralPage'
 import { cn } from '@/lib/utils'
 
 function clamp(value: number, min: number, max: number): number {
@@ -134,6 +134,126 @@ export function HideableTextField({ hidden, selected, onToggleHidden, fieldLabel
       {selected && <FieldVisibilityToggle hidden={hidden} label={fieldLabel} onToggle={onToggleHidden} />}
       <EditableText {...editableProps} style={hidden ? { ...style, opacity: 0.45, fontStyle: 'italic' } : style} />
     </div>
+  )
+}
+
+interface DraggableCoverFieldProps {
+  /** Committed independent position, or `undefined` while this field is
+   * still part of the shared flex block (`coverLayout.ts`'s `layout` +
+   * nudge). */
+  position: CoverFieldPosition | undefined
+  /** Called continuously while actively dragging, `null` when a drag ends —
+   * the caller uses this for a local live-preview position, same
+   * live/commit split every other cover drag control uses. */
+  onLiveMove: (position: CoverFieldPosition | null) => void
+  onCommitMove: (position: CoverFieldPosition) => void
+  /** The page's own root element — its bounding box is the 0..1 fraction
+   * space, same reference frame `CoverElementLayer` measures against. */
+  containerRef: React.RefObject<HTMLDivElement | null>
+  pageSelected: boolean
+  children: React.ReactNode
+}
+
+/** Minimum on-screen movement, in real px, before a pointer-down is treated
+ * as a drag rather than a plain click — without this, every ordinary click
+ * (selecting the page, double-clicking to start editing, tapping the
+ * visibility toggle) would "detach" the field into free-position mode with
+ * zero actual movement. */
+const DRAG_THRESHOLD_PX = 3
+
+/**
+ * Makes one Cover text field (title/subtitle/author) directly draggable to
+ * any point on the page, Canva-style — the free-form counterpart to the
+ * whole-block `CoverNudgeHandle`. While `position` is `undefined` the field
+ * renders in the normal flex flow exactly as before; the *first* drag reads
+ * the field's own live `getBoundingClientRect()` as its starting point (so
+ * it doesn't jump the instant a drag begins) and, only past
+ * `DRAG_THRESHOLD_PX` of real movement, commits a `CoverFieldPosition` that
+ * switches it to absolute positioning from then on. See
+ * `types/structuralPage.ts`'s `CoverFieldPosition` doc comment for the
+ * reset path back to shared-layout mode.
+ */
+export function DraggableCoverField({ position, onLiveMove, onCommitMove, containerRef, pageSelected, children }: DraggableCoverFieldProps) {
+  const fieldRef = useRef<HTMLDivElement>(null)
+  const draggingRef = useRef(false)
+  const movedRef = useRef(false)
+  const startRef = useRef({ clientX: 0, clientY: 0, x: 0, y: 0 })
+
+  function originFraction(): { x: number; y: number } {
+    if (position) return position
+    const containerRect = containerRef.current!.getBoundingClientRect()
+    const fieldRect = fieldRef.current!.getBoundingClientRect()
+    return {
+      x: (fieldRect.left + fieldRect.width / 2 - containerRect.left) / containerRect.width,
+      y: (fieldRect.top + fieldRect.height / 2 - containerRect.top) / containerRect.height,
+    }
+  }
+
+  function deltaFraction(clientX: number, clientY: number): { x: number; y: number } {
+    const containerRect = containerRef.current!.getBoundingClientRect()
+    return { x: (clientX - startRef.current.clientX) / containerRect.width, y: (clientY - startRef.current.clientY) / containerRect.height }
+  }
+
+  return (
+    <div
+      ref={fieldRef}
+      className={cn('pointer-events-auto', pageSelected && 'cursor-move')}
+      style={
+        position
+          ? { position: 'absolute', left: `${position.x * 100}%`, top: `${position.y * 100}%`, transform: 'translate(-50%, -50%)' }
+          : undefined
+      }
+      onPointerDown={(e) => {
+        if (!pageSelected) return
+        const origin = originFraction()
+        draggingRef.current = true
+        movedRef.current = false
+        startRef.current = { clientX: e.clientX, clientY: e.clientY, x: origin.x, y: origin.y }
+        e.currentTarget.setPointerCapture(e.pointerId)
+      }}
+      onPointerMove={(e) => {
+        if (!draggingRef.current) return
+        const dPx = { x: e.clientX - startRef.current.clientX, y: e.clientY - startRef.current.clientY }
+        if (!movedRef.current) {
+          if (Math.hypot(dPx.x, dPx.y) < DRAG_THRESHOLD_PX) return
+          movedRef.current = true
+          e.stopPropagation()
+        }
+        const d = deltaFraction(e.clientX, e.clientY)
+        onLiveMove({ x: clamp(startRef.current.x + d.x, 0, 1), y: clamp(startRef.current.y + d.y, 0, 1) })
+      }}
+      onPointerUp={(e) => {
+        if (!draggingRef.current) return
+        draggingRef.current = false
+        if (!movedRef.current) return // plain click/double-click — untouched, no position committed
+        const d = deltaFraction(e.clientX, e.clientY)
+        onLiveMove(null)
+        onCommitMove({ x: clamp(startRef.current.x + d.x, 0, 1), y: clamp(startRef.current.y + d.y, 0, 1) })
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Small reset pill shown next to a free-positioned field (once selected)
+ * to rejoin the shared flex layout — the only way back once a field has
+ * been dragged, since `DraggableCoverField` itself has no undo affordance
+ * of its own beyond the app's normal undo/redo. */
+export function ResetFieldPositionButton({ onReset }: { onReset: () => void }) {
+  return (
+    <button
+      type="button"
+      title="Reset to the default layout position"
+      aria-label="Reset to the default layout position"
+      onClick={(e) => {
+        e.stopPropagation()
+        onReset()
+      }}
+      className="flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-full bg-black/45 text-white shadow-[var(--shadow-sm)] backdrop-blur-sm transition-colors hover:bg-black/65"
+    >
+      <RotateCcw className="size-3.5" />
+    </button>
   )
 }
 

@@ -11,6 +11,8 @@ import {
   AlignVerticalJustifyEnd,
 } from 'lucide-react'
 
+import { ImagePlus } from 'lucide-react'
+
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
@@ -19,6 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import type { CoverElement, CoverFontChoice, CoverIconId } from '@/types/structuralPage'
 import { updateElement, removeElement, bringToFront, sendToBack, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS, COVER_ICON_LABELS } from '@/structuralPages/coverIcons'
+import { useImageUpload } from '@/hooks/useImageUpload'
 
 const ICON_OPTIONS = Object.keys(COVER_ICON_LABELS) as CoverIconId[]
 
@@ -53,11 +56,15 @@ const KIND_LABEL: Record<CoverElement['kind'], string> = {
   text: 'Text box',
   icon: 'Icon',
   badge: 'Badge',
+  image: 'Image',
 }
 
 interface CoverElementPanelProps {
   element: CoverElement
   elements: CoverElement[] | undefined
+  /** Needed only for the 'image' kind's upload control — `useImageUpload`
+   * imports the picked file into this project's asset store. */
+  projectId: string
   onChange: (elements: CoverElement[]) => void
   onDeselect: () => void
   /** Selects a different element by id — used after duplicating, so the
@@ -75,8 +82,12 @@ interface CoverElementPanelProps {
  * properties that don't have an obvious on-canvas gesture, plus delete and
  * layer order.
  */
-export function CoverElementPanel({ element, elements, onChange, onDeselect, onSelect }: CoverElementPanelProps) {
+export function CoverElementPanel({ element, elements, projectId, onChange, onDeselect, onSelect }: CoverElementPanelProps) {
   const patch = (updates: Partial<CoverElement>) => onChange(updateElement(elements, element.id, updates))
+  // Always called (hooks can't be conditional) — only rendered for the
+  // 'image' kind below, same "cheap to call, only used sometimes" tradeoff
+  // as every other kind-specific branch in this panel already accepts.
+  const { openPicker, inputProps } = useImageUpload(projectId, (assetId) => patch({ imageAssetId: assetId }))
 
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-border bg-panel p-3">
@@ -347,6 +358,18 @@ export function CoverElementPanel({ element, elements, onChange, onDeselect, onS
             </div>
           </div>
         </>
+      )}
+
+      {element.kind === 'image' && (
+        <div className="flex flex-col gap-1.5">
+          <Label>Image</Label>
+          <Button type="button" variant="secondary" onClick={openPicker} className="justify-start gap-2">
+            <ImagePlus className="size-3.5" />
+            {element.imageAssetId ? 'Replace image' : 'Choose image'}
+          </Button>
+          <input {...inputProps} />
+          <p className="text-xs text-text-secondary">Cropped to fill this box — drag a corner handle in the preview to change its shape.</p>
+        </div>
       )}
 
       {(element.kind === 'rect' || element.kind === 'ellipse' || element.kind === 'line') && (

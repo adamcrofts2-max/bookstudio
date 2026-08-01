@@ -1,13 +1,16 @@
-import { rgb, LineCapStyle } from 'pdf-lib'
+import { rgb, LineCapStyle, pushGraphicsState, popGraphicsState, rectangle, clip, endPath } from 'pdf-lib'
 
 import type { DrawCtx } from '@/pdf/exportPdf'
-import type { CoverElement, CoverElementKind, CoverShapeElement, CoverTextElement, CoverIconElement, CoverBadgeElement } from '@/types/structuralPage'
+import type { CoverElement, CoverElementKind, CoverShapeElement, CoverTextElement, CoverIconElement, CoverBadgeElement, CoverImageElement } from '@/types/structuralPage'
 import { generateId } from '@/utils/id'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { pickFont, pickItalicFont } from '@/pdf/fonts'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
 import { COVER_ICON_PDF_NODES } from '@/structuralPages/coverIcons'
+import { computeCoverImagePdfPlacement } from '@/structuralPages/coverImageFit'
+import { getAssetBlob } from '@/store/assetDb'
+import { blobToPng } from '@/pdf/imageForPdf'
 
 /**
  * Pure data helpers for `CoverElement` arrays (see `docs/COVER_CANVAS_PLAN.md`)
@@ -82,6 +85,19 @@ export function createCoverElement(kind: CoverElementKind, existingCount: number
       backgroundColor: '#dc2626',
       textColor: '#ffffff',
       fontSize: 15,
+    }
+    return el
+  }
+
+  if (kind === 'image') {
+    const el: CoverImageElement = {
+      ...base,
+      kind: 'image',
+      width: 0.25,
+      height: 0.25,
+      // `imageAssetId` starts unset — `ElementBody` renders an upload
+      // placeholder until the user picks one, same "empty state prompts
+      // for content" pattern as `StructuralImageDropZone`.
     }
     return el
   }
@@ -165,7 +181,7 @@ function clampFraction(value: number, size: number): number {
  * top-down fraction (matching CSS) — flipped once here, at the boundary,
  * exactly like `drawCoverOverlayPdf` already does for the overlay gradient.
  */
-export function drawCoverElementsPdf(
+export async function drawCoverElementsPdf(
   ctx: DrawCtx,
   elements: CoverElement[] | undefined,
   bleedPt: number,
@@ -322,6 +338,39 @@ export function drawCoverElementsPdf(
         font,
         color: el.color ? hexToPdfColor(el.color) : rgb(1, 1, 1),
       })
+    } else if (el.kind === 'image' && el.imageAssetId) {
+      const blob = await getAssetBlob(el.imageAssetId)
+      if (blob) {
+        const { bytes, width, height } = await blobToPng(blob, false)
+        const pdfImage = await ctx.page.doc.embedPng(bytes)
+        // Same cover-fit math as the page background image
+        // (`computeCoverImagePdfPlacement` is generic over any box, not
+        // just the full media box), scoped down to this element's own
+        // width/height in place of `mediaWidthPt`/`mediaHeightPt`. No
+        // focal point/zoom controls on secondary images yet — always
+        // centred cover-fit, matching the on-screen `ElementBody`.
+        const placement = computeCoverImagePdfPlacement({
+          mediaWidthPt: wPt,
+          mediaHeightPt: hPt,
+          imageWidth: width,
+          imageHeight: height,
+          focalPoint: undefined,
+          zoom: undefined,
+        })
+        // A secondary image's cover-fit-scaled source is routinely larger
+        // than its own box (that's the point of "cover" fit), so — unlike
+        // the full-bleed background image, which never overflows the page
+        // — this needs an explicit clip to its element box or the excess
+        // would paint straight over the rest of the cover.
+        ctx.page.pushOperators(pushGraphicsState(), rectangle(xPt, yPt, wPt, hPt), clip(), endPath())
+        ctx.page.drawImage(pdfImage, {
+          x: xPt + placement.x,
+          y: yPt + placement.y,
+          width: placement.width,
+          height: placement.height,
+        })
+        ctx.page.pushOperators(popGraphicsState())
+      }
     }
   }
 }

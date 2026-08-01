@@ -1,4 +1,4 @@
-import { Shapes, Square, Circle, Minus, Type, Star, Award } from 'lucide-react'
+import { Shapes, Square, Circle, Minus, Type, Star, Award, ImagePlus } from 'lucide-react'
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import type { CoverElement, CoverElementKind } from '@/types/structuralPage'
@@ -14,6 +14,11 @@ const ADD_OPTIONS: { kind: CoverElementKind; label: string; Icon: typeof Square 
   // rectangle always starts white before the user picks a real fill.
   { kind: 'icon', label: 'Icon', Icon: Star },
   { kind: 'badge', label: 'Badge', Icon: Award },
+  // Adds an empty image element — distinct from the page's one background
+  // cover image (`CoverImageUploadButton`/`imageAssetId`); this is for a
+  // second, freely-positioned photo layered on top, same "add empty, then
+  // fill it in" flow as every other element kind here.
+  { kind: 'image', label: 'Image', Icon: ImagePlus },
 ]
 
 interface CoverElementToolbarProps {
