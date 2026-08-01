@@ -19,6 +19,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { EmptyState } from '@/components/common/EmptyState'
 import { BookOpen, Image as ImageIcon } from 'lucide-react'
+import { SearchPanel } from '@/layout/SearchPanel'
 import type { Project } from '@/types'
 
 /** Types offered by the "Add Page" picker per category. Phase 20 (Milestone
@@ -270,6 +271,7 @@ export function Sidebar({ project }: SidebarProps) {
           <TabsTrigger value="chapters" className="flex-1">Chapters</TabsTrigger>
           <TabsTrigger value="structure" className="flex-1">Structure</TabsTrigger>
           <TabsTrigger value="assets" className="flex-1">Assets</TabsTrigger>
+          <TabsTrigger value="search" className="flex-1">Search</TabsTrigger>
         </TabsList>
 
         <TabsContent value="chapters" className="flex min-h-0 flex-1 flex-col">
@@ -464,6 +466,10 @@ export function Sidebar({ project }: SidebarProps) {
               </div>
             )}
           </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="search" className="flex min-h-0 flex-1 flex-col">
+          <SearchPanel project={project} />
         </TabsContent>
       </Tabs>
     </aside>

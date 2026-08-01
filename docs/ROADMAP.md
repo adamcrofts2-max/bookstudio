@@ -172,18 +172,34 @@ daily use of everything built so far.)*
       the same thing as the still-open Phase F "word-count goals and
       writing-session tracking" item below (a session-length daily-goal
       tracker) — this is only the live running total.
-- [ ] Find (and find-and-replace) across the whole manuscript — flagged
-      2026-08-01 alongside the word-count gap above: there is currently no
-      way to search manuscript text at all, a real gap for a book-length
-      document (checking whether a character's name is spelled
-      consistently, jumping to a phrase). Reasonable scope: a search box in
-      the Toolbar/Sidebar that highlights matches and lets the user step
-      through them, jumping the (virtualized, lazily-mounted) page view to
-      the match — the main cost here is the jump-to-match integration with
-      `LazySpread`'s lazy mounting, not the text search itself (`
-      extractTextSpans` already exists to walk every block's text). Find-
-      and-replace is a natural, only slightly bigger follow-on once find
-      exists. Not started.
+- [x] Find (and find-and-replace) across the whole manuscript — shipped
+      2026-08-01 (Phase 75). New Sidebar tab ("Search", alongside Chapters/
+      Structure/Assets) rather than a Toolbar button or a Ctrl/Cmd+F
+      shortcut — the Toolbar is already flagged as crowded
+      (`docs/SUGGESTIONS.md`'s Phase 67 entry), and `useKeyboardShortcuts
+      .ts`'s own doc comment states this codebase deliberately never
+      intercepts Ctrl/Cmd+anything except undo/redo, so overriding the
+      browser's native find wasn't on the table. `src/search
+      /manuscriptSearch.ts` is the pure logic — `findMatches` reuses
+      `virtualEditor/textExtract.ts`'s `extractTextSpans` directly (the
+      "walk every block's text" cost this item already flagged as solved),
+      plain substring matching (not word-boundary — "Find" means
+      "contains," unlike the Continuity checker's whole-name matching).
+      Jump-to-match reuses `selectionStore.requestScrollToBlock` exactly as-
+      is — the Virtual Editor's Locate/Edit actions already solved the
+      "`LazySpread` hasn't mounted a page further down the book yet"
+      problem this item flagged as the main cost, so Search needed zero new
+      scroll/mount machinery. Replace reuses `virtualEditor/textPatch.ts`'s
+      `getRawFieldText`/`patchTextField` (the same helpers every checker's
+      `suggestedFix` already uses) plus a new occurrence-index scheme
+      (`SearchMatch.occurrenceIndexInField`) so a single match's Replace
+      button touches only that one occurrence, not every occurrence in its
+      field; both `replaceMatchWithHistory` and `replaceAllMatchesWithHistory`
+      (`editorActions.ts`) apply through the existing history-aware
+      `editBlock`, so every replacement is undoable exactly like any other
+      content edit. No confirm dialog on Replace All — undo covers it, the
+      same "no confirm needed, undo covers it" policy this codebase already
+      states explicitly (`Sidebar.tsx`'s `StructuralPageRow` doc comment).
 - [ ] Real (dictionary-backed) spell-check, beyond the browser's native
       `contentEditable` default — flagged 2026-08-01. Every editable field
       in this codebase is a bare `contentEditable` element with the

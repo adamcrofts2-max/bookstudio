@@ -5168,14 +5168,88 @@ dynamic camelCase-to-spaced-words rendering (expected to Just Work, since it's d
 entirely by whatever categories are present in `report.findings`, no hardcoded list to
 update — but not yet seen rendered).
 
+## Phase 75 — Find (and find-and-replace) across the manuscript (2026-08-01)
+
+Per CLAUDE.md's phase-priority rule (Phase B before Phase F), moved to this Phase B
+item once Phase F's buildable work closed out — the roadmap entry itself had already
+scoped out the two hard parts (jump-to-match against `LazySpread`'s lazy mounting, and
+walking every block's text), and both turned out to already be solved by existing
+infrastructure, which is most of why this phase was mostly wiring rather than new
+mechanism.
+
+- **`src/search/manuscriptSearch.ts`** (new). Pure text logic, no store access — same
+  separation as `virtualEditor/textExtract.ts`/`textPatch.ts`, which it reuses
+  directly rather than re-implementing: `findMatches(manuscript, query, options)`
+  calls `extractTextSpans` once and scans every span for plain-substring occurrences
+  (case-insensitive by default, `caseSensitive` option available — deliberately not
+  word-boundary matching like the Continuity checker or `detectMentionedEntityIds`,
+  since "Find" means "contains this text," not "mentions this whole name"). Each
+  `SearchMatch` carries an `occurrenceIndexInField` — which Nth occurrence (0-indexed)
+  of the query this is within its own block+field — computed on the assumption that
+  left-to-right occurrence order is identical between a block's raw field (e.g. a
+  paragraph's HTML) and its stripped plain text, since stripping only ever *removes*
+  tag markup between characters, never reorders them. That index is what lets a
+  single match's Replace button target exactly one occurrence precisely, without
+  needing to translate a stripped-text character offset into a raw-HTML one (which
+  would be genuinely fragile). Also exports `replaceOccurrence`/`replaceAllOccurrences`
+  — pure string transforms, no store access.
+- **`store/editorActions.ts`.** Two new wrappers: `replaceMatchWithHistory` (one
+  match) and `replaceAllMatchesWithHistory` (every current match, grouped by
+  `(blockId, field)` first so a field with several occurrences gets exactly one
+  history entry, not one per occurrence). Both resolve the block, build the patch via
+  `virtualEditor/textPatch.ts`'s `patchTextField` (the exact same helper every
+  checker's `suggestedFix.apply` already uses — this phase didn't need a second
+  text-patching implementation), and apply it through the existing `editBlock`, so
+  every replacement is undoable exactly like any other content edit, with zero new
+  undo/redo machinery.
+- **`layout/SearchPanel.tsx`** (new). Find input + a compact "match case" toggle
+  (`CaseSensitive` icon, styled like the existing compact chevron/duplicate/delete
+  icon-buttons already used throughout `Sidebar.tsx`, not the full-size `Button`
+  component, which would look oversized inline with a search field), a "Replace
+  with" input + "Replace All" button, and a live-updating, chapter-grouped results
+  list — each row shows an excerpt with the match highlighted (`<mark>`), click to
+  jump to it, plus a per-match Replace button once replacement text is entered.
+  Jump-to-match is `select(chapterId, blockId)` + `requestScrollToBlock(chapterId,
+  blockId)` — the exact same pair the Virtual Editor's Locate/Edit actions already
+  use, which already force-mounts a `LazySpread` page that hasn't scrolled into view
+  yet, so this phase needed zero new scroll/mount code despite the roadmap item
+  flagging that as the main expected cost.
+- **`layout/Sidebar.tsx`.** New fourth tab, "Search," alongside Chapters/Structure/
+  Assets — deliberately not a new Toolbar button (already flagged as crowded,
+  `docs/SUGGESTIONS.md`'s Phase 67 entry) and deliberately not a Ctrl/Cmd+F shortcut
+  (`useKeyboardShortcuts.ts`'s own doc comment states this codebase never intercepts
+  Ctrl/Cmd+anything except undo/redo — a hard, already-documented boundary, not one
+  this phase should quietly break).
+- No confirm dialog before Replace All — undo already covers it, the same policy
+  `Sidebar.tsx`'s `StructuralPageRow` doc comment already states explicitly for
+  structural-page delete ("no confirm dialog on delete: undo now covers structural
+  pages too").
+
+`tsc -b --force` clean. Verified the search/replace logic directly (not just via
+`tsc`) with a standalone `tsx` script (polyfilling `DOMParser` via `jsdom`, since
+`stripHtml`/paragraph blocks need it and this sandbox has no browser): confirmed
+case-insensitive and case-sensitive search both return the right match counts against
+a two-chapter fixture with a paragraph containing two occurrences of the query plus a
+third occurrence in a different chapter with different casing, confirmed
+`replaceOccurrence` touches only the targeted occurrence and leaves the other
+untouched, confirmed `replaceAllOccurrences` touches every occurrence in a field,
+confirmed an empty/whitespace query returns no matches, and confirmed the excerpt's
+`excerptMatchStart`/`excerptMatchLength` offsets correctly slice back out to the
+original matched text for highlighting. Not runtime-tested end-to-end in the actual
+running app (same sandbox blocker as every phase since 55) — in particular, the new
+Sidebar "Search" tab's layout/scroll behaviour at the Sidebar's fixed 264px width and
+the actual click-to-jump-and-highlight behaviour against a real, lazily-mounted
+`LazySpread` haven't been seen rendered.
+
 ## Recommended next task
-Phase F's roadmap list is now fully closed except two deliberately-deferred items:
-`ApiKeyProvider` (direct API call, streamed diff — waiting on a real cost/accounts
-story, Phase G/H) and a thesaurus/synonym lookup (needs either a bundled dataset or an
-external API, lowest priority of the three text-tooling gaps). The natural next pieces
-of work: manuscript search/find and real dictionary-backed spellcheck
-(docs/ROADMAP.md Phase B, flagged 2026-08-01) — both client-only, no-backend features
-that fit this sandbox the same way everything else in this phase has — or the bigger
-"insert AI-drafted prose into the manuscript with a reviewable diff" feature flagged
-in Phase 68's STATUS.md/SUGGESTIONS.md entries as a distinct, still-open feature
-(likely higher day-to-day value than the bible-sync half that already shipped).
+Phase B's remaining items: real (dictionary-backed) spell-check (flagged 2026-08-01
+alongside this one — needs a bundled dictionary via something like `nspell`/`typo-js`,
+a bigger bundle-size/licensing tradeoff than this phase's work) and drag-to-reorder
+for all blocks (already deprioritised in favour of the existing move-up/down buttons,
+so not a real next-task candidate). Phase F still has two deliberately-deferred items
+(`ApiKeyProvider`, waiting on a real cost/accounts story; a thesaurus/synonym lookup,
+lowest priority of the three text-tooling gaps). Also still open and worth folding in
+opportunistically: the bigger "insert AI-drafted prose into the manuscript with a
+reviewable diff" feature flagged in Phase 68's STATUS.md/SUGGESTIONS.md entries as a
+distinct, still-open feature (likely higher day-to-day value than the bible-sync half
+that already shipped).
