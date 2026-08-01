@@ -9,6 +9,27 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 69 (2026-08-01) — Layer 0: TimelineEvent manual reorder UI
+
+- **The Up/Down reorder pattern is now used in three places** (chapters, structural
+  pages, timeline events) with three separate hand-written implementations
+  (`moveChapterWithHistory`, `movePageWithHistory`, `moveTimelineEventWithHistory` —
+  all structurally identical: swap-with-neighbour, record history with the direction
+  flipped for undo). Worth a small consolidation pass at some point — a shared
+  `swapAdjacentWithHistory` helper parameterised by a "get sorted list"/"swap
+  primitive" pair — once a fourth reorderable list shows up and the duplication
+  becomes harder to justify as three independent one-offs.
+- **Timeline Events have no visual timeline view yet** — the reorder buttons make
+  sequencing possible, but the list still renders as plain title/description rows
+  identical to every other entity kind, with no sense of "when" spacing or a visual
+  line connecting events. A dedicated timeline/ribbon view (even a simple vertical
+  line with `when` labels alongside) would make this entity kind noticeably more
+  useful for the "keep a complex plot straight" use case the vision doc describes —
+  worth considering once more of Phase F ships and there's a sense of which entity
+  kinds get heaviest use in practice.
+
+---
+
 ## After Phase 68 (2026-08-01) — AI Workspace: paste-response-back with reviewable diff
 
 - **The "insert AI-drafted prose into the manuscript" feature is still genuinely
