@@ -4202,11 +4202,50 @@ before the next deploy: add one of each new kind to a Cover, drag/resize it, cha
 icon/colour/badge text, and export a PDF to confirm the on-screen and printed results
 still match.
 
+## Phase 56 — Two small UX fixes from user report (2026-08-01)
+
+User reported three issues while using the app; investigated all three before touching
+anything.
+
+- **"Clicking a page like the cover should take you to its editor" — investigated, not a
+  bug.** `Page.tsx`'s structural-page render already wires `onSelect` to
+  `selectStructuralPage` + `setInspectorTab('page')` on the page's own root `onClick`
+  (`structuralPages/types/cover.tsx`/`backCover.tsx`), the exact same action the
+  Sidebar's Front Matter rows use — confirmed by reading `selectionStore.ts`'s own doc
+  comment, which already documents this as intentional. Clicking a page in the live
+  preview already opens its Inspector panel; no fix needed here.
+- **Long chapter titles unreadable in the Sidebar — fixed.** The title span used
+  `truncate` (single line + ellipsis), with only a hover-only native `title` tooltip as
+  a fallback (added in Phase 53). Changed to `line-clamp-2` so a long title wraps and
+  stays fully readable in the row itself; the row's icon-button (up/down/rename/delete)
+  switched from `items-center` to `items-start` alignment so those icons sit at the top
+  of a now-possibly-taller row instead of awkwardly centred against two lines of text.
+  `title={chapter.title}` kept as a fallback for the rare title that still overflows two
+  lines. `src/layout/Sidebar.tsx`.
+- **Cover preview disappears when scrolling the Inspector — fixed, confirmed real.** The
+  Inspector's `<aside>` had no internal scroll container, so a long panel (Cover with
+  several stacked element property panels, easy to hit now that Milestone 2 added
+  icons/badges) simply overflowed and the *whole app shell* became the scroll container
+  — scrolling the Inspector scrolled the Sidebar and canvas (including the Cover preview
+  itself) along with it, unlike the canvas's own already-correct independent
+  `overflow-auto`. Fixed by splitting the Inspector into a `shrink-0` tab-bar region and
+  a `min-h-0 flex-1 overflow-y-auto` content region — `min-h-0` is load-bearing here (a
+  flex child won't shrink to allow its own scrollbar without it). `src/layout/
+  Inspector.tsx`.
+
+`tsc -b` clean. Not independently verified live in Chrome — same sandbox `npm run dev`
+blocker as Phase 55 (Phase 53's verification caveat). Worth a 30-second manual check
+(long chapter title in Sidebar, add several cover elements and scroll the Inspector)
+before the next deploy.
+
 ## Recommended next task
 All five items from the original "think about it" request plus both
 chapter-management follow-ups (add, reorder) are shipped, plus Phase 53's five audit
-fixes, Phase 54's cover-canvas Milestone 1, and Phase 55's Milestone 2 (icons/badges).
-The highest-leverage remaining items: the real fix for the Phase J renderer-freeze item
+fixes, Phase 54's cover-canvas Milestone 1, Phase 55's Milestone 2 (icons/badges), and
+Phase 56's two small UX fixes. Distraction-free reading mode was discussed with the user
+(2026-08-01) but deliberately not built yet, pending their direction on scope — see the
+chat log/`docs/READING_MODE_PLAN.md` if that gets written up. The highest-leverage
+remaining items otherwise: the real fix for the Phase J renderer-freeze item
 (worker-based or otherwise), and the next cover-canvas follow-ups now that icons/badges
 are done — rotation, secondary images, smart alignment/snap guides, or the wrap-aware
 front+spine+back view (see `docs/ROADMAP.md` Phase E for the full deferred list). Absent

@@ -336,12 +336,16 @@ export function Sidebar({ project }: SidebarProps) {
                         type="button"
                         onClick={() => requestScrollToChapter(chapter.id)}
                         onDoubleClick={() => startRename(chapter.id, chapter.title)}
-                        className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                        className="flex min-w-0 flex-1 items-start gap-2.5 py-0.5 text-left"
                       >
-                        <span className="text-xs tabular-nums text-text-muted">{i + 1}</span>
-                        {/* title attribute keeps the full title reachable via native
-                         * hover tooltip even when a very long title still truncates */}
-                        <span className="truncate" title={chapter.title}>{chapter.title}</span>
+                        <span className="pt-px text-xs tabular-nums text-text-muted">{i + 1}</span>
+                        {/* Wraps to 2 lines instead of truncating to one — a long
+                         * title is fully readable in the row itself now, not just
+                         * via the hover-only `title` tooltip (kept below as a
+                         * fallback for the rare title that still overflows 2 lines). */}
+                        <span className="line-clamp-2 break-words" title={chapter.title}>
+                          {chapter.title}
+                        </span>
                       </button>
                       <button
                         type="button"

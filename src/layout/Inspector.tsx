@@ -46,12 +46,12 @@ export function Inspector({ project }: InspectorProps) {
 
   return (
     <aside className="flex h-full w-[300px] shrink-0 flex-col border-l border-border bg-panel">
-      <div className="p-3">
-        <Tabs value={activeTab} onValueChange={(v) => setInspectorTab(v as InspectorTab)}>
-          {/* px-1.5/text-xs/gap-0.5 (tighter than this component's px-3/text-sm/gap-1
-           * defaults) — with 5 tabs in a 300px panel, the default padding genuinely
-           * overflowed the row (labels truncated on both edges depending on scroll
-           * position). See docs/STATUS.md's audit-fixes entry. */}
+      <Tabs value={activeTab} onValueChange={(v) => setInspectorTab(v as InspectorTab)} className="flex h-full min-h-0 flex-col">
+        {/* px-1.5/text-xs/gap-0.5 (tighter than this component's px-3/text-sm/gap-1
+         * defaults) — with 5 tabs in a 300px panel, the default padding genuinely
+         * overflowed the row (labels truncated on both edges depending on scroll
+         * position). See docs/STATUS.md's audit-fixes entry. */}
+        <div className="shrink-0 p-3 pb-0">
           <TabsList className="w-full gap-0.5">
             {TABS.map((tab) => (
               <TabsTrigger key={tab.id} value={tab.id} className="flex-1 px-1.5 text-xs">
@@ -59,7 +59,16 @@ export function Inspector({ project }: InspectorProps) {
               </TabsTrigger>
             ))}
           </TabsList>
+        </div>
 
+        {/* `min-h-0` is load-bearing on a flex child that needs to scroll — without
+         * it this region refuses to shrink below its content's natural height, the
+         * whole `<aside>` grows past the viewport instead, and scrolling a long
+         * panel (e.g. Cover with several stacked element property panels) scrolls
+         * the Sidebar/canvas along with it instead of just this column. Confirmed
+         * live: a tall Inspector panel scrolled the Cover preview itself out of
+         * view. See docs/STATUS.md's audit-fixes entry. */}
+        <div className="min-h-0 flex-1 overflow-y-auto p-3">
           <TabsContent value="page" className="px-1">
             {selectedStructuralPageId ? (
               <StructuralPagePanel projectId={project.id} />
@@ -105,8 +114,8 @@ export function Inspector({ project }: InspectorProps) {
               </Button>
             </div>
           </TabsContent>
-        </Tabs>
-      </div>
+        </div>
+      </Tabs>
     </aside>
   )
 }
