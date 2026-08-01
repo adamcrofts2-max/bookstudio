@@ -511,9 +511,17 @@ daily use of everything built so far.)*
       once a third copy-pasted nav block would have repeated itself). Directly
       reuses Phase 69's Timeline reorder UI for fine-tuning the seeded beats
       afterward.
-- [ ] Word-count goals and writing-session tracking — the live total itself
-      shipped in Phase B (2026-08-01); this is the bigger daily-goal/
-      session-tracking layer on top of it
+- [x] Word-count goals and writing-session tracking — shipped 2026-08-01 (Phase 72).
+      `store/writingSessionStore.ts` keeps one small per-project record (`dailyGoal`
+      + a per-calendar-date net-words-written `log`), fed by `recordWordCount`'s
+      running-baseline-diff — day-boundary-aware, so opening an existing manuscript
+      or crossing midnight never backdates the whole total as "written today."
+      `hooks/useWritingSessionTracking.ts` feeds the live total (`useManuscript
+      WordCount`, Phase B) into it on every change, mounted once in `Toolbar.tsx`.
+      `components/common/WritingGoalDialog.tsx` — today's net words + optional
+      goal + a `Progress` bar + the last 7 days (gaps shown, not hidden) — opens by
+      clicking the word count itself (no new toolbar button, given the crowding
+      already flagged in `docs/SUGGESTIONS.md`).
 - [ ] Thesaurus / synonym lookup — flagged 2026-08-01 alongside search and
       spellcheck. Lowest priority of the three: needs either a bundled
       synonym dataset (a compact WordNet-derived package, most

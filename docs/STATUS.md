@@ -5000,3 +5000,47 @@ far this phase; (3) the bigger "insert AI-drafted prose into the manuscript with
 reviewable diff" feature flagged in Phase 68. Also still open and worth folding in
 opportunistically: manuscript search/find, real spellcheck, and a thesaurus
 (docs/ROADMAP.md Phase B/F, flagged 2026-08-01).
+
+## Phase 72 — Word-count goals and writing-session tracking (2026-08-01)
+
+The daily-goal layer on top of the live word-count total already in `Toolbar.tsx`
+(Phase B). Deliberately app-preference-shaped, not a Layer 2 Content concern — this
+never reads or writes manuscript data itself, only observes the total
+`useManuscriptWordCount` already computes.
+
+- **`store/writingSessionStore.ts`.** One small per-project record: `dailyGoal`
+  (0 = unset) and `log: Record<dateStr, number>` — the *net* words written per local
+  calendar date (can be negative on a day with more deletion than addition; shown as-is
+  rather than clamped, so the log stays honest). `recordWordCount(projectId,
+  currentTotal)` diffs against a running `lastKnownTotal`/`lastKnownDate` baseline: the
+  first observation ever, or the first observation after a calendar-date change,
+  re-establishes the baseline without attributing anything to "today" — the load-
+  bearing detail that keeps opening an existing 50,000-word manuscript for the first
+  time from instantly reading as "50,000 words written today," and keeps a fresh day
+  from silently carrying yesterday's already-counted total forward as a gain.
+- **`hooks/useWritingSessionTracking.ts`.** Feeds `useManuscriptWordCount`'s live total
+  into `recordWordCount` on every change via a `useEffect` — no separate polling loop,
+  since the word count already recomputes on every manuscript edit. Mounted once in
+  `Toolbar.tsx`, which already reads the same live count for display.
+- **`components/common/WritingGoalDialog.tsx`.** Today's net words (with a `Progress`
+  bar once a goal is set), a daily-goal number input (commits on blur/Enter), and the
+  last 7 calendar dates including zero-activity days (so a gap in a streak is visible,
+  not silently skipped, negative days shown in `text-danger`). Opens by clicking the
+  word-count text itself in `Toolbar.tsx` — deliberately not a new toolbar button/icon,
+  given the crowding already flagged in `docs/SUGGESTIONS.md`'s Phase 67 entry; this
+  reuses an existing element's click target instead of adding a twelfth control to an
+  already-busy row.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
+phase since 55) — in particular, the day-boundary logic is straightforward but
+untested live across an actual local-midnight rollover.
+
+## Recommended next task
+Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
+Continuity checker, extending the Virtual Editor's checker architecture over Layer 0
+data — the last major unbuilt AI-Workspace item; (2) distraction-free writing mode, the
+one remaining Phase F item with no dependencies on anything else in this phase; (3) the
+bigger "insert AI-drafted prose into the manuscript with a reviewable diff" feature
+flagged in Phase 68. Also still open and worth folding in opportunistically: manuscript
+search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, flagged
+2026-08-01).

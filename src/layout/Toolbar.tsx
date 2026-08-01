@@ -39,9 +39,11 @@ import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { useManuscriptWordCount } from '@/hooks/useManuscriptWordCount'
+import { useWritingSessionTracking } from '@/hooks/useWritingSessionTracking'
 import { KeyboardShortcutsDialog } from '@/components/common/KeyboardShortcutsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
+import { WritingGoalDialog } from '@/components/common/WritingGoalDialog'
 import type { Project } from '@/types'
 
 interface ToolbarProps {
@@ -75,6 +77,7 @@ function IconButton({
 export function Toolbar({ project }: ToolbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
+  const [writingGoalOpen, setWritingGoalOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
   const { resolved, setAppearance } = useTheme()
@@ -123,6 +126,7 @@ export function Toolbar({ project }: ToolbarProps) {
     else if (pendingExportFormat === 'html') void runExportHtml()
   }
   const wordCount = useManuscriptWordCount(project.id)
+  useWritingSessionTracking(project.id)
   const canUndo = useHistoryStore((s) => s.canUndo(project.id))
   const canRedo = useHistoryStore((s) => s.canRedo(project.id))
   const undoLabel = useHistoryStore((s) => s.peekUndoLabel(project.id))
@@ -172,15 +176,19 @@ export function Toolbar({ project }: ToolbarProps) {
       <div className="flex min-w-0 flex-1 items-baseline gap-2.5 overflow-hidden">
         <p className="min-w-0 shrink truncate text-sm font-medium text-text-primary">{project.name}</p>
         {wordCount > 0 && (
-          // Live total, not a goal/session tracker — see docs/ROADMAP.md
-          // Phase F's separate "word-count goals and writing-session
-          // tracking" item for that bigger, still-open feature. This is
-          // just finally surfacing a number the app already computed
-          // internally (`wordCount()`/`extractTextSpans` — used by
-          // TypographyPanel and several checkers) but never showed anyone.
-          <p className="min-w-0 shrink-[2] truncate whitespace-nowrap text-xs tabular-nums text-text-secondary">
+          // Clickable — opens `WritingGoalDialog` (today's net words +
+          // optional daily goal, Phase F's "word-count goals and writing-
+          // session tracking"). A plain `<button>`, not a new toolbar icon:
+          // the toolbar is already crowded (see docs/SUGGESTIONS.md's Phase
+          // 67 entry), so reusing this existing text's own click target
+          // costs zero additional visual footprint.
+          <button
+            type="button"
+            onClick={() => setWritingGoalOpen(true)}
+            className="min-w-0 shrink-[2] truncate whitespace-nowrap text-xs tabular-nums text-text-secondary transition-colors duration-150 hover:text-text-primary hover:underline"
+          >
             {wordCount.toLocaleString()} words
-          </p>
+          </button>
         )}
       </div>
 
@@ -310,6 +318,7 @@ export function Toolbar({ project }: ToolbarProps) {
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <VersionHistoryDialog projectId={project.id} open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen} />
+      <WritingGoalDialog projectId={project.id} open={writingGoalOpen} onOpenChange={setWritingGoalOpen} />
       <ExportReadinessDialog
         open={readinessOpen}
         onOpenChange={setReadinessOpen}
