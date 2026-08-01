@@ -4838,12 +4838,58 @@ silently into the next feature phase.
 
 `tsc -b --force` clean.
 
+## Phase 68 — AI Workspace: paste-response-back with reviewable diff (2026-08-01)
+
+Closes the round trip `ClipboardProvider` opened (Phase 66): generate a prompt, take
+it to your own Claude/ChatGPT, paste the reply back in, review before anything
+touches the story bible. Re-read `docs/AI_WORKSPACE_VISION.md`'s "Bible sync must be
+a reviewable diff, never automatic" section closely before building this — it
+specifically scopes V1 to *suggested field updates*, explicitly warning that "free-text
+extraction of an AI response back into structured fields is unsolved and
+error-prone." That ruled out the more ambitious "diff the AI's prose against the
+manuscript and offer to insert new chapter content" interpretation — a real, useful
+feature, but a different one (and now a candidate for its own future roadmap item,
+not this one).
+
+- **`layout/planning/pasteBackSuggestions.ts`.** `splitIntoSentences` breaks pasted
+  text into sentence-ish chunks (split by line, then by sentence-ending punctuation
+  — not linguistically perfect, but excerpts are user-editable before accepting, so a
+  slightly-off boundary costs a small edit rather than a wrong suggestion).
+  `extractBibleSuggestions(bible, pastedText)` then finds every existing Character/
+  Location whose name appears as a whole word in some sentence (word-boundary regex,
+  reusing `promptContext.ts`'s `escapeRegExp` — exported for this — rather than a
+  second copy) and returns one `BibleSuggestion` per unique matching sentence.
+  `appendToNotes(existing, excerpt)` appends with a blank-line separator, never
+  overwrites. Deliberately Character/Location only (not all eight Layer 0 kinds) —
+  both are the only shapes with a free-text `notes` field that's always safe to
+  append to; appending arbitrary prose into `GlossaryTerm.definition` or
+  `StyleRule.rule` would corrupt a single-purpose field instead of helping.
+- **`layout/planning/PasteBackPanel.tsx`.** Textarea for the pasted response, live
+  `useMemo`'d suggestion list below it. Each suggestion renders as a card styled
+  identically to the Virtual Editor's `FindingRow` (Phase C) — `bg-panel`,
+  `rounded-[var(--radius-card)]`, `opacity-60` once resolved — with an editable
+  excerpt (`Textarea`, so the user can trim/fix the auto-detected sentence before
+  committing) and Accept ("Add to notes")/Reject buttons. Accept calls
+  `updateLayer0EntityWithHistory` (undo/redo-safe, matching every other Layer 0
+  write) with `{ notes: appendToNotes(entity.notes, excerpt) }`; Reject only updates
+  local component state. An `EmptyState` covers "pasted text but no name matches."
+- **`PlanningShell.tsx`.** New "Paste Response" nav entry (`ClipboardPaste` icon)
+  alongside "Generate Prompt," extending the `PlanningView` union a second time.
+
+`tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
+phase since 55).
+
 ## Recommended next task
-Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
-paste-response-back-with-reviewable-diff flow, reusing the Virtual Editor's Accept/
-Reject/Ignore pattern — the natural follow-up now that a prompt can be generated; (2)
-the project-creation wizard and outlining/story-structure templates, which don't
-depend on any of the Layer 0 AI-Workspace pieces; (3) the Continuity checker, extending
-the Virtual Editor's checker architecture over Layer 0 data. Also still open and worth
-folding in opportunistically: manuscript search/find, real spellcheck, and a thesaurus
-(docs/ROADMAP.md Phase B/F, flagged 2026-08-01).
+Per the settled build order (Phase F before D/B), the AI-Workspace round trip
+(generate → paste back → review) is now complete for its V1 scope. Reasonable next
+pieces: (1) the Continuity checker, extending the Virtual Editor's checker
+architecture over Layer 0 data — the natural next AI-Workspace item, and doesn't
+depend on anything not already built; (2) the project-creation wizard and outlining/
+story-structure templates, which don't depend on any Layer 0 AI-Workspace piece at
+all; (3) the bigger "insert AI-drafted prose into the manuscript with a reviewable
+diff" feature flagged above — genuinely valuable, but distinct from bible-sync and
+worth its own scoping pass (probably reusing `src/parser/`'s import pipeline per
+`AI_WORKSPACE_VISION.md`'s "handed to the existing parser" note) rather than bolting
+onto this phase. Also still open and worth folding in opportunistically: manuscript
+search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F, flagged
+2026-08-01).

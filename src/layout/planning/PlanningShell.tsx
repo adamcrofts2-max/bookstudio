@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, Sparkles } from 'lucide-react'
+import { ArrowLeft, ClipboardPaste, Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -10,6 +10,7 @@ import { useLayer0Store } from '@/store/layer0Store'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type Layer0EntityKind } from '@/types/layer0'
 import { EntityListPanel } from '@/layout/planning/EntityListPanel'
 import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
+import { PasteBackPanel } from '@/layout/planning/PasteBackPanel'
 import type { Project } from '@/types'
 
 interface PlanningShellProps {
@@ -17,10 +18,10 @@ interface PlanningShellProps {
 }
 
 /** The left-hand nav's selection: one of the eight entity categories, or
- * the "Generate Prompt" tool — a second, non-entity view living in the
- * same nav rather than a separate top-level control, since it's still
- * squarely part of Layer 0's own screen. */
-type PlanningView = Layer0EntityKind | 'prompt-generator'
+ * one of the two AI-Workspace tools ("Generate Prompt" / "Paste Response") —
+ * living in the same nav rather than a separate top-level control, since
+ * they're still squarely part of Layer 0's own screen. */
+type PlanningView = Layer0EntityKind | 'prompt-generator' | 'paste-back'
 
 /**
  * Layer 0's own top-level shell — structurally separate from `AppShell`
@@ -95,6 +96,20 @@ export function PlanningShell({ project }: PlanningShellProps) {
                 <Sparkles className="size-3.5 shrink-0" />
                 <span>Generate Prompt</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveView('paste-back')}
+                className={cn(
+                  'flex items-center gap-2 rounded-[var(--radius-button)] px-3 py-2 text-left text-sm transition-colors duration-150',
+                  activeView === 'paste-back'
+                    ? 'bg-[var(--color-accent)]/10 font-medium text-[var(--color-accent)]'
+                    : 'text-text-secondary hover:bg-hover hover:text-text-primary',
+                )}
+              >
+                <ClipboardPaste className="size-3.5 shrink-0" />
+                <span>Paste Response</span>
+              </button>
             </nav>
           </ScrollArea>
         </aside>
@@ -102,6 +117,8 @@ export function PlanningShell({ project }: PlanningShellProps) {
         <ScrollArea className="h-full min-w-0 flex-1">
           {activeView === 'prompt-generator' ? (
             <PromptGeneratorPanel projectId={project.id} />
+          ) : activeView === 'paste-back' ? (
+            <PasteBackPanel projectId={project.id} />
           ) : (
             <EntityListPanel projectId={project.id} kind={activeView} />
           )}

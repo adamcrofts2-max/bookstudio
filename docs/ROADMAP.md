@@ -506,9 +506,22 @@ daily use of everything built so far.)*
       copies the prompt into their own Claude/ChatGPT subscription rather
       than a Book-Studio-hosted AI, keeping "AI assists, never replaces" from
       `CLAUDE.md`.
-- [ ] AI Workspace: paste-response-back with reviewable diff, reusing the Virtual
-      Editor's Accept/Reject/Ignore pattern (Phase C) — nothing commits to the
-      bible without approval
+- [x] AI Workspace: paste-response-back with reviewable diff — shipped 2026-08-01
+      (Phase 68). `layout/planning/pasteBackSuggestions.ts` scans pasted text,
+      sentence by sentence, for whole-word mentions of any existing Character or
+      Location (reusing `promptContext.ts`'s escape-and-word-boundary approach —
+      no new NLP), and proposes each matching sentence as an append-to-notes
+      suggestion. Deliberately scoped to Character/Location only (the two entity
+      shapes with a safe, always-appendable free-text `notes` field) and to
+      appending only — per `docs/AI_WORKSPACE_VISION.md`'s explicit "free-text
+      extraction into structured fields is unsolved and error-prone," this does
+      not guess at other fields or invent new entities from prose.
+      `layout/planning/PasteBackPanel.tsx` is the review UI, mirroring the Virtual
+      Editor's `FindingRow` Accept/Reject card pattern (Phase C) rather than a new
+      interaction: each suggestion is editable before accepting, and nothing
+      writes to the bible until accepted. Wired into `PlanningShell.tsx` as a
+      second AI-Workspace nav entry ("Paste Response") alongside "Generate
+      Prompt."
 - [ ] AI Workspace: continuity checker over Layer 0 data, extending the Virtual
       Editor's checker architecture (Phase C) — flags mismatches between the
       manuscript and the character/timeline/world-bible data

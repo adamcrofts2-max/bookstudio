@@ -41,7 +41,10 @@ const PRIMARY_LABEL_KEY: Record<Layer0EntityKind, string> = {
  * that literally recurs in a chapter about its aftermath. */
 const AUTO_DETECTABLE_KINDS: Layer0EntityKind[] = ['character', 'location', 'glossaryTerm']
 
-function escapeRegExp(value: string): string {
+/** Exported for `pasteBackSuggestions.ts`'s identical name-matching need —
+ * one escape helper, not two copies of the same regex-special-character
+ * list. */
+export function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
