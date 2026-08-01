@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { useProjectStore } from '@/store/projectStore'
+import { CATEGORY_TEMPLATES, seedProjectTemplate } from '@/data/projectTemplates'
 import type { ProjectCategory } from '@/types'
 
 const CATEGORIES: { id: ProjectCategory; label: string }[] = [
@@ -44,8 +45,17 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const [name, setName] = useState('')
   const [category, setCategory] = useState<ProjectCategory>('novel')
 
+  const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
+
   const handleCreate = () => {
     const project = createProject(name, category)
+    // Category-driven starting template — trim size default plus a few
+    // clearly-marked example Planning entries, per `docs/ROADMAP.md`'s
+    // "decides which Layer 0 entity subset a new project starts with." See
+    // `data/projectTemplates.ts` for why this stops well short of the full
+    // per-genre relabeling `docs/AI_WORKSPACE_VISION.md` explicitly defers.
+    updateProjectSettings(project.id, { trimSize: CATEGORY_TEMPLATES[category].trimSize })
+    seedProjectTemplate(project.id, category)
     onOpenChange(false)
     setName('')
     setCategory('novel')
@@ -89,6 +99,10 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-text-secondary">
+              We'll set a matching trim size and add a few example Planning entries you can edit or delete — nothing
+              is exported until you write it yourself.
+            </p>
           </div>
         </div>
 

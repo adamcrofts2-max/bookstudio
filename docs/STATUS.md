@@ -4918,3 +4918,52 @@ bible-sync, needs its own scoping pass (reusing `src/parser/`'s import pipeline 
 `AI_WORKSPACE_VISION.md`). Also still open and worth folding in opportunistically:
 manuscript search/find, real spellcheck, and a thesaurus (docs/ROADMAP.md Phase B/F,
 flagged 2026-08-01).
+
+## Phase 70 — Project-creation wizard: genre/audience starting template (2026-08-01)
+
+Read `docs/AI_WORKSPACE_VISION.md`'s "Reject the folder-of-files model" section again
+before starting, since its "a genre template just turns subsets on/off and relabels
+them" line is the obvious anchor for this ticket — but its own "Open questions"
+explicitly defers "exact entity schema per genre template" to a future design pass.
+Built the lightest version that satisfies `docs/ROADMAP.md`'s actual wording ("decides
+which Layer 0 entity subset a new project starts with") without pre-empting that
+deferred design pass: no relabeling, no per-project category visibility toggling, no
+new dialog step.
+
+- **`data/projectTemplates.ts`.** `CATEGORY_TEMPLATES: Record<ProjectCategory,
+  { trimSize: TrimSize; seedKinds: Layer0EntityKind[] }>` — one small static map. Trim
+  sizes follow real-world publishing convention per category (novel/nonfiction `6x9`;
+  children's/educational/coffee-table `8.5x11`, the largest option this app's
+  `TrimSize` union has; nature/scientific `7x10` for figure/table width). `seedKinds`
+  is 1-3 genre-relevant Layer 0 kinds per category (a novel seeds Character/Location/
+  Style Rule; nonfiction seeds Reference/Research Note/Glossary Term; a coffee-table
+  book seeds Illustration Brief/Reference; `other` seeds just Character, a minimal safe
+  default). `seedProjectTemplate(projectId, category)` loops those kinds through a
+  plain `switch`-based `seedExampleEntity` (not generic-over-`kind` — each branch needs
+  its own concrete field literal, so genericizing it would only reintroduce the cast
+  dance `layer0Store.ts`'s `asEntities()` already documents as the accepted escape
+  hatch elsewhere, not worth it for eight short one-offs), each call going through
+  `addLayer0EntityWithHistory` so every seeded entity is undoable exactly like a user's
+  own edit. Every seeded entity's text ends with "This is a starter example — edit or
+  delete it," and since Layer 0 is never read by PDF/EPUB/HTML export (`types
+  /layer0.ts`'s own doc comment), an unedited example can never leak into a shipped
+  book even if the user never touches it.
+- **`pages/NewProjectDialog.tsx`.** No new step — `ProjectCategory` was already the
+  genre/audience axis the picker collects. `handleCreate` now also calls
+  `updateProjectSettings(project.id, { trimSize: CATEGORY_TEMPLATES[category]
+  .trimSize })` and `seedProjectTemplate(project.id, category)` right after
+  `createProject`. Added one line of copy under the category picker so this isn't a
+  silent side effect: "We'll set a matching trim size and add a few example Planning
+  entries you can edit or delete — nothing is exported until you write it yourself."
+
+`tsc -b --force` clean. Not runtime-tested end-to-end (same sandbox blocker as every
+phase since 55).
+
+## Recommended next task
+Per the settled build order (Phase F before D/B), reasonable next pieces: (1) the
+Continuity checker, extending the Virtual Editor's checker architecture over Layer 0
+data; (2) outlining/story-structure templates, the other half of this phase's
+"wizard + templates" pairing; (3) the bigger "insert AI-drafted prose into the
+manuscript with a reviewable diff" feature flagged in Phase 68. Also still open and
+worth folding in opportunistically: manuscript search/find, real spellcheck, and a
+thesaurus (docs/ROADMAP.md Phase B/F, flagged 2026-08-01).

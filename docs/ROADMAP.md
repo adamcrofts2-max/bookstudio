@@ -481,8 +481,21 @@ daily use of everything built so far.)*
       now sorts by `order` for this one kind and adds Up/Down buttons — the
       established `ChevronUp`/`ChevronDown` reorder pattern already used for chapters
       and structural pages, not new drag-and-drop machinery.
-- [ ] Project-creation wizard (genre/audience-driven starting template) — also
-      decides which Layer 0 entity subset a new project starts with
+- [x] Project-creation wizard (genre/audience-driven starting template) — shipped
+      2026-08-01 (Phase 70). Deliberately the lightest version that satisfies this
+      ticket, not the full per-genre relabeling `docs/AI_WORKSPACE_VISION.md`
+      explicitly defers to its own design pass — no new dialog step, no per-project
+      Layer 0 category visibility toggling. Extends the existing `NewProjectDialog`'s
+      category picker (which already doubles as the genre/audience axis via
+      `ProjectCategory`) to imply two things on create: a sensible starting trim size
+      (`data/projectTemplates.ts`'s `CATEGORY_TEMPLATES`, e.g. children's → `8.5x11`,
+      novel → `6x9`, nature/scientific → `7x10`) and one clearly-marked example entity
+      per genre-relevant Layer 0 kind (a novel seeds Character/Location/Style Rule;
+      nonfiction seeds Reference/Research Note/Glossary Term; etc.) — this is the
+      literal "decides which Layer 0 entity subset a new project starts with," without
+      inventing new schema. Every seeded entity's own text says "starter example, edit
+      or delete," and Layer 0 is never read by export, so an unedited example can
+      never leak into a shipped book.
 - [ ] Outlining / story-structure templates
 - [ ] Word-count goals and writing-session tracking — the live total itself
       shipped in Phase B (2026-08-01); this is the bigger daily-goal/
