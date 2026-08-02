@@ -892,6 +892,23 @@ daily use of everything built so far.)*
       minimap's actual job at the node counts this app targets today.
       Revisit if a real project's graph ever gets large enough that "reset
       view" stops being a satisfying answer.
+- [x] Book Graph: per-node colour + size, chapter-connection parity, node
+      search, entity role subtitle (Phase 103, 2026-08-02, user: "change
+      colour of individual nodes and make individual nodes larger and
+      smaller. And connect chapters to nodes. Primary and secondary
+      nodes?"). `graphLayoutStore.ts` gained `nodeColorByProject`/
+      `nodeSizeByProject` (per-node overrides, editable from the detail
+      panel, stacking with Phase 102's global node-size control). "Primary
+      and secondary nodes?" answered with the per-node size control itself
+      rather than a new boolean field — reasoning in `BookGraphView.tsx`'s
+      doc comment. Chapters added to `Layer0RelationshipsSection.tsx`'s
+      "Connect to…" picker (the graph's own click-to-connect never excluded
+      them, only the dialog-based picker did — now consistent). A
+      `secondaryKey` field already existed per Layer 0 kind (Character's is
+      literally `role` — "Protagonist", "mentor", etc.) and now surfaces as
+      a subtitle in the detail panel. New "find a node" search box pinned
+      atop the right panel dims non-matching nodes/edges, for locating one
+      node in a large graph.
 - [x] Visual moodboard / Pinterest-style board for example ideas and reference
       images (Phase 93, 2026-08-02) — resolved the design question with a new
       optional `Idea.imageAssetIds?: string[]` (reusing the existing

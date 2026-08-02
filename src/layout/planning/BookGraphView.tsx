@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link2, Maximize2, Minus, Plus, RotateCcw, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Link2, Maximize2, Minus, Plus, RotateCcw, Search, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useContentStore } from '@/store/contentStore'
@@ -99,6 +99,21 @@ const NODE_SCALE_STEP = 0.15
 const ZOOM_MIN = 0.35
 const ZOOM_MAX = 2.5
 const ZOOM_STEP = 0.15
+
+/** Stable empty fallbacks for the per-node colour/size maps — same reason
+ * `graphLayoutStore.ts`'s own `EMPTY_POSITIONS` exists: a fresh `{}` literal
+ * on every selector call would be a new reference every render, which
+ * defeats Zustand's default `Object.is` equality check and re-renders this
+ * whole (potentially 100+ node) view on every unrelated store change. */
+const EMPTY_NODE_COLORS: Record<string, string> = {}
+const EMPTY_NODE_SIZES: Record<string, number> = {}
+
+/** Native `<input type="color">` needs *some* starting hex value even
+ * before a user has picked one — this is only ever the picker's opening
+ * position, not a claim about what the node currently renders as (that's
+ * still the kind's own accent/neutral colour until an override is set).
+ * Matches `--accent`'s light-theme value in `index.css`. */
+const DEFAULT_COLOR_SWATCH = '#4f8a5b'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -311,6 +326,45 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  * `linkedChapterId`, an idea's `relatedIdeaIds`, an idea's `promotedTo`, and
  * user-authored `Layer0Relationship`s (from here, or from the entity's own
  * edit dialog — both write the same underlying record).
+ *
+ * **Phase 103 additions** (user, 2026-08-02: "change colour of individual
+ * nodes and make individual nodes larger and smaller. And connect chapters
+ * to nodes. Primary and secondary nodes?"):
+ *
+ * - *Per-node colour and size* — `graphLayoutStore.ts`'s `nodeColorByProject`
+ *   / `nodeSizeByProject`, editable from the node detail panel once
+ *   something is selected. Size stacks with Phase 102's *global* node-size
+ *   control (`finalRadius = kindBaseRadius * globalScale * perNodeSize`),
+ *   it doesn't replace it — the global control is "the whole graph reads
+ *   too dense/sparse," the per-node one is "this specific character matters
+ *   more than that one."
+ * - *"Primary and secondary nodes?"* — deliberately answered with the
+ *   per-node size control above, not a new boolean/tag field. A dedicated
+ *   `isPrimary` flag would need its own UI, its own meaning to define
+ *   (bigger? bolder? a badge?), and would inevitably just end up meaning
+ *   "render this one bigger" anyway — which the resize control already
+ *   does, today, for any reason a user has, not just protagonist-vs-
+ *   minor-character. One mechanism, not two that overlap.
+ * - *Chapters are connectable* — click-to-connect (Phase 102) never actually
+ *   excluded chapters (only the synthetic Book node), but
+ *   `Layer0RelationshipsSection.tsx`'s dialog-based "Connect to…" dropdown
+ *   did — an inconsistency between the graph's own connect flow and the
+ *   entity-dialog's, now closed by adding chapters to that picker too. Both
+ *   entry points write the same `Layer0Relationship` record either way.
+ * - *A node's existing "role" surfaces automatically* — `LAYER0_FORM_CONFIG`
+ *   already has a per-kind `secondaryKey` (Character's is literally called
+ *   `role`, free text like "Protagonist" or "mentor" — exactly what the
+ *   pasted mockup showed as a subtitle under each character). The detail
+ *   panel shows it next to the kind label ("Character · Protagonist") when
+ *   set. No new field, no new form — this was already-entered data with
+ *   nowhere to show inside the graph itself until now.
+ * - *Node search* — a "find a node" box pinned at the top of the right
+ *   panel (not the crowded top toolbar row) that dims every non-matching
+ *   node/edge, reusing the exact same dim/highlight mechanism selection
+ *   already uses. Aimed squarely at the "100-chapter novel" scalability
+ *   case from the earlier design review: visually finding one specific
+ *   character among a hundred nodes by scanning alone stops working well
+ *   before search does.
  */
 export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: BookGraphViewProps) {
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
@@ -324,9 +378,14 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const clearSavedPositions = useGraphLayoutStore((s) => s.clearPositions)
   const nodeScale = useGraphLayoutStore((s) => s.getNodeScale(projectId))
   const setNodeScale = useGraphLayoutStore((s) => s.setNodeScale)
+  const nodeColors = useGraphLayoutStore((s) => s.nodeColorByProject[projectId]) ?? EMPTY_NODE_COLORS
+  const nodeSizes = useGraphLayoutStore((s) => s.nodeSizeByProject[projectId]) ?? EMPTY_NODE_SIZES
+  const setNodeColorAction = useGraphLayoutStore((s) => s.setNodeColor)
+  const setNodeSizeAction = useGraphLayoutStore((s) => s.setNodeSize)
 
   const [hiddenKinds, setHiddenKinds] = useState<Set<GraphNodeKind>>(new Set())
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
 
   // Persistent selection (distinct from hover) — the node whose connections
   // are highlighted and whose details show in the right panel. `null` means
@@ -344,11 +403,16 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const [pendingConnection, setPendingConnection] = useState<{ aId: string; bId: string } | null>(null)
   const [connectLabel, setConnectLabel] = useState('')
 
-  const { allNodes, allEdges, countByKind } = useMemo(() => {
+  const { allNodes, allEdges, countByKind, secondaryByNodeId } = useMemo(() => {
     const nodes: GraphNode[] = []
     const edges: GraphEdge[] = []
     const nodeIds = new Set<string>()
     const count: Partial<Record<GraphNodeKind, number>> = {}
+    // A Layer 0 entity's existing `secondaryKey` field value (Character's
+    // is `role` — "Protagonist", "mentor", etc.), keyed by node id, for the
+    // detail panel's subtitle (Phase 103). Built here rather than a second
+    // pass over `bible` since this loop already visits every entity once.
+    const secondary = new Map<string, string>()
 
     // The book itself — always present, always the first node, so every
     // chapter below can spoke off it. Not counted in `countByKind`/
@@ -370,14 +434,18 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
 
     for (const kind of LAYER0_ENTITY_KINDS) {
       const collection = LAYER0_KIND_TO_COLLECTION[kind]
-      const primaryKey = LAYER0_FORM_CONFIG[kind].primaryKey
+      const config = LAYER0_FORM_CONFIG[kind]
       const entities = bible[collection] as unknown as (Record<string, unknown> & { id: string; linkedChapterId?: string })[]
       for (const entity of entities) {
-        nodes.push({ id: entity.id, kind, label: (entity[primaryKey] as string | undefined)?.trim() || 'Untitled' })
+        nodes.push({ id: entity.id, kind, label: (entity[config.primaryKey] as string | undefined)?.trim() || 'Untitled' })
         nodeIds.add(entity.id)
         count[kind] = (count[kind] ?? 0) + 1
         if (entity.linkedChapterId && nodeIds.has(entity.linkedChapterId)) {
           edges.push({ a: entity.id, b: entity.linkedChapterId })
+        }
+        if (config.secondaryKey) {
+          const secondaryValue = (entity[config.secondaryKey] as string | undefined)?.trim()
+          if (secondaryValue) secondary.set(entity.id, secondaryValue)
         }
       }
     }
@@ -419,7 +487,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     // never actually turned up as a node.
     const validEdges = edges.filter((e) => nodeIds.has(e.a) && nodeIds.has(e.b))
 
-    return { allNodes: nodes, allEdges: validEdges, countByKind: count }
+    return { allNodes: nodes, allEdges: validEdges, countByKind: count, secondaryByNodeId: secondary }
   }, [chapters, bible, ideas, bookTitle])
 
   const nodeById = useMemo(() => new Map(allNodes.map((n) => [n.id, n])), [allNodes])
@@ -492,6 +560,29 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     return set
   }, [selectedNodeId, visibleEdges])
 
+  // Node search (Phase 103) — "which nodes match" as its own independent
+  // set from `highlightedIds` above. `null` when the search box is empty,
+  // same "don't dim anything" convention. The Book node never matches (it's
+  // not really a searchable "thing," and would otherwise get dimmed by
+  // every non-empty query that doesn't happen to match the book's title).
+  const searchMatchIds = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return null
+    const set = new Set<string>()
+    for (const node of visibleNodes) {
+      if (node.kind !== 'book' && node.label.toLowerCase().includes(q)) set.add(node.id)
+    }
+    return set
+  }, [searchQuery, visibleNodes])
+
+  // What actually drives the dim/highlight render pass below: a persistent
+  // selection wins if one exists (it has real "these are direct
+  // connections" semantics an edge-highlight needs); otherwise an active
+  // search query dims everything that doesn't match; otherwise nothing is
+  // dimmed at all. Both `highlightedIds` and `searchMatchIds` are "ids to
+  // keep at full opacity" sets, so this can be one shared variable.
+  const emphasizedIds = highlightedIds ?? searchMatchIds
+
   // The selected node's own direct connections, resolved to full nodes (for
   // the panel's connection list) with whichever relationship label (if any)
   // applies to that specific edge.
@@ -563,6 +654,8 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const zoomIn = () => setTransform((t) => ({ ...t, k: clamp(t.k + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) }))
   const zoomOut = () => setTransform((t) => ({ ...t, k: clamp(t.k - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) }))
   const adjustNodeScale = (delta: number) => setNodeScale(projectId, clamp(Math.round((nodeScale + delta) * 100) / 100, NODE_SCALE_MIN, NODE_SCALE_MAX))
+  const adjustPerNodeSize = (nodeId: string, delta: number) =>
+    setNodeSizeAction(projectId, nodeId, clamp(Math.round(((nodeSizes[nodeId] ?? 1) + delta) * 100) / 100, NODE_SCALE_MIN, NODE_SCALE_MAX))
 
   function toggleConnectMode() {
     setConnectMode((v) => !v)
@@ -801,15 +894,24 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   function renderNodeDetailPanel(node: GraphNode) {
     const Icon = GRAPH_NODE_ICONS[node.kind]
     const openLabel = node.kind === 'chapter' ? 'Open in editor' : node.kind === 'idea' ? 'Open idea' : `Open in Develop`
+    const secondary = secondaryByNodeId.get(node.id)
+    const customColor = nodeColors[node.id]
+    const perNodeSize = nodeSizes[node.id] ?? 1
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-start gap-2.5">
-          <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-background-secondary">
-            <Icon className="size-4 text-text-secondary" />
+          <div
+            className="flex size-9 shrink-0 items-center justify-center rounded-full border"
+            style={{ borderColor: customColor ?? 'var(--color-border)', backgroundColor: customColor ? `${customColor}29` : 'var(--color-background-secondary)' }}
+          >
+            <Icon className="size-4" style={{ color: customColor ?? 'var(--color-text-secondary)' }} />
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-semibold text-text-primary">{node.label}</div>
-            <div className="text-xs text-text-secondary">{kindSingularLabel(node.kind)}</div>
+            <div className="truncate text-xs text-text-secondary">
+              {kindSingularLabel(node.kind)}
+              {secondary && ` · ${secondary}`}
+            </div>
           </div>
           <button
             type="button"
@@ -828,6 +930,56 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         <Button variant="secondary" size="sm" className="w-full" onClick={() => handleOpen(node)}>
           {openLabel}
         </Button>
+
+        <div className="flex items-center gap-3 border-t border-border pt-3">
+          <div className="flex flex-1 flex-col gap-1">
+            <span className="text-xs font-medium text-text-secondary">Colour</span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                aria-label="Node colour"
+                value={customColor ?? DEFAULT_COLOR_SWATCH}
+                onChange={(e) => setNodeColorAction(projectId, node.id, e.target.value)}
+                className="h-8 w-9 shrink-0 cursor-pointer rounded-[var(--radius-control)] border border-border"
+              />
+              {customColor && (
+                <button
+                  type="button"
+                  onClick={() => setNodeColorAction(projectId, node.id, null)}
+                  className="text-[11px] text-text-secondary underline decoration-dotted hover:text-text-primary"
+                >
+                  Use default
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <span className="text-xs font-medium text-text-secondary">Size</span>
+            <div className="flex items-center gap-0.5 rounded-full border border-border px-1 py-1">
+              <button
+                type="button"
+                onClick={() => adjustPerNodeSize(node.id, -NODE_SCALE_STEP)}
+                disabled={perNodeSize <= NODE_SCALE_MIN}
+                aria-label="Smaller"
+                title="Smaller"
+                className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+              >
+                <Minus className="size-3" />
+              </button>
+              <span className="w-8 text-center text-[10px] tabular-nums text-text-secondary">{Math.round(perNodeSize * 100)}%</span>
+              <button
+                type="button"
+                onClick={() => adjustPerNodeSize(node.id, NODE_SCALE_STEP)}
+                disabled={perNodeSize >= NODE_SCALE_MAX}
+                aria-label="Larger"
+                title="Larger"
+                className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+              >
+                <Plus className="size-3" />
+              </button>
+            </div>
+          </div>
+        </div>
 
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-medium text-text-secondary">Connections ({selectedConnections.length})</span>
@@ -1028,7 +1180,14 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
               if (!pa || !pb) return null
               const hoverHighlighted = hoveredId === a || hoveredId === b
               const touchesSelection = highlightedIds && (a === selectedNodeId || b === selectedNodeId)
-              const dimmed = highlightedIds ? !touchesSelection : false
+              // Selection mode dims everything except edges that touch the
+              // selected node directly (a tight "just this node's own
+              // connections" focus — an edge between two of its neighbours
+              // that doesn't touch it stays dimmed). Search mode is looser:
+              // any edge touching *a* match stays visible, since the point
+              // is tracing what a found node connects to, not just the
+              // found nodes themselves.
+              const dimmed = highlightedIds ? !touchesSelection : searchMatchIds ? !(searchMatchIds.has(a) || searchMatchIds.has(b)) : false
               // The book's own spine to each chapter reads as the manuscript's
               // backbone — thicker and more opaque than an ordinary structural
               // edge, but still the same accent colour (not a new hue) per
@@ -1080,9 +1239,12 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
               const isSelected = selectedNodeId === node.id
               const isConnectSource = connectSourceId === node.id
               const isPinned = pinnedPositions.has(node.id) && !isBook
-              const dimmed = highlightedIds ? !highlightedIds.has(node.id) : false
-              const r = (isBook ? BOOK_RADIUS : isChapter ? CHAPTER_RADIUS : NODE_RADIUS) * (isBook ? 1 : nodeScale)
-              const iconSize = (isBook ? 28 : isChapter ? 24 : 20) * (isBook ? 1 : nodeScale)
+              const dimmed = isBook ? false : emphasizedIds ? !emphasizedIds.has(node.id) : false
+              const customColor = isBook ? undefined : nodeColors[node.id]
+              const perNodeSize = isBook ? 1 : (nodeSizes[node.id] ?? 1)
+              const r = (isBook ? BOOK_RADIUS : isChapter ? CHAPTER_RADIUS : NODE_RADIUS) * (isBook ? 1 : nodeScale * perNodeSize)
+              const iconSize = (isBook ? 28 : isChapter ? 24 : 20) * (isBook ? 1 : nodeScale * perNodeSize)
+              const tintColor = customColor ?? (isBook || isChapter ? 'var(--color-accent)' : undefined)
               // The book node is the one fixed anchor (see `pinnedPositions`'s
               // doc comment above) — no drag handlers at all, so it can never
               // be dragged, and no grab cursor, so it doesn't visually
@@ -1113,15 +1275,15 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
                 >
                   <circle
                     r={isHovered || node.id === draggingNodeId ? r + 3 : r}
-                    fill={isBook || isChapter ? 'var(--color-accent)' : 'var(--color-panel)'}
-                    fillOpacity={isBook ? 0.18 : isChapter ? 0.14 : 1}
-                    stroke={isConnectSource ? 'var(--color-accent)' : isSelected ? 'var(--color-accent)' : isBook || isChapter ? 'var(--color-accent)' : 'var(--color-border)'}
+                    fill={tintColor ?? 'var(--color-panel)'}
+                    fillOpacity={tintColor ? (isBook ? 0.18 : 0.16) : 1}
+                    stroke={isConnectSource || isSelected ? 'var(--color-accent)' : (tintColor ?? 'var(--color-border)')}
                     strokeWidth={isConnectSource || isSelected ? 3 : isBook ? 3 : isChapter ? 2.5 : isPinned ? 2 : 1.5}
                     strokeDasharray={isConnectSource ? '3,2' : isPinned ? '3,2' : undefined}
                     className={cn('transition-[r] duration-150', isConnectSource && 'animate-pulse')}
                   />
                   <foreignObject x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} style={{ pointerEvents: 'none' }}>
-                    <Icon className="size-full" style={{ color: isBook || isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />
+                    <Icon className="size-full" style={{ color: tintColor ?? 'var(--color-text-secondary)' }} />
                   </foreignObject>
                   <foreignObject x={-70} y={r + 6} width={140} height={34} style={{ pointerEvents: 'none' }}>
                     <div
@@ -1190,14 +1352,43 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
           </div>
         </div>
 
-        <div className="flex h-[560px] w-72 shrink-0 flex-col overflow-y-auto rounded-[var(--radius-card)] border border-border bg-panel p-4">
-          {pendingConnection
-            ? renderConnectFormPanel()
-            : connectMode
-              ? renderConnectHintPanel()
-              : selectedNode
-                ? renderNodeDetailPanel(selectedNode)
-                : renderStatsPanel()}
+        <div className="flex h-[560px] w-72 shrink-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-panel">
+          <div className="border-b border-border p-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Find a node…"
+                aria-label="Find a node"
+                className="h-8 w-full rounded-[var(--radius-button)] border border-border bg-background-secondary pl-8 pr-7 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)]"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Clear search"
+                  className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-text-muted hover:text-text-primary"
+                >
+                  <X className="size-3" />
+                </button>
+              )}
+            </div>
+            {searchQuery && (
+              <p className="mt-1.5 text-[11px] text-text-secondary">
+                {searchMatchIds?.size ?? 0} match{(searchMatchIds?.size ?? 0) === 1 ? '' : 'es'}
+              </p>
+            )}
+          </div>
+          <div className="flex-1 overflow-y-auto p-4">
+            {pendingConnection
+              ? renderConnectFormPanel()
+              : connectMode
+                ? renderConnectHintPanel()
+                : selectedNode
+                  ? renderNodeDetailPanel(selectedNode)
+                  : renderStatsPanel()}
+          </div>
         </div>
       </div>
 

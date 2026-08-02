@@ -6672,18 +6672,85 @@ correctly in code and still needs a real mouse to confirm feels right,
 especially the click-vs-drag threshold now also gating background-click
 deselect.
 
+## Phase 103 — Book Graph: per-node colour/size, chapter-connect parity, search, role subtitle (2026-08-02)
+
+Direct follow-up to Phase 102, same session: "change colour of individual
+nodes and make individual nodes larger and smaller. And connect chapters to
+nodes. Primary and secondary nodes? Think of anything else to also make
+better and better experience."
+
+**Per-node colour + size**: `graphLayoutStore.ts` gained `nodeColorByProject`
+(hex override, `null` clears back to the kind default) and
+`nodeSizeByProject` (a per-node multiplier that *stacks* with Phase 102's
+global `nodeScaleByProject` — `finalRadius = kindBaseRadius * globalScale *
+perNodeSize`, so the global control answers "the whole graph reads too
+dense" while the per-node one answers "this one character matters more").
+Both editable from a new row in the node detail panel — a native
+`<input type="color">` (same pattern `CoverElementPanel.tsx` already uses,
+no new picker component) with a "Use default" clear link, and a −/+ size
+control identical in shape to Phase 102's global one. Node rendering now
+computes one `tintColor` per node (custom colour, else the existing
+accent-for-chapter/book default, else `undefined` for a plain entity) used
+consistently for fill, stroke, and icon colour — one variable instead of
+three separate colour decisions that could drift out of sync.
+
+**"Primary and secondary nodes?"** — the user asked this as an open
+question, not a spec. Answered by *not* adding a new field: a dedicated
+`isPrimary` boolean would need its own UI and its own definition of what
+"primary" visually means, and that definition would just end up being
+"render this one bigger" — which the per-node size control above already
+does, for any reason a user has. One mechanism, not two overlapping ones.
+Full reasoning in `BookGraphView.tsx`'s doc comment.
+
+**Chapter-connection parity**: click-to-connect (Phase 102) never actually
+excluded chapters — `handleConnectClick` only excludes the synthetic Book
+node — but `Layer0RelationshipsSection.tsx`'s dialog-based "Connect to…"
+dropdown (`useAllEntityRefs`) only ever listed Layer 0 entities and Ideas,
+never chapters. That meant the graph's own connect flow could do something
+the entity-dialog's couldn't — closed by adding chapters (from
+`useContentStore`) to that picker's ref list. Both paths write the same
+`Layer0Relationship` record either way.
+
+**Entity role surfaces automatically**: `LAYER0_FORM_CONFIG` already had a
+per-kind `secondaryKey` — Character's is literally `role`, free text like
+"Protagonist" or "mentor," exactly what the user's pasted UX-review mockup
+showed as a subtitle under each character card. This was already-entered
+data with no home inside the graph; the detail panel now shows it next to
+the kind label ("Character · Protagonist") whenever set. No new field, no
+new form.
+
+**Node search**: a "find a node" box pinned at the top of the right panel
+(deliberately not the already-crowded top toolbar row) dims every
+non-matching node/edge, reusing the same dim/highlight mechanism selection
+already drives (`emphasizedIds` in the render loop, `highlightedIds` ??
+`searchMatchIds`). Aimed at the "100-chapter novel" scalability case the
+earlier UX review raised — visually scanning for one specific character
+among a hundred nodes breaks down well before typing their name does.
+Selection and search share the same dim mechanism for *nodes* but not
+*edges*: a selected node dims every edge except ones touching it directly
+(a tight "just this node's connections" focus); a search match keeps any
+edge touching *any* match, since the point of search is tracing what a
+found node connects to, not isolating it.
+
+Verification: `npx tsc -b --force` clean. Same caveat as Phase 102 — this
+is pointer/click-heavy UI that reads correctly in code and still wants a
+real mouse pass before fully trusting it, especially the colour-input
+interaction (native `<input type="color">` opens the OS's own colour
+picker, which this sandbox has no way to click through).
+
 ## Recommended next task
-Push everything queued from Phase 85 through Phase 102 (20+ commits) — this
+Push everything queued from Phase 85 through Phase 103 (20+ commits) — this
 has been a standing, repeated ask across many sessions now; it requires the
 user's own terminal, not this sandbox. Once pushed, a real Chrome pass
 (resized to a phone viewport, ideally a real device) is overdue and should
 cover, in order: (1) Phase 95-100's mobile claims — chapter switcher add/
 rename/delete, "Add photo" OS picker + insert, per-block "⋮" menu (move up/
 down disabled correctly at the ends, delete + undo round-trip), header Undo
-reaching into Ideas too; (2) Phase 99's Book Graph — drag/pin persistence,
-the central Book hub + spine edges, labeled relationship edges rendering
-correctly, the Toolbar/Inspector overflow fix; (3) Phase 101's CMYK export —
-generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`, confirm
-they differ and neither crashes the exporter. Real dictionary-backed
+reaching into Ideas too; (2) Phase 102-103's Book Graph — the three click
+semantics (select/drag/connect-mode) don't collide, per-node colour/size
+controls actually apply, search dimming feels right, chapter-to-chapter and
+chapter-to-entity connections both work end to end; (3) Phase 101's CMYK
+export — generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`,
+confirm they differ and neither crashes the exporter. Real dictionary-backed
 spell-check and thesaurus/synonym lookup remain blocked — no npm registry
 access in this sandbox, unchanged from every earlier phase.

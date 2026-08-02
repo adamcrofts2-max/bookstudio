@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useLayer0Store } from '@/store/layer0Store'
 import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
+import { useContentStore } from '@/store/contentStore'
 import { addLayer0EntityWithHistory, deleteLayer0EntityWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_TO_COLLECTION, getLayer0KindLabel } from '@/types/layer0'
@@ -20,19 +21,30 @@ interface EntityRef {
   label: string
 }
 
-/** Every Layer 0 entity plus every Idea, flattened into one pickable list —
- * the same cross-kind sweep `BookGraphView.tsx`'s `allNodes` builder already
- * does, reused here for the relationship picker's dropdown rather than
- * re-deriving a second, narrower "just Characters" list. A relationship
- * between a Character and a Location ("The Lighthouse is Callan's
- * childhood home") is just as real as one between two Characters — see
- * `Layer0Relationship`'s own doc comment in `types/layer0.ts`. */
+/** Every Layer 0 entity, every Idea, and every chapter, flattened into one
+ * pickable list — the same cross-kind sweep `BookGraphView.tsx`'s
+ * `allNodes` builder already does, reused here for the relationship
+ * picker's dropdown rather than re-deriving a second, narrower "just
+ * Characters" list. A relationship between a Character and a Location ("The
+ * Lighthouse is Callan's childhood home") is just as real as one between
+ * two Characters — see `Layer0Relationship`'s own doc comment in
+ * `types/layer0.ts`. Chapters were missing from this list until Phase 103
+ * (user, 2026-08-02: "connect chapters to nodes") — `BookGraphView.tsx`'s
+ * own click-to-connect flow never had this restriction (it only excludes
+ * the synthetic Book node), so leaving chapters out here meant the two
+ * entry points for the same underlying data could do different things;
+ * this closes that gap rather than leaving one path more capable than the
+ * other. */
 function useAllEntityRefs(projectId: string): EntityRef[] {
   const bible = useLayer0Store((s) => s.getBible(projectId))
   const ideas = useIdeaStore((s) => s.byProject[projectId]) ?? EMPTY_IDEAS
+  const chapters = useContentStore((s) => s.getManuscript(projectId))?.chapters ?? []
 
   return useMemo(() => {
     const refs: EntityRef[] = []
+    for (const chapter of chapters) {
+      refs.push({ id: chapter.id, kind: 'chapter', label: chapter.title || 'Untitled chapter' })
+    }
     for (const kind of LAYER0_ENTITY_KINDS) {
       const collection = LAYER0_KIND_TO_COLLECTION[kind]
       const primaryKey = LAYER0_FORM_CONFIG[kind].primaryKey
@@ -45,7 +57,7 @@ function useAllEntityRefs(projectId: string): EntityRef[] {
       refs.push({ id: idea.id, kind: 'idea', label: idea.text.trim() || '(empty idea)' })
     }
     return refs
-  }, [bible, ideas])
+  }, [chapters, bible, ideas])
 }
 
 interface Layer0RelationshipsSectionProps {
