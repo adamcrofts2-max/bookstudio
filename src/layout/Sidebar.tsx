@@ -99,7 +99,22 @@ function StructuralPageRow({ projectId, page, selected }: StructuralPageRowProps
     >
       <button type="button" onClick={handleClick} className="flex min-w-0 flex-1 items-center gap-2 text-left">
         <Icon className="size-3.5 shrink-0" />
-        <span className="truncate">{def.label}</span>
+        {/* `min-w-0` here, not just on the button above, is load-bearing: this
+           span is itself a flex item (direct child of the flex row above),
+           and a flex item's default `min-width: auto` refuses to shrink
+           below its own content's natural width regardless of `truncate`'s
+           `overflow: hidden` — the classic flexbox-truncation gotcha. Without
+           it, a long label like "Acknowledgements" never actually ellipsised;
+           it forced this row (and the whole Structure scroll content) wider
+           than the sidebar, pushing the duplicate/delete buttons — and, via
+           the resulting horizontal overflow, the section's own "+" Add Page
+           button — out of view entirely (user report, 2026-08-02: "it pushes
+           the + symbol etc out of view making it unuseable"). Chapter rows
+           never hit this because they wrap (`line-clamp-2 break-words`)
+           instead of single-line-truncating — this row's `truncate` needed
+           the missing `min-w-0` to behave the same way it always looked like
+           it should. */}
+        <span className="min-w-0 truncate">{def.label}</span>
       </button>
       <button
         type="button"

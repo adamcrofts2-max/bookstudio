@@ -825,6 +825,19 @@ daily use of everything built so far.)*
       nav's entity-kind rows, every `EntityListPanel` row (small icon badge),
       and the Book Graph's nodes — one registry, three call sites, not three
       separate icon choices to keep in sync.
+- [x] Book Graph: draggable nodes / manual mind-map arrangement (Phase 98,
+      2026-08-02, user: "they should be dragable on the page to make a mind
+      map"). New `graphLayoutStore.ts` persists manual per-node positions per
+      project; the force layout treats a dragged node as a fixed anchor
+      (still repels/attracts everything else, just never drifts itself) so
+      the rest of the graph keeps arranging sensibly around whatever you've
+      placed by hand. "Reset layout" button clears manual positions.
+- [x] Fix Structure-tab "+ button pushed out of view" bug (Phase 98,
+      2026-08-02) — a long structural-page label (e.g. "Acknowledgements")
+      never actually truncated, forcing the whole Structure sidebar content
+      wider than 264px and pushing the row's own icons and the section's "+"
+      button out of view. Root-caused via live Chrome reproduction (missing
+      `min-w-0` on the label's flex-item span) and fixed with one class.
 - [x] Visual moodboard / Pinterest-style board for example ideas and reference
       images (Phase 93, 2026-08-02) — resolved the design question with a new
       optional `Idea.imageAssetIds?: string[]` (reusing the existing

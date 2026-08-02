@@ -6288,6 +6288,88 @@ against real data), whether the chip-toggle filtering feels right in practice,
 and whether clicking through to a chapter/idea/entity from the graph actually
 lands correctly end to end.
 
+## Phase 98 — Book Graph: draggable nodes (a real mind map) + a real Structure-tab bug fix (2026-08-02)
+
+User feedback on Phase 97, before the graph could even be pushed and tested:
+"the book graph should show icons (in circles?) to represent the different
+elements of the book and they should be dragable on the page to make a mind
+map. think. design has to be key to user experience." Plus a separate,
+unrelated bug report: "also if i click structure and choose acknowledgements
+it pushes the + symbol etc out of view making it unuseable for the user."
+
+**Book Graph — draggable nodes:**
+- **`src/store/graphLayoutStore.ts`** (new) — one more `byProject: Record<
+  projectId, Record<nodeId, {x,y}>>` store, same shape/`persist` convention
+  as `ideaStore.ts`/`notesStore.ts`. Deliberately NOT routed through
+  `editorActions.ts`/`historyStore`: dragging a node into place is a view/
+  arrangement preference (same category as pan/zoom or a theme choice), not
+  book content — Ctrl+Z undoing "moved this bubble" would be a strange
+  interaction for something that isn't the manuscript, Layer 0 data, or an
+  Idea. Still persisted to `localStorage` so a manually-arranged map
+  survives a reload.
+- **`computeGraphLayout`** takes a new `pinned: Map<nodeId, {x,y}>` param.
+  A pinned node is excluded from position *integration* every physics
+  iteration (it never drifts on its own) but still fully participates
+  otherwise — it still repels every other node and its edges still pull
+  neighbours toward it. That's the difference between "a fixed layout with
+  an escape hatch" and an actual mind map: drag the two or three nodes that
+  matter into place, and everything else keeps arranging itself sensibly
+  around them, not ignoring them.
+- **Per-node drag**, independent of the existing background pan: each
+  node's own `onPointerDown`/`Move`/`Up` (with `setPointerCapture` on the
+  node's own `<g>`, not the SVG root) tracks a live drag position via
+  `screenToSvgPoint` — converts the pointer's screen coordinates into the
+  SVG's user-space through `getScreenCTM()`, which folds in the existing
+  pan/zoom CSS transform automatically, so dragging feels correct at any
+  zoom level without hand-deriving the transform math. A 4px movement
+  threshold (`DRAG_THRESHOLD_PX`) distinguishes an intentional drag from a
+  click that opens the node — the same convention every draggable-canvas
+  tool (Figma, Miro) uses, so tapping a node to open it still works
+  reliably even though the same pointer-down also arms a potential drag.
+  Only committed to `graphLayoutStore` on pointer-up (a live drag re-renders
+  cheaply via local React state, not a store write + full layout recompute
+  on every pointermove).
+- **"Reset layout"** button (`RotateCcw`, next to the existing "Reset view"
+  pan/zoom reset) clears every manual position for the project, letting the
+  auto-arrangement take back over from scratch.
+- **Visual redesign** — bigger, clearer icon-in-circle badges (22px radius,
+  up from 16px; chapters 28px, up from 24px), a dashed ring on any node
+  with a manually-pinned position (a quiet "you moved this" indicator,
+  distinct from the solid ring everything else gets) so the graph
+  communicates which nodes are pinned vs. auto-arranged without needing a
+  legend to explain it.
+
+**Structure-tab bug — root-caused, not guessed at**: reproduced live in
+Chrome (this sandbox can navigate/interact with the deployed app even
+though it can't push to it) — added an Acknowledgements page from Front
+Matter's "+" picker, and confirmed exactly what the user described: the
+row's action icons and the section's own "+" button vanished off the right
+edge of the 264px sidebar. Root cause: `StructuralPageRow`'s label
+(`<span className="truncate">{def.label}</span>`) is itself a flex item
+(direct child of the row's flex container), and a flex item's default
+`min-width: auto` refuses to shrink below its own content's natural width
+regardless of `truncate`'s `overflow: hidden` — the classic flexbox-
+truncation gotcha where `min-w-0` is needed on the truncating element
+itself, not just an ancestor. "Acknowledgements" (17 characters) never
+actually ellipsised; it forced the row — and, via the resulting horizontal
+overflow, the whole Structure scroll content — wider than the sidebar,
+pushing everything to its right out of view. Fixed with one added
+`min-w-0` on that span. `Sidebar.tsx`'s Chapter rows never hit this because
+they use wrapping (`line-clamp-2 break-words`) instead of single-line
+truncation — a different, also-valid strategy that happens not to need
+`min-w-0` to avoid the same failure mode.
+
+Verification: `npx tsc -b --force` clean. The Structure-tab fix was
+confirmed against the actual root cause via live reproduction in Chrome
+(not just reasoned through) — high confidence in that one specifically.
+The Book Graph drag/pin mechanics are `tsc`-clean and reasoned through
+carefully (`getScreenCTM`-based coordinate conversion, threshold-based
+click/drag disambiguation, pointer capture on the node not the background)
+but not pushed or hand-tested yet — genuinely worth a real drag-and-drop
+pass once live: does a dragged node feel like it's really under the cursor
+at different zoom levels, does releasing outside the canvas behave
+sensibly, does "Reset layout" clear things as expected.
+
 ## Recommended next task
 Push everything from Phase 85 onward (13+ commits queued), then do one real Chrome
 pass (resized to a phone viewport, and ideally a real device) covering: the Notes

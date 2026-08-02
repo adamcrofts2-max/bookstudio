@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2, Waypoints } from 'lucide-react'
+import { Maximize2, RotateCcw, Waypoints } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useContentStore } from '@/store/contentStore'
@@ -7,6 +7,7 @@ import { useLayer0Store } from '@/store/layer0Store'
 import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
 import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useGraphLayoutStore } from '@/store/graphLayoutStore'
 import { EmptyState } from '@/components/common/EmptyState'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
@@ -53,8 +54,15 @@ interface Layout {
  * likely to still be loose ends). */
 const GRAPH_KIND_ORDER: GraphNodeKind[] = ['chapter', ...LAYER0_ENTITY_KINDS, 'idea']
 
-const CHAPTER_RADIUS = 24
-const NODE_RADIUS = 16
+/** A pointer that moved less than this many screen pixels between down and
+ * up is a click, not a drag — the standard "click vs. drag" threshold every
+ * draggable-canvas tool uses (Miro, Figma, etc.), so a quick tap to open a
+ * node still works reliably even though the same pointer-down also arms a
+ * potential drag. */
+const DRAG_THRESHOLD_PX = 4
+
+const CHAPTER_RADIUS = 28
+const NODE_RADIUS = 22
 
 /**
  * A hand-rolled force-directed layout generalised from `IdeaMindMapView.tsx`'s
@@ -66,11 +74,26 @@ const NODE_RADIUS = 16
  * connection (chapter links, related ideas, promotions) — never a stand-in
  * for "shares a tag" — so every edge here is drawn as a line, no separate
  * "cluster vs. line" distinction needed.
+ *
+ * `pinned` is Phase 98's addition (user, 2026-08-02: "they should be
+ * dragable on the page to make a mind map") — a node the user has manually
+ * dragged is excluded from position *integration* every iteration (it never
+ * moves on its own) but still fully participates in the physics otherwise:
+ * it still repels every other node and still pulls its edge-connected
+ * neighbours toward it. That's what makes this a real mind map rather than
+ * just a fixed auto-layout with an escape hatch — drag the two or three
+ * nodes that matter into place, and everything else still arranges itself
+ * sensibly around them instead of ignoring them.
  */
-function computeGraphLayout(nodes: GraphNode[], edges: GraphEdge[]): Layout {
+function computeGraphLayout(nodes: GraphNode[], edges: GraphEdge[], pinned: Map<string, { x: number; y: number }>): Layout {
   const points = new Map<string, Point>()
   const n = nodes.length
   nodes.forEach((node, i) => {
+    const fixed = pinned.get(node.id)
+    if (fixed) {
+      points.set(node.id, { x: fixed.x, y: fixed.y, vx: 0, vy: 0 })
+      return
+    }
     const angle = (i / Math.max(n, 1)) * Math.PI * 2
     const radius = 200 + (i % 3) * 35
     points.set(node.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0 })
@@ -120,6 +143,7 @@ function computeGraphLayout(nodes: GraphNode[], edges: GraphEdge[]): Layout {
       centroids.set(node.kind, c)
     }
     for (const node of nodes) {
+      if (pinned.has(node.id)) continue
       const c = centroids.get(node.kind)!
       if (c.count < 2) continue
       const p = points.get(node.id)!
@@ -127,11 +151,13 @@ function computeGraphLayout(nodes: GraphNode[], edges: GraphEdge[]): Layout {
       p.vy += (c.y / c.count - p.y) * 0.006
     }
     for (const node of nodes) {
+      if (pinned.has(node.id)) continue
       const p = points.get(node.id)!
       p.vx += -p.x * 0.002
       p.vy += -p.y * 0.002
     }
     for (const node of nodes) {
+      if (pinned.has(node.id)) continue
       const p = points.get(node.id)!
       p.vx *= 0.82
       p.vy *= 0.82
@@ -159,30 +185,43 @@ function computeGraphLayout(nodes: GraphNode[], edges: GraphEdge[]): Layout {
     minY = -140
     maxY = 140
   }
-  const pad = 80
+  const pad = 90
   return { positions, bounds: { minX: minX - pad, minY: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 } }
+}
+
+/** Converts a pointer event's screen coordinates into the SVG's own user-
+ * space (the same coordinate system `node.x`/`node.y` live in), accounting
+ * for both the `viewBox` and the CSS `transform: translate(...) scale(...)`
+ * pan/zoom already applied to the element — `getScreenCTM()` folds in every
+ * transform between the element and the screen, so this stays correct at
+ * any zoom level without hand-deriving the math. */
+function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number): { x: number; y: number } {
+  const pt = svg.createSVGPoint()
+  pt.x = clientX
+  pt.y = clientY
+  const ctm = svg.getScreenCTM()
+  if (!ctm) return { x: 0, y: 0 }
+  const transformed = pt.matrixTransform(ctm.inverse())
+  return { x: transformed.x, y: transformed.y }
 }
 
 /**
  * Book Graph (Idea System Milestone 3, `docs/ROADMAP.md`) — the mind-map
  * concept from `IdeaMindMapView.tsx` extended past Ideas to the whole book:
  * chapters, every Layer 0 entity kind, and Ideas, all in one connected,
- * icon-coded graph, filterable by kind. Built now at the user's explicit
- * request (2026-08-02: "map view should be better") rather than left gated
- * on "watch a first-time author's reaction to Milestone 2 first" — the
- * data-model prerequisite (`linkedChapterId` on every kind) shipped in
- * Phase 90, so this was always just the UI layer away.
+ * icon-coded graph, filterable by kind, and — as of Phase 98 — a real mind
+ * map you can rearrange by hand, not just a fixed auto-layout. Built at the
+ * user's explicit request ("map view should be better... they should be
+ * dragable on the page to make a mind map") rather than left gated on
+ * "watch a first-time author's reaction to Milestone 2 first."
  *
- * Node kind is legible from its icon alone (`graphIcons.ts`) — colour stays
- * reserved for the chapter/entity distinction (chapters get an accent ring,
- * everything else a neutral one), not an invented ten-colour categorical
- * palette, per `CLAUDE.md`'s design-token discipline. Edges are real
- * relationships only: an entity/idea's `linkedChapterId` (where it was
- * captured from, or was manually assigned, for Timeline Events), an idea's
- * `relatedIdeaIds`, and an idea's `promotedTo` (the entity it became). A
- * same-kind centroid attraction (see `computeGraphLayout`) loosely clusters
- * same-kind nodes spatially, so the whole graph reads as "regions of
- * characters / regions of locations" even before you look at a single icon.
+ * Every node is an icon-in-a-circle badge (`graphIcons.ts`'s per-kind icon)
+ * — kind is legible from the icon alone, colour stays reserved for the
+ * chapter/entity distinction (chapters get a larger, accent-ringed circle
+ * as the graph's spine; everything else shares one neutral ring), not an
+ * invented ten-colour categorical palette, per `CLAUDE.md`'s design-token
+ * discipline. Edges are real relationships only: an entity/idea's
+ * `linkedChapterId`, an idea's `relatedIdeaIds`, and an idea's `promotedTo`.
  */
 export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphViewProps) {
   const chapters = useContentStore((s) => s.getManuscript(projectId))?.chapters ?? []
@@ -190,6 +229,9 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
   const ideas = useIdeaStore((s) => s.byProject[projectId]) ?? EMPTY_IDEAS
   const setAppMode = useUiStore((s) => s.setAppMode)
   const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
+  const savedPositions = useGraphLayoutStore((s) => s.getPositions(projectId))
+  const setSavedPosition = useGraphLayoutStore((s) => s.setPosition)
+  const clearSavedPositions = useGraphLayoutStore((s) => s.clearPositions)
 
   const [hiddenKinds, setHiddenKinds] = useState<Set<GraphNodeKind>>(new Set())
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
@@ -250,18 +292,45 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
   const visibleIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
   const visibleEdges = useMemo(() => allEdges.filter((e) => visibleIds.has(e.a) && visibleIds.has(e.b)), [allEdges, visibleIds])
 
+  const pinnedPositions = useMemo(() => {
+    const map = new Map<string, { x: number; y: number }>()
+    for (const node of visibleNodes) {
+      const saved = savedPositions[node.id]
+      if (saved) map.set(node.id, saved)
+    }
+    return map
+  }, [visibleNodes, savedPositions])
+
   const depKey = useMemo(
-    () => visibleNodes.map((n) => n.id).join('|') + '::' + visibleEdges.map((e) => `${e.a}-${e.b}`).join('|'),
-    [visibleNodes, visibleEdges],
+    () =>
+      visibleNodes.map((n) => n.id).join('|') +
+      '::' +
+      visibleEdges.map((e) => `${e.a}-${e.b}`).join('|') +
+      '::' +
+      Array.from(pinnedPositions.entries())
+        .map(([id, p]) => `${id}:${Math.round(p.x)}:${Math.round(p.y)}`)
+        .join('|'),
+    [visibleNodes, visibleEdges, pinnedPositions],
   )
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => computeGraphLayout(visibleNodes, visibleEdges), [depKey])
+  const layout = useMemo(() => computeGraphLayout(visibleNodes, visibleEdges, pinnedPositions), [depKey])
 
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 })
-  const [isDragging, setIsDragging] = useState(false)
+  const [isPanning, setIsPanning] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const dragState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const svgRef = useRef<SVGSVGElement>(null)
+  const panState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+
+  // Live drag-in-progress position for whichever node is currently being
+  // dragged — kept as its own bit of state (not written into
+  // `graphLayoutStore` until pointer-up) so every intermediate frame is a
+  // cheap re-render, not a store write + full layout recompute.
+  const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null)
+  const [dragPosition, setDragPosition] = useState<{ x: number; y: number } | null>(null)
+  const nodeDragState = useRef<{ nodeId: string; offsetX: number; offsetY: number; startClientX: number; startClientY: number; moved: boolean } | null>(
+    null,
+  )
 
   useEffect(() => {
     const el = containerRef.current
@@ -275,23 +344,73 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
   }, [])
 
   const resetView = () => setTransform({ x: 0, y: 0, k: 1 })
+  const resetLayout = () => clearSavedPositions(projectId)
 
   const onBackgroundPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    dragState.current = { startX: e.clientX, startY: e.clientY, origX: transform.x, origY: transform.y }
-    setIsDragging(true)
+    panState.current = { startX: e.clientX, startY: e.clientY, origX: transform.x, origY: transform.y }
+    setIsPanning(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onBackgroundPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!dragState.current) return
+    if (!panState.current) return
     setTransform((t) => ({
       ...t,
-      x: dragState.current!.origX + (e.clientX - dragState.current!.startX),
-      y: dragState.current!.origY + (e.clientY - dragState.current!.startY),
+      x: panState.current!.origX + (e.clientX - panState.current!.startX),
+      y: panState.current!.origY + (e.clientY - panState.current!.startY),
     }))
   }
   const onBackgroundPointerUp = () => {
-    dragState.current = null
-    setIsDragging(false)
+    panState.current = null
+    setIsPanning(false)
+  }
+
+  function onNodePointerDown(e: React.PointerEvent<SVGGElement>, node: GraphNode) {
+    e.stopPropagation()
+    const svg = svgRef.current
+    if (!svg) return
+    const svgPoint = screenToSvgPoint(svg, e.clientX, e.clientY)
+    const current = layout.positions.get(node.id) ?? { x: 0, y: 0 }
+    nodeDragState.current = {
+      nodeId: node.id,
+      offsetX: svgPoint.x - current.x,
+      offsetY: svgPoint.y - current.y,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      moved: false,
+    }
+    setDraggingNodeId(node.id)
+    setDragPosition(current)
+    e.currentTarget.setPointerCapture(e.pointerId)
+  }
+
+  function onNodePointerMove(e: React.PointerEvent<SVGGElement>) {
+    const drag = nodeDragState.current
+    if (!drag || drag.nodeId !== draggingNodeId) return
+    const svg = svgRef.current
+    if (!svg) return
+    const dxScreen = e.clientX - drag.startClientX
+    const dyScreen = e.clientY - drag.startClientY
+    if (Math.abs(dxScreen) > DRAG_THRESHOLD_PX || Math.abs(dyScreen) > DRAG_THRESHOLD_PX) drag.moved = true
+    const svgPoint = screenToSvgPoint(svg, e.clientX, e.clientY)
+    setDragPosition({ x: svgPoint.x - drag.offsetX, y: svgPoint.y - drag.offsetY })
+  }
+
+  function onNodePointerUp(e: React.PointerEvent<SVGGElement>, node: GraphNode) {
+    const drag = nodeDragState.current
+    nodeDragState.current = null
+    setDraggingNodeId(null)
+    if (drag && drag.nodeId === node.id && drag.moved && dragPosition) {
+      setSavedPosition(projectId, node.id, dragPosition)
+    } else {
+      // Never actually moved past the threshold — a click, not a drag.
+      handleSelect(node)
+    }
+    setDragPosition(null)
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+    } catch {
+      // Pointer capture may already have been released — harmless either way.
+    }
   }
 
   function toggleKind(kind: GraphNodeKind) {
@@ -337,7 +456,9 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
     <div className="flex flex-col gap-3 p-6">
       <div>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
-        <p className="text-sm text-text-secondary">Every chapter, entity, and idea, connected — click a kind below to hide or show it.</p>
+        <p className="text-sm text-text-secondary">
+          Every chapter, entity, and idea, connected — drag a node to arrange your own mind map, or click one to open it.
+        </p>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -366,17 +487,18 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
         className="relative h-[560px] w-full overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary"
       >
         <svg
+          ref={svgRef}
           viewBox={`${layout.bounds.minX} ${layout.bounds.minY} ${layout.bounds.width} ${layout.bounds.height}`}
           className="size-full touch-none select-none"
-          style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`, cursor: isDragging ? 'grabbing' : 'grab' }}
+          style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`, cursor: isPanning ? 'grabbing' : 'grab' }}
           onPointerDown={onBackgroundPointerDown}
           onPointerMove={onBackgroundPointerMove}
           onPointerUp={onBackgroundPointerUp}
           onPointerLeave={onBackgroundPointerUp}
         >
           {visibleEdges.map(({ a, b }) => {
-            const pa = layout.positions.get(a)
-            const pb = layout.positions.get(b)
+            const pa = a === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(a)
+            const pb = b === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(b)
             if (!pa || !pb) return null
             const highlighted = hoveredId === a || hoveredId === b
             return (
@@ -394,55 +516,65 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
           })}
 
           {visibleNodes.map((node) => {
-            const p = layout.positions.get(node.id)
+            const p = node.id === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(node.id)
             if (!p) return null
             const Icon = GRAPH_NODE_ICONS[node.kind]
             const isChapter = node.kind === 'chapter'
             const isHovered = hoveredId === node.id
+            const isPinned = pinnedPositions.has(node.id)
             const r = isChapter ? CHAPTER_RADIUS : NODE_RADIUS
+            const iconSize = isChapter ? 24 : 20
             return (
               <g
                 key={node.id}
                 transform={`translate(${p.x} ${p.y})`}
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={() => handleSelect(node)}
+                onPointerDown={(e) => onNodePointerDown(e, node)}
+                onPointerMove={onNodePointerMove}
+                onPointerUp={(e) => onNodePointerUp(e, node)}
                 onMouseEnter={() => setHoveredId(node.id)}
                 onMouseLeave={() => setHoveredId((v) => (v === node.id ? null : v))}
-                className="cursor-pointer"
+                className={node.id === draggingNodeId ? 'cursor-grabbing' : 'cursor-grab'}
               >
                 <circle
-                  r={isHovered ? r + 3 : r}
+                  r={isHovered || node.id === draggingNodeId ? r + 3 : r}
                   fill={isChapter ? 'var(--color-accent)' : 'var(--color-panel)'}
-                  fillOpacity={isChapter ? 0.12 : 1}
+                  fillOpacity={isChapter ? 0.14 : 1}
                   stroke={isChapter ? 'var(--color-accent)' : 'var(--color-border)'}
-                  strokeWidth={isChapter ? 2 : 1.5}
+                  strokeWidth={isChapter ? 2.5 : isPinned ? 2 : 1.5}
+                  strokeDasharray={isPinned && !isChapter ? '3,2' : undefined}
                   className="transition-[r] duration-150"
                 />
-                <foreignObject x={-9} y={-9} width={18} height={18} style={{ pointerEvents: 'none' }}>
-                  <Icon
-                    className="size-[18px]"
-                    style={{ color: isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }}
-                  />
+                <foreignObject x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} style={{ pointerEvents: 'none' }}>
+                  <Icon className="size-full" style={{ color: isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />
                 </foreignObject>
-                <foreignObject x={-56} y={r + 5} width={112} height={34}>
-                  <div className="line-clamp-2 text-center text-[10px] leading-tight text-text-secondary" style={{ pointerEvents: 'none' }}>
-                    {node.label}
-                  </div>
+                <foreignObject x={-60} y={r + 6} width={120} height={34} style={{ pointerEvents: 'none' }}>
+                  <div className="line-clamp-2 text-center text-[10px] leading-tight text-text-secondary">{node.label}</div>
                 </foreignObject>
               </g>
             )
           })}
         </svg>
 
-        <button
-          type="button"
-          onClick={resetView}
-          aria-label="Reset view"
-          title="Reset pan/zoom"
-          className="absolute right-2 top-2 flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
-        >
-          <Maximize2 className="size-3.5" />
-        </button>
+        <div className="absolute right-2 top-2 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={resetLayout}
+            aria-label="Reset layout"
+            title="Clear manual positions and re-arrange automatically"
+            className="flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
+          >
+            <RotateCcw className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={resetView}
+            aria-label="Reset view"
+            title="Reset pan/zoom"
+            className="flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       {selectedIdeaId && (
