@@ -6796,21 +6796,78 @@ every recent UI pass, and this one specifically deserves a check at a
 realistic laptop width with both side panels open, since that's the exact
 condition that was broken twice now.
 
+## Phase 105 — Book Graph: chapter reading-order edges (2026-08-02)
+
+User: "should chapters link in order in the book graph. make other
+suggestions for improvement in the book graph."
+
+**Reading-order edges**: chapters now connect to their immediate neighbour
+in the manuscript (chapter *i* → chapter *i+1*), in addition to each
+chapter's existing spine link to the Book hub. This is a real second edge in
+`GraphEdge` (`sequence?: boolean`), not a restyled spine — meaning it also
+feeds `computeGraphLayout`'s edge-spring physics, so chapters are now pulled
+toward their sequence neighbours as well as the Book. The auto-arrangement
+itself gets better, not just the information on screen: previously a
+chapter's position relative to *other chapters* was essentially arbitrary
+(whatever angle/iteration the physics happened to settle on), since nothing
+but a shared pull toward the Book related them to each other at all.
+
+Rendered distinctly from the other two edge kinds: thin, muted
+(`--color-text-secondary`), with a small SVG `<marker>` arrowhead — the one
+edge kind here where direction is actually part of the meaning. The
+arrowhead required shortening the line to stop just short of the target
+chapter's own circle (nodes render after/on top of edges, so an arrowhead
+landing exactly at a node's centre would render completely hidden
+underneath it) — computed per-edge from that chapter's actual current
+radius (`CHAPTER_RADIUS * nodeScale * perNodeSize`), so it stays correctly
+placed at any zoom/size setting. A one-line legend now sits under the
+header ("Book spine" / "Chapter order" / "Relationship") since there are
+three visually distinct edge languages now, not two.
+
+Chapter node labels also gained a number prefix ("1. The Whispering
+Forest") — order should be legible without tracing an edge at all, which
+matters once a manuscript has enough chapters that scanning layout position
+alone stops being reliable.
+
+**Considered and rejected**: forcing chapters into a literal straight-line/
+timeline layout instead of letting them sit in the free-form force graph.
+Would fight the "drag anywhere to build your own arrangement" premise this
+whole view is built on (Phase 98), and a straight timeline already exists —
+it's what the Chapters sidebar list is for. The sequence edges add order
+*within* the mind map without turning the mind map into a worse copy of the
+sidebar.
+
+**Considered and deferred, not built**: profiling the force layout against
+a genuinely large project. It's O(n²) per iteration × 260 iterations,
+recomputed on most graph-shape changes — reasoned to be fine at the sizes
+tested, but never actually measured against a 100+ chapter manuscript with
+a full Layer 0 bible. Logged in `docs/ROADMAP.md` as a real, not
+hypothetical, follow-up rather than pre-optimised against a problem that
+hasn't been confirmed to exist yet.
+
+Verification: `npx tsc -b --force` clean. Not yet Chrome-verified — the
+arrowhead-inset geometry in particular (line shortened by the target node's
+live radius, which itself depends on zoom-independent SVG user-space units)
+is exactly the kind of math that's easy to get subtly wrong in a way only
+visible on screen.
+
 ## Recommended next task
-Push everything queued from Phase 85 through Phase 104 (20+ commits) — this
+Push everything queued from Phase 85 through Phase 105 (20+ commits) — this
 has been a standing, repeated ask across many sessions now; it requires the
 user's own terminal, not this sandbox. Once pushed, a real Chrome pass
 (resized to a normal laptop width, both Sidebar and Inspector open) is
-overdue and should cover, in order: (1) Phase 104's Toolbar — confirm
-Export is no longer clipped, the "More" menu holds everything it should,
-Hide Inspector on the Inspector's own header works and "Show inspector"
-reappears correctly when collapsed; (2) Phase 95-100's mobile claims —
-chapter switcher add/rename/delete, "Add photo" OS picker + insert,
-per-block "⋮" menu, header Undo reaching into Ideas too; (3) Phase 102-103's
-Book Graph — the three click semantics (select/drag/connect-mode) don't
-collide, per-node colour/size controls actually apply, search dimming feels
-right, chapter connections work end to end; (4) Phase 101's CMYK export —
-generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`, confirm
-they differ and neither crashes the exporter. Real dictionary-backed
+overdue and should cover, in order: (1) Phase 105's chapter sequence edges —
+arrowheads land outside the node circle at various zoom levels and node
+sizes, the legend reads clearly, the auto-layout visibly strings chapters
+into a rough order; (2) Phase 104's Toolbar — confirm Export is no longer
+clipped, the "More" menu holds everything it should, Hide Inspector on the
+Inspector's own header works and "Show inspector" reappears correctly when
+collapsed; (3) Phase 95-100's mobile claims — chapter switcher add/rename/
+delete, "Add photo" OS picker + insert, per-block "⋮" menu, header Undo
+reaching into Ideas too; (4) Phase 102-103's Book Graph — the three click
+semantics (select/drag/connect-mode) don't collide, per-node colour/size
+controls actually apply, search dimming feels right; (5) Phase 101's CMYK
+export — generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`,
+confirm they differ and neither crashes the exporter. Real dictionary-backed
 spell-check and thesaurus/synonym lookup remain blocked — no npm registry
 access in this sandbox, unchanged from every earlier phase.

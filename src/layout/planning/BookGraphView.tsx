@@ -49,6 +49,12 @@ interface GraphEdge {
    * promotions, the book's own spine to each chapter) stays a plain
    * unlabeled line, exactly as before. */
   label?: string
+  /** True for a chapter→next-chapter edge (Phase 105, user 2026-08-02:
+   * "should chapters link in order"). `a` is always the earlier chapter,
+   * `b` the one right after it — direction matters here (unlike every other
+   * edge kind, which is symmetric), so it's rendered with an arrowhead
+   * rather than a plain line. See the doc comment above `BookGraphView`. */
+  sequence?: boolean
 }
 
 /** Sentinel id for the synthetic "Book" hub node — deliberately not a real
@@ -365,6 +371,40 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  *   case from the earlier design review: visually finding one specific
  *   character among a hundred nodes by scanning alone stops working well
  *   before search does.
+ *
+ * **Phase 105** (user, 2026-08-02: "should chapters link in order in the
+ * book graph"):
+ *
+ * - *Yes* — chapters now connect to each other in reading order, not just
+ *   to the Book hub. This is a genuine second edge, not a restyled spine:
+ *   a chapter was previously only ever pulled toward the Book in the force
+ *   layout, so its position relative to *other chapters* was arbitrary
+ *   (whatever the initial angle/iteration happened to settle on). The
+ *   sequence edges feed the same edge-spring physics every edge already
+ *   uses, so the layout now also pulls each chapter toward its neighbours
+ *   — the auto-arrangement itself gets better, not just the information
+ *   on screen. Rendered distinctly (thin, muted, arrowheaded) from the
+ *   spine (thick accent) and relationships (dashed, labeled) so three edge
+ *   kinds stay visually unambiguous — see the new one-line legend under
+ *   the header. Chapter node labels also gained a number prefix ("1. The
+ *   Whispering Forest") so order reads instantly even without tracing an
+ *   edge, which matters once a book has enough chapters that scanning
+ *   layout position alone stops being reliable.
+ * - *Considered and left alone*: forcing chapters into a literal straight
+ *   line/timeline layout instead of the free-form force graph. Rejected —
+ *   it would fight the "drag anywhere to build your own mind map" premise
+ *   this whole view is built on (Phase 98), and a straight timeline is
+ *   already exactly what the Chapters sidebar list is for. The sequence
+ *   edges give order *within* the mind map without turning the mind map
+ *   into a second, worse copy of the sidebar.
+ * - *Considered and deferred, not built*: the force layout is O(n²) per
+ *   iteration × 260 iterations, recomputed on most graph-shape changes.
+ *   Fine at today's scale (tested reasoning only, not profiled against a
+ *   real 100+ chapter project with a full Layer 0 bible) but a real
+ *   candidate to eventually need a Web Worker or an incremental layout
+ *   instead of a synchronous main-thread recompute. Flagged in
+ *   `docs/ROADMAP.md` rather than pre-optimised against a problem not yet
+ *   confirmed to exist.
  */
 export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: BookGraphViewProps) {
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
@@ -421,8 +461,13 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     nodes.push({ id: BOOK_NODE_ID, kind: 'book', label: bookTitle || 'Untitled book' })
     nodeIds.add(BOOK_NODE_ID)
 
-    for (const chapter of chapters) {
-      nodes.push({ id: chapter.id, kind: 'chapter', label: chapter.title || 'Untitled chapter' })
+    chapters.forEach((chapter, index) => {
+      // Numbered ("1. The Whispering Forest") rather than just the title
+      // (Phase 105) — reading order is core structural information a graph
+      // like this should never require tracing an edge to learn, especially
+      // once a manuscript has enough chapters that the auto-layout's
+      // clustering no longer happens to match reading order visually.
+      nodes.push({ id: chapter.id, kind: 'chapter', label: `${index + 1}. ${chapter.title || 'Untitled chapter'}` })
       nodeIds.add(chapter.id)
       count.chapter = (count.chapter ?? 0) + 1
       // The spine: every chapter connects straight to the book, so the
@@ -430,6 +475,22 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
       // "in the center should be the book?") instead of chapters floating
       // as their own disconnected cluster.
       edges.push({ a: BOOK_NODE_ID, b: chapter.id })
+    })
+
+    // Reading-order edges (Phase 105, user 2026-08-02: "should chapters
+    // link in order in the book graph") — a second, distinct connection
+    // alongside each chapter's spine link to the Book. Beyond just being
+    // visible information, these feed the same edge-spring physics every
+    // other edge already does (see `computeGraphLayout`'s doc comment): a
+    // chapter is now pulled toward both the Book *and* its neighbours in
+    // sequence, so the auto-layout naturally strings chapters out into a
+    // rough chain instead of scattering them evenly around the hub in
+    // whatever order they happened to be visited in. Rendered with a small
+    // arrowhead (the one edge kind here where direction actually matters)
+    // rather than reusing the plain spine or dashed-relationship styles —
+    // see the render loop below.
+    for (let i = 0; i < chapters.length - 1; i++) {
+      edges.push({ a: chapters[i].id, b: chapters[i + 1].id, sequence: true })
     }
 
     for (const kind of LAYER0_ENTITY_KINDS) {
@@ -1095,6 +1156,24 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         <p className="text-sm text-text-secondary">
           Click a node to see its connections. Drag to rearrange. Turn on Connect to link two nodes with a label.
         </p>
+        {/* A quiet key for the three edge styles now on the canvas (Phase
+         * 105 added the third, arrowed one) — one line, not a boxed legend
+         * widget, since it's explaining line-weight conventions, not adding
+         * a new feature surface. */}
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-secondary">
+          <span className="flex items-center gap-1.5">
+            <span className="h-[3px] w-4 rounded-full bg-[var(--color-accent)] opacity-60" />
+            Book spine
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-px w-4 bg-text-secondary" />
+            Chapter order
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-px w-4 border-t border-dashed border-text-primary" />
+            Relationship
+          </span>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -1174,7 +1253,18 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
             onPointerUp={onBackgroundPointerUp}
             onPointerLeave={onBackgroundPointerUp}
           >
-            {visibleEdges.map(({ a, b, label }) => {
+            <defs>
+              {/* Arrowhead for chapter reading-order edges (Phase 105) — the
+               * one edge kind here where direction is actually part of the
+               * meaning, so it's the one edge kind that gets a marker.
+               * `auto-start-reverse` orients it along the line automatically
+               * regardless of which way a chapter got dragged. */}
+              <marker id="chapter-sequence-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0,0 L8,4 L0,8 Z" fill="var(--color-text-secondary)" />
+              </marker>
+            </defs>
+
+            {visibleEdges.map(({ a, b, label, sequence }) => {
               const pa = a === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(a)
               const pb = b === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(b)
               if (!pa || !pb) return null
@@ -1200,17 +1290,33 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
               // different kind of line from "this entity happens to be linked
               // to this chapter."
               const isRelationship = !!label
+              const isSequence = !!sequence
+              // The arrowhead needs to land just outside the target chapter's
+              // own circle, not at its exact centre — nodes render *after*
+              // edges (so they paint on top), which would otherwise bury the
+              // arrowhead completely underneath the node. Only sequence edges
+              // need this: every other edge kind has no marker to protect.
+              let lineEnd = pb
+              if (isSequence) {
+                const targetRadius = CHAPTER_RADIUS * nodeScale * (nodeSizes[b] ?? 1)
+                const dx = pb.x - pa.x
+                const dy = pb.y - pa.y
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1
+                const inset = targetRadius + 6
+                lineEnd = { x: pb.x - (dx / dist) * inset, y: pb.y - (dy / dist) * inset }
+              }
               return (
                 <g key={`${a}-${b}-${label ?? ''}`} className="transition-opacity duration-150" style={{ opacity: dimmed ? 0.12 : 1 }}>
                   <line
                     x1={pa.x}
                     y1={pa.y}
-                    x2={pb.x}
-                    y2={pb.y}
-                    stroke={isRelationship ? 'var(--color-text-primary)' : 'var(--color-accent)'}
-                    strokeWidth={touchesSelection ? 2.5 : isSpine ? 3 : isRelationship ? 1.6 : hoverHighlighted ? 2 : 1}
-                    strokeOpacity={touchesSelection ? 0.9 : isRelationship ? 0.75 : isSpine ? 0.55 : hoverHighlighted ? 0.7 : 0.28}
+                    x2={lineEnd.x}
+                    y2={lineEnd.y}
+                    stroke={isRelationship ? 'var(--color-text-primary)' : isSequence ? 'var(--color-text-secondary)' : 'var(--color-accent)'}
+                    strokeWidth={touchesSelection ? 2.5 : isSpine ? 3 : isRelationship ? 1.6 : isSequence ? 1.25 : hoverHighlighted ? 2 : 1}
+                    strokeOpacity={touchesSelection ? 0.9 : isRelationship ? 0.75 : isSpine ? 0.55 : isSequence ? 0.45 : hoverHighlighted ? 0.7 : 0.28}
                     strokeDasharray={isRelationship ? '4,3' : undefined}
+                    markerEnd={isSequence ? 'url(#chapter-sequence-arrow)' : undefined}
                   />
                   {label && (
                     <foreignObject

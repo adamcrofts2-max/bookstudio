@@ -878,6 +878,26 @@ daily use of everything built so far.)*
       into one "More" overflow menu. The always-visible row is now Undo/
       Redo, project name, theme toggle, Virtual Editor, Develop, Export,
       More — down from eleven controls to five plus one menu.
+- [x] Book Graph: chapters connect in reading order (Phase 105, 2026-08-02,
+      user: "should chapters link in order in the book graph") — a second
+      edge alongside each chapter's existing spine link to the Book, drawn
+      as a thin arrowheaded line distinct from the spine and from labeled
+      relationships (one-line legend added under the header to keep all
+      three unambiguous). Not just visual: these are real edges in the same
+      force layout, so chapters now also pull toward their neighbours in
+      sequence, not only toward the Book — the auto-arrangement itself
+      improves. Chapter node labels also gained a number prefix ("1. The
+      Whispering Forest"). Considered and rejected: forcing chapters into a
+      literal straight-line layout — that would fight the "drag anywhere"
+      mind-map premise the whole view is built on, and duplicate what the
+      Chapters sidebar list already is.
+- [ ] Book Graph layout-performance profiling — the hand-rolled force
+      layout is O(n²) per iteration × 260 iterations, recomputed on most
+      graph-shape changes. Reasoned to be fine at today's scale but never
+      actually profiled against a real 100+ chapter project with a full
+      Layer 0 bible (dozens of characters/locations/etc.). If it turns out
+      to lag, a Web Worker or an incremental (not full-recompute) layout is
+      the fix — not attempted speculatively against an unconfirmed problem.
 - [x] Book Graph: discoverable zoom controls, node-size control, and
       click-to-connect (Phase 102, 2026-08-02, user: "should be able to zoom
       in zoom out, make each node larger/smaller, connect easily by clicking
