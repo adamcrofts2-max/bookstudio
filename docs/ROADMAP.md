@@ -450,6 +450,21 @@ daily use of everything built so far.)*
 
 ## Phase F — Planning & Writing Tools
 
+- [ ] **Open strategic question, not yet decided — read before picking up more
+      Planning-mode work.** `docs/PLANNING_EXPERIENCE_REDESIGN.md` (2026-08-02) is a
+      first-principles product design review, requested by the user, that argues
+      Planning's current database-first shape (eight structured entity categories
+      presented up front) may be the wrong foundation entirely — not a UX polish
+      problem but an information-architecture one. Proposes inverting it: capture
+      ideas with zero structure first, let Characters/Locations/etc. emerge from
+      what's written (with the software noticing recurring names, the same
+      mention-detection idiom the continuity checker already uses) rather than
+      handing a first-time author a blank database on day one. No code was written
+      for this and nothing below should be read as superseded until the user decides
+      which direction to take — small UX fixes (Phase 77/78) are still real
+      improvements to the current shape either way, but the bigger open items further
+      down this phase (insert-AI-drafted-prose, category-aware sidebar) may want to
+      wait on this decision rather than build further into the current model.
 - [x] Live first-time-author UX audit of Planning mode's full fiction and
       non-fiction workflows, in Chrome against the deployed build — 2026-08-02
       (Phase 77/78). Full findings, prioritised, in
