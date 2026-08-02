@@ -56,13 +56,13 @@ function drawIndexPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBookThe
   const headingFont = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
   const headingSize = theme.typography.bodySize * 1.5 * PX_TO_PT
   ctx.cursorY -= headingSize
-  ctx.page.drawText('Index', { x: ctx.contentX, y: ctx.cursorY, size: headingSize, font: headingFont, color: hexToPdfColor(theme.page.ink) })
+  ctx.page.drawText('Index', { x: ctx.contentX, y: ctx.cursorY, size: headingSize, font: headingFont, color: hexToPdfColor(theme.page.ink, ctx.colorMode) })
   ctx.cursorY -= headingSize * 1.1
 
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   const bodySize = theme.typography.bodySize * 0.9 * PX_TO_PT
   const lineHeight = bodySize * 1.3
-  const ink = hexToPdfColor(theme.page.ink)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
   for (const entry of entries.length > 0 ? entries : [INDEX_PLACEHOLDER]) {
     const lines = wrapRuns([{ text: entry, bold: false }], bodyFont, bodyFont, bodySize, ctx.contentWidthPt)
     drawWrappedLines(ctx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont)

@@ -106,8 +106,8 @@ function QuoteRender(props: BlockRenderProps) {
 function drawQuotePdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'quote') return
   const { theme } = ctx
-  const muted = hexToPdfColor(theme.page.mutedInk)
-  const accent = hexToPdfColor(theme.page.accent)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
+  const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
   const sizePt = theme.typography.bodySize * 1.05 * PX_TO_PT
   const font = pickFont(ctx.fonts, theme.fonts.heading, 400)
   ctx.cursorY -= 8
@@ -116,7 +116,7 @@ function drawQuotePdf(ctx: DrawCtx, block: ContentBlock) {
   const startCtx = { ...ctx, contentX: ctx.contentX + 16 }
   drawWrappedLines(startCtx, lines, sizePt, sizePt * 1.5, accent, font, font)
   ctx.cursorY = startCtx.cursorY
-  ctx.page.drawRectangle({ x: ctx.contentX, y: ctx.cursorY, width: 2, height: ruleTop - ctx.cursorY, color: hexToPdfColor(theme.page.ruleColor) })
+  ctx.page.drawRectangle({ x: ctx.contentX, y: ctx.cursorY, width: 2, height: ruleTop - ctx.cursorY, color: hexToPdfColor(theme.page.ruleColor, ctx.colorMode) })
   if (block.attribution) {
     ctx.cursorY -= 4
     const capSize = theme.typography.bodySize * 0.8 * PX_TO_PT

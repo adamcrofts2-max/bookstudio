@@ -76,9 +76,9 @@ function drawTitlePagePdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBoo
 
   const titleFont = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
-  const ink = hexToPdfColor(theme.page.ink)
-  const mutedInk = hexToPdfColor(theme.page.mutedInk)
-  const accent = hexToPdfColor(theme.page.accent)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const mutedInk = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
+  const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
 
   const title = page.content.title || 'Untitled'
   const titleSize = theme.typography.bodySize * 1.7 * PX_TO_PT

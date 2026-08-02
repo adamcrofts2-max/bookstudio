@@ -114,9 +114,9 @@ function PullQuoteRender(props: BlockRenderProps) {
 function drawPullQuotePdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'pull-quote') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const muted = hexToPdfColor(theme.page.mutedInk)
-  const rule = hexToPdfColor(theme.page.ruleColor)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
+  const rule = hexToPdfColor(theme.page.ruleColor, ctx.colorMode)
   const centerX = ctx.contentX + ctx.contentWidthPt / 2
   const ruleHalfWidth = 18
 

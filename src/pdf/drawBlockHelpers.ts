@@ -1,4 +1,4 @@
-import { rgb, type PDFFont } from 'pdf-lib'
+import type { Color, PDFFont } from 'pdf-lib'
 
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { WrappedLine } from '@/pdf/textWrap'
@@ -21,7 +21,7 @@ export interface DrawWrappedLinesOptions {
    * distinguished from surrounding text by the underline alone in that
    * case, just not by colour too.
    */
-  linkColor?: ReturnType<typeof rgb>
+  linkColor?: Color
 }
 
 /** Draws pre-wrapped text lines (see `wrapRuns`) at the current cursor,
@@ -44,7 +44,7 @@ export function drawWrappedLines(
   lines: WrappedLine[],
   sizePt: number,
   lineHeightPt: number,
-  color: ReturnType<typeof rgb>,
+  color: Color,
   regularFont: PDFFont,
   boldFont: PDFFont,
   options?: DrawWrappedLinesOptions,

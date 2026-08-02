@@ -83,7 +83,7 @@ function drawBarcodePdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBookT
   const totalWidthPt = bars.reduce((sum, b) => sum + b.width, 0) * 1.4 * PX_TO_PT
   const startX = ctx.contentX + (ctx.contentWidthPt - totalWidthPt) / 2
   const bottomY = ctx.cursorY - barHeightPt
-  const barColor = hexToPdfColor(theme.page.ink)
+  const barColor = hexToPdfColor(theme.page.ink, ctx.colorMode)
 
   let x = startX
   for (const bar of bars) {
@@ -100,7 +100,7 @@ function drawBarcodePdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBookT
     y: bottomY - size * 1.6,
     size,
     font,
-    color: hexToPdfColor(theme.page.mutedInk),
+    color: hexToPdfColor(theme.page.mutedInk, ctx.colorMode),
   })
 }
 

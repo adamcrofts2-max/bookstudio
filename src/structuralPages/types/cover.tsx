@@ -336,7 +336,7 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
       y: 0,
       width: mediaWidthPt,
       height: mediaHeightPt,
-      color: hexToPdfColor(tintHex(theme.page.accent, 0.85)),
+      color: hexToPdfColor(tintHex(theme.page.accent, 0.85), ctx.colorMode),
     })
   }
 
@@ -356,9 +356,9 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   // screen version's translucent whites (PDF text has no alpha blending
   // here), matching the pre-existing `rgb(0.92,0.92,0.92)`/
   // `rgb(0.88,0.88,0.88)` values exactly when nothing is overridden.
-  const ink = hexToPdfColor(resolveCoverColor(typography, hasImage ? '#ffffff' : theme.page.ink))
-  const mutedInk = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#ebebeb' : theme.page.mutedInk))
-  const accent = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e0e0e0' : theme.page.accent))
+  const ink = hexToPdfColor(resolveCoverColor(typography, hasImage ? '#ffffff' : theme.page.ink), ctx.colorMode)
+  const mutedInk = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#ebebeb' : theme.page.mutedInk), ctx.colorMode)
+  const accent = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e0e0e0' : theme.page.accent), ctx.colorMode)
   const hiddenFields = page.content.hiddenFields
   const titleHidden = isFieldHidden(hiddenFields, 'title')
   // "Skip drawing" also covers a field that's simply empty — not the same

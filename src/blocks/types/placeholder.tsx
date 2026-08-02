@@ -150,7 +150,7 @@ function drawPlaceholderPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'placeholder') return
   const { theme } = ctx
   const meta = KIND_META[block.kind]
-  const mutedInk = hexToPdfColor(theme.page.mutedInk)
+  const mutedInk = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
 
   const heightPt = PLACEHOLDER_HEIGHT_PX * PX_TO_PT
   const boxTop = ctx.cursorY
@@ -163,7 +163,7 @@ function drawPlaceholderPdf(ctx: DrawCtx, block: ContentBlock) {
     y: boxBottom,
     width: ctx.contentWidthPt,
     height: heightPt,
-    borderColor: hexToPdfColor('#c7c7c7'),
+    borderColor: hexToPdfColor('#c7c7c7', ctx.colorMode),
     borderWidth: 1.5,
     borderDashArray: [6, 4],
   })

@@ -131,9 +131,9 @@ function drawCalloutPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'callout') return
   const { theme } = ctx
   const variant = VARIANTS[block.variant]
-  const accent = hexToPdfColor(variant.accent)
-  const background = hexToPdfColor(variant.background)
-  const ink = hexToPdfColor(theme.page.ink)
+  const accent = hexToPdfColor(variant.accent, ctx.colorMode)
+  const background = hexToPdfColor(variant.background, ctx.colorMode)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
 
   const padX = 14
   const padTop = 12

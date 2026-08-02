@@ -107,13 +107,13 @@ async function drawAboutTheAuthorPdf(ctx: DrawCtx, page: StructuralPage, theme: 
   const heading = 'About the Author'
   const headingWidth = headingFont.widthOfTextAtSize(heading, headingSize)
   ctx.cursorY -= headingSize
-  ctx.page.drawText(heading, { x: centerX - headingWidth / 2, y: ctx.cursorY, size: headingSize, font: headingFont, color: hexToPdfColor(theme.page.ink) })
+  ctx.page.drawText(heading, { x: centerX - headingWidth / 2, y: ctx.cursorY, size: headingSize, font: headingFont, color: hexToPdfColor(theme.page.ink, ctx.colorMode) })
   ctx.cursorY -= headingSize * 1.1
 
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   const bodySize = theme.typography.bodySize * PX_TO_PT
   const lineHeight = bodySize * theme.typography.lineHeight
-  const ink = hexToPdfColor(theme.page.ink)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
   const paragraphs = splitParagraphs(page.content.text ?? '')
   for (const paragraph of paragraphs.length > 0 ? paragraphs : [ABOUT_PLACEHOLDER]) {
     const lines = wrapRuns([{ text: paragraph, bold: false }], bodyFont, bodyFont, bodySize, ctx.contentWidthPt)

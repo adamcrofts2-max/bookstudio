@@ -60,7 +60,7 @@ function ListRender(props: BlockRenderProps) {
 function drawListPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'list') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
   const sizePt = theme.typography.bodySize * PX_TO_PT
   const font = pickFont(ctx.fonts, theme.fonts.body, 400)
   const indent = 16

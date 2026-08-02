@@ -312,7 +312,7 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
       y: 0,
       width: mediaWidthPt,
       height: mediaHeightPt,
-      color: hexToPdfColor(tintHex(theme.page.accent, 0.92)),
+      color: hexToPdfColor(tintHex(theme.page.accent, 0.92), ctx.colorMode),
     })
   }
 
@@ -324,8 +324,8 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
 
   const typography = page.content.typography
   // Same override-wins, else-automatic rule as `cover.tsx` — Phase 49.
-  const ink = hexToPdfColor(resolveCoverColor(typography, hasImage ? '#ffffff' : theme.page.ink))
-  const mutedInk = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e6e6e6' : theme.page.mutedInk))
+  const ink = hexToPdfColor(resolveCoverColor(typography, hasImage ? '#ffffff' : theme.page.ink), ctx.colorMode)
+  const mutedInk = hexToPdfColor(resolveCoverSecondaryColor(typography, hasImage ? '#e6e6e6' : theme.page.mutedInk), ctx.colorMode)
   const hiddenFields = page.content.hiddenFields
   const blurbHidden = isFieldHidden(hiddenFields, 'blurb')
   const authorBioHidden = isFieldHidden(hiddenFields, 'authorBio')

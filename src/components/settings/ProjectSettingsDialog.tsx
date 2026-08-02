@@ -236,6 +236,30 @@ export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSe
             </div>
           </div>
 
+          <div className="flex flex-col gap-1.5">
+            <Label>Colour profile</Label>
+            <Select
+              value={settings.colorProfile ?? 'rgb'}
+              onValueChange={(value) =>
+                updateProjectSettings(project.id, { colorProfile: value as 'rgb' | 'cmyk' })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="rgb">RGB — screen &amp; Amazon KDP</SelectItem>
+                <SelectItem value="cmyk">CMYK — commercial offset &amp; IngramSpark</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-text-secondary">
+              Colour space for PDF export. RGB is what KDP recommends and what most print-on-demand
+              printers expect. Switch to CMYK for commercial offset printers or IngramSpark's
+              print-ready spec — solid fills, text and rules convert to press separations; embedded
+              photos stay RGB either way.
+            </p>
+          </div>
+
           <Separator />
 
           <div className="flex flex-col gap-1.5">

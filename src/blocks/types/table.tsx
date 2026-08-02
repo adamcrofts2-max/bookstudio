@@ -108,7 +108,7 @@ function drawTableRow(ctx: DrawCtx, cells: string[], font: PDFFont, sizePt: numb
 function drawTablePdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'table') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
   const sizePt = theme.typography.bodySize * 0.85 * PX_TO_PT
   const lineHeightPt = sizePt * 1.35
   const font = pickFont(ctx.fonts, theme.fonts.body, 400)
@@ -117,7 +117,7 @@ function drawTablePdf(ctx: DrawCtx, block: ContentBlock) {
 
   ctx.cursorY -= lineHeightPt * 0.2
   drawTableRow(ctx, block.header, boldFont, sizePt, lineHeightPt, colWidth, ink)
-  ctx.page.drawLine({ start: { x: ctx.contentX, y: ctx.cursorY - 2 }, end: { x: ctx.contentX + ctx.contentWidthPt, y: ctx.cursorY - 2 }, thickness: 0.75, color: hexToPdfColor(theme.page.ruleColor) })
+  ctx.page.drawLine({ start: { x: ctx.contentX, y: ctx.cursorY - 2 }, end: { x: ctx.contentX + ctx.contentWidthPt, y: ctx.cursorY - 2 }, thickness: 0.75, color: hexToPdfColor(theme.page.ruleColor, ctx.colorMode) })
   ctx.cursorY -= 8
   for (const row of block.rows) {
     drawTableRow(ctx, row, font, sizePt, lineHeightPt, colWidth, ink)

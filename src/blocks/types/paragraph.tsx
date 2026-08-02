@@ -73,8 +73,8 @@ function ParagraphRender(props: BlockRenderProps) {
 function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
   if (block.type !== 'paragraph') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const accent = hexToPdfColor(theme.page.accent)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
   const sizePt = theme.typography.bodySize * PX_TO_PT
   const regularFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   const boldFont = pickFont(ctx.fonts, theme.fonts.body, 700)

@@ -107,7 +107,7 @@ function GalleryRender(props: BlockRenderProps) {
 async function drawGalleryPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'gallery') return
   const { theme } = ctx
-  const muted = hexToPdfColor(theme.page.mutedInk)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
   const gapPt = GAP_PX * PX_TO_PT
 
   if (block.assetIds.length === 0) {

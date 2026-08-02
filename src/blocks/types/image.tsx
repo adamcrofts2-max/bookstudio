@@ -112,7 +112,7 @@ function ImageRender(props: BlockRenderProps) {
 async function drawImagePdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'image') return
   const { theme } = ctx
-  const muted = hexToPdfColor(theme.page.mutedInk)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
   const blob = await getAssetBlob(block.assetId)
   if (!blob) return
   const { bytes, width, height } = await blobToPng(blob, block.grayscale ?? false)

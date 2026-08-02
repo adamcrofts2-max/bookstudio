@@ -284,7 +284,12 @@ daily use of everything built so far.)*
       (the installed version) has no subsetting API at all, and getting one
       would need installing a different/forked package, which needs npm
       registry access this sandbox doesn't have
-- [ ] CMYK-aware export workflow for commercial print
+- [x] CMYK-aware export workflow for commercial print — shipped 2026-08-02
+      (Phase 100+1): `ProjectSettings.colorProfile` ('rgb' default | 'cmyk'),
+      naive RGB→CMYK conversion via pdf-lib's built-in `cmyk()` (no new
+      dependency), threaded through every `drawPdf` call site via
+      `DrawCtx.colorMode`, toggle in Project Settings. Embedded photos stay
+      RGB regardless — see STATUS.md for the full scope writeup
 
 ## Phase E — Design & Templates (the "Canva" layer)
 

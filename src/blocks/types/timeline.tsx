@@ -134,10 +134,10 @@ function TimelineRender(props: BlockRenderProps) {
 function drawTimelinePdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'timeline') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const muted = hexToPdfColor(theme.page.mutedInk)
-  const accent = hexToPdfColor(theme.page.accent)
-  const rule = hexToPdfColor(theme.page.ruleColor)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
+  const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
+  const rule = hexToPdfColor(theme.page.ruleColor, ctx.colorMode)
 
   const labelFont = pickFont(ctx.fonts, theme.fonts.heading, 600)
   const textFont = pickFont(ctx.fonts, theme.fonts.body, 400)

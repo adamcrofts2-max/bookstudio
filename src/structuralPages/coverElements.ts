@@ -1,9 +1,9 @@
-import { rgb, LineCapStyle, pushGraphicsState, popGraphicsState, rectangle, clip, endPath, translate, rotateRadians } from 'pdf-lib'
+import { LineCapStyle, pushGraphicsState, popGraphicsState, rectangle, clip, endPath, translate, rotateRadians } from 'pdf-lib'
 
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { CoverElement, CoverElementKind, CoverShapeElement, CoverTextElement, CoverIconElement, CoverBadgeElement, CoverImageElement } from '@/types/structuralPage'
 import { generateId } from '@/utils/id'
-import { hexToPdfColor } from '@/pdf/color'
+import { hexToPdfColor, pdfBlack, pdfWhite } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { pickFont, pickItalicFont } from '@/pdf/fonts'
 import { resolveCoverFontFamily } from '@/structuralPages/coverTypography'
@@ -275,9 +275,9 @@ export async function drawCoverElementsPdf(
         y: yPt,
         width: wPt,
         height: hPt,
-        color: el.fill ? hexToPdfColor(el.fill) : undefined,
+        color: el.fill ? hexToPdfColor(el.fill, ctx.colorMode) : undefined,
         opacity: el.fill ? (el.fillOpacity ?? 1) * elementOpacity : elementOpacity,
-        borderColor: el.stroke ? hexToPdfColor(el.stroke) : undefined,
+        borderColor: el.stroke ? hexToPdfColor(el.stroke, ctx.colorMode) : undefined,
         borderWidth: el.stroke ? (el.strokeWidth ?? 1) * PX_TO_PT : undefined,
         borderOpacity: el.stroke ? elementOpacity : undefined,
         // pdf-lib has no native rounded-rectangle primitive; a plain
@@ -294,9 +294,9 @@ export async function drawCoverElementsPdf(
         y: yPt + hPt / 2,
         xScale: wPt / 2,
         yScale: hPt / 2,
-        color: el.fill ? hexToPdfColor(el.fill) : undefined,
+        color: el.fill ? hexToPdfColor(el.fill, ctx.colorMode) : undefined,
         opacity: el.fill ? (el.fillOpacity ?? 1) * elementOpacity : elementOpacity,
-        borderColor: el.stroke ? hexToPdfColor(el.stroke) : undefined,
+        borderColor: el.stroke ? hexToPdfColor(el.stroke, ctx.colorMode) : undefined,
         borderWidth: el.stroke ? (el.strokeWidth ?? 1) * PX_TO_PT : undefined,
         borderOpacity: el.stroke ? elementOpacity : undefined,
       })
@@ -306,7 +306,7 @@ export async function drawCoverElementsPdf(
         start: { x: xPt, y: midYPt },
         end: { x: xPt + wPt, y: midYPt },
         thickness: (el.strokeWidth ?? 1) * PX_TO_PT,
-        color: el.stroke ? hexToPdfColor(el.stroke) : rgb(0, 0, 0),
+        color: el.stroke ? hexToPdfColor(el.stroke, ctx.colorMode) : pdfBlack(ctx.colorMode),
         opacity: elementOpacity,
       })
     } else if (el.kind === 'icon') {
@@ -318,7 +318,7 @@ export async function drawCoverElementsPdf(
       const iconScale = iconSizePt / 24
       const iconX = xPt + (wPt - iconSizePt) / 2
       const iconTopY = yPt + hPt - (hPt - iconSizePt) / 2
-      const color = el.color ? hexToPdfColor(el.color) : rgb(1, 1, 1)
+      const color = el.color ? hexToPdfColor(el.color, ctx.colorMode) : pdfWhite(ctx.colorMode)
       // NOT pre-multiplied by `iconScale` here: `drawSvgPath` applies its
       // own `scale(iconScale, -iconScale)` transform to the current
       // graphics state before stroking, and per the PDF spec a stroke's
@@ -362,8 +362,8 @@ export async function drawCoverElementsPdf(
       // ingredients as a `rect`/`ellipse` element plus a `text` element,
       // just always drawn together so the text can't be repositioned away
       // from the shape's centre (see `CoverBadgeElement`'s doc comment).
-      const bg = el.backgroundColor ? hexToPdfColor(el.backgroundColor) : undefined
-      const border = el.borderColor ? hexToPdfColor(el.borderColor) : undefined
+      const bg = el.backgroundColor ? hexToPdfColor(el.backgroundColor, ctx.colorMode) : undefined
+      const border = el.borderColor ? hexToPdfColor(el.borderColor, ctx.colorMode) : undefined
       const borderWidthPt = el.borderColor ? (el.borderWidth ?? 1) * PX_TO_PT : undefined
       if (el.shape === 'circle') {
         const rPt = Math.min(wPt, hPt) / 2
@@ -401,7 +401,7 @@ export async function drawCoverElementsPdf(
         y: yPt + hPt / 2 - size * 0.35,
         size,
         font,
-        color: el.textColor ? hexToPdfColor(el.textColor) : rgb(1, 1, 1),
+        color: el.textColor ? hexToPdfColor(el.textColor, ctx.colorMode) : pdfWhite(ctx.colorMode),
         opacity: elementOpacity,
       })
     } else if (el.kind === 'text') {
@@ -427,7 +427,7 @@ export async function drawCoverElementsPdf(
         y: textY,
         size,
         font,
-        color: el.color ? hexToPdfColor(el.color) : rgb(1, 1, 1),
+        color: el.color ? hexToPdfColor(el.color, ctx.colorMode) : pdfWhite(ctx.colorMode),
         opacity: elementOpacity,
       })
     } else if (el.kind === 'image' && el.imageAssetId) {

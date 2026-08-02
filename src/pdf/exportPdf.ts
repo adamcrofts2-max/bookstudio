@@ -1,4 +1,4 @@
-import { PDFDocument, type PDFPage, rgb } from 'pdf-lib'
+import { PDFDocument, type PDFPage } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
 
 import type { ExportableLayout } from '@/store/exportStore'
@@ -6,7 +6,7 @@ import type { ContentBlock } from '@/types/content'
 import type { ProjectSettings } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import { loadThemeFonts, pickFont, type ThemeFontSet } from '@/pdf/fonts'
-import { hexToPdfColor } from '@/pdf/color'
+import { hexToPdfColor, pdfBlack, type PdfColorMode } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
@@ -30,6 +30,13 @@ export interface DrawCtx {
    */
   projectId: string
   structuralPages: StructuralPage[]
+  /** Colour space every `hexToPdfColor`/`pdfBlack`/`pdfWhite` call in this
+   * export should use — resolved once from `ProjectSettings.colorProfile`
+   * (`?? 'rgb'`) at the top of `exportBookToPdf` and threaded through every
+   * `DrawCtx` this file constructs, so every block/structural-page
+   * `drawPdf` implementation reads it from `ctx.colorMode` rather than each
+   * needing its own fallback. See `src/pdf/color.ts`'s `PdfColorMode`. */
+  colorMode: PdfColorMode
 }
 
 /**
@@ -45,11 +52,11 @@ async function drawBlock(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
   await def.drawPdf(ctx, block, dropCap)
 }
 
-function drawCropMarks(page: PDFPage, mediaWidth: number, mediaHeight: number, bleedPt: number) {
+function drawCropMarks(page: PDFPage, mediaWidth: number, mediaHeight: number, bleedPt: number, colorMode: PdfColorMode) {
   if (bleedPt <= 0) return
   const markLength = 10
   const gap = 3
-  const black = rgb(0, 0, 0)
+  const black = pdfBlack(colorMode)
   const corners: Array<[number, number, number, number]> = [
     [bleedPt, mediaHeight - bleedPt, 0, 1], // top-left
     [mediaWidth - bleedPt, mediaHeight - bleedPt, 0, 1], // top-right
@@ -86,6 +93,10 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
   // (`structuralPageId`) via `composeBookPages`, so the full objects are
   // read once here, outside the loop.
   const structuralPages = useStructuralPageStore.getState().byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES
+  // See `ProjectSettings.colorProfile`'s doc comment — `undefined` (every
+  // project persisted before this setting existed) is `'rgb'`, unchanged
+  // behaviour from before this feature existed.
+  const colorMode = settings.colorProfile ?? 'rgb'
 
   const bleedPt = settings.bleed * (72 / 25.4) // mm -> pt
   const widthPt = pageBox.widthPx * PX_TO_PT
@@ -100,8 +111,8 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
 
   for (const page of layout.pages) {
     const pdfPage = doc.addPage([mediaWidth, mediaHeight])
-    pdfPage.drawRectangle({ x: 0, y: 0, width: mediaWidth, height: mediaHeight, color: hexToPdfColor(theme.page.background) })
-    drawCropMarks(pdfPage, mediaWidth, mediaHeight, bleedPt)
+    pdfPage.drawRectangle({ x: 0, y: 0, width: mediaWidth, height: mediaHeight, color: hexToPdfColor(theme.page.background, colorMode) })
+    drawCropMarks(pdfPage, mediaWidth, mediaHeight, bleedPt, colorMode)
 
     if (page.kind === 'blank') continue
 
@@ -122,6 +133,7 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
           cursorY: mediaHeight - bleedPt - marginTopPt,
           projectId,
           structuralPages,
+          colorMode,
         }
         await def.drawPdf(ctx, structuralPage, theme, pageBox)
       }
@@ -133,19 +145,19 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
     const contentTop = mediaHeight - bleedPt - marginTopPt
     const contentBottom = bleedPt + marginBottomPt
 
-    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages }
+    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages, colorMode }
 
     if (page.kind === 'toc') {
       const headingFont = pickFont(fonts, theme.fonts.heading, 600)
       ctx.cursorY -= 32
-      pdfPage.drawText('Contents', { x: ctx.contentX, y: ctx.cursorY, size: 24, font: headingFont, color: hexToPdfColor(theme.page.ink) })
+      pdfPage.drawText('Contents', { x: ctx.contentX, y: ctx.cursorY, size: 24, font: headingFont, color: hexToPdfColor(theme.page.ink, colorMode) })
       ctx.cursorY -= 40
       const bodyFont = pickFont(fonts, theme.fonts.body, 400)
       for (const entry of toc) {
-        pdfPage.drawText(entry.title, { x: ctx.contentX, y: ctx.cursorY, size: 11, font: bodyFont, color: hexToPdfColor(theme.page.ink) })
+        pdfPage.drawText(entry.title, { x: ctx.contentX, y: ctx.cursorY, size: 11, font: bodyFont, color: hexToPdfColor(theme.page.ink, colorMode) })
         const numText = String(entry.pageNumber)
         const numWidth = bodyFont.widthOfTextAtSize(numText, 11)
-        pdfPage.drawText(numText, { x: ctx.contentX + contentWidthPt - numWidth, y: ctx.cursorY, size: 11, font: bodyFont, color: hexToPdfColor(theme.page.mutedInk) })
+        pdfPage.drawText(numText, { x: ctx.contentX + contentWidthPt - numWidth, y: ctx.cursorY, size: 11, font: bodyFont, color: hexToPdfColor(theme.page.mutedInk, colorMode) })
         ctx.cursorY -= 22
       }
     } else if (page.kind === 'chapter-start') {
@@ -154,11 +166,11 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
         const font = pickFont(fonts, theme.fonts.heading, 500)
         const idx = toc.findIndex((t) => t.chapterId === page.chapterId)
         const label = theme.chapterOpener.numberLabel === 'word' ? `Chapter ${idx + 1}` : `${idx + 1}`
-        pdfPage.drawText(label, { x: ctx.contentX, y: ctx.cursorY, size: 11, font, color: hexToPdfColor(theme.page.accent) })
+        pdfPage.drawText(label, { x: ctx.contentX, y: ctx.cursorY, size: 11, font, color: hexToPdfColor(theme.page.accent, colorMode) })
         ctx.cursorY -= 22
       }
       const titleFont = pickFont(fonts, theme.fonts.heading, theme.typography.headingWeight)
-      pdfPage.drawText(page.chapterTitle ?? '', { x: ctx.contentX, y: ctx.cursorY, size: 30, font: titleFont, color: hexToPdfColor(theme.page.ink) })
+      pdfPage.drawText(page.chapterTitle ?? '', { x: ctx.contentX, y: ctx.cursorY, size: 30, font: titleFont, color: hexToPdfColor(theme.page.ink, colorMode) })
       ctx.cursorY -= 40
       for (const block of page.blocks) {
         const isDropCap = block.type === 'paragraph' && theme.typography.dropCap && block === page.blocks.find((b) => b.type === 'paragraph')
@@ -177,7 +189,7 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
     const numFont = pickFont(fonts, theme.fonts.body, 400)
     const numText = String(page.number)
     const numX = isRight ? mediaWidth - bleedPt - marginOuterPt - numFont.widthOfTextAtSize(numText, 9) : bleedPt + marginOuterPt
-    pdfPage.drawText(numText, { x: numX, y: bleedPt + marginBottomPt * 0.4, size: 9, font: numFont, color: hexToPdfColor(theme.page.mutedInk) })
+    pdfPage.drawText(numText, { x: numX, y: bleedPt + marginBottomPt * 0.4, size: 9, font: numFont, color: hexToPdfColor(theme.page.mutedInk, colorMode) })
   }
 
   const bytes = await doc.save()

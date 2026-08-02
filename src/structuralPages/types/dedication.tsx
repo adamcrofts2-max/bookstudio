@@ -48,7 +48,7 @@ function drawDedicationPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBo
   const font = pickFont(ctx.fonts, theme.fonts.body, 400)
   const size = theme.typography.bodySize * 1.1 * PX_TO_PT
   const lineHeight = size * 1.8
-  const color = hexToPdfColor(theme.page.ink)
+  const color = hexToPdfColor(theme.page.ink, ctx.colorMode)
 
   const bleedPt = pageBox.bleedPx * PX_TO_PT
   const widthPt = pageBox.widthPx * PX_TO_PT

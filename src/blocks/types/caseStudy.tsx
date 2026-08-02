@@ -108,8 +108,8 @@ function CaseStudyRender(props: BlockRenderProps) {
 function drawCaseStudyPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'case-study') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const ruleColor = hexToPdfColor(theme.page.ruleColor)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const ruleColor = hexToPdfColor(theme.page.ruleColor, ctx.colorMode)
 
   const padX = 16
   const padTop = 14

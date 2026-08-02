@@ -6532,20 +6532,88 @@ detail, and an honest "where competitors already win and can't realistically
 be beaten head-on" section live in that file — not duplicated here since it
 isn't a code change.
 
+## Phase 101 — CMYK-aware PDF export (2026-08-02)
+
+`docs/ROADMAP.md` Phase D's last unchecked item. Commercial offset printers
+and IngramSpark's print-ready spec expect CMYK; Amazon KDP recommends RGB.
+Previously every export was hardcoded RGB regardless of destination.
+
+**Data model**: `ProjectSettings.colorProfile?: 'rgb' | 'cmyk'` in
+`src/types/project.ts` — optional, undefined treated as `'rgb'` at the one
+read site in `exportPdf.ts` (`settings.colorProfile ?? 'rgb'`), same
+never-migrated convention as `styleGuide?`. Not added to
+`DEFAULT_PROJECT_SETTINGS` — matches that same convention.
+
+**Colour helpers** (`src/pdf/color.ts`, rewritten): `hexToPdfColor(hex, mode)`
+now takes a required `PdfColorMode` and returns pdf-lib's `cmyk()` or `rgb()`
+Color depending on it; `pdfBlack(mode)`/`pdfWhite(mode)` added for the
+fallback-literal call sites that used to hardcode `rgb(0,0,0)`/`rgb(1,1,1)`.
+Conversion is a naive/non-colour-managed RGB→CMYK formula (`k = 1 -
+max(r,g,b)`, then divide the rest through) — the same approximation most
+consumer tools use without an ICC profile; documented plainly as such, not
+press-calibrated. Pure K black (not 4-colour rich black) for text/rules,
+deliberately, to avoid misregistration muddiness on small text.
+
+No new dependency: pdf-lib 1.17.1 (already installed) ships `cmyk()` as a
+built-in `Color` constructor, confirmed via a direct `node -e` check before
+starting — this is what made the feature possible at all in a sandbox with
+no npm registry access.
+
+**Threading**: `DrawCtx` (in `exportPdf.ts`) gained a `colorMode: PdfColorMode`
+field, resolved once per export and passed into both `DrawCtx` object
+literals the export loop constructs. Every `drawPdf` implementation across
+`src/blocks/types/*.tsx` (15 files) and `src/structuralPages/**/*.tsx` (13
+files) already receives `ctx: DrawCtx` as its first argument, so no function
+signature needed to change — only each site's own `hexToPdfColor(hex)` call
+became `hexToPdfColor(hex, ctx.colorMode)` (69 call sites across 27 files,
+bulk-patched with a paren-depth-matching script rather than a naive regex,
+since several calls nest, e.g.
+`hexToPdfColor(tintHex(theme.page.accent, 0.92), ctx.colorMode)`).
+`coverElements.ts`'s four `rgb(0,0,0)`/`rgb(1,1,1)` inline fallbacks became
+`pdfBlack(ctx.colorMode)`/`pdfWhite(ctx.colorMode)`; its now-unused `rgb`
+import from pdf-lib was removed.
+
+**Type fix surfaced by `tsc`**: `drawBlockHelpers.ts`'s `drawWrappedLines`
+had `color`/`options.linkColor` typed as `ReturnType<typeof rgb>` — i.e.
+narrowly `RGB`, not pdf-lib's `Color` union — so every call site passing a
+possibly-CMYK `hexToPdfColor(...)` result failed to typecheck. Widened both
+to pdf-lib's own `Color` type; this is the one call site every wrapped-text
+block (heading/paragraph/quote/list/callout/etc.) funnels through, so this
+single fix cleared ~19 of the surfaced errors at once.
+
+**Scope boundary, deliberate**: `coverOverlay.ts`'s two `rgb(0,0,0)`
+darkening-gradient usages were left untouched — that function draws a
+translucent band over a raster cover image, which stays RGB regardless of
+`colorProfile` (images are never converted), so keeping the overlay in the
+same colour space as the image it sits on is more correct, not a gap.
+
+**UI**: `ProjectSettingsDialog.tsx` gained a "Colour profile" `Select`
+(RGB — screen & Amazon KDP / CMYK — commercial offset & IngramSpark),
+wired via `updateProjectSettings(project.id, { colorProfile })`, placed
+between the margins grid and the Theme gallery.
+
+Verification: `npx tsc -b --force` clean (confirmed after the
+`drawWrappedLines` fix above — first typecheck since this feature's data
+model/color-helper/call-site work began, so this fix was a real, not
+hypothetical, catch). Not yet Chrome-verified — no way in this sandbox to
+open a generated PDF and visually confirm the CMYK separations look right;
+this is a case where the conversion math is correct by construction
+(pdf-lib's `cmyk()` handles the low-level PDF colour operator, our formula
+is the standard one) but a real print-shop proof is the only way to fully
+trust it, same honest caveat as everywhere else in this doc.
+
 ## Recommended next task
-The moment this sandbox's Linux VM comes back: run `npx tsc -b --force` on
-Phase 100's mobile changes (unverified due to the VM outage above), fix
-anything it surfaces, then commit both Phase 100 and the product-strategy
-doc. After that, push everything queued from Phase 85 onward (17+ commits),
-then one real Chrome pass — resized to a phone viewport and ideally a real
-device — covering every mobile claim made across Phases 95-100: does the
-chapter switcher's new add/rename/delete actually work by touch, does "Add
-photo" actually trigger the OS picker and insert correctly, does the new
-per-block "⋮" menu behave (move up/down disabled correctly at the ends,
-delete + undo round-trips cleanly), and does the header's new Undo button
-reach across into Ideas too (it should — `historyStore` is project-scoped,
-not view-scoped). Also still outstanding: everything listed in Phase 99's
-own unverified list (Book Graph drag/pin/relationship-edge feel, the
-Toolbar/Sidebar overflow fixes). Real dictionary-backed spell-check and
-thesaurus/synonym lookup remain blocked — no npm registry access in this
-sandbox, unchanged from every earlier phase.
+Push everything queued from Phase 85 through Phase 101 (20+ commits) — this
+has been a standing, repeated ask across many sessions now; it requires the
+user's own terminal, not this sandbox. Once pushed, a real Chrome pass
+(resized to a phone viewport, ideally a real device) is overdue and should
+cover, in order: (1) Phase 95-100's mobile claims — chapter switcher add/
+rename/delete, "Add photo" OS picker + insert, per-block "⋮" menu (move up/
+down disabled correctly at the ends, delete + undo round-trip), header Undo
+reaching into Ideas too; (2) Phase 99's Book Graph — drag/pin persistence,
+the central Book hub + spine edges, labeled relationship edges rendering
+correctly, the Toolbar/Inspector overflow fix; (3) Phase 101's CMYK export —
+generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`, confirm
+they differ and neither crashes the exporter. Real dictionary-backed
+spell-check and thesaurus/synonym lookup remain blocked — no npm registry
+access in this sandbox, unchanged from every earlier phase.

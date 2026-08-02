@@ -51,18 +51,18 @@ function drawGlossaryPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBook
   const headingFont = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
   const headingSize = theme.typography.bodySize * 1.5 * PX_TO_PT
   ctx.cursorY -= headingSize
-  ctx.page.drawText('Glossary', { x: ctx.contentX, y: ctx.cursorY, size: headingSize, font: headingFont, color: hexToPdfColor(theme.page.ink) })
+  ctx.page.drawText('Glossary', { x: ctx.contentX, y: ctx.cursorY, size: headingSize, font: headingFont, color: hexToPdfColor(theme.page.ink, ctx.colorMode) })
   ctx.cursorY -= headingSize * 1.1
 
   const regularFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   const boldFont = pickFont(ctx.fonts, theme.fonts.body, 700)
   const bodySize = theme.typography.bodySize * 0.95 * PX_TO_PT
   const lineHeight = bodySize * theme.typography.lineHeight
-  const ink = hexToPdfColor(theme.page.ink)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
 
   if (entries.length === 0) {
     const lines = wrapRuns([{ text: GLOSSARY_PLACEHOLDER, bold: false }], regularFont, boldFont, bodySize, ctx.contentWidthPt)
-    drawWrappedLines(ctx, lines, bodySize, lineHeight, hexToPdfColor(theme.page.mutedInk), regularFont, boldFont)
+    drawWrappedLines(ctx, lines, bodySize, lineHeight, hexToPdfColor(theme.page.mutedInk, ctx.colorMode), regularFont, boldFont)
     return
   }
 

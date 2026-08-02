@@ -70,7 +70,7 @@ function drawHalfTitlePdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBoo
   const title = page.content.title?.trim() || findTitlePageTitle(ctx.structuralPages) || 'Untitled'
   const size = theme.typography.bodySize * 1.3 * PX_TO_PT
   const width = font.widthOfTextAtSize(title, size)
-  const color = hexToPdfColor(theme.page.ink)
+  const color = hexToPdfColor(theme.page.ink, ctx.colorMode)
 
   ctx.page.drawText(title, { x: centerX - width / 2, y: centerY, size, font, color })
 }

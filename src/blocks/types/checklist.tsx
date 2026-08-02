@@ -130,9 +130,9 @@ function drawCheckboxGlyph(ctx: DrawCtx, x: number, y: number, size: number, che
 function drawChecklistPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'checklist') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const muted = hexToPdfColor(theme.page.mutedInk)
-  const accent = hexToPdfColor(theme.page.accent)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
+  const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
 
   const font = pickFont(ctx.fonts, theme.fonts.body, 400)
   const sizePt = theme.typography.bodySize * 0.95 * PX_TO_PT

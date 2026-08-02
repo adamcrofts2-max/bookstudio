@@ -40,6 +40,14 @@ export interface ProjectSettings {
    * `DEFAULT_STYLE_GUIDE` (from `@/virtualEditor/types`) via `?? `, exactly
    * like `ImageBlock`'s optional fields in `src/types/content.ts`. */
   styleGuide?: StyleGuide
+  /** Colour space PDF export renders solid fills/text/rules in
+   * (`docs/ROADMAP.md` Phase D, "CMYK-aware export workflow"). `undefined`
+   * (every project persisted before this field existed) is treated as
+   * `'rgb'` at every read site — the exact behaviour every export already
+   * had, so this is purely additive and opt-in. See `src/pdf/color.ts`'s
+   * `PdfColorMode` doc comment for what each value actually means and why
+   * embedded photographs stay RGB regardless of this setting. */
+  colorProfile?: 'rgb' | 'cmyk'
 }
 
 export type ProjectCategory =

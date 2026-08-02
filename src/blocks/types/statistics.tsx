@@ -128,8 +128,8 @@ function StatisticsRender(props: BlockRenderProps) {
 function drawStatisticsPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'statistics') return
   const { theme } = ctx
-  const accent = hexToPdfColor(theme.page.accent)
-  const muted = hexToPdfColor(theme.page.mutedInk)
+  const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
 
   const valueFont = pickFont(ctx.fonts, theme.fonts.heading, 700)
   const labelFont = pickFont(ctx.fonts, theme.fonts.body, 400)

@@ -153,8 +153,8 @@ export function LongFormPageRender({
 export function drawLongFormPagePdf(ctx: DrawCtx, theme: ResolvedBookTheme, heading: string, text: string, emptyPlaceholder: string, attribution?: string) {
   const headingFont = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
-  const ink = hexToPdfColor(theme.page.ink)
-  const mutedInk = hexToPdfColor(theme.page.mutedInk)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const mutedInk = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
 
   const headingSize = theme.typography.bodySize * 1.5 * PX_TO_PT
   ctx.cursorY -= headingSize

@@ -65,7 +65,7 @@ function HeadingRender(props: BlockRenderProps) {
 function drawHeadingPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'heading') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
   ctx.cursorY -= 20
   const sizePt = (block.level === 2 ? theme.typography.bodySize * 1.5 : theme.typography.bodySize * 1.2) * PX_TO_PT
   const font = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)

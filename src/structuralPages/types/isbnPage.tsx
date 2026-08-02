@@ -77,7 +77,7 @@ function drawIsbnPagePdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBook
   const font = pickFont(ctx.fonts, theme.fonts.body, 400)
   const size = theme.typography.bodySize * 0.78 * PX_TO_PT
   const lineHeight = size * 1.45
-  const color = hexToPdfColor(theme.page.mutedInk)
+  const color = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
 
   const bleedPt = pageBox.bleedPx * PX_TO_PT
   const marginBottomPt = pageBox.marginBottomPx * PX_TO_PT

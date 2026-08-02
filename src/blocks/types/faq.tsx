@@ -126,8 +126,8 @@ function FaqRender(props: BlockRenderProps) {
 function drawFaqPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'faq') return
   const { theme } = ctx
-  const ink = hexToPdfColor(theme.page.ink)
-  const muted = hexToPdfColor(theme.page.mutedInk)
+  const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
+  const muted = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
 
   const questionFont = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
   const answerFont = pickFont(ctx.fonts, theme.fonts.body, 400)
