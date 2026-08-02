@@ -201,29 +201,31 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           />
         )}
         {chapterId && !decorative && (
-          <NoteIndicatorBadge
-            projectId={projectId}
-            blockId={block.id}
-            className="absolute -top-3 left-2 z-10"
-            onClick={() => {
-              select(chapterId, block.id)
-              setInspectorTab('notes')
-            }}
-          />
-        )}
-        {chapterId && !decorative && (
-          // `-bottom-3 left-2`, not the right side at all. `BlockToolbar`
-          // always sits at `-top-3 right-2` on EVERY block — Phase 84's fix
-          // moved this badge to `-bottom-3 right-2` on the theory that only
-          // its own block's toolbar mattered, but blocks are stacked closely
-          // enough that "bottom of block N" lands right on top of "top of
-          // block N+1" — i.e. its own block's toolbar was gone, but it now
-          // collided with the *next* block's toolbar instead (Phase 85 fix,
-          // reported live: "covered by the up/down/copy tab"). Left side is
-          // safe from BlockToolbar entirely, at either edge; bottom (not
-          // top, where `NoteIndicatorBadge` lives) keeps the two badges from
-          // colliding with each other on a block that has both.
-          <IdeaIndicatorBadge projectId={projectId} blockId={block.id} className="absolute -bottom-3 left-2 z-10" />
+          // Notes and Ideas share ONE positioned row at `-top-3 left-2`
+          // instead of each owning a separate corner. Phase 85 tried
+          // `-bottom-3` for Ideas on the theory that top/bottom would keep
+          // them apart, but inter-block spacing is too tight for that:
+          // "bottom of block N" and "top of block N+1" sit only a few
+          // pixels apart (paragraph margins are ~20px, the badges reach
+          // 12px each way), so the two still overlapped one block down —
+          // reported live as "notes appear off visible screen" (the two
+          // badges rendering garbled on top of each other at the seam
+          // between blocks). Laying both out in one `flex` row, side by
+          // side, at the one corner (`NoteIndicatorBadge`'s original spot,
+          // proven collision-free since Phase 41) removes the guesswork:
+          // whichever badges are actually present just sit next to each
+          // other, never on top of anything from a neighbouring block.
+          <div className="absolute -top-3 left-2 z-10 flex items-center gap-1">
+            <NoteIndicatorBadge
+              projectId={projectId}
+              blockId={block.id}
+              onClick={() => {
+                select(chapterId, block.id)
+                setInspectorTab('notes')
+              }}
+            />
+            <IdeaIndicatorBadge projectId={projectId} blockId={block.id} />
+          </div>
         )}
       </div>
     )
