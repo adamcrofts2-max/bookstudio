@@ -1,11 +1,8 @@
-import { useState, type FocusEvent } from 'react'
+import { useState } from 'react'
 import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useLayer0Store } from '@/store/layer0Store'
 import {
@@ -17,24 +14,7 @@ import {
 import { generateId } from '@/utils'
 import { LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, type Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
-import { EXAMPLE_SUFFIX } from '@/data/projectTemplates'
-
-/**
- * Selects a field's entire value the first time it's focused, but only
- * while that value still ends in the seeded-example marker — i.e. only for
- * an unedited starter field ("Describe your protagonist here. This is a
- * starter example — edit or delete it."), never for a user's own real
- * content. Scoped this narrowly (rather than selecting on every focus,
- * which would be actively annoying once real prose exists) because the
- * only failure this fixes is a first-time user's very first edit to a
- * pre-filled example — found via a live first-time-author UX audit
- * (docs/STATUS.md, Phase 78, 2026-08-02): clicking into the example
- * Description field and typing merged into the placeholder text instead
- * of replacing it.
- */
-function selectIfUneditedExample(e: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-  if (e.currentTarget.value.trim().endsWith(EXAMPLE_SUFFIX)) e.currentTarget.select()
-}
+import { Layer0FieldsForm } from '@/layout/planning/Layer0FieldsForm'
 
 interface EntityListPanelProps {
   projectId: string
@@ -223,31 +203,12 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
             <DialogTitle>{editingId === NEW_ENTITY_SENTINEL ? `Add ${singularLower}` : `Edit ${singularLower}`}</DialogTitle>
             <DialogDescription>{labels.description}</DialogDescription>
           </DialogHeader>
-          <div className="flex flex-col gap-3">
-            {config.fields.map((field) => (
-              <div key={field.key} className="flex flex-col gap-1.5">
-                <Label htmlFor={`layer0-field-${field.key}`}>{field.label}</Label>
-                {field.type === 'textarea' ? (
-                  <Textarea
-                    id={`layer0-field-${field.key}`}
-                    rows={3}
-                    placeholder={field.placeholder}
-                    value={draft[field.key] ?? ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
-                    onFocus={selectIfUneditedExample}
-                  />
-                ) : (
-                  <Input
-                    id={`layer0-field-${field.key}`}
-                    placeholder={field.placeholder}
-                    value={draft[field.key] ?? ''}
-                    onChange={(e) => setDraft((d) => ({ ...d, [field.key]: e.target.value }))}
-                    onFocus={selectIfUneditedExample}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+          <Layer0FieldsForm
+            fields={config.fields}
+            draft={draft}
+            onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
+            idPrefix="layer0-field"
+          />
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={close}>
               Cancel

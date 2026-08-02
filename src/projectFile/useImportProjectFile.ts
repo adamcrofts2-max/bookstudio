@@ -7,6 +7,7 @@ import { useNotesStore } from '@/store/notesStore'
 import { useCustomThemeStore } from '@/store/customThemeStore'
 import { useAssetStore } from '@/store/assetStore'
 import { useLayer0Store } from '@/store/layer0Store'
+import { useIdeaStore } from '@/store/ideaStore'
 
 /**
  * Drives "Load from file" (`Toolbar.tsx` and `ProjectsPage.tsx`, Phase 51):
@@ -37,6 +38,7 @@ export function useImportProjectFile() {
   const importCustomTheme = useCustomThemeStore((s) => s.importCustomTheme)
   const restoreAsset = useAssetStore((s) => s.restoreAsset)
   const replaceLayer0Bible = useLayer0Store((s) => s.replaceBible)
+  const replaceAllIdeas = useIdeaStore((s) => s.replaceAllIdeas)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,6 +58,7 @@ export function useImportProjectFile() {
       replaceAllPages(project.id, bundle.structuralPages)
       replaceAllNotes(project.id, bundle.notes)
       replaceLayer0Bible(project.id, bundle.layer0Bible)
+      replaceAllIdeas(project.id, bundle.ideas)
       if (bundle.customTheme) importCustomTheme(bundle.customTheme)
       for (const { asset, blob } of bundle.assets) {
         await restoreAsset(project.id, { ...asset, projectId: project.id }, blob)

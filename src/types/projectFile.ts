@@ -5,6 +5,7 @@ import type { Note } from '@/store/notesStore'
 import type { CustomTheme } from '@/store/customThemeStore'
 import type { ImageAsset } from '@/types/asset'
 import type { Layer0Bible } from '@/types/layer0'
+import type { Idea } from '@/types/idea'
 
 /**
  * The ".bookstudio" project file format (Phase 51) — a portable, self-
@@ -56,4 +57,12 @@ export interface ProjectFileBundle {
    * `parseProjectFile` reads that case as an empty bible rather than
    * failing to open the file at all. */
   layer0Bible: Layer0Bible
+  /** The Idea System's captured thoughts (Develop Milestone 1,
+   * `docs/IDEA_SYSTEM_PLAN.md`). Added after `PROJECT_FILE_VERSION` 1
+   * shipped — same deliberately-not-a-version-bump, purely-additive
+   * convention `layer0Bible` above already established: a `.bookstudio`
+   * file saved before Ideas existed simply has no `ideas.json` entry, and
+   * `importProjectFile.ts`'s `parseProjectFile` reads that case as an
+   * empty list rather than failing to open the file at all. */
+  ideas: Idea[]
 }

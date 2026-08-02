@@ -5,10 +5,12 @@ import { useHistoryStore } from '@/store/historyStore'
 import { useStructuralPageStore } from '@/store/structuralPageStore'
 import { useNotesStore, type Note } from '@/store/notesStore'
 import { useLayer0Store } from '@/store/layer0Store'
+import { useIdeaStore } from '@/store/ideaStore'
 import { generateId } from '@/utils'
 import type { Chapter, ContentBlock } from '@/types/content'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
-import type { Layer0Bible } from '@/types/layer0'
+import type { Layer0Bible, Layer0EntityKind } from '@/types/layer0'
+import type { Idea } from '@/types/idea'
 import { patchTextField } from '@/virtualEditor/textPatch'
 import type { SearchMatch } from '@/search/manuscriptSearch'
 import { replaceAllOccurrences, replaceOccurrence } from '@/search/manuscriptSearch'
@@ -773,5 +775,96 @@ export function moveTimelineEventWithHistory(projectId: string, id: string, dire
     'Reorder timeline event',
     () => useLayer0Store.getState().moveTimelineEvent(projectId, id, opposite),
     () => useLayer0Store.getState().moveTimelineEvent(projectId, id, direction),
+  )
+}
+
+/**
+ * The Idea System's history-wrapped actions (Develop Milestone 1,
+ * `docs/IDEA_SYSTEM_PLAN.md`) — same four-method shape `addLayer0EntityWith
+ * History`/`updateLayer0EntityWithHistory`/`deleteLayer0EntityWithHistory`
+ * already establish above, plus one new compound action for promotion.
+ */
+export function addIdeaWithHistory(projectId: string, idea: Idea, label = 'Capture idea'): void {
+  useIdeaStore.getState().addIdea(projectId, idea)
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => useIdeaStore.getState().deleteIdea(projectId, idea.id),
+    () => useIdeaStore.getState().addIdea(projectId, idea),
+  )
+}
+
+/** Covers text edits, status changes, tag changes, and related-Idea links —
+ * one function for all of it, exactly like `updateLayer0EntityWithHistory`,
+ * since every one of those is "replace some fields on this Idea." */
+export function updateIdeaWithHistory(projectId: string, id: string, updates: Partial<Idea>, label = 'Edit idea'): void {
+  const oldIdea = useIdeaStore.getState().getIdeas(projectId).find((i) => i.id === id)
+  if (!oldIdea) return
+
+  useIdeaStore.getState().updateIdea(projectId, id, updates)
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => useIdeaStore.getState().updateIdea(projectId, id, oldIdea),
+    () => useIdeaStore.getState().updateIdea(projectId, id, updates),
+  )
+}
+
+export function deleteIdeaWithHistory(projectId: string, id: string, label = 'Delete idea'): void {
+  const snapshot = useIdeaStore.getState().getIdeas(projectId).find((i) => i.id === id)
+  if (!snapshot) return
+
+  useIdeaStore.getState().deleteIdea(projectId, id)
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => useIdeaStore.getState().addIdea(projectId, snapshot),
+    () => useIdeaStore.getState().deleteIdea(projectId, id),
+  )
+}
+
+/**
+ * Promotes an Idea into a real, existing Layer 0 entity (Character,
+ * Location, etc.) — the one compound action this system needs. Builds and
+ * adds the new entity, then stamps the Idea's `promotedTo`, both inside one
+ * history entry so a single undo reverses the whole promotion rather than
+ * leaving a user to undo twice. Deliberately calls `layer0Store`/
+ * `ideaStore`'s own raw actions directly rather than going through
+ * `addLayer0EntityWithHistory`/`updateIdeaWithHistory` — those each record
+ * their own separate history entry, which would split one promotion into
+ * two undo steps; mirrors how `deleteChapterWithHistory` above bundles a
+ * multi-part change into a single record() call.
+ */
+export function promoteIdeaWithHistory<K extends keyof Layer0Bible>(
+  projectId: string,
+  ideaId: string,
+  kind: Layer0EntityKind,
+  collection: K,
+  entity: Layer0Bible[K][number],
+  label: string,
+): void {
+  const idea = useIdeaStore.getState().getIdeas(projectId).find((i) => i.id === ideaId)
+  if (!idea) return
+
+  const promotedTo = { kind, entityId: entity.id }
+  const previousPromotedTo = idea.promotedTo
+
+  useLayer0Store.getState().addEntity(projectId, collection, entity)
+  useIdeaStore.getState().updateIdea(projectId, ideaId, { promotedTo })
+
+  useHistoryStore.getState().record(
+    projectId,
+    label,
+    () => {
+      useLayer0Store.getState().deleteEntity(projectId, collection, entity.id)
+      useIdeaStore.getState().updateIdea(projectId, ideaId, { promotedTo: previousPromotedTo })
+    },
+    () => {
+      useLayer0Store.getState().addEntity(projectId, collection, entity)
+      useIdeaStore.getState().updateIdea(projectId, ideaId, { promotedTo })
+    },
   )
 }

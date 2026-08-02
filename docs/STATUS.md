@@ -5566,19 +5566,133 @@ several phases) — worth a real click-through after pulling: open a chapter, ho
 gap, "AI Draft…", paste a short multi-paragraph sample, confirm the preview and the
 Insert button both look right, and confirm Undo removes the whole batch in one step.
 
+## Phase 82 — Idea System: Develop Milestone 1 (2026-08-02)
+
+Built from `docs/IDEA_SYSTEM_PLAN.md` after explicit go-ahead to start ("Yes, start
+Milestone 1 now"), following that spec's own scope line-by-line rather than
+re-deriving it. Everything below matches the spec; deviations and small
+implementation calls it left open are called out explicitly, not silently folded in.
+
+**Data model + store.** `types/idea.ts` (`Idea`, `IdeaStatus`, `IDEA_STATUSES`/
+`IDEA_STATUS_LABELS`) and `store/ideaStore.ts` (`useIdeaStore`) — a ninth
+`byProject: Record<projectId, X>` store that looks exactly like `notesStore.ts`/
+`layer0Store.ts`, per the spec's own instruction not to invent a new pattern.
+`editorActions.ts` gained `addIdeaWithHistory`/`updateIdeaWithHistory`/
+`deleteIdeaWithHistory` (same three-method shape as the Layer 0 wrappers) plus the one
+compound action, `promoteIdeaWithHistory`: builds the new Layer 0 entity, adds it, and
+stamps the Idea's `promotedTo`, all inside one `historyStore.record()` call so a
+single undo reverses the whole promotion — calls `layer0Store`/`ideaStore`'s raw
+actions directly rather than the individual `WithHistory` wrappers, which would have
+split it into two undo steps (mirrors how `deleteChapterWithHistory` already bundles a
+multi-part change).
+
+**Capture affordance in Write.** `layout/IdeaCaptureAffordance.tsx` — collapsed to a
+single lightbulb icon, docked bottom-right of `Workspace.tsx`'s manuscript view (not
+the Editorial Dashboard, not the empty-project state — neither is "writing").
+Expanding reveals one textarea; Enter captures and collapses, Escape cancels, blur
+with empty text collapses without creating anything. `linkedChapterId` is set from
+`selectionStore.selectedChapterId` — the closest available proxy for "whichever
+chapter is open," since `BookRenderer` renders the whole manuscript as one continuous
+scroll rather than a per-chapter editor; `null` (nothing selected yet) simply omits
+the link, matching the spec's own "absent for an Idea captured from Develop directly"
+case.
+
+**Develop's landing view.** `layout/planning/IdeaInboxPanel.tsx` — newest-first list,
+a status filter row (pill buttons, counts per status, hidden entirely for a
+zero-Idea project), a coloured status dot per row, and a "New idea" button for
+capturing directly from Develop (a reasonable symmetry with `EntityListPanel`'s own
+"Add" button — the spec's "one always-available way to capture" describes Write's
+affordance as the *ambient* way in, not the *only* button that can ever add one).
+Clicking a row opens `IdeaDetailDialog.tsx`.
+
+**`PlanningShell.tsx` restructured**, not rewritten: default `activeView` is now
+`'ideas'`; the nav leads with an always-`font-medium` Ideas row (bold before it's ever
+clicked, the one deliberate exception to every other row's plain-until-active
+styling), then a divider, then the six kinds/tools the spec names by name (Outline
+Templates, Characters, Places, Timeline, Research, Illustrations), then a second
+divider, then the three kinds the spec doesn't name (Glossary Terms, References,
+Style Rules) plus the existing Generate Prompt/Paste Response tools. Nothing was
+removed — every existing Layer 0 kind is still one click away, just visually
+deemphasized into "secondary," matching "visible immediately, nothing hidden, but not
+what an author lands on first" rather than the narrower "six things exist" reading.
+
+**Idea detail + promotion.** `IdeaDetailDialog.tsx`: inline-editable text (commits on
+blur), a status `Select`, a comma-separated tags input, a related-Ideas picker (a
+`Select` listing every other Idea, each add/remove call updating both sides'
+`relatedIdeaIds` so the link is always symmetric), a "Jump to [chapter]" button when
+`linkedChapterId` is set (closes the dialog, `setAppMode('editor')`,
+`requestScrollToChapter` — the same primitive `SearchPanel.tsx`'s chapter-title
+matches already use), and "Turn into…": one button per Layer 0 kind, opening the exact
+same field form `EntityListPanel.tsx` renders. Extracted that form into
+`layout/planning/Layer0FieldsForm.tsx` first (a real small refactor, not a duplicate
+copy) — `EntityListPanel.tsx` now calls it too, confirmed behaviourally unchanged.
+Pre-fill deliberately isn't "stuff the Idea's text into the name field": a new
+`PREFILL_FIELD` map sends it to each kind's actual description/body field
+(`description` for Character/Location/Illustration Brief/Timeline Event, `definition`
+for Glossary Term, `notes` for Reference, `body` for Research Note — `styleRule` has
+only one field, so it gets both roles), with a short truncated working title filling
+the required name/title field instead, exactly per the spec's own example.
+
+**New Project dialog.** Reordered per spec: "What's the idea?" is now the first and
+only required field (renamed from "Book title" — same underlying field, reframed);
+category defaults to `undefined` (no pre-selection, `SelectValue`'s `placeholder`
+prop reads "Skip for now — decide later") rather than a bare no-config-gate finding —
+checking the actual pre-existing code first showed creation was never really gated on
+category (it already defaulted to `'novel'`), so the real change here is making
+"skip category" an honest, visible choice instead of a silent default, and only
+seeding the category template (trim size + example entities) when a category was
+actually picked. One addition beyond the spec's literal text: the typed idea becomes
+the project's first captured Idea via `addIdeaWithHistory` on create — turns "capture
+first" into something true on the very first screen, not just a principle for later,
+and needed no new mechanism since the Idea System already existed by the time this
+task started.
+
+**Project-file round-trip.** `ideas.json` added to the `.bookstudio` archive
+(`exportProjectFile.ts`/`importProjectFile.ts`/both hooks), same purely-additive,
+no-version-bump convention `layer0.json` already established — a file saved before
+Ideas existed just has no entry, read back as an empty list.
+
+**Rename discipline.** Every user-facing "Planning" string became "Develop"
+(`Toolbar.tsx`'s button + tooltip, `PlanningShell.tsx`'s header, `NewProjectDialog
+.tsx`'s copy) — but `uiStore.AppMode`'s underlying `'editor' | 'planning'` string
+value was deliberately left unchanged. That value is persisted (`uiStore.ts`'s
+`persist` middleware covers `appMode`, and it isn't excluded in `partialize`); a
+returning user who had Planning open when they last closed the app has a stale
+`'planning'` string sitting in their browser's localStorage, and there's no `migrate`
+function on this store to translate it. Renaming the type's literal would have meant
+that user's next load either matches nothing (falls through to a blank branch) or
+needs new migration code neither the spec nor this milestone asked for. File/component
+names (`PlanningShell.tsx`, `PlanningView`) were left alone for the same
+low-risk-first reason — purely cosmetic, per the spec's own framing, means the string
+a person reads, not every internal identifier.
+
+`tsc -b --force` clean throughout, verified incrementally after each file group rather
+than once at the end. `npx oxlint` hit the same sandbox-level "Bus error" as Phases
+80-81 on every attempt — not a code finding, the process itself doesn't survive in
+this sandbox. Not live-verified in Chrome this session (no network path from this
+sandbox to a locally-running dev server, and Chrome MCP tools drive a URL, not this
+sandbox's filesystem) — this is the largest single feature shipped without a live
+click-through this session, so it's the first thing worth doing once pulled: create a
+project via the new dialog, capture an idea while writing, open Develop, promote an
+idea to a Character, confirm undo reverses the promotion in one step, reload the page
+and confirm Ideas survived (zustand `persist`).
+
 ## Recommended next task
-Push the currently-unpushed local commits (Phase 76 through 81) so the live deployment
-matches `main` — the sandbox has no git push credentials, same constraint as the
-still-open #105/#162 tasks. Once pushed, live-verify in Chrome: the new "AI Draft…"
-insert flow (this phase), the Search tab actually being visible now (Phase 80), Reading
-Mode's page-turn arrows/keyboard nav (Phase 79), plus the still-outstanding Phase 76-78
-batch (empty-chapter "Start writing" prompt, select-on-focus for pre-filled fields,
-first-name-only paste-back mention detection).
+Live-verify the Idea System end to end in Chrome (above) — this is the biggest
+untested surface in the app right now. Then push the currently-unpushed local commits
+(Phase 76 through 82) so the live deployment matches `main` — the sandbox has no git
+push credentials, same constraint as the still-open #105/#162 tasks. Once pushed,
+also live-verify: the "AI Draft…" insert flow (Phase 81), the Search tab actually
+being visible now (Phase 80), Reading Mode's page-turn arrows/keyboard nav (Phase 79),
+plus the still-outstanding Phase 76-78 batch (empty-chapter "Start writing" prompt,
+select-on-focus for pre-filled fields, first-name-only paste-back mention detection).
+Per the spec's own "how we'll know Milestone 1 worked" section: once live-verified,
+worth putting in front of two or three people who haven't written a book before and
+watching whether they find the capture affordance unprompted, whether "turn this into
+a Character" makes sense without explanation, and whether skipping category on the New
+Project dialog reads as an option or as something broken — that reaction, not more
+building, should decide what Milestone 2 (automatic promotion suggestions, Board/
+Canvas views) actually needs.
 Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
 Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/
-synonym lookup). `docs/VISION.md`'s new "Long-Term Platform Vision" section (2026-08-02)
-is worth a read before scoping the Idea System / Develop redesign
-(`docs/IDEA_SYSTEM_PLAN.md`, spec-ready but not started) — several of that spec's
-assumptions (structured data primarily feeding AI generation, versus primarily helping
-the author navigate their own book) are exactly what the vision doc's new risk log
-flags as unresolved.
+synonym lookup).

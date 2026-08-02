@@ -1,6 +1,8 @@
 # The Idea System — Develop Milestone 1
 
-Status: **Spec only, not started.** Follows `docs/PLANNING_EXPERIENCE_REDESIGN.md`'s
+Status: **Shipped 2026-08-02 (Phase 82).** See `docs/STATUS.md`'s Phase 82 entry for
+the full build record — what matches this spec exactly, and the handful of small,
+deliberate implementation calls this doc left open. Follows `docs/PLANNING_EXPERIENCE_REDESIGN.md`'s
 first-principles review and the follow-up design conversation logged in
 `docs/STATUS.md`. Supersedes this document's earlier draft (originally named "Seed",
 originally split into four top-level workspaces) — both corrections are logged below

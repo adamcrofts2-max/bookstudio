@@ -21,6 +21,9 @@ import {
 } from '@/components/ui/select'
 import { useProjectStore } from '@/store/projectStore'
 import { CATEGORY_TEMPLATES, seedProjectTemplate } from '@/data/projectTemplates'
+import { addIdeaWithHistory } from '@/store/editorActions'
+import { generateId } from '@/utils'
+import type { Idea } from '@/types/idea'
 import type { ProjectCategory } from '@/types'
 
 const CATEGORIES: { id: ProjectCategory; label: string }[] = [
@@ -42,54 +45,76 @@ interface NewProjectDialogProps {
 export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) {
   const navigate = useNavigate()
   const createProject = useProjectStore((s) => s.createProject)
-  const [name, setName] = useState('')
-  const [category, setCategory] = useState<ProjectCategory>('novel')
-
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
+  const [idea, setIdea] = useState('')
+  // `undefined` — not a pre-selected default — is what makes category
+  // genuinely optional (Develop Milestone 1, `docs/IDEA_SYSTEM_PLAN.md`):
+  // the trim-size default and example-entry seeding below only run if the
+  // author actually picked something, rather than silently applying
+  // whatever category happened to be selected first.
+  const [category, setCategory] = useState<ProjectCategory | undefined>(undefined)
+
+  const reset = () => {
+    setIdea('')
+    setCategory(undefined)
+  }
 
   const handleCreate = () => {
-    const project = createProject(name, category)
-    // Category-driven starting template — trim size default plus a few
-    // clearly-marked example Planning entries, per `docs/ROADMAP.md`'s
-    // "decides which Layer 0 entity subset a new project starts with." See
-    // `data/projectTemplates.ts` for why this stops well short of the full
-    // per-genre relabeling `docs/AI_WORKSPACE_VISION.md` explicitly defers.
-    updateProjectSettings(project.id, { trimSize: CATEGORY_TEMPLATES[category].trimSize })
-    seedProjectTemplate(project.id, category)
+    const project = createProject(idea, category ?? 'other')
+    if (category) {
+      // Category-driven starting template — trim size default plus a few
+      // clearly-marked example Develop entries, per `docs/ROADMAP.md`'s
+      // "decides which Layer 0 entity subset a new project starts with."
+      // See `data/projectTemplates.ts` for why this stops well short of
+      // the full per-genre relabeling `docs/AI_WORKSPACE_VISION.md`
+      // explicitly defers. Skipped entirely when no category was chosen —
+      // `createProject`'s own `DEFAULT_PROJECT_SETTINGS` trim size applies
+      // instead, and Develop starts with zero example entities rather than
+      // presuming a genre the author never picked.
+      updateProjectSettings(project.id, { trimSize: CATEGORY_TEMPLATES[category].trimSize })
+      seedProjectTemplate(project.id, category)
+    }
+    // The words that created this project become its first captured Idea
+    // — capture-first in practice, not just in principle: the very first
+    // thing a new project has in Develop is the thought that started it,
+    // with no extra step required to put it there.
+    const now = new Date().toISOString()
+    const firstIdea: Idea = { id: generateId('idea'), text: idea, createdAt: now, updatedAt: now, status: 'new' }
+    addIdeaWithHistory(project.id, firstIdea, 'Capture idea')
     onOpenChange(false)
-    setName('')
-    setCategory('novel')
+    reset()
     navigate(`/project/${project.id}`)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { onOpenChange(next); if (!next) reset() }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New Project</DialogTitle>
-          <DialogDescription>Give your book a name. You can change everything later.</DialogDescription>
+          <DialogDescription>What's the idea? You can change everything later.</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="new-project-name">Book title</Label>
+            <Label htmlFor="new-project-idea">What's the idea?</Label>
             <Input
-              id="new-project-name"
+              id="new-project-idea"
               autoFocus
-              placeholder="e.g. The Wildflower Field Guide"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. A field guide to garden birds, or just a first line…"
+              value={idea}
+              onChange={(e) => setIdea(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && name.trim()) handleCreate()
+                if (e.key === 'Enter' && idea.trim()) handleCreate()
               }}
             />
+            <p className="text-xs text-text-secondary">This becomes your project's title, and its first Idea in Develop.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label>Category</Label>
+            <Label>Category (optional)</Label>
             <Select value={category} onValueChange={(v) => setCategory(v as ProjectCategory)}>
               <SelectTrigger>
-                <SelectValue />
+                <SelectValue placeholder="Skip for now — decide later" />
               </SelectTrigger>
               <SelectContent>
                 {CATEGORIES.map((c) => (
@@ -100,8 +125,9 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
               </SelectContent>
             </Select>
             <p className="text-xs text-text-secondary">
-              We'll set a matching trim size and add a few example Planning entries you can edit or delete — nothing
-              is exported until you write it yourself.
+              {category
+                ? "We'll set a matching trim size and add a few example Develop entries you can edit or delete — nothing is exported until you write it yourself."
+                : 'Pick this now if you know it, or leave it and set it later from Project Settings.'}
             </p>
           </div>
         </div>
@@ -110,7 +136,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleCreate} disabled={!name.trim()}>
+          <Button variant="primary" onClick={handleCreate} disabled={!idea.trim()}>
             Create Project
           </Button>
         </DialogFooter>

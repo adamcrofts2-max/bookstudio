@@ -7,6 +7,7 @@ import type { CustomTheme } from '@/store/customThemeStore'
 import type { ImageAsset } from '@/types/asset'
 import type { Layer0Bible } from '@/types/layer0'
 import { EMPTY_LAYER0_BIBLE } from '@/store/layer0Store'
+import type { Idea } from '@/types/idea'
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   png: 'image/png',
@@ -56,6 +57,7 @@ export async function parseProjectFile(bytes: Uint8Array): Promise<ProjectFileBu
   const customTheme = json<CustomTheme | null>('customTheme.json')
   const assetMetadata = json<ImageAsset[]>('assets/manifest.json')
   const layer0Bible = optionalJson<Layer0Bible>('layer0.json', EMPTY_LAYER0_BIBLE)
+  const ideas = optionalJson<Idea[]>('ideas.json', [])
 
   const assets: ProjectFileBundle['assets'] = []
   for (const asset of assetMetadata) {
@@ -66,5 +68,5 @@ export async function parseProjectFile(bytes: Uint8Array): Promise<ProjectFileBu
     assets.push({ asset, blob: new Blob([entry.data as BlobPart], { type: mimeType }) })
   }
 
-  return { manifest, manuscript, structuralPages, notes, customTheme, assets, layer0Bible }
+  return { manifest, manuscript, structuralPages, notes, customTheme, assets, layer0Bible, ideas }
 }

@@ -9,6 +9,33 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 82 (2026-08-02) — Idea System / Develop Milestone 1
+
+- **Not live-verified in Chrome this session** — the largest gap in this batch. Worth
+  a real click-through before trusting any of the above: capture from Write, the
+  status filter row, the related-Ideas picker's bidirectional sync, promotion +
+  undo, and reload-persistence (zustand `persist`) all deserve eyes before Milestone 2
+  planning starts.
+- **The related-Ideas picker doesn't show a count or search once a project has many
+  Ideas** — a plain `Select` listing every candidate by truncated text is fine at the
+  scale a first Milestone 1 test will actually see, but will get unwieldy well before
+  "dozens of Ideas" (the same scale the spec's own status filter was sized for).
+  Worth a searchable combobox if usage shows this matters.
+- **No bulk actions in the Ideas inbox** (archive several at once, delete several at
+  once) — every action is per-row. Reasonable for a first slice; revisit once real
+  usage shows whether an inbox actually accumulates enough Ideas to need it.
+- **"New idea" button in Develop creates an empty Idea and opens it immediately**,
+  relying on the detail dialog's text field rather than a lighter inline-add like
+  `EntityListPanel`'s own dialog. Consistent with "capture-first, structure later,"
+  but worth a quick UX check that opening straight into an empty textarea reads as
+  inviting rather than confusing on first encounter.
+- **Idea detail's "Turn into…" shows all eight kinds as equal-weight buttons.** For a
+  fiction project, Style Rule/Glossary Term/Reference are rarely what an Idea becomes;
+  for non-fiction, Character/Timeline Event rarely are. No genre-awareness here yet —
+  `data/projectTemplates.ts`'s `CATEGORY_TEMPLATES.seedKinds` already encodes exactly
+  this kind of per-category relevance and could reorder/emphasize this list cheaply if
+  it turns out to matter once real projects exist.
+
 ## After Phase 81 (2026-08-02) — AI-drafted-prose insertion
 
 - **No per-block accept/reject within a batch.** Insert is all-or-nothing for the

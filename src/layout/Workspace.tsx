@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ImportManuscriptButton } from '@/editor/ImportManuscriptButton'
 import { BookRenderer } from '@/renderer/BookRenderer'
 import { VirtualEditorWorkspace } from '@/layout/virtualEditor/VirtualEditorWorkspace'
+import { IdeaCaptureAffordance } from '@/layout/IdeaCaptureAffordance'
 import { useContentStore } from '@/store/contentStore'
 import { useUiStore } from '@/store/uiStore'
 import type { Project } from '@/types'
@@ -105,9 +106,15 @@ export function Workspace({ project }: WorkspaceProps) {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <ViewControls />
       <BookRenderer project={project} manuscript={manuscript} />
+      {/* The Idea System's entire footprint in Write — see that component's
+         own doc comment. Present whenever a manuscript page is open,
+         exactly per docs/IDEA_SYSTEM_PLAN.md; absent from the Editorial
+         Dashboard (`workspaceMode === 'virtualEditor'`, above) and the
+         empty-project state (above), neither of which is "writing." */}
+      <IdeaCaptureAffordance projectId={project.id} />
     </div>
   )
 }

@@ -7,6 +7,7 @@ import type { Note } from '@/store/notesStore'
 import type { CustomTheme } from '@/store/customThemeStore'
 import type { ImageAsset } from '@/types/asset'
 import type { Layer0Bible } from '@/types/layer0'
+import type { Idea } from '@/types/idea'
 
 export interface ProjectFileSource {
   project: Project
@@ -23,6 +24,9 @@ export interface ProjectFileSource {
    * `ProjectFileBundle.layer0Bible` doc comment for why this doesn't need a
    * format-version bump. */
   layer0Bible: Layer0Bible
+  /** The Idea System's captured thoughts for this project — see
+   * `types/projectFile.ts`'s `ProjectFileBundle.ideas` doc comment. */
+  ideas: Idea[]
 }
 
 function extensionForMimeType(mimeType: string): string {
@@ -47,7 +51,7 @@ function extensionForMimeType(mimeType: string): string {
  * file missing one photo is far better than a user who can't save at all.
  */
 export async function buildProjectFile(source: ProjectFileSource): Promise<Blob> {
-  const { project, manuscript, structuralPages, notes, customTheme, assets, getAssetBlob, layer0Bible } = source
+  const { project, manuscript, structuralPages, notes, customTheme, assets, getAssetBlob, layer0Bible, ideas } = source
   const encoder = new TextEncoder()
   const entries: ZipEntry[] = []
   const json = (value: unknown) => encoder.encode(JSON.stringify(value, null, 2))
@@ -65,6 +69,7 @@ export async function buildProjectFile(source: ProjectFileSource): Promise<Blob>
   entries.push({ name: 'customTheme.json', data: json(customTheme) })
   entries.push({ name: 'assets/manifest.json', data: json(assets) })
   entries.push({ name: 'layer0.json', data: json(layer0Bible) })
+  entries.push({ name: 'ideas.json', data: json(ideas) })
 
   for (const asset of assets) {
     const blob = await getAssetBlob(asset.id)

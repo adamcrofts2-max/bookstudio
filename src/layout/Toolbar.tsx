@@ -252,10 +252,10 @@ export function Toolbar({ project }: ToolbarProps) {
           <TooltipTrigger asChild>
             <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setAppMode('planning')}>
               <NotebookPen className="size-3.5" />
-              Planning
+              Develop
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Character/location/timeline bible — Layer 0's own screen</TooltipContent>
+          <TooltipContent>Ideas, characters, places, timeline — everything that gives this book context</TooltipContent>
         </Tooltip>
 
         <IconButton label="Version history" onClick={() => setVersionHistoryOpen(true)}>
