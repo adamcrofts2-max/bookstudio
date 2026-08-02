@@ -37,14 +37,16 @@ interface SelectionState {
   /**
    * Where the caret should land once the requested block actually enters
    * edit mode — `'end'` (matching every pre-existing caller: the Virtual
-   * Editor's "Edit" action, a fresh block from the "+" inserter, etc.) or
+   * Editor's "Edit" action, a fresh block from the "+" inserter, etc.),
    * `'start'`, used by `editorActions.splitParagraphWithHistory`'s caller
    * (`Page.tsx`, wiring `onSplit`) so pressing Enter mid-paragraph lands the
-   * cursor at the very beginning of the new second half — the same place
-   * every real word processor puts it, not wherever "end of content"
-   * happens to be. Only meaningful while `editRequestId` is non-null.
+   * cursor at the very beginning of the new second half, or a text-
+   * character offset (Phase 112), used by `mergeParagraphWithPreviousHistory`
+   * so pressing Backspace at the start of a paragraph lands the cursor
+   * exactly at the old seam with the previous paragraph, not at either end.
+   * Only meaningful while `editRequestId` is non-null.
    */
-  editRequestCaretPosition: 'start' | 'end'
+  editRequestCaretPosition: 'start' | 'end' | number
   /**
    * Non-null means "scroll the manuscript view to this chapter's opening
    * page, this exact page, or this exact block" (Sidebar's chapter nav /
@@ -66,9 +68,11 @@ interface SelectionState {
   /** Same as `select`, but also flags the selection for immediate editing.
    * `caretPosition` defaults to `'end'` — pass `'start'` for a block whose
    * content is brand new from the caret's perspective (e.g. the second half
-   * of a just-split paragraph), so the cursor doesn't land past content the
-   * user hasn't actually looked at yet. */
-  selectForEdit: (chapterId: string, blockId: string, caretPosition?: 'start' | 'end') => void
+   * of a just-split paragraph), or a text-character offset for a block
+   * whose content was just merged from two blocks into one (Phase 112), so
+   * the cursor doesn't land past content the user hasn't actually looked at
+   * yet, or at the wrong end of a merge. */
+  selectForEdit: (chapterId: string, blockId: string, caretPosition?: 'start' | 'end' | number) => void
   /** Selects a structural page (clearing any block/chapter selection) —
    * used by the Sidebar's Structure tab rows and by clicking a structural
    * page directly in the on-screen preview. */
@@ -109,7 +113,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       editRequestId: null,
       editRequestCaretPosition: 'end',
     }),
-  selectForEdit: (chapterId, blockId, caretPosition = 'end') =>
+  selectForEdit: (chapterId, blockId, caretPosition: 'start' | 'end' | number = 'end') =>
     set({
       selectedChapterId: chapterId,
       selectedBlockId: blockId,

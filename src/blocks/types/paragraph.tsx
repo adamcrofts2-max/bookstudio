@@ -14,7 +14,20 @@ import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
 
 function ParagraphRender(props: BlockRenderProps) {
-  const { block, theme, dropCap, selected, onSelect, editable, onCommit, onSplit, autoEdit, autoEditCaretPosition, onAutoEditHandled } = props
+  const {
+    block,
+    theme,
+    dropCap,
+    selected,
+    onSelect,
+    editable,
+    onCommit,
+    onSplit,
+    onMergeWithPrevious,
+    autoEdit,
+    autoEditCaretPosition,
+    onAutoEditHandled,
+  } = props
 
   const primary = useEditableField({
     mode: 'html',
@@ -23,6 +36,7 @@ function ParagraphRender(props: BlockRenderProps) {
       if (block.type === 'paragraph') onCommit?.({ html: value })
     },
     onSplit: onSplit && block.type === 'paragraph' ? onSplit : undefined,
+    onMergeWithPrevious: onMergeWithPrevious && block.type === 'paragraph' ? onMergeWithPrevious : undefined,
   })
 
   // `startEditing` is re-issued (idempotently) every time `autoEdit` flips

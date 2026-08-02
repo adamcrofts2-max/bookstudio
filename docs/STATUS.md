@@ -7320,3 +7320,64 @@ reproduce identically against files untouched by this phase). Web Audio
 output and real scroll-centring geometry can't be meaningfully verified
 headlessly either way; both are owed a live-browser check together with the
 Enter-split feature above.
+
+## Phase 112 (2026-08-03) — Backspace merges a paragraph into the previous one
+
+Direct continuation of Phase 111's "writing should feel effortless" theme.
+Enter could split a paragraph in two, but there was no way back except
+`Ctrl+Z` — every real word processor also lets Backspace at the very start
+of a line join it back into the line above. Built as the mirror image of
+`splitParagraphWithHistory`/`splitElementAtCaret`, reusing the same
+architecture rather than inventing a new one.
+
+**New**: `isCaretAtElementStart(el)` (`src/blocks/splitAtCaret.ts`) —
+collapsed-selection check via a probe `Range` from the element's start to
+the caret; `probe.toString().length === 0` means nothing precedes the caret,
+regardless of intervening inline tags. `useEditableField` gained an optional
+`onMergeWithPrevious` callback (`src/blocks/shared.tsx`): Backspace at
+element-start calls it instead of the browser's default (no-op, since each
+block is its own isolated `contentEditable`) behaviour, with the same
+`skipCommitRef` race-avoidance `onSplit` already uses.
+
+**Caret placement across a merge is harder than the split case**: the split
+puts the caret at either the very start or very end of a field, both of
+which `placeCaretAtStart`/`placeCaretAtEnd` already handled. A merge needs
+the caret at the exact *seam* — an arbitrary point mid-content. New
+`placeCaretAtTextOffset(el, offset)` walks `el`'s text nodes in document
+order via `TreeWalker` and lands the caret at the matching node+offset; the
+"offset" itself is computed with the existing `stripHtml` (`utils/format.ts`,
+already used for word count/search) rather than raw HTML length, since HTML
+tags don't correspond to caret positions. `useEditableField`'s
+`caretPositionRef`/`startEditing` widened from `'start' | 'end'` to
+`'start' | 'end' | number` to carry this — cascaded through
+`BlockContentProps.autoEditCaretPosition` and `selectionStore
+.editRequestCaretPosition`/`selectForEdit`'s same union, both now accepting
+a number alongside the two string literals they already had.
+
+**Store**: `editorActions.mergeParagraphWithPreviousHistory(projectId,
+chapterId, blockId)` — concatenates `previous.html + current.html` into the
+previous block, removes the current block, one `replaceChapterBlocks` call
++ one `historyStore.record()` (one user action, one undo step, same
+principle as the split). Returns the merged block's id and the text-offset
+seam so the caller can select it for editing at exactly the right spot.
+`Page.tsx` only ever wires `onMergeWithPrevious` when `renderBlock` already
+knows the immediately preceding sibling is also a `paragraph` (a new
+`canMergeWithPrevious` computed alongside the existing `canMoveUp`/
+`canMoveDown`) — so Backspace at the start of a chapter's very first
+paragraph, or right after a heading, correctly does nothing rather than
+attempting an ill-defined merge.
+
+This feature automatically inherits Phase 111's follow-up robustness fix:
+the merged block's auto-focus goes through the same `onFocus`-triggered
+`onAutoEditHandled` consumption (not the mount effect), so it self-heals
+across any pagination-driven remounts the same way the split's new block
+does — no separate race to fix here.
+
+**Verified**: `npx tsc -b --force` — zero errors, full project (this
+change touched `shared.tsx`, `splitAtCaret.ts`, `BlockContent.tsx`,
+`paragraph.tsx`, `selectionStore.ts`, `editorActions.ts`, and `Page.tsx` —
+every call site of the widened caret-position type still compiles). Not
+yet live-verified in Chrome — same standing sandbox limitation as Phase
+111; owed a real click-through (type two paragraphs, press Backspace at the
+start of the second, confirm one merged paragraph with the caret at the
+seam and one undo step restores both).

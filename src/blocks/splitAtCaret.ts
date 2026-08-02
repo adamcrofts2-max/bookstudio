@@ -28,6 +28,22 @@ export interface CaretSplit {
   after: string
 }
 
+/** True when the current selection is collapsed and sits at the very start
+ * of `el`'s content (no characters before the caret) — used by
+ * `useEditableField`'s Backspace handling (Phase 112,
+ * `mergeParagraphWithPreviousHistory`) to tell "merge with the previous
+ * block" apart from an ordinary character-deleting Backspace. */
+export function isCaretAtElementStart(el: HTMLElement): boolean {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0 || !selection.isCollapsed) return false
+  const range = selection.getRangeAt(0)
+  if (!el.contains(range.startContainer)) return false
+  const probe = document.createRange()
+  probe.selectNodeContents(el)
+  probe.setEnd(range.startContainer, range.startOffset)
+  return probe.toString().length === 0
+}
+
 export function splitElementAtCaret(el: HTMLElement): CaretSplit | null {
   const selection = window.getSelection()
   if (!selection || selection.rangeCount === 0) return null

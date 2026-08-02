@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 
 import { sanitiseInline } from '@/parser/html'
-import { splitElementAtCaret } from '@/blocks/splitAtCaret'
+import { splitElementAtCaret, isCaretAtElementStart } from '@/blocks/splitAtCaret'
 import { cn } from '@/lib/utils'
 
 function placeCaretAtEnd(el: HTMLElement) {
@@ -25,6 +25,37 @@ function placeCaretAtStart(el: HTMLElement) {
   selection?.addRange(range)
 }
 
+/** Places the caret at a specific *text* offset (not raw HTML length)
+ * within `el` — used when merging a block into its previous sibling
+ * (Phase 112, `mergeParagraphWithPreviousHistory`) so the caret lands
+ * exactly at the old seam between the two paragraphs' text, not at either
+ * end. Walks `el`'s text nodes in document order, which is how a rendered
+ * offset is actually counted regardless of intervening inline tags
+ * (`<strong>`/`<em>`/links). Falls back to the very end if `offset`
+ * exceeds the element's real text length (shouldn't happen — the caller
+ * computes it from the same content — but a silent no-op caret would be a
+ * worse failure mode than "lands at the end"). */
+function placeCaretAtTextOffset(el: HTMLElement, offset: number) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  let remaining = offset
+  let node = walker.nextNode() as Text | null
+  while (node) {
+    const length = node.data.length
+    if (remaining <= length) {
+      const range = document.createRange()
+      range.setStart(node, remaining)
+      range.collapse(true)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+      return
+    }
+    remaining -= length
+    node = walker.nextNode() as Text | null
+  }
+  placeCaretAtEnd(el)
+}
+
 /** Enter commits (blurs to trigger the commit handler), Escape cancels
  * without committing. Shared by every inline-editable field across the
  * per-block-type render modules in `src/blocks/types/`.
@@ -38,32 +69,43 @@ function placeCaretAtStart(el: HTMLElement) {
  * behaviour every word processor has. Falls through to the ordinary
  * commit-and-blur if the split can't be computed (e.g. no active selection)
  * or if the caller doesn't pass `onSplit` at all — every other block type
- * (headings, quotes, list items, …) is completely unaffected. */
+ * (headings, quotes, list items, …) is completely unaffected.
+ *
+ * `onMergeWithPrevious` (Phase 112) is `onSplit`'s companion: pressing
+ * Backspace with the caret at the very start of the field (`isCaretAtElement
+ * Start`) calls it instead of deleting nothing, so the block can be merged
+ * into its previous sibling (`editorActions.mergeParagraphWithPreviousHistory`)
+ * — the same "Backspace at the start of a line joins it with the line above"
+ * behaviour every word processor has. Same opt-in shape as `onSplit`: absent
+ * for every block type except `paragraph`. */
 export function useEditableField(options: {
   mode: 'text' | 'html'
   initialValue: string
   onCommit: (value: string) => void
   onSplit?: (before: string, after: string) => void
+  onMergeWithPrevious?: () => void
 }) {
-  const { mode, initialValue, onCommit, onSplit } = options
+  const { mode, initialValue, onCommit, onSplit, onMergeWithPrevious } = options
   const [isEditing, setIsEditing] = useState(false)
   const ref = useRef<HTMLElement | null>(null)
   const skipCommitRef = useRef(false)
-  const caretPositionRef = useRef<'start' | 'end'>('end')
+  const caretPositionRef = useRef<'start' | 'end' | number>('end')
 
   useLayoutEffect(() => {
     if (!isEditing || !ref.current) return
     if (mode === 'html') ref.current.innerHTML = initialValue
     else ref.current.textContent = initialValue
     ref.current.focus()
-    if (caretPositionRef.current === 'start') placeCaretAtStart(ref.current)
+    const caretPosition = caretPositionRef.current
+    if (caretPosition === 'start') placeCaretAtStart(ref.current)
+    else if (typeof caretPosition === 'number') placeCaretAtTextOffset(ref.current, caretPosition)
     else placeCaretAtEnd(ref.current)
     // Only re-run when entering/leaving edit mode — re-syncing on every
     // keystroke would fight the user's in-progress, uncontrolled DOM edits.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditing])
 
-  const startEditing = (caretPosition: 'start' | 'end' = 'end') => {
+  const startEditing = (caretPosition: 'start' | 'end' | number = 'end') => {
     caretPositionRef.current = caretPosition
     setIsEditing(true)
   }
@@ -97,6 +139,21 @@ export function useEditableField(options: {
           return
         }
       }
+      ;(e.currentTarget as HTMLElement).blur()
+    } else if (
+      e.key === 'Backspace' &&
+      onMergeWithPrevious &&
+      ref.current &&
+      mode === 'html' &&
+      isCaretAtElementStart(ref.current)
+    ) {
+      // Same "the real commit happens inside the callback" reasoning as
+      // `onSplit` above — `onMergeWithPrevious` persists the merge as one
+      // undo step, so the ordinary blur-triggered `onCommit` must not also
+      // fire (it would race with a block that's about to be deleted).
+      e.preventDefault()
+      skipCommitRef.current = true
+      onMergeWithPrevious()
       ;(e.currentTarget as HTMLElement).blur()
     } else if (e.key === 'Escape') {
       e.preventDefault()

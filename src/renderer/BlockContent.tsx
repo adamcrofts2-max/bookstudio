@@ -38,11 +38,13 @@ export interface BlockContentProps {
   autoEdit?: boolean
   /** Where the caret should land when `autoEdit` fires — `'end'` (the
    * long-standing default: the Virtual Editor's "Edit" action, a fresh
-   * block from the "+" inserter) or `'start'` (Phase 111: the second half
-   * of a just-split paragraph, so the cursor lands at the very beginning of
-   * its new content rather than past it). Only meaningful alongside
-   * `autoEdit`. */
-  autoEditCaretPosition?: 'start' | 'end'
+   * block from the "+" inserter), `'start'` (Phase 111: the second half of
+   * a just-split paragraph, so the cursor lands at the very beginning of
+   * its new content rather than past it), or a text-character offset
+   * (Phase 112: `mergeParagraphWithPreviousHistory`'s merged block, so the
+   * cursor lands exactly at the old seam between the two paragraphs' text).
+   * Only meaningful alongside `autoEdit`. */
+  autoEditCaretPosition?: 'start' | 'end' | number
   /** Called once autoEdit has been acted on, so the requester (selectionStore)
    * can clear the pending request and avoid re-triggering. */
   onAutoEditHandled?: () => void
@@ -59,6 +61,18 @@ export interface BlockContentProps {
    * for e.g. a heading or a list item the same way it does for prose.
    */
   onSplit?: (before: string, after: string) => void
+  /**
+   * Backspace-at-start-merges-with-previous-block (Phase 112, 2026-08-03,
+   * the natural companion to `onSplit` above). Called with no arguments —
+   * this block's own content isn't needed by the caller, since
+   * `editorActions.mergeParagraphWithPreviousHistory` re-reads both blocks'
+   * current content straight from `contentStore` rather than trusting
+   * whatever this component last rendered. `Page.tsx` only ever wires this
+   * when the immediately preceding sibling block is also a `paragraph`
+   * (mirroring `onSplit`'s "only `paragraph` gets this" scope) — merging
+   * text into a heading or list item isn't well-defined the same way.
+   */
+  onMergeWithPrevious?: () => void
 }
 
 /**

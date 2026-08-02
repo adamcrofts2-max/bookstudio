@@ -32,6 +32,7 @@ import {
   deletePageBlocksWithHistory,
   deleteChapterWithHistory,
   splitParagraphWithHistory,
+  mergeParagraphWithPreviousHistory,
 } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -190,6 +191,13 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const canMoveUp = indexInChapter > 0
     const canMoveDown = !!chapter && indexInChapter >= 0 && indexInChapter < chapter.blocks.length - 1
     const isSelected = !decorative && selectedBlockId === block.id
+    // Backspace-at-start-merges-with-previous (Phase 112) only makes sense
+    // paragraph-into-paragraph — mirrors `onSplit`'s "only `paragraph`" scope
+    // below. Computed here (not inside `mergeParagraphWithPreviousHistory`)
+    // so `onMergeWithPrevious` is only ever passed when it would actually do
+    // something, the same reasoning `canMoveUp`/`canMoveDown` already use.
+    const previousBlockInChapter = indexInChapter > 0 && chapter ? chapter.blocks[indexInChapter - 1] : undefined
+    const canMergeWithPrevious = block.type === 'paragraph' && previousBlockInChapter?.type === 'paragraph'
 
     return (
       <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group/block relative">
@@ -208,6 +216,15 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
                   if (!chapterId) return
                   const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
                   if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+                }
+          }
+          onMergeWithPrevious={
+            decorative || !canMergeWithPrevious
+              ? undefined
+              : () => {
+                  if (!chapterId) return
+                  const result = mergeParagraphWithPreviousHistory(projectId, chapterId, block.id)
+                  if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset)
                 }
           }
           autoEdit={isSelected && editRequestId !== null}

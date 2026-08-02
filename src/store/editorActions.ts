@@ -14,6 +14,7 @@ import type { Idea } from '@/types/idea'
 import { patchTextField } from '@/virtualEditor/textPatch'
 import type { SearchMatch } from '@/search/manuscriptSearch'
 import { replaceAllOccurrences, replaceOccurrence } from '@/search/manuscriptSearch'
+import { stripHtml } from '@/utils/format'
 
 /**
  * History-aware wrapper functions around the real `contentStore`/
@@ -268,6 +269,64 @@ export function splitParagraphWithHistory(
   )
 
   return newBlock.id
+}
+
+/**
+ * Merges a paragraph block into its immediately preceding sibling — the
+ * store-level half of "pressing Backspace at the start of a paragraph joins
+ * it with the one above" (Phase 112, 2026-08-03, the natural companion to
+ * `splitParagraphWithHistory` above: without this, Enter could create a new
+ * paragraph but there was no way to undo that split with the same key a real
+ * word processor uses, only `Ctrl+Z`).
+ *
+ * The previous block's content becomes `previous.html + current.html`
+ * (straight concatenation — no inserted space, matching how the split
+ * itself never added one); the current block is removed entirely. Both
+ * changes land in a single `replaceChapterBlocks` call, one undo step, same
+ * "one user action, one undo step" principle as the split. Returns the
+ * merged block's id and the *text*-character offset marking the old seam
+ * (via `stripHtml`, since raw HTML length would count markup characters
+ * that never render) so the caller (`Page.tsx`, via `onMergeWithPrevious`)
+ * can select it for immediate editing with the caret exactly where the two
+ * paragraphs used to meet — not at either end, which is where a plain
+ * `'start'`/`'end'` request would otherwise leave it.
+ *
+ * Returns `undefined` (a no-op) if the block is the chapter's first block
+ * (nothing to merge into), or if either block isn't actually a `paragraph`
+ * — defensive, matching `splitParagraphWithHistory`; `Page.tsx` additionally
+ * only ever wires `onMergeWithPrevious` when it already knows the previous
+ * sibling is a paragraph, so this second check should never actually fire
+ * from the real UI, only protect against a stale/racing call.
+ */
+export function mergeParagraphWithPreviousHistory(
+  projectId: string,
+  chapterId: string,
+  blockId: string,
+): { mergedBlockId: string; caretOffset: number } | undefined {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return undefined
+  const index = chapter.blocks.findIndex((b) => b.id === blockId)
+  if (index <= 0) return undefined
+  const currentBlock = chapter.blocks[index]
+  const previousBlock = chapter.blocks[index - 1]
+  if (currentBlock.type !== 'paragraph' || previousBlock.type !== 'paragraph') return undefined
+
+  const caretOffset = stripHtml(previousBlock.html).length
+  const mergedBlock: ContentBlock = { ...previousBlock, html: previousBlock.html + currentBlock.html }
+  const oldBlocks = chapter.blocks
+  const newBlocks = [...oldBlocks.slice(0, index - 1), mergedBlock, ...oldBlocks.slice(index + 1)]
+
+  useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Merge paragraphs',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, oldBlocks),
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks),
+  )
+
+  return { mergedBlockId: mergedBlock.id, caretOffset }
 }
 
 /**

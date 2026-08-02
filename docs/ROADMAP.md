@@ -284,11 +284,16 @@ daily use of everything built so far.)*
       `onSplit` — pressing Enter mid-item in a list still just commits/exits
       rather than creating a new `<li>`, which is the same "feels broken"
       gap the user flagged for paragraphs, just not yet asked about).
-- [ ] Backspace-at-start-of-block-merges-with-previous-block (the natural
-      companion to Enter-splits-paragraph — word processors merge the
-      current block into the previous one when Backspace is pressed at
-      position 0; not implemented, no user request yet for this specific
-      half of the pair).
+- [x] Backspace-at-start-of-paragraph-merges-with-previous-paragraph (Phase
+      112, 2026-08-03) — the natural companion to Enter-splits-paragraph:
+      pressing Backspace with the caret at the very start of a paragraph
+      (and the immediately preceding sibling block is also a paragraph)
+      merges its content into the previous paragraph, deletes this block,
+      and places the caret exactly at the old seam — one undo step. Only
+      paragraph-into-paragraph, mirroring `onSplit`'s scope (merging text
+      into a heading/list item isn't well-defined the same way). No new
+      dependency. Verified via `tsc`; not yet live-verified in Chrome (see
+      STATUS.md).
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 
@@ -719,12 +724,14 @@ daily use of everything built so far.)*
       clicking the word count itself (no new toolbar button, given the crowding
       already flagged in `docs/SUGGESTIONS.md`).
 - [ ] Thesaurus / synonym lookup — flagged 2026-08-01 alongside search and
-      spellcheck. Lowest priority of the three: needs either a bundled
-      synonym dataset (a compact WordNet-derived package, most
-      realistically) or an external API call, and this client-only,
-      no-backend architecture makes a bundled dataset the more consistent
-      choice with everything else in this phase (no accounts/billing
-      needed, same reasoning `ClipboardProvider` below uses). Not started.
+      spellcheck. Needs a bundled synonym dataset (client-only, no-backend
+      architecture, same reasoning `ClipboardProvider` below uses). Package
+      identified 2026-08-03: `moby` (npm), from the same `wooorm`/`words`
+      family as the already-installed `nspell`/`dictionary-en` — see
+      `docs/TERMINAL_SETUP.md` for the install command. Not started —
+      wiring it up (an "Ideas"-style lookup panel or a right-click "Find a
+      synonym" on selected text, mirroring `spellcheckDictionary.ts`'s
+      async-load pattern) is next once it's installed.
 - [x] Distraction-free writing mode, plus a reading mode (user-requested
       alongside it, 2026-08-01) — shipped 2026-08-01 (Phase 73). One shared
       `uiStore.focusMode: 'none' | 'write' | 'read'` rather than two independent
