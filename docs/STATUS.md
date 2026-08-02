@@ -6602,8 +6602,78 @@ this is a case where the conversion math is correct by construction
 is the standard one) but a real print-shop proof is the only way to fully
 trust it, same honest caveat as everywhere else in this doc.
 
+## Phase 102 — Book Graph: zoom controls, node size, click-to-connect, selection panel (2026-08-02)
+
+User request: "make book graph better, should be able to zoom in zoom out.
+make each node larger/smaller. connect easily by clicking one node to
+another. think of anything else that would make it better." — alongside a
+pasted professional-UX-review mockup and a direct set of design questions
+(chapter-centric by default? selection should show connections + a details
+panel? what's unnecessary or missing?). Answered those questions in
+`BookGraphView.tsx`'s own doc comment (the reasoning needs to survive
+outside chat) and implemented all three concrete asks plus the interaction-
+model change the review pointed at.
+
+**Zoom**: wheel-zoom already existed (Phase 95) but had zero on-screen
+affordance — nothing hinted the graph could be zoomed at all. Added
+Zoom-out/percentage/Zoom-in buttons next to the existing Reset-layout/Reset-
+view buttons; the percentage itself is clickable (resets to 100% without
+losing pan position, distinct from "Reset view" which resets both).
+
+**Node size**: `graphLayoutStore.ts` gained `nodeScaleByProject` (a
+per-project multiplier, 70–160%, persisted like manual node positions —
+same "display preference, not book content, no undo trail" reasoning).
+A compact −/% /+ control sits in the filter-chip row. Applies to every
+non-book node's radius and icon size; the Book hub stays fixed-size (it's
+the one deliberately-different anchor).
+
+**Click-to-connect**: a real mode switch (`Link2` toggle, not a modifier
+key) — while active, clicking builds a connection instead of
+selecting/navigating: first click picks a source (dashed pulsing accent
+ring), second click on a different node stages the pair, and the right
+panel switches to a small "New connection" form (reusing the same
+`addLayer0EntityWithHistory(projectId, 'relationships', ...)` call
+`Layer0RelationshipsSection.tsx` already used — one write path, two entry
+points). Background click or Escape cancels a half-made connection without
+leaving Connect mode; "Done connecting" exits it.
+
+**Selection-driven focus + right panel (the interaction-model change)**:
+previously a single click on any node immediately navigated away (to the
+editor / Develop / an Idea dialog) — fast once you know the graph, but
+every exploratory click on an unfamiliar graph was a full context switch.
+Click now *selects*: dims every node/edge not directly connected to it,
+highlights the ones that are, and shows the node's label/kind/word-count
+(chapters)/connection list in a new right-hand panel (`w-72`, replacing the
+old canvas-only layout with a canvas+panel row, closer to the Obsidian/
+Figma reference the user pasted). Actually navigating away is now the
+panel's explicit "Open" button — or a double-click, kept specifically as
+the accelerator for the old single-click-opens muscle memory, so nothing
+that used to be one click became strictly slower for a power user, it just
+stopped being the *only* option. Clicking the Book node, or clicking
+background, clears the selection back to a whole-book stats view (chapter
+count, total word count via `extractTextSpans`, idea count, relationship
+count, per-kind entity counts) — directly answering the user's "show
+overall book statistics when nothing selected."
+
+**Deliberately not built**: a minimap (present in the pasted mockup). The
+SVG's `viewBox` already auto-fits every visible node into frame any time
+"Reset view" is clicked (it's computed from the live layout bounds, not a
+fixed box), which covers a minimap's actual job at the node counts this app
+targets — added as an unchecked `docs/ROADMAP.md` item instead of building
+it speculatively, to revisit if a real project ever makes "reset view" feel
+insufficient. Also not built: any inline editing inside the graph itself —
+the panel shows and links out, it never grows into a second copy of
+`EntityListPanel`'s form.
+
+Verification: `npx tsc -b --force` clean. Not yet Chrome-verified — pointer-
+based drag/click/connect-mode interplay (three different meanings for
+"click a node" depending on mode) is exactly the kind of thing that reads
+correctly in code and still needs a real mouse to confirm feels right,
+especially the click-vs-drag threshold now also gating background-click
+deselect.
+
 ## Recommended next task
-Push everything queued from Phase 85 through Phase 101 (20+ commits) — this
+Push everything queued from Phase 85 through Phase 102 (20+ commits) — this
 has been a standing, repeated ask across many sessions now; it requires the
 user's own terminal, not this sandbox. Once pushed, a real Chrome pass
 (resized to a phone viewport, ideally a real device) is overdue and should

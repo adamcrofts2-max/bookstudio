@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Maximize2, RotateCcw, Waypoints } from 'lucide-react'
+import { Link2, Maximize2, Minus, Plus, RotateCcw, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useContentStore } from '@/store/contentStore'
@@ -8,11 +8,17 @@ import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
 import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useGraphLayoutStore } from '@/store/graphLayoutStore'
+import { addLayer0EntityWithHistory } from '@/store/editorActions'
 import { EmptyState } from '@/components/common/EmptyState'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_TO_COLLECTION, getLayer0KindLabel, type Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
+import { extractTextSpans } from '@/virtualEditor/textExtract'
+import { wordCount } from '@/utils/format'
+import { generateId } from '@/utils'
 import type { BookForm } from '@/types'
 
 interface BookGraphViewProps {
@@ -73,12 +79,30 @@ const GRAPH_KIND_ORDER: GraphNodeKind[] = ['chapter', ...LAYER0_ENTITY_KINDS, 'i
  * up is a click, not a drag — the standard "click vs. drag" threshold every
  * draggable-canvas tool uses (Miro, Figma, etc.), so a quick tap to open a
  * node still works reliably even though the same pointer-down also arms a
- * potential drag. */
+ * potential drag. Also used to tell a background "click" (deselect / cancel
+ * a pending connection) from a background "drag" (pan) — see
+ * `onBackgroundPointerUp` below. */
 const DRAG_THRESHOLD_PX = 4
 
 const BOOK_RADIUS = 40
 const CHAPTER_RADIUS = 28
 const NODE_RADIUS = 22
+
+/** Node-size multiplier range (Phase 102, user 2026-08-02: "make each node
+ * larger/smaller") — wide enough to matter (70% reads noticeably denser,
+ * 160% noticeably roomier) without ever shrinking a node's icon past
+ * legibility or ballooning it into overlap-guaranteed territory. */
+const NODE_SCALE_MIN = 0.7
+const NODE_SCALE_MAX = 1.6
+const NODE_SCALE_STEP = 0.15
+
+const ZOOM_MIN = 0.35
+const ZOOM_MAX = 2.5
+const ZOOM_STEP = 0.15
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
+}
 
 /**
  * A hand-rolled force-directed layout generalised from `IdeaMindMapView.tsx`'s
@@ -225,11 +249,58 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  * Book Graph (Idea System Milestone 3, `docs/ROADMAP.md`) — the mind-map
  * concept from `IdeaMindMapView.tsx` extended past Ideas to the whole book:
  * chapters, every Layer 0 entity kind, and Ideas, all in one connected,
- * icon-coded graph, filterable by kind, and — as of Phase 98 — a real mind
- * map you can rearrange by hand, not just a fixed auto-layout. Built at the
- * user's explicit request ("map view should be better... they should be
- * dragable on the page to make a mind map") rather than left gated on
- * "watch a first-time author's reaction to Milestone 2 first."
+ * icon-coded graph, filterable by kind, a real mind map you can rearrange by
+ * hand (Phase 98), and — as of Phase 102 (this pass, user 2026-08-02: "make
+ * book graph better, should be able to zoom in zoom out, make each node
+ * larger/smaller, connect easily by clicking one node to another") —
+ * zoomable with visible controls, resizable nodes, and click-to-connect
+ * relationship creation, all backed by one right-hand panel instead of a
+ * scatter of overlay widgets.
+ *
+ * **Interaction model, decided this pass** (the user also pasted a
+ * professional-UX-review mockup and asked several direct design questions —
+ * answered here, in the code, rather than only in chat, so the reasoning
+ * survives):
+ *
+ * - *Chapter-centric by default* — yes, already true structurally (every
+ *   chapter spokes off the central Book node, Phase 99) and reinforced here:
+ *   chapters keep the largest non-book radius and the accent fill, so the
+ *   manuscript's spine reads as the graph's backbone at a glance even before
+ *   anything is clicked.
+ * - *Selecting a node shows its direct connections; the panel shows details;
+ *   nothing selected shows book-wide stats* — implemented exactly as asked.
+ *   `selectedNodeId` drives a dim-everything-else focus effect (see the node/
+ *   edge render loops below), and the right panel is single-purpose per
+ *   state: a node selected → that node's details + connection list; nothing
+ *   selected (or the Book node itself clicked) → whole-book stats. One panel,
+ *   one job at a time — not a fixed-layout dashboard with empty sections.
+ * - *What was simplified* — the old model was "single click always
+ *   immediately navigates away" (to the editor / Develop / an Idea dialog).
+ *   That's fast for a *known* graph but actively hostile to a *first look* at
+ *   an unfamiliar or 100-chapter one: every exploratory click was a full
+ *   context switch away from the graph. Click now selects (cheap, reversible,
+ *   answers "what is this and what does it touch"); the panel's explicit
+ *   "Open" button (or a double-click, kept as the power-user accelerator for
+ *   anyone with the old muscle memory) is the deliberate, second action that
+ *   actually navigates away.
+ * - *Missing features worth adding* — zoom controls with a visible
+ *   percentage (wheel-zoom existed but was undiscoverable — nothing on
+ *   screen even hinted a graph this size could be zoomed), a node-size
+ *   control (small clusters want big legible nodes, a 100-chapter graph
+ *   wants small dense ones — one project's right answer isn't another's), and
+ *   click-to-connect (a labeled relationship previously required leaving the
+ *   graph for the entity's own edit dialog, which is backwards for a tool
+ *   whose entire premise is "connect things visually").
+ * - *Deliberately not built* — a minimap (the mockup shows one). Reasonable
+ *   at real scale, but this graph's `viewBox` already auto-fits every node
+ *   into view any time the pan/zoom is reset (see "Reset view" below), which
+ *   covers the minimap's actual job — "where am I relative to everything" —
+ *   for the sizes this app targets (tens, not thousands, of nodes). Flagged
+ *   in `docs/ROADMAP.md` as a real candidate if a genuinely huge project ever
+ *   makes "reset view" an unsatisfying answer, rather than built speculatively
+ *   now. Likewise no inline editing inside the graph itself (title, notes,
+ *   fields) — the panel shows and links out, it never becomes a second copy
+ *   of `EntityListPanel`'s form; one editing surface per field stays true.
  *
  * Every node is an icon-in-a-circle badge (`graphIcons.ts`'s per-kind icon)
  * — kind is legible from the icon alone, colour stays reserved for the
@@ -237,10 +308,13 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  * as the graph's spine; everything else shares one neutral ring), not an
  * invented ten-colour categorical palette, per `CLAUDE.md`'s design-token
  * discipline. Edges are real relationships only: an entity/idea's
- * `linkedChapterId`, an idea's `relatedIdeaIds`, and an idea's `promotedTo`.
+ * `linkedChapterId`, an idea's `relatedIdeaIds`, an idea's `promotedTo`, and
+ * user-authored `Layer0Relationship`s (from here, or from the entity's own
+ * edit dialog — both write the same underlying record).
  */
 export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: BookGraphViewProps) {
-  const chapters = useContentStore((s) => s.getManuscript(projectId))?.chapters ?? []
+  const manuscript = useContentStore((s) => s.getManuscript(projectId))
+  const chapters = manuscript?.chapters ?? []
   const bible = useLayer0Store((s) => s.getBible(projectId))
   const ideas = useIdeaStore((s) => s.byProject[projectId]) ?? EMPTY_IDEAS
   const setAppMode = useUiStore((s) => s.setAppMode)
@@ -248,9 +322,27 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const savedPositions = useGraphLayoutStore((s) => s.getPositions(projectId))
   const setSavedPosition = useGraphLayoutStore((s) => s.setPosition)
   const clearSavedPositions = useGraphLayoutStore((s) => s.clearPositions)
+  const nodeScale = useGraphLayoutStore((s) => s.getNodeScale(projectId))
+  const setNodeScale = useGraphLayoutStore((s) => s.setNodeScale)
 
   const [hiddenKinds, setHiddenKinds] = useState<Set<GraphNodeKind>>(new Set())
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
+
+  // Persistent selection (distinct from hover) — the node whose connections
+  // are highlighted and whose details show in the right panel. `null` means
+  // "show whole-book stats instead" (see the panel render logic near the
+  // bottom of this component).
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+
+  // Click-to-connect (Phase 102). `connectMode` is a real mode switch, not a
+  // modifier key — while it's on, clicking a node never navigates or selects
+  // for the details panel, it only participates in building a connection;
+  // this keeps click semantics unambiguous instead of overloading one click
+  // with two different meanings depending on hidden state.
+  const [connectMode, setConnectMode] = useState(false)
+  const [connectSourceId, setConnectSourceId] = useState<string | null>(null)
+  const [pendingConnection, setPendingConnection] = useState<{ aId: string; bId: string } | null>(null)
+  const [connectLabel, setConnectLabel] = useState('')
 
   const { allNodes, allEdges, countByKind } = useMemo(() => {
     const nodes: GraphNode[] = []
@@ -308,10 +400,13 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     // Labeled relationship edges (Phase 99, user 2026-08-02: "if the
     // characters are related it could show what that is with the line
     // connection eg daughter/mother") — the one edge kind that carries a
-    // caption. Written from `Layer0RelationshipsSection.tsx`'s add control,
-    // read here exactly as stored: cross-kind by design, so a Character-to-
-    // Location relationship ("childhood home") draws the same way a
-    // Character-to-Character one does.
+    // caption. Written either from `Layer0RelationshipsSection.tsx`'s add
+    // control inside an entity's edit dialog, or (as of Phase 102) directly
+    // from this graph's own click-to-connect flow — both paths write the
+    // same `Layer0Relationship` record, read here exactly as stored:
+    // cross-kind by design, so a Character-to-Location relationship
+    // ("childhood home") draws the same way a Character-to-Character one
+    // does.
     for (const rel of bible.relationships ?? []) {
       edges.push({ a: rel.aId, b: rel.bId, label: rel.label })
     }
@@ -326,6 +421,28 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
 
     return { allNodes: nodes, allEdges: validEdges, countByKind: count }
   }, [chapters, bible, ideas, bookTitle])
+
+  const nodeById = useMemo(() => new Map(allNodes.map((n) => [n.id, n])), [allNodes])
+
+  // Whole-manuscript + per-chapter word counts for the panel's "nothing
+  // selected" stats view and a selected chapter's own detail row. Reuses
+  // `extractTextSpans` (the Virtual Editor's own text-flattening helper —
+  // see `useManuscriptWordCount.ts`'s doc comment for why this codebase has
+  // exactly one place that knows how to pull plain text out of a block)
+  // rather than calling that hook *and* re-deriving a second, parallel
+  // per-chapter breakdown from scratch.
+  const { wordCountByChapter, totalWordCount } = useMemo(() => {
+    const byChapter = new Map<string, number>()
+    let total = 0
+    if (manuscript) {
+      for (const span of extractTextSpans(manuscript)) {
+        const w = wordCount(span.text)
+        byChapter.set(span.chapterId, (byChapter.get(span.chapterId) ?? 0) + w)
+        total += w
+      }
+    }
+    return { wordCountByChapter: byChapter, totalWordCount: total }
+  }, [manuscript])
 
   const visibleNodes = useMemo(() => allNodes.filter((n) => !hiddenKinds.has(n.kind)), [allNodes, hiddenKinds])
   const visibleIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
@@ -361,12 +478,41 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const layout = useMemo(() => computeGraphLayout(visibleNodes, visibleEdges, pinnedPositions), [depKey])
 
+  // Every node id directly reachable from `selectedNodeId` in one hop — the
+  // "direct connections" the design review asked for. `null` when nothing
+  // is selected, which every render site below treats as "don't dim
+  // anything" rather than "dim everything."
+  const highlightedIds = useMemo(() => {
+    if (!selectedNodeId) return null
+    const set = new Set<string>([selectedNodeId])
+    for (const e of visibleEdges) {
+      if (e.a === selectedNodeId) set.add(e.b)
+      if (e.b === selectedNodeId) set.add(e.a)
+    }
+    return set
+  }, [selectedNodeId, visibleEdges])
+
+  // The selected node's own direct connections, resolved to full nodes (for
+  // the panel's connection list) with whichever relationship label (if any)
+  // applies to that specific edge.
+  const selectedConnections = useMemo(() => {
+    if (!selectedNodeId) return []
+    const rows: { node: GraphNode; label?: string }[] = []
+    for (const e of visibleEdges) {
+      const otherId = e.a === selectedNodeId ? e.b : e.b === selectedNodeId ? e.a : null
+      if (!otherId) continue
+      const other = nodeById.get(otherId)
+      if (other) rows.push({ node: other, label: e.label })
+    }
+    return rows
+  }, [selectedNodeId, visibleEdges, nodeById])
+
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 })
   const [isPanning, setIsPanning] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-  const panState = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null)
+  const panState = useRef<{ startX: number; startY: number; origX: number; origY: number; moved: boolean } | null>(null)
 
   // Live drag-in-progress position for whichever node is currently being
   // dragged — kept as its own bit of state (not written into
@@ -383,35 +529,99 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     if (!el) return
     const handler = (e: WheelEvent) => {
       e.preventDefault()
-      setTransform((t) => ({ ...t, k: Math.min(2.5, Math.max(0.35, t.k - e.deltaY * 0.001)) }))
+      setTransform((t) => ({ ...t, k: clamp(t.k - e.deltaY * 0.001, ZOOM_MIN, ZOOM_MAX) }))
     }
     el.addEventListener('wheel', handler, { passive: false })
     return () => el.removeEventListener('wheel', handler)
   }, [])
 
+  // Escape is the universal "back out one step" key: cancel a pending
+  // connection first (it's the most transient state), then a chosen source
+  // with nothing picked yet, then connect mode itself, then a plain
+  // selection — never more than one step at a time, so it's never
+  // surprising which state disappears.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== 'Escape') return
+      if (pendingConnection) {
+        setPendingConnection(null)
+        setConnectLabel('')
+      } else if (connectSourceId) {
+        setConnectSourceId(null)
+      } else if (connectMode) {
+        setConnectMode(false)
+      } else if (selectedNodeId) {
+        setSelectedNodeId(null)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [pendingConnection, connectSourceId, connectMode, selectedNodeId])
+
   const resetView = () => setTransform({ x: 0, y: 0, k: 1 })
   const resetLayout = () => clearSavedPositions(projectId)
+  const zoomIn = () => setTransform((t) => ({ ...t, k: clamp(t.k + ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) }))
+  const zoomOut = () => setTransform((t) => ({ ...t, k: clamp(t.k - ZOOM_STEP, ZOOM_MIN, ZOOM_MAX) }))
+  const adjustNodeScale = (delta: number) => setNodeScale(projectId, clamp(Math.round((nodeScale + delta) * 100) / 100, NODE_SCALE_MIN, NODE_SCALE_MAX))
+
+  function toggleConnectMode() {
+    setConnectMode((v) => !v)
+    setConnectSourceId(null)
+    setPendingConnection(null)
+    setConnectLabel('')
+    setSelectedNodeId(null)
+  }
+
+  function cancelPendingConnection() {
+    setPendingConnection(null)
+    setConnectSourceId(null)
+    setConnectLabel('')
+  }
+
+  function submitPendingConnection() {
+    if (!pendingConnection || !connectLabel.trim()) return
+    const now = new Date().toISOString()
+    addLayer0EntityWithHistory(
+      projectId,
+      'relationships',
+      { id: generateId('rel'), aId: pendingConnection.aId, bId: pendingConnection.bId, label: connectLabel.trim(), createdAt: now, updatedAt: now } as never,
+      'Add relationship',
+    )
+    setPendingConnection(null)
+    setConnectLabel('')
+    // Deliberately stays in connect mode with no source chosen — chaining
+    // several connections in a row (e.g. building out one character's whole
+    // family tree) shouldn't require re-clicking "Connect" each time.
+  }
 
   const onBackgroundPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
-    panState.current = { startX: e.clientX, startY: e.clientY, origX: transform.x, origY: transform.y }
+    panState.current = { startX: e.clientX, startY: e.clientY, origX: transform.x, origY: transform.y, moved: false }
     setIsPanning(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onBackgroundPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!panState.current) return
-    setTransform((t) => ({
-      ...t,
-      x: panState.current!.origX + (e.clientX - panState.current!.startX),
-      y: panState.current!.origY + (e.clientY - panState.current!.startY),
-    }))
+    const dx = e.clientX - panState.current.startX
+    const dy = e.clientY - panState.current.startY
+    if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) panState.current.moved = true
+    setTransform((t) => ({ ...t, x: panState.current!.origX + dx, y: panState.current!.origY + dy }))
   }
   const onBackgroundPointerUp = () => {
+    const state = panState.current
     panState.current = null
     setIsPanning(false)
+    if (state && !state.moved) {
+      // A real click on empty canvas, not a pan — Miro/Figma's "click empty
+      // space to deselect" convention, plus (in Connect mode) a way to bail
+      // out of a half-made connection without reaching for Escape.
+      if (pendingConnection || connectSourceId) cancelPendingConnection()
+      else if (selectedNodeId) setSelectedNodeId(null)
+    }
   }
 
   function onNodePointerDown(e: React.PointerEvent<SVGGElement>, node: GraphNode) {
     e.stopPropagation()
+    if (connectMode) return // handled as a plain click on pointer-up, no drag tracking needed
     const svg = svgRef.current
     if (!svg) return
     const svgPoint = screenToSvgPoint(svg, e.clientX, e.clientY)
@@ -442,6 +652,15 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   }
 
   function onNodePointerUp(e: React.PointerEvent<SVGGElement>, node: GraphNode) {
+    if (connectMode) {
+      handleConnectClick(node)
+      try {
+        e.currentTarget.releasePointerCapture(e.pointerId)
+      } catch {
+        // No capture was taken in Connect mode — nothing to release.
+      }
+      return
+    }
     const drag = nodeDragState.current
     nodeDragState.current = null
     setDraggingNodeId(null)
@@ -449,7 +668,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
       setSavedPosition(projectId, node.id, dragPosition)
     } else {
       // Never actually moved past the threshold — a click, not a drag.
-      handleSelect(node)
+      handleNodeClick(node)
     }
     setDragPosition(null)
     try {
@@ -468,12 +687,24 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     })
   }
 
-  function handleSelect(node: GraphNode) {
-    // The book node has no edit surface of its own (it's a synthetic
-    // stand-in for the whole project, not a Layer 0 entity or a chapter) —
-    // it also has no drag handlers attached below, so this branch is mostly
-    // defensive, but keeps `onFocusKind`'s `Layer0EntityKind`-only signature
-    // honest rather than ever being called with `'book'`.
+  /** Single click on a node in the default (non-Connect) mode: select it —
+   * highlights its direct connections and shows its details in the right
+   * panel. Clicking the Book node, or clicking an already-selected node
+   * again, clears the selection back to the whole-book stats view. Actually
+   * navigating away is a separate, explicit action — see `handleOpen`. */
+  function handleNodeClick(node: GraphNode) {
+    if (node.kind === 'book') {
+      setSelectedNodeId(null)
+      return
+    }
+    setSelectedNodeId((current) => (current === node.id ? null : node.id))
+  }
+
+  /** The deliberate "go there" action (Phase 102's panel Open button, or a
+   * double-click as the accelerator for the old single-click-opens muscle
+   * memory) — unchanged from what a plain click used to do before this
+   * pass. */
+  function handleOpen(node: GraphNode) {
     if (node.kind === 'book') return
     if (node.kind === 'chapter') {
       setAppMode('editor')
@@ -487,11 +718,209 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     onFocusKind(node.kind)
   }
 
+  function handleConnectClick(node: GraphNode) {
+    if (node.kind === 'book') return // the Book is the project itself, not a real entity to relate things to
+    if (pendingConnection) return // a label is already being entered for a prior pair — ignore further node clicks until resolved
+    if (!connectSourceId) {
+      setConnectSourceId(node.id)
+      return
+    }
+    if (connectSourceId === node.id) {
+      setConnectSourceId(null) // clicked the source again — cancel and start over
+      return
+    }
+    setPendingConnection({ aId: connectSourceId, bId: node.id })
+    setConnectSourceId(null)
+    setConnectLabel('')
+  }
+
   function kindLabel(kind: GraphNodeKind): string {
     if (kind === 'chapter') return 'Chapters'
     if (kind === 'idea') return 'Ideas'
     if (kind === 'book') return 'Book'
     return getLayer0KindLabel(kind, bookForm).plural
+  }
+
+  function kindSingularLabel(kind: GraphNodeKind): string {
+    if (kind === 'chapter') return 'Chapter'
+    if (kind === 'idea') return 'Idea'
+    if (kind === 'book') return 'Book'
+    return getLayer0KindLabel(kind, bookForm).singular
+  }
+
+  /** Whole-book stats — the panel's default content whenever nothing is
+   * selected (design review, user 2026-08-02: "show overall book statistics
+   * when nothing selected"). Also what clicking the Book node itself shows,
+   * since selecting "the whole book" and selecting "nothing in particular"
+   * mean the same thing here. */
+  function renderStatsPanel() {
+    const kindsWithCounts = GRAPH_KIND_ORDER.filter((k) => k !== 'chapter' && k !== 'idea' && (countByKind[k] ?? 0) > 0)
+    return (
+      <div className="flex flex-col gap-4">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">Book overview</h3>
+          <p className="mt-0.5 text-xs text-text-secondary">Nothing selected — click any node to see its connections.</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="rounded-[var(--radius-button)] border border-border bg-background-secondary p-2.5">
+            <div className="text-lg font-semibold text-text-primary">{chapters.length}</div>
+            <div className="text-[11px] text-text-secondary">Chapters</div>
+          </div>
+          <div className="rounded-[var(--radius-button)] border border-border bg-background-secondary p-2.5">
+            <div className="text-lg font-semibold text-text-primary">{totalWordCount.toLocaleString()}</div>
+            <div className="text-[11px] text-text-secondary">Words</div>
+          </div>
+          <div className="rounded-[var(--radius-button)] border border-border bg-background-secondary p-2.5">
+            <div className="text-lg font-semibold text-text-primary">{countByKind.idea ?? 0}</div>
+            <div className="text-[11px] text-text-secondary">Ideas</div>
+          </div>
+          <div className="rounded-[var(--radius-button)] border border-border bg-background-secondary p-2.5">
+            <div className="text-lg font-semibold text-text-primary">{bible.relationships?.length ?? 0}</div>
+            <div className="text-[11px] text-text-secondary">Connections</div>
+          </div>
+        </div>
+        {kindsWithCounts.length > 0 && (
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-text-secondary">Layer 0 entities</span>
+            {kindsWithCounts.map((kind) => {
+              const Icon = GRAPH_NODE_ICONS[kind]
+              return (
+                <div key={kind} className="flex items-center gap-2 text-xs text-text-primary">
+                  <Icon className="size-3.5 shrink-0 text-text-secondary" />
+                  <span className="flex-1">{kindLabel(kind)}</span>
+                  <span className="text-text-secondary">{countByKind[kind]}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderNodeDetailPanel(node: GraphNode) {
+    const Icon = GRAPH_NODE_ICONS[node.kind]
+    const openLabel = node.kind === 'chapter' ? 'Open in editor' : node.kind === 'idea' ? 'Open idea' : `Open in Develop`
+    return (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start gap-2.5">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-full border border-border bg-background-secondary">
+            <Icon className="size-4 text-text-secondary" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-semibold text-text-primary">{node.label}</div>
+            <div className="text-xs text-text-secondary">{kindSingularLabel(node.kind)}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSelectedNodeId(null)}
+            aria-label="Deselect"
+            className="flex size-6 shrink-0 items-center justify-center rounded-full text-text-muted hover:bg-hover hover:text-text-primary"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
+
+        {node.kind === 'chapter' && (
+          <div className="text-xs text-text-secondary">{(wordCountByChapter.get(node.id) ?? 0).toLocaleString()} words</div>
+        )}
+
+        <Button variant="secondary" size="sm" className="w-full" onClick={() => handleOpen(node)}>
+          {openLabel}
+        </Button>
+
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-text-secondary">Connections ({selectedConnections.length})</span>
+          {selectedConnections.length === 0 ? (
+            <p className="text-xs text-text-muted">Nothing linked to this yet.</p>
+          ) : (
+            selectedConnections.map(({ node: other, label }) => {
+              const OtherIcon = GRAPH_NODE_ICONS[other.kind]
+              return (
+                <button
+                  key={other.id}
+                  type="button"
+                  onClick={() => setSelectedNodeId(other.id)}
+                  className="flex items-center gap-2 rounded-[var(--radius-button)] border border-border bg-background-secondary px-2.5 py-1.5 text-left transition-colors hover:bg-hover"
+                >
+                  <OtherIcon className="size-3.5 shrink-0 text-text-secondary" />
+                  <span className="min-w-0 flex-1 truncate text-xs text-text-primary">
+                    {other.label}
+                    {label && <span className="text-text-secondary"> — {label}</span>}
+                  </span>
+                </button>
+              )
+            })
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function renderConnectHintPanel() {
+    const source = connectSourceId ? nodeById.get(connectSourceId) : null
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Link2 className="size-4 text-[var(--color-accent)]" />
+          <h3 className="text-sm font-semibold text-text-primary">Connect mode</h3>
+        </div>
+        {source ? (
+          <>
+            <p className="text-xs text-text-secondary">
+              Connecting from <span className="font-medium text-text-primary">{source.label}</span> — click another node to link to.
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => setConnectSourceId(null)}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <p className="text-xs text-text-secondary">Click a node to start a connection, then click a second node to link them.</p>
+        )}
+        <Button variant="secondary" size="sm" onClick={toggleConnectMode}>
+          Done connecting
+        </Button>
+      </div>
+    )
+  }
+
+  function renderConnectFormPanel() {
+    if (!pendingConnection) return null
+    const a = nodeById.get(pendingConnection.aId)
+    const b = nodeById.get(pendingConnection.bId)
+    return (
+      <div className="flex flex-col gap-3">
+        <div className="flex items-center gap-2">
+          <Link2 className="size-4 text-[var(--color-accent)]" />
+          <h3 className="text-sm font-semibold text-text-primary">New connection</h3>
+        </div>
+        <p className="text-xs text-text-secondary">
+          <span className="font-medium text-text-primary">{a?.label ?? 'Deleted item'}</span>
+          {' ↔ '}
+          <span className="font-medium text-text-primary">{b?.label ?? 'Deleted item'}</span>
+        </p>
+        <Input
+          autoFocus
+          value={connectLabel}
+          onChange={(e) => setConnectLabel(e.target.value)}
+          placeholder="e.g. mother / daughter"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              submitPendingConnection()
+            }
+          }}
+        />
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" className="flex-1" onClick={cancelPendingConnection}>
+            Cancel
+          </Button>
+          <Button size="sm" className="flex-1" disabled={!connectLabel.trim()} onClick={submitPendingConnection}>
+            Add
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   if (allNodes.length === 0) {
@@ -505,12 +934,14 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     )
   }
 
+  const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) : undefined
+
   return (
     <div className="flex flex-col gap-3 p-6">
       <div>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
         <p className="text-sm text-text-secondary">
-          Every chapter, entity, and idea, connected — drag a node to arrange your own mind map, or click one to open it.
+          Click a node to see its connections. Drag to rearrange. Turn on Connect to link two nodes with a label.
         </p>
       </div>
 
@@ -533,144 +964,240 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
             </button>
           )
         })}
+
+        <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-0.5 rounded-full border border-border px-1 py-1" title="Node size">
+            <button
+              type="button"
+              onClick={() => adjustNodeScale(-NODE_SCALE_STEP)}
+              disabled={nodeScale <= NODE_SCALE_MIN}
+              aria-label="Smaller nodes"
+              title="Smaller nodes"
+              className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+            >
+              <Minus className="size-3" />
+            </button>
+            <span className="w-9 text-center text-[10px] tabular-nums text-text-secondary">{Math.round(nodeScale * 100)}%</span>
+            <button
+              type="button"
+              onClick={() => adjustNodeScale(NODE_SCALE_STEP)}
+              disabled={nodeScale >= NODE_SCALE_MAX}
+              aria-label="Larger nodes"
+              title="Larger nodes"
+              className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+            >
+              <Plus className="size-3" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleConnectMode}
+            className={cn(
+              'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-colors duration-150',
+              connectMode ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'border-border text-text-secondary hover:text-text-primary',
+            )}
+          >
+            <Link2 className="size-3" />
+            {connectMode ? 'Connecting…' : 'Connect'}
+          </button>
+        </div>
       </div>
 
-      <div
-        ref={containerRef}
-        className="relative h-[560px] w-full overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary"
-      >
-        <svg
-          ref={svgRef}
-          viewBox={`${layout.bounds.minX} ${layout.bounds.minY} ${layout.bounds.width} ${layout.bounds.height}`}
-          className="size-full touch-none select-none"
-          style={{ transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`, cursor: isPanning ? 'grabbing' : 'grab' }}
-          onPointerDown={onBackgroundPointerDown}
-          onPointerMove={onBackgroundPointerMove}
-          onPointerUp={onBackgroundPointerUp}
-          onPointerLeave={onBackgroundPointerUp}
+      <div className="flex gap-3">
+        <div
+          ref={containerRef}
+          className="relative h-[560px] min-w-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary"
         >
-          {visibleEdges.map(({ a, b, label }) => {
-            const pa = a === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(a)
-            const pb = b === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(b)
-            if (!pa || !pb) return null
-            const highlighted = hoveredId === a || hoveredId === b
-            // The book's own spine to each chapter reads as the manuscript's
-            // backbone — thicker and more opaque than an ordinary structural
-            // edge, but still the same accent colour (not a new hue) per
-            // `CLAUDE.md`'s design-token discipline.
-            const isSpine = a === BOOK_NODE_ID || b === BOOK_NODE_ID
-            // A labeled relationship edge (Phase 99) gets its own colour —
-            // `--color-text-primary` instead of the accent every structural
-            // edge uses — and a dash pattern, so "the author explicitly
-            // said these two are connected, and here's how" reads as a
-            // different kind of line from "this entity happens to be linked
-            // to this chapter."
-            const isRelationship = !!label
-            return (
-              <g key={`${a}-${b}-${label ?? ''}`}>
-                <line
-                  x1={pa.x}
-                  y1={pa.y}
-                  x2={pb.x}
-                  y2={pb.y}
-                  stroke={isRelationship ? 'var(--color-text-primary)' : 'var(--color-accent)'}
-                  strokeWidth={isSpine ? 3 : isRelationship ? 1.6 : highlighted ? 2 : 1}
-                  strokeOpacity={isRelationship ? 0.75 : isSpine ? 0.55 : highlighted ? 0.7 : 0.28}
-                  strokeDasharray={isRelationship ? '4,3' : undefined}
-                />
-                {label && (
-                  <foreignObject
-                    x={(pa.x + pb.x) / 2 - 55}
-                    y={(pa.y + pb.y) / 2 - 9}
-                    width={110}
-                    height={18}
-                    style={{ pointerEvents: 'none' }}
-                  >
-                    <div className="mx-auto flex h-[18px] w-fit max-w-full items-center justify-center truncate rounded-full border border-border bg-panel px-2 text-center text-[9px] leading-none text-text-primary shadow-[var(--shadow-sm)]">
-                      {label}
+          <svg
+            ref={svgRef}
+            viewBox={`${layout.bounds.minX} ${layout.bounds.minY} ${layout.bounds.width} ${layout.bounds.height}`}
+            className="size-full touch-none select-none"
+            style={{
+              transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.k})`,
+              cursor: isPanning ? 'grabbing' : connectMode ? 'crosshair' : 'grab',
+            }}
+            onPointerDown={onBackgroundPointerDown}
+            onPointerMove={onBackgroundPointerMove}
+            onPointerUp={onBackgroundPointerUp}
+            onPointerLeave={onBackgroundPointerUp}
+          >
+            {visibleEdges.map(({ a, b, label }) => {
+              const pa = a === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(a)
+              const pb = b === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(b)
+              if (!pa || !pb) return null
+              const hoverHighlighted = hoveredId === a || hoveredId === b
+              const touchesSelection = highlightedIds && (a === selectedNodeId || b === selectedNodeId)
+              const dimmed = highlightedIds ? !touchesSelection : false
+              // The book's own spine to each chapter reads as the manuscript's
+              // backbone — thicker and more opaque than an ordinary structural
+              // edge, but still the same accent colour (not a new hue) per
+              // `CLAUDE.md`'s design-token discipline.
+              const isSpine = a === BOOK_NODE_ID || b === BOOK_NODE_ID
+              // A labeled relationship edge (Phase 99) gets its own colour —
+              // `--color-text-primary` instead of the accent every structural
+              // edge uses — and a dash pattern, so "the author explicitly
+              // said these two are connected, and here's how" reads as a
+              // different kind of line from "this entity happens to be linked
+              // to this chapter."
+              const isRelationship = !!label
+              return (
+                <g key={`${a}-${b}-${label ?? ''}`} className="transition-opacity duration-150" style={{ opacity: dimmed ? 0.12 : 1 }}>
+                  <line
+                    x1={pa.x}
+                    y1={pa.y}
+                    x2={pb.x}
+                    y2={pb.y}
+                    stroke={isRelationship ? 'var(--color-text-primary)' : 'var(--color-accent)'}
+                    strokeWidth={touchesSelection ? 2.5 : isSpine ? 3 : isRelationship ? 1.6 : hoverHighlighted ? 2 : 1}
+                    strokeOpacity={touchesSelection ? 0.9 : isRelationship ? 0.75 : isSpine ? 0.55 : hoverHighlighted ? 0.7 : 0.28}
+                    strokeDasharray={isRelationship ? '4,3' : undefined}
+                  />
+                  {label && (
+                    <foreignObject
+                      x={(pa.x + pb.x) / 2 - 55}
+                      y={(pa.y + pb.y) / 2 - 9}
+                      width={110}
+                      height={18}
+                      style={{ pointerEvents: 'none' }}
+                    >
+                      <div className="mx-auto flex h-[18px] w-fit max-w-full items-center justify-center truncate rounded-full border border-border bg-panel px-2 text-center text-[9px] leading-none text-text-primary shadow-[var(--shadow-sm)]">
+                        {label}
+                      </div>
+                    </foreignObject>
+                  )}
+                </g>
+              )
+            })}
+
+            {visibleNodes.map((node) => {
+              const p = node.id === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(node.id)
+              if (!p) return null
+              const Icon = GRAPH_NODE_ICONS[node.kind]
+              const isBook = node.kind === 'book'
+              const isChapter = node.kind === 'chapter'
+              const isHovered = hoveredId === node.id
+              const isSelected = selectedNodeId === node.id
+              const isConnectSource = connectSourceId === node.id
+              const isPinned = pinnedPositions.has(node.id) && !isBook
+              const dimmed = highlightedIds ? !highlightedIds.has(node.id) : false
+              const r = (isBook ? BOOK_RADIUS : isChapter ? CHAPTER_RADIUS : NODE_RADIUS) * (isBook ? 1 : nodeScale)
+              const iconSize = (isBook ? 28 : isChapter ? 24 : 20) * (isBook ? 1 : nodeScale)
+              // The book node is the one fixed anchor (see `pinnedPositions`'s
+              // doc comment above) — no drag handlers at all, so it can never
+              // be dragged, and no grab cursor, so it doesn't visually
+              // promise an interaction it doesn't have. It still gets a
+              // click handler (below) so clicking it can reset the panel back
+              // to the whole-book stats view.
+              const dragHandlers = isBook
+                ? {}
+                : {
+                    onPointerDown: (e: React.PointerEvent<SVGGElement>) => onNodePointerDown(e, node),
+                    onPointerMove: onNodePointerMove,
+                    onPointerUp: (e: React.PointerEvent<SVGGElement>) => onNodePointerUp(e, node),
+                  }
+              return (
+                <g
+                  key={node.id}
+                  transform={`translate(${p.x} ${p.y})`}
+                  {...dragHandlers}
+                  onClick={isBook ? () => handleNodeClick(node) : undefined}
+                  onDoubleClick={!isBook && !connectMode ? () => handleOpen(node) : undefined}
+                  onMouseEnter={() => setHoveredId(node.id)}
+                  onMouseLeave={() => setHoveredId((v) => (v === node.id ? null : v))}
+                  className={cn(
+                    'transition-opacity duration-150',
+                    isBook ? 'cursor-pointer' : node.id === draggingNodeId ? 'cursor-grabbing' : connectMode ? 'cursor-crosshair' : 'cursor-grab',
+                  )}
+                  style={{ opacity: dimmed ? 0.3 : 1 }}
+                >
+                  <circle
+                    r={isHovered || node.id === draggingNodeId ? r + 3 : r}
+                    fill={isBook || isChapter ? 'var(--color-accent)' : 'var(--color-panel)'}
+                    fillOpacity={isBook ? 0.18 : isChapter ? 0.14 : 1}
+                    stroke={isConnectSource ? 'var(--color-accent)' : isSelected ? 'var(--color-accent)' : isBook || isChapter ? 'var(--color-accent)' : 'var(--color-border)'}
+                    strokeWidth={isConnectSource || isSelected ? 3 : isBook ? 3 : isChapter ? 2.5 : isPinned ? 2 : 1.5}
+                    strokeDasharray={isConnectSource ? '3,2' : isPinned ? '3,2' : undefined}
+                    className={cn('transition-[r] duration-150', isConnectSource && 'animate-pulse')}
+                  />
+                  <foreignObject x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} style={{ pointerEvents: 'none' }}>
+                    <Icon className="size-full" style={{ color: isBook || isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />
+                  </foreignObject>
+                  <foreignObject x={-70} y={r + 6} width={140} height={34} style={{ pointerEvents: 'none' }}>
+                    <div
+                      className={cn(
+                        'line-clamp-2 text-center leading-tight',
+                        isBook ? 'text-[11px] font-semibold text-text-primary' : 'text-[10px] text-text-secondary',
+                      )}
+                    >
+                      {node.label}
                     </div>
                   </foreignObject>
-                )}
-              </g>
-            )
-          })}
+                </g>
+              )
+            })}
+          </svg>
 
-          {visibleNodes.map((node) => {
-            const p = node.id === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(node.id)
-            if (!p) return null
-            const Icon = GRAPH_NODE_ICONS[node.kind]
-            const isBook = node.kind === 'book'
-            const isChapter = node.kind === 'chapter'
-            const isHovered = hoveredId === node.id
-            const isPinned = pinnedPositions.has(node.id) && !isBook
-            const r = isBook ? BOOK_RADIUS : isChapter ? CHAPTER_RADIUS : NODE_RADIUS
-            const iconSize = isBook ? 28 : isChapter ? 24 : 20
-            // The book node is the one fixed anchor (see `pinnedPositions`'s
-            // doc comment above) — no pointer handlers at all, so it can
-            // never be dragged, and no grab cursor, so it doesn't visually
-            // promise an interaction it doesn't have.
-            const dragHandlers = isBook
-              ? {}
-              : {
-                  onPointerDown: (e: React.PointerEvent<SVGGElement>) => onNodePointerDown(e, node),
-                  onPointerMove: onNodePointerMove,
-                  onPointerUp: (e: React.PointerEvent<SVGGElement>) => onNodePointerUp(e, node),
-                }
-            return (
-              <g
-                key={node.id}
-                transform={`translate(${p.x} ${p.y})`}
-                {...dragHandlers}
-                onMouseEnter={() => setHoveredId(node.id)}
-                onMouseLeave={() => setHoveredId((v) => (v === node.id ? null : v))}
-                className={isBook ? undefined : node.id === draggingNodeId ? 'cursor-grabbing' : 'cursor-grab'}
+          <div className="absolute right-2 top-2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={resetLayout}
+              aria-label="Reset layout"
+              title="Clear manual positions and re-arrange automatically"
+              className="flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
+            >
+              <RotateCcw className="size-3.5" />
+            </button>
+            <div className="flex items-center rounded-[var(--radius-button)] border border-border bg-panel shadow-[var(--shadow-sm)]">
+              <button
+                type="button"
+                onClick={zoomOut}
+                disabled={transform.k <= ZOOM_MIN}
+                aria-label="Zoom out"
+                title="Zoom out"
+                className="flex size-7 items-center justify-center text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
               >
-                <circle
-                  r={isHovered || node.id === draggingNodeId ? r + 3 : r}
-                  fill={isBook || isChapter ? 'var(--color-accent)' : 'var(--color-panel)'}
-                  fillOpacity={isBook ? 0.18 : isChapter ? 0.14 : 1}
-                  stroke={isBook || isChapter ? 'var(--color-accent)' : 'var(--color-border)'}
-                  strokeWidth={isBook ? 3 : isChapter ? 2.5 : isPinned ? 2 : 1.5}
-                  strokeDasharray={isPinned ? '3,2' : undefined}
-                  className="transition-[r] duration-150"
-                />
-                <foreignObject x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} style={{ pointerEvents: 'none' }}>
-                  <Icon className="size-full" style={{ color: isBook || isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />
-                </foreignObject>
-                <foreignObject x={-70} y={r + 6} width={140} height={34} style={{ pointerEvents: 'none' }}>
-                  <div
-                    className={cn(
-                      'line-clamp-2 text-center leading-tight',
-                      isBook ? 'text-[11px] font-semibold text-text-primary' : 'text-[10px] text-text-secondary',
-                    )}
-                  >
-                    {node.label}
-                  </div>
-                </foreignObject>
-              </g>
-            )
-          })}
-        </svg>
+                <ZoomOut className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setTransform((t) => ({ ...t, k: 1 }))}
+                title="Reset zoom to 100%"
+                className="w-10 text-center text-[10px] tabular-nums text-text-secondary hover:text-text-primary"
+              >
+                {Math.round(transform.k * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={zoomIn}
+                disabled={transform.k >= ZOOM_MAX}
+                aria-label="Zoom in"
+                title="Zoom in"
+                className="flex size-7 items-center justify-center text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+              >
+                <ZoomIn className="size-3.5" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={resetView}
+              aria-label="Reset view"
+              title="Reset pan and zoom — fits every visible node back into view"
+              className="flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
+            >
+              <Maximize2 className="size-3.5" />
+            </button>
+          </div>
+        </div>
 
-        <div className="absolute right-2 top-2 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={resetLayout}
-            aria-label="Reset layout"
-            title="Clear manual positions and re-arrange automatically"
-            className="flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
-          >
-            <RotateCcw className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={resetView}
-            aria-label="Reset view"
-            title="Reset pan/zoom"
-            className="flex size-7 items-center justify-center rounded-[var(--radius-button)] border border-border bg-panel text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
-          >
-            <Maximize2 className="size-3.5" />
-          </button>
+        <div className="flex h-[560px] w-72 shrink-0 flex-col overflow-y-auto rounded-[var(--radius-card)] border border-border bg-panel p-4">
+          {pendingConnection
+            ? renderConnectFormPanel()
+            : connectMode
+              ? renderConnectHintPanel()
+              : selectedNode
+                ? renderNodeDetailPanel(selectedNode)
+                : renderStatsPanel()}
         </div>
       </div>
 

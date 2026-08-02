@@ -17,6 +17,14 @@ import { persist } from 'zustand/middleware'
  */
 interface GraphLayoutState {
   byProject: Record<string, Record<string, { x: number; y: number }>>
+  /** Per-project node-size multiplier for `BookGraphView.tsx` (Phase 102,
+   * user 2026-08-02: "make each node larger/smaller"). Same rationale as
+   * `byProject` above for not going through `historyStore` — a display
+   * preference, not book content. Missing entry (every project before this
+   * field existed, or one that's never touched the control) defaults to `1`
+   * at the read site below, same never-migrated convention as
+   * `ProjectSettings.colorProfile`. */
+  nodeScaleByProject: Record<string, number>
 }
 
 interface GraphLayoutActions {
@@ -25,14 +33,18 @@ interface GraphLayoutActions {
   /** Drops every manual position for one project — the Book Graph's "Reset
    * layout" button, for starting the auto-arrangement over from scratch. */
   clearPositions: (projectId: string) => void
+  getNodeScale: (projectId: string) => number
+  setNodeScale: (projectId: string, scale: number) => void
 }
 
 const EMPTY_POSITIONS: Record<string, { x: number; y: number }> = {}
+const DEFAULT_NODE_SCALE = 1
 
 export const useGraphLayoutStore = create<GraphLayoutState & GraphLayoutActions>()(
   persist(
     (set, get) => ({
       byProject: {},
+      nodeScaleByProject: {},
 
       getPositions: (projectId) => get().byProject[projectId] ?? EMPTY_POSITIONS,
 
@@ -51,6 +63,14 @@ export const useGraphLayoutStore = create<GraphLayoutState & GraphLayoutActions>
           delete next[projectId]
           return { byProject: next }
         })
+      },
+
+      getNodeScale: (projectId) => get().nodeScaleByProject[projectId] ?? DEFAULT_NODE_SCALE,
+
+      setNodeScale: (projectId, scale) => {
+        set((state) => ({
+          nodeScaleByProject: { ...state.nodeScaleByProject, [projectId]: scale },
+        }))
       },
     }),
     {

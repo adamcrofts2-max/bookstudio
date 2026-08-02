@@ -861,6 +861,37 @@ daily use of everything built so far.)*
       bleeding onto the Inspector column (Phase 99, 2026-08-02) — same
       missing-`overflow-hidden` family of bug as the Structure-tab fix,
       one column over.
+- [x] Book Graph: discoverable zoom controls, node-size control, and
+      click-to-connect (Phase 102, 2026-08-02, user: "should be able to zoom
+      in zoom out, make each node larger/smaller, connect easily by clicking
+      one node to another") — wheel-zoom already existed but had no on-screen
+      affordance; added zoom in/out buttons + a live percentage readout next
+      to the existing Reset-view button. Node size is a persisted per-project
+      multiplier (`graphLayoutStore.getNodeScale`/`setNodeScale`, 70–160%).
+      Connect mode is a real mode switch (`Link2` toggle): click a source
+      node, click a target node, name the relationship in the right panel —
+      writes the same `Layer0Relationship` record `Layer0RelationshipsSection
+      .tsx` already did, just without leaving the graph to do it.
+- [x] Book Graph: selection-driven focus + right-hand details/stats panel
+      (Phase 102, 2026-08-02) — answered the user's own UX-review questions
+      directly: clicking a node now selects it (dims every non-connected
+      node/edge, highlights direct connections) and shows its details —
+      label, kind, word count for chapters, a clickable connection list — in
+      a persistent right panel, replacing the old "single click always
+      navigates away" model. Nothing selected (or the Book node clicked)
+      shows whole-book stats (chapter count, total words, idea count,
+      relationship count, per-kind entity counts) in the same panel slot.
+      Navigating away is now an explicit "Open" button in the panel, or a
+      double-click kept as the accelerator for the old muscle memory. Full
+      interaction-model reasoning, including what was deliberately *not*
+      built (a minimap) and why, lives in `BookGraphView.tsx`'s own doc
+      comment.
+- [ ] Book Graph minimap — deliberately deferred in Phase 102 (see
+      `BookGraphView.tsx`'s doc comment): "Reset view" already auto-fits
+      every visible node via the SVG's dynamic `viewBox`, which covers a
+      minimap's actual job at the node counts this app targets today.
+      Revisit if a real project's graph ever gets large enough that "reset
+      view" stops being a satisfying answer.
 - [x] Visual moodboard / Pinterest-style board for example ideas and reference
       images (Phase 93, 2026-08-02) — resolved the design question with a new
       optional `Idea.imageAssetIds?: string[]` (reusing the existing
