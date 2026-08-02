@@ -212,11 +212,18 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           />
         )}
         {chapterId && !decorative && (
-          // `-bottom-3 right-2`, not `-top-3 right-2` — that's exactly where
-          // `BlockToolbar`'s delete (Trash2) button sits, and unlike Notes'
-          // badge this one isn't hover-gated, so it was rendering directly
-          // on top of the trash icon on hover/selection (Phase 84 fix).
-          <IdeaIndicatorBadge projectId={projectId} blockId={block.id} className="absolute -bottom-3 right-2 z-10" />
+          // `-bottom-3 left-2`, not the right side at all. `BlockToolbar`
+          // always sits at `-top-3 right-2` on EVERY block — Phase 84's fix
+          // moved this badge to `-bottom-3 right-2` on the theory that only
+          // its own block's toolbar mattered, but blocks are stacked closely
+          // enough that "bottom of block N" lands right on top of "top of
+          // block N+1" — i.e. its own block's toolbar was gone, but it now
+          // collided with the *next* block's toolbar instead (Phase 85 fix,
+          // reported live: "covered by the up/down/copy tab"). Left side is
+          // safe from BlockToolbar entirely, at either edge; bottom (not
+          // top, where `NoteIndicatorBadge` lives) keeps the two badges from
+          // colliding with each other on a block that has both.
+          <IdeaIndicatorBadge projectId={projectId} blockId={block.id} className="absolute -bottom-3 left-2 z-10" />
         )}
       </div>
     )
