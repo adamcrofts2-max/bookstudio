@@ -860,7 +860,24 @@ daily use of everything built so far.)*
 - [x] Fix Toolbar buttons (Hide Inspector/Keyboard shortcuts) visually
       bleeding onto the Inspector column (Phase 99, 2026-08-02) — same
       missing-`overflow-hidden` family of bug as the Structure-tab fix,
-      one column over.
+      one column over. **Incomplete** — see Phase 104 below: this stopped
+      the bleed but not the underlying cause, so the same buttons still
+      went missing, just clipped instead of overlapping.
+- [x] Toolbar: actually fix the Hide Inspector/Keyboard shortcuts/Export
+      crowding (Phase 104, 2026-08-02, user: "still cant see keyboard
+      shortcuts or hide inspector as right sidebar overlaps them. and half
+      of the export button is cut off.") — root cause was never the missing
+      `overflow-hidden` alone, it was eleven controls permanently competing
+      for one `shrink-0` row with no give; Phase 99's fix only stopped the
+      overflow from bleeding onto the Inspector, it clipped the row's tail
+      instead, which is exactly what the user kept losing. Real fix: Hide
+      Inspector moved onto the Inspector panel's own header (next to its
+      tabs — more discoverable there anyway, and structurally can't be
+      squeezed out by unrelated toolbar buttons again); Focus mode, Version
+      history, Save, Load, Project Settings, and Keyboard shortcuts folded
+      into one "More" overflow menu. The always-visible row is now Undo/
+      Redo, project name, theme toggle, Virtual Editor, Develop, Export,
+      More — down from eleven controls to five plus one menu.
 - [x] Book Graph: discoverable zoom controls, node-size control, and
       click-to-connect (Phase 102, 2026-08-02, user: "should be able to zoom
       in zoom out, make each node larger/smaller, connect easily by clicking

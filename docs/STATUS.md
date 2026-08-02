@@ -6738,19 +6738,79 @@ real mouse pass before fully trusting it, especially the colour-input
 interaction (native `<input type="color">` opens the OS's own colour
 picker, which this sandbox has no way to click through).
 
+## Phase 104 — Toolbar overflow: the actual fix, not just the clip (2026-08-02)
+
+User report: "still cant see keyboard shortcuts or hide inspector as right
+sidebar overlaps them. and half of the export button is cut off." — a
+regression report against Phase 99's fix for what was nominally the same
+bug.
+
+**Why Phase 99 didn't actually fix it**: that pass added `overflow-hidden`
+to the Toolbar's `<header>` and `shrink-0` to the right-hand button group,
+which stopped the group from visually *bleeding* onto the Inspector column
+when it ran out of room. It never addressed *why* it ran out of room: the
+right-hand group had eleven separate controls (theme toggle, Focus mode,
+Virtual Editor, Develop, Version history, Save, Load, Project Settings,
+Export, Hide Inspector, Keyboard shortcuts) permanently competing for one
+row that never got any wider once both Sidebar and Inspector were open.
+`overflow-hidden` just changed the failure mode from "bleeds onto Inspector"
+to "clips off the end of the row" — and the *end* of that row was exactly
+Hide Inspector and Keyboard shortcuts, with Export (right before them)
+losing whatever fraction of its own width the row was short by. The user
+saw a different-looking version of the identical underlying problem and,
+reasonably, reported it as the same bug still unfixed.
+
+**The actual fix — remove controls from the row, don't reclip it**:
+
+- **Hide Inspector moved onto the Inspector panel's own header**
+  (`Inspector.tsx`, next to its tab row) instead of living in the Toolbar.
+  This is both a better pattern (Figma/VS Code put a panel's collapse
+  control on the panel itself, not a distant global toolbar) and
+  structurally immune to this bug class going forward — nothing else in the
+  Toolbar can ever crowd it out again, because it's no longer in the
+  Toolbar. Re-expanding mirrors the Sidebar's existing pattern exactly: a
+  "Show inspector" button appears in the Toolbar's right group, but *only*
+  while collapsed (`{inspectorCollapsed && <IconButton ...>}`), the same
+  shape as the pre-existing `{collapsed && <IconButton label="Show
+  sidebar">}` at the top of the file.
+- **Six more controls folded into one "More" overflow menu**: Focus mode
+  (both its options), Version history, Save, Load, Project Settings, and
+  Keyboard shortcuts. These are meaningfully lower-frequency than Undo/
+  Redo/Export/mode-switching — reasonable to trade one extra click for
+  guaranteed visibility. `saveProjectError`/`loadProjectError` (previously
+  shown in a hover tooltip) now show as the menu item's own label text when
+  set, since a closed dropdown item has nowhere to hover a tooltip onto —
+  a real fidelity loss for that one rare error path, accepted rather than
+  over-engineering a solution for it.
+- **What's left always-visible**: Undo, Redo, project name, theme toggle,
+  Virtual Editor, Develop, Export, More — seven items instead of thirteen.
+  Comfortably fits even with Sidebar + Inspector both open at a normal
+  laptop width, which is the actual scenario that was breaking.
+
+Verification: `npx tsc -b --force` clean (two `noUnusedLocals` errors
+surfaced immediately — `saveProjectError`/`loadProjectError` had been read
+only inside the removed tooltips — fixed by folding them into the menu
+item labels rather than dropping them, so a real save/load failure still
+surfaces somewhere). Not yet Chrome-verified — same standing caveat as
+every recent UI pass, and this one specifically deserves a check at a
+realistic laptop width with both side panels open, since that's the exact
+condition that was broken twice now.
+
 ## Recommended next task
-Push everything queued from Phase 85 through Phase 103 (20+ commits) — this
+Push everything queued from Phase 85 through Phase 104 (20+ commits) — this
 has been a standing, repeated ask across many sessions now; it requires the
 user's own terminal, not this sandbox. Once pushed, a real Chrome pass
-(resized to a phone viewport, ideally a real device) is overdue and should
-cover, in order: (1) Phase 95-100's mobile claims — chapter switcher add/
-rename/delete, "Add photo" OS picker + insert, per-block "⋮" menu (move up/
-down disabled correctly at the ends, delete + undo round-trip), header Undo
-reaching into Ideas too; (2) Phase 102-103's Book Graph — the three click
-semantics (select/drag/connect-mode) don't collide, per-node colour/size
-controls actually apply, search dimming feels right, chapter-to-chapter and
-chapter-to-entity connections both work end to end; (3) Phase 101's CMYK
-export — generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`,
-confirm they differ and neither crashes the exporter. Real dictionary-backed
+(resized to a normal laptop width, both Sidebar and Inspector open) is
+overdue and should cover, in order: (1) Phase 104's Toolbar — confirm
+Export is no longer clipped, the "More" menu holds everything it should,
+Hide Inspector on the Inspector's own header works and "Show inspector"
+reappears correctly when collapsed; (2) Phase 95-100's mobile claims —
+chapter switcher add/rename/delete, "Add photo" OS picker + insert,
+per-block "⋮" menu, header Undo reaching into Ideas too; (3) Phase 102-103's
+Book Graph — the three click semantics (select/drag/connect-mode) don't
+collide, per-node colour/size controls actually apply, search dimming feels
+right, chapter connections work end to end; (4) Phase 101's CMYK export —
+generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`, confirm
+they differ and neither crashes the exporter. Real dictionary-backed
 spell-check and thesaurus/synonym lookup remain blocked — no npm registry
 access in this sandbox, unchanged from every earlier phase.

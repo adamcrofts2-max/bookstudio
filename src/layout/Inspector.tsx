@@ -1,9 +1,10 @@
-import { Palette } from 'lucide-react'
+import { ChevronsRight, Palette } from 'lucide-react'
 
 import { useUiStore, type InspectorTab } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypographyPanel } from '@/layout/inspector/TypographyPanel'
 import { ImagePanel } from '@/layout/inspector/ImagePanel'
 import { StructuralPagePanel } from '@/layout/inspector/StructuralPagePanel'
@@ -35,6 +36,7 @@ function SettingRow({ label, value }: { label: string; value: string }) {
 /** Right column: always context-sensitive, never overwhelming. */
 export function Inspector({ project }: InspectorProps) {
   const collapsed = useUiStore((s) => s.inspectorCollapsed)
+  const toggleInspector = useUiStore((s) => s.toggleInspector)
   const activeTab = useUiStore((s) => s.inspectorTab)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
   const setProjectSettingsOpen = useUiStore((s) => s.setProjectSettingsOpen)
@@ -50,15 +52,37 @@ export function Inspector({ project }: InspectorProps) {
         {/* px-1.5/text-xs/gap-0.5 (tighter than this component's px-3/text-sm/gap-1
          * defaults) — with 5 tabs in a 300px panel, the default padding genuinely
          * overflowed the row (labels truncated on both edges depending on scroll
-         * position). See docs/STATUS.md's audit-fixes entry. */}
-        <div className="shrink-0 p-3 pb-0">
-          <TabsList className="w-full gap-0.5">
+         * position). See docs/STATUS.md's audit-fixes entry.
+         *
+         * The collapse chevron moved here from `Toolbar.tsx` (Phase 104, user
+         * 2026-08-02: "still cant see keyboard shortcuts or hide inspector as
+         * right sidebar overlaps them"). The Toolbar's own "fix" for that
+         * (Phase 99's `overflow-hidden`) only stopped the overflow from
+         * visually *bleeding* onto this column — it didn't create room, so on
+         * anything but a wide viewport the rightmost buttons (this one
+         * included) still got clipped off the edge entirely. The actual fix is
+         * fewer things competing for that one crowded row: this control now
+         * lives on the panel it collapses, the same place Figma/VS Code put a
+         * panel's own collapse affordance, and can never be squeezed out by
+         * unrelated toolbar buttons again. Re-expanding uses the mirror-image
+         * pattern `Toolbar.tsx` already established for the Sidebar: a small
+         * "Show inspector" button appears in the Toolbar only while collapsed. */}
+        <div className="flex shrink-0 items-center gap-1.5 p-3 pb-0">
+          <TabsList className="w-full flex-1 gap-0.5">
             {TABS.map((tab) => (
               <TabsTrigger key={tab.id} value={tab.id} className="flex-1 px-1.5 text-xs">
                 {tab.label}
               </TabsTrigger>
             ))}
           </TabsList>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="Hide inspector" onClick={toggleInspector}>
+                <ChevronsRight className="size-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Hide inspector</TooltipContent>
+          </Tooltip>
         </div>
 
         {/* `min-h-0` is load-bearing on a flex child that needs to scroll — without

@@ -5,17 +5,18 @@ import {
   ChevronDown,
   ChevronsRight,
   Download,
-  Focus,
   FolderOpen,
   History,
   Keyboard,
   Loader2,
   Moon,
+  MoreHorizontal,
   NotebookPen,
   PanelLeft,
   PenLine,
   Redo2,
   Save,
+  Settings,
   Sparkles,
   Sun,
   Undo2,
@@ -28,7 +29,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
 import { useContentStore } from '@/store/contentStore'
@@ -218,31 +219,6 @@ export function Toolbar({ project }: ToolbarProps) {
           {resolved === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </IconButton>
 
-        <DropdownMenu>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" aria-label="Focus mode" disabled={!manuscript}>
-                    <Focus className="size-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </span>
-            </TooltipTrigger>
-            <TooltipContent>{manuscript ? 'Hide everything but the page — for writing or reading' : 'Import a manuscript first'}</TooltipContent>
-          </Tooltip>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem className="gap-2" onSelect={() => setFocusMode('write')}>
-              <PenLine className="size-3.5" />
-              Distraction-free writing
-            </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2" onSelect={() => setFocusMode('read')}>
-              <BookOpenText className="size-3.5" />
-              Reading mode
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -270,34 +246,7 @@ export function Toolbar({ project }: ToolbarProps) {
           <TooltipContent>Ideas, characters, places, timeline — everything that gives this book context</TooltipContent>
         </Tooltip>
 
-        <IconButton label="Version history" onClick={() => setVersionHistoryOpen(true)}>
-          <History className="size-4" />
-        </IconButton>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => void runSaveProject()} disabled={savingProject}>
-              {savingProject ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
-              Save
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{saveProjectError ?? 'Save this project as a file you can keep or move to another computer'}</TooltipContent>
-        </Tooltip>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button variant="secondary" size="sm" className="gap-1.5" onClick={openProjectFilePicker} disabled={loadingProject}>
-              {loadingProject ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
-              Load
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{loadProjectError ?? 'Open a project file saved earlier, as a new project'}</TooltipContent>
-        </Tooltip>
         <input {...projectFileInputProps} />
-
-        <Button variant="secondary" size="sm" onClick={() => setSettingsOpen(true)}>
-          Project Settings
-        </Button>
 
         <DropdownMenu>
           <Tooltip>
@@ -346,16 +295,77 @@ export function Toolbar({ project }: ToolbarProps) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <IconButton
-          label={inspectorCollapsed ? 'Show inspector' : 'Hide inspector'}
-          onClick={toggleInspector}
-        >
-          <ChevronsRight className={inspectorCollapsed ? 'size-4' : 'size-4 rotate-180'} />
-        </IconButton>
+        {/* Everything below used to be six more individual buttons in this
+         * same row (Focus mode, Version history, Save, Load, Project
+         * Settings, Keyboard shortcuts) — eleven controls total competing
+         * for one `shrink-0` row that never got any wider. Phase 99's fix
+         * (`overflow-hidden` on the header) only stopped that overflow from
+         * visually bleeding onto the Inspector column; it didn't create
+         * room, so on anything narrower than a very wide monitor — the
+         * common case once both Sidebar and Inspector are open — the
+         * row still ran out of space and the *tail* of it (Keyboard
+         * shortcuts, Hide Inspector, and the end of Export) got clipped off
+         * by that same `overflow-hidden` instead (user, 2026-08-02: "still
+         * cant see keyboard shortcuts or hide inspector... half of the
+         * export button is cut off"). Folding the lower-frequency actions
+         * into one menu is the actual fix: it removes five controls' worth
+         * of width from the row instead of trying to reclip a row that was
+         * already too full. Hide Inspector moved to `Inspector.tsx`'s own
+         * header (same reasoning, plus it's more discoverable sitting on
+         * the panel it actually controls) — only "Show inspector" (below)
+         * still lives here, and only while collapsed, mirroring the
+         * Sidebar's own `{collapsed && <IconButton label="Show sidebar">}`
+         * pattern at the top of this file. */}
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="More">
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>More</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem className="gap-2" disabled={!manuscript} onSelect={() => setFocusMode('write')}>
+              <PenLine className="size-3.5" />
+              Distraction-free writing
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" disabled={!manuscript} onSelect={() => setFocusMode('read')}>
+              <BookOpenText className="size-3.5" />
+              Reading mode
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="gap-2" onSelect={() => setVersionHistoryOpen(true)}>
+              <History className="size-3.5" />
+              Version history
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" disabled={savingProject} onSelect={() => void runSaveProject()}>
+              {savingProject ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
+              {savingProject ? 'Saving…' : (saveProjectError ?? 'Save project file')}
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" disabled={loadingProject} onSelect={openProjectFilePicker}>
+              {loadingProject ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
+              {loadingProject ? 'Loading…' : (loadProjectError ?? 'Load project file')}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="gap-2" onSelect={() => setSettingsOpen(true)}>
+              <Settings className="size-3.5" />
+              Project Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setShortcutsOpen(true)}>
+              <Keyboard className="size-3.5" />
+              Keyboard shortcuts
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-        <IconButton label="Keyboard shortcuts" onClick={() => setShortcutsOpen(true)}>
-          <Keyboard className="size-4" />
-        </IconButton>
+        {inspectorCollapsed && (
+          <IconButton label="Show inspector" onClick={toggleInspector}>
+            <ChevronsRight className="size-4" />
+          </IconButton>
+        )}
       </div>
 
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
