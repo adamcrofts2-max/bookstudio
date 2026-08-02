@@ -5992,21 +5992,75 @@ Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors (pre-existin
 unrelated). Not live-verified in Chrome — same push limitation as every commit
 since Phase 89.
 
+## Phase 94 — Idea System Milestone 2: the Ideas mind-map view (2026-08-02)
+
+User asked for this to be thought through properly rather than built to the
+roadmap's one-line spec as-is ("nodes are ideas, tag = cluster colour, edges are
+shared tags or manual `relatedIdeaIds`") — so before writing any code, worked
+through what would actually be readable and what wouldn't:
+
+- **Edges only from `relatedIdeaIds`, not shared tags.** Drawing a line for every
+  pair of ideas sharing a tag is fine at 3 ideas and unreadable at 12 — one
+  popular tag produces a dense, crossing mess. `relatedIdeaIds` is a deliberate
+  "the author said these two connect" signal and deserves to read as a real
+  edge; a shared tag is a much looser, more implicit signal better shown through
+  clustering than a literal line.
+- **Tag clustering via a cheap per-tag centroid attraction**, not pairwise shared-
+  tag forces — each layout iteration, every idea is pulled toward the average
+  position of every other idea sharing its first tag. O(n) per tag group, not
+  O(n²) per pair, and produces the same visual result (same-tagged ideas end up
+  near each other) without needing to draw anything extra.
+- **Colour discipline**: only the four semantic hues this whole app already has
+  (`--color-accent/success/warning/danger`) are used for tag rings, hashed by tag
+  name to a stable index. No new categorical palette invented — that would break
+  dark/light theme adaptation those four get for free and goes against
+  `CLAUDE.md`'s "don't invent ad-hoc values outside tokens." Past four distinct
+  tags, colours repeat; the legend's text label is the actual disambiguator at
+  that point, colour is a secondary assist.
+- **Node fill = status colour**, exactly `STATUS_DOT_CLASS`'s existing meaning
+  from List/Board, just as a paintable CSS var (SVG `fill` doesn't take
+  Tailwind's `bg-*` utilities) — one consistent status-colour language across
+  all three views, not a second one invented for Map.
+- **Hand-rolled force-directed layout**, no graph/viz library: confirmed while
+  scoping Phase 93 that this sandbox has no npm registry access at all (`npm
+  view` returns 403), so a library was never actually on the table. A plain
+  O(n²) spring-embedder (repulsion between every pair, spring attraction along
+  edges, per-tag centroid pull, weak centering force, damped integration, ~240
+  iterations) settles well under a frame's cost at the scale Ideas realistically
+  reach. Recomputed via `useMemo` keyed on a joined ids/tags/relations string,
+  not on every render, so the layout doesn't visibly re-jump on unrelated
+  re-renders.
+- **Pan + zoom as a plain CSS `transform` on the `<svg>` element itself**, not an
+  SVG-space transform inside a `<g>` — a screen-pixel drag delta maps 1:1 to CSS
+  transform pixels regardless of the fitted `viewBox`'s own internal scale,
+  avoiding a whole class of "pan speed is wrong at some zoom levels" bugs a
+  viewBox-relative transform would introduce. Zoom uses a native, non-passive
+  `wheel` listener (`useEffect` + `addEventListener(..., { passive: false })`)
+  rather than React's synthetic `onWheel`, which attaches passively by default
+  and would throw a console warning the moment `preventDefault()` is called.
+- **`IdeaInboxPanel.tsx`**: the List/Board toggle from Phase 93 becomes a three-
+  way List/Board/Map segmented control. All three share the same status-filtered
+  `visible` idea list and the same `IdeaDetailDialog` on click.
+
+Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors (pre-existing,
+unrelated). Not live-verified in Chrome — same push limitation as every commit
+since Phase 89.
+
 ## Recommended next task
 Push everything from Phase 85 onward, then do one real Chrome pass covering all of
 it: the Notes badge no longer clipping at a page's top edge (Phase 89), the
 selection-to-Develop menu end to end (Phase 90), "Linked from Chapter X" jumping to
-the right paragraph (Phase 91), the Develop nav's new "Tools" label (Phase 92), and
-the Ideas Board view with at least one image actually attached (Phase 93) —
-including confirming `loadAssets` being called from both `Sidebar.tsx` and now
-`IdeaInboxPanel.tsx`/`IdeaDetailDialog.tsx` doesn't cause any duplicate-load
-weirdness. After that, real dictionary-backed spell-check and the thesaurus/
-synonym lookup are both blocked from this side — this sandbox has no npm registry
-access (confirmed via `npm view`, 403 Forbidden), and both need a new bundled
-package. They're buildable, just not by me here; flagging that plainly rather than
-silently skipping them. Also still outstanding from Phase 82: putting Idea System
-Milestone 1 in front of two or three first-time authors and watching their
-reaction, per the spec's own "how we'll know it worked" section — that reaction,
-not more building, should decide what Idea System Milestone 2 (mind-map view) and
-the rest of the book graph (Milestone 3 — Phase 90 cleared its data-model
-prerequisite; the graph UI itself is still unbuilt) actually look like.
+the right paragraph (Phase 91), the Develop nav's new "Tools" label (Phase 92), the
+Ideas Board view with at least one image attached (Phase 93), and the Map view
+(Phase 94) — pan/zoom feel, tag clustering with several tagged ideas, and edges
+actually appearing between manually-related ideas. Also confirm `loadAssets` being
+called from both `Sidebar.tsx` and now `IdeaInboxPanel.tsx`/`IdeaDetailDialog.tsx`
+doesn't cause any duplicate-load weirdness. After that, real dictionary-backed
+spell-check and the thesaurus/synonym lookup are both blocked from this side — this
+sandbox has no npm registry access (confirmed via `npm view`, 403 Forbidden), and
+both need a new bundled package. They're buildable, just not by me here; flagging
+that plainly rather than silently skipping them. Also still outstanding from Phase
+82: putting the whole Idea System in front of two or three first-time authors and
+watching their reaction, per the spec's own "how we'll know it worked" section —
+that reaction should decide what the book graph (Milestone 3 — Phase 90 cleared its
+data-model prerequisite; the graph UI itself is still unbuilt) actually looks like.

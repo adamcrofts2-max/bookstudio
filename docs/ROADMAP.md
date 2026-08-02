@@ -795,9 +795,19 @@ daily use of everything built so far.)*
       preferring the precise `linkedBlockId` over the chapter when both are
       set) for every kind except Timeline Event, which already has its own
       manual chapter-assignment `Select` for this same field.
-- [ ] Idea System Milestone 2: Ideas mind-map view (list/mind-map toggle on the
-      same Ideas data — nodes are ideas, tag = cluster colour, edges are shared
-      tags or manual `relatedIdeaIds`). Design agreed 2026-08-02, not built.
+- [x] Idea System Milestone 2: Ideas mind-map view (Phase 94, 2026-08-02, built
+      after the user asked for it to be thought through properly rather than
+      built to the one-line spec as-is). One deliberate change from the
+      original design note: edges are manual `relatedIdeaIds` only, not shared
+      tags too — a popular tag on a dozen ideas would draw dozens of crossing
+      lines and be unreadable. Tags instead drive a cheap per-tag centroid-
+      attraction force each layout iteration, clustering same-tagged ideas
+      spatially and by a coloured ring, with no line drawn for the pairing.
+      Hand-rolled force-directed layout in `IdeaMindMapView.tsx` — no graph/
+      viz library (confirmed this sandbox has no npm registry access, so one
+      wasn't on the table regardless). Pan (drag) + zoom (scroll/pinch) via a
+      plain CSS transform on the `<svg>` itself. List/Board/Map now share one
+      segmented toggle in `IdeaInboxPanel.tsx`.
 - [ ] Book graph (Idea System Milestone 3, discussed 2026-08-02): the mind-map
       concept extended past Ideas to the whole book — chapters, characters,
       places, ideas, images, and research as one connected, icon-coded graph

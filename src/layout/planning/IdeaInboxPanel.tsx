@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LayoutGrid, Lightbulb, List, Plus } from 'lucide-react'
+import { LayoutGrid, Lightbulb, List, Network, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -10,6 +10,7 @@ import { useAssetStore } from '@/store/assetStore'
 import { addIdeaWithHistory } from '@/store/editorActions'
 import { IDEA_STATUSES, IDEA_STATUS_LABELS, type Idea, type IdeaStatus } from '@/types/idea'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
+import { IdeaMindMapView } from '@/layout/planning/IdeaMindMapView'
 
 interface IdeaInboxPanelProps {
   projectId: string
@@ -34,7 +35,7 @@ const STATUS_DOT_CLASS: Record<IdeaStatus, string> = {
  * category one click away in a quieter secondary row.
  *
  * List was the only view Milestone 1 shipped (Board/Canvas were explicitly
- * deferred). Phase 93 adds Board — a Pinterest-style visual grid — as the
+ * deferred). Phase 93 added Board — a Pinterest-style visual grid — as the
  * direct answer to "theres no place for example ideas/images think
  * pinterest" (user, 2026-08-02): any Idea with `imageAssetIds` (Phase 93's
  * new field) shows its first image as a cover; ideas with no image still
@@ -42,15 +43,22 @@ const STATUS_DOT_CLASS: Record<IdeaStatus, string> = {
  * column layout (`columns-*` + `break-inside-avoid`), not a JS masonry
  * library — no new dependency, and this sandbox has no npm registry access
  * to add one even if it were worth it for what's still a fairly small grid.
- * List stays the default and the only view for anyone who never adds an
- * image — Board is additive, not a replacement.
+ *
+ * Phase 94 (Idea System Milestone 2) adds Map — see `IdeaMindMapView.tsx`
+ * for the full design reasoning (why tags cluster spatially instead of
+ * drawing a line per shared tag, why lines are reserved for manual
+ * `relatedIdeaIds`, the hand-rolled force layout). All three views share
+ * the same `visible` (status-filtered) idea list and the same
+ * `IdeaDetailDialog` on click — one detail surface, three ways to browse.
+ * List stays the default for anyone who never tags, links, or adds an
+ * image to an Idea — Board and Map are both additive, never a replacement.
  */
 export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
   const ideas = useIdeaStore((s) => s.byProject[projectId]) ?? EMPTY_IDEAS
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all')
-  const [view, setView] = useState<'list' | 'board'>('list')
+  const [view, setView] = useState<'list' | 'board' | 'map'>('list')
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
 
   // See `IdeaDetailDialog.tsx`'s identical effect for why this is needed
@@ -118,9 +126,9 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
               )
             })}
           </div>
-          {/* List/Board toggle — a plain segmented pair, not a dropdown,
-             since it's exactly two mutually-exclusive states someone will
-             flip between often. */}
+          {/* List/Board/Map toggle — a plain segmented row, not a dropdown,
+             since these are mutually-exclusive states someone will flip
+             between often. */}
           <div className="flex shrink-0 items-center gap-0.5 rounded-[var(--radius-button)] border border-border p-0.5">
             <button
               type="button"
@@ -145,6 +153,18 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
               )}
             >
               <LayoutGrid className="size-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('map')}
+              aria-label="Map view"
+              title="Map view"
+              className={cn(
+                'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
+                view === 'map' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
+              )}
+            >
+              <Network className="size-3.5" />
             </button>
           </div>
         </div>
@@ -184,7 +204,7 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
             </button>
           ))}
         </div>
-      ) : (
+      ) : view === 'board' ? (
         // Board — CSS multi-column masonry, not a grid: a grid forces every
         // row to the tallest cell's height, which would stretch every
         // text-only card up to match its image-having neighbours. Columns
@@ -215,6 +235,8 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
             )
           })}
         </div>
+      ) : (
+        <IdeaMindMapView ideas={visible} onSelect={setSelectedIdeaId} />
       )}
 
       {selectedIdeaId && (
