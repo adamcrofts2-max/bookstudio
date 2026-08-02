@@ -805,20 +805,20 @@ daily use of everything built so far.)*
       Data-model prerequisite (chapter/block association on every kind) is now
       done (Phase 90) — this item is the graph UI itself, still unbuilt. Do this
       after Milestone 2 ships and gets real reaction, not before.
-- [ ] Visual moodboard / Pinterest-style board for example ideas and reference
-      images (user, 2026-08-02): today's Ideas and References are text-only —
-      no way to pin an inspiration image or lay out visual references as a
-      board rather than a list. Needs a real design pass before building:
-      where do images actually live (a new optional field on `Idea`, a new
-      Layer 0 kind, or a board view layered over `References`/
-      `IllustrationBrief`?), and how does a board/grid layout coexist with the
-      existing list view rather than replacing it. Not scoped yet.
-- [ ] Develop nav cleanup: fold "Generate Prompt" + "Paste Response" (a real
-      two-step bulk-AI workflow, not clutter — Phase 143/144) under a small
-      muted "Tools" section header at the bottom of the nav, separated from the
-      Ideas-promotion categories above it. Discussed in the Phase 83 design
-      review but deliberately not built — not part of the agreed build list for
-      that pass.
+- [x] Visual moodboard / Pinterest-style board for example ideas and reference
+      images (Phase 93, 2026-08-02) — resolved the design question with a new
+      optional `Idea.imageAssetIds?: string[]` (reusing the existing
+      `assetStore`, no new Layer 0 kind, no duplicated storage — same pattern
+      `IllustrationBrief.referenceAssetId` already used for one image,
+      generalised to a list). `IdeaDetailDialog.tsx` gets an "Add reference
+      image" upload; `IdeaInboxPanel.tsx` gets a List/Board toggle — Board is
+      a CSS multi-column masonry grid (no new dependency; sandbox has no npm
+      registry access regardless), List stays the default so nobody who never
+      adds an image sees any change.
+- [x] Develop nav cleanup (Phase 92, 2026-08-02): folded "Generate Prompt" +
+      "Paste Response" under a small muted "Tools" section header, separated
+      from the Ideas-promotion categories above it. Discussed in the Phase 83
+      design review, deliberately not built then.
 
 ## Phase G — Accounts, Cloud & Collaboration
 

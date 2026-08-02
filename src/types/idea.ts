@@ -61,4 +61,16 @@ export interface Idea {
    * the Archived bucket by default) as a record of where that structured
    * entity came from, not deleted or hidden outright. */
   promotedTo?: { kind: Layer0EntityKind; entityId: string }
+  /**
+   * Reference/inspiration images attached to this Idea (Phase 93, user:
+   * "theres no place for example ideas/images think pintrest") — ids into
+   * the existing `assetStore`/IndexedDB asset library, exactly like
+   * `IllustrationBrief.referenceAssetId` already does for a single image,
+   * generalised to a list since a mood-board entry often wants several. No
+   * new storage: these are the same assets a manuscript `ImageBlock` could
+   * point at, just referenced rather than duplicated. First image (if any)
+   * is the card's cover in the Ideas Board view (`IdeaInboxPanel.tsx`);
+   * absent or empty means a plain text card, same as every Idea today.
+   */
+  imageAssetIds?: string[]
 }

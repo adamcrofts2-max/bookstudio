@@ -5946,16 +5946,67 @@ Character list, working from both a plain read and mid-edit selection), and clic
 "Linked from Chapter X" → confirm it switches to Write mode and scrolls to the
 right paragraph (Phase 91). Also confirm `LazySpread`'s virtualisation doesn't
 leave a stale `SelectionDevelopMenu` reacting after its page unmounts. Scope the
-Pinterest/moodboard idea properly before building it — needs a real design pass
-(where do images live: a new field on existing Ideas, a new Layer 0 kind, or a
-dedicated board view over References/Illustration Briefs?) rather than bolting a
-grid onto the current list UI. Also still outstanding from Phase 82: putting
+Pinterest/moodboard idea properly before building it. [Superseded — done, see
+Phases 92-93 below.]
+
+## Phase 92 — Develop nav cleanup: muted "Tools" section header (2026-08-02)
+
+Small, self-contained: `PlanningShell.tsx`'s nav now has a `text-xs uppercase
+tracking-[0.08em] text-text-muted` "Tools" label above "Generate Prompt"/"Paste
+Response", separating that two-step bulk-AI workflow from the Ideas-promotion
+entity categories above it. Discussed in the Phase 83 design review, deliberately
+not built then. `tsc -b --force`: clean.
+
+## Phase 93 — Ideas Board: a Pinterest-style visual view (2026-08-02)
+
+Direct answer to "theres no place for example ideas/images think pinterest"
+(user, 2026-08-02) — the design question ROADMAP.md left open (where do images
+live, how does a board coexist with the list) is resolved:
+
+- **`types/idea.ts`**: new optional `imageAssetIds?: string[]` — ids into the
+  existing `assetStore`/IndexedDB asset library, the exact same reference-not-
+  duplicate pattern `IllustrationBrief.referenceAssetId` already established for
+  a single image, generalised to a list since a mood-board entry often wants
+  several. No new Layer 0 kind, no new storage layer.
+- **`IdeaDetailDialog.tsx`**: an "Add reference image" button (reuses
+  `useImageUpload`, the same hook `CoverImageUploadButton`/the block inserter's
+  Image option already use) plus a small thumbnail grid with per-image remove.
+  Also calls `assetStore.loadAssets` on mount — Develop's shell
+  (`PlanningShell.tsx`) is separate from the editor's `Sidebar.tsx`, which is
+  what normally triggers that load, so a project opened straight into Develop
+  could otherwise show broken image references.
+- **`IdeaInboxPanel.tsx`**: a List/Board segmented toggle next to the status
+  filters (defaults to List — nobody who never adds an image sees any change).
+  Board renders a CSS multi-column masonry layout (`columns-2 sm:columns-3` +
+  `break-inside-avoid`), not a grid — a grid would stretch every text-only card
+  up to match its tallest image-having neighbour; columns let each card keep its
+  own height, which is the actual look being asked for. No new dependency for
+  the layout, which matters here specifically: this sandbox has no npm registry
+  access (`npm view` returns a 403), so any feature needing a new package is
+  simply not buildable from this side regardless of scope — confirmed while
+  scoping this feature, relevant context for anything after this too (spell-
+  check and the thesaurus lookup both explicitly need a bundled dictionary/
+  dataset package and are blocked the same way).
+
+Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors (pre-existing,
+unrelated). Not live-verified in Chrome — same push limitation as every commit
+since Phase 89.
+
+## Recommended next task
+Push everything from Phase 85 onward, then do one real Chrome pass covering all of
+it: the Notes badge no longer clipping at a page's top edge (Phase 89), the
+selection-to-Develop menu end to end (Phase 90), "Linked from Chapter X" jumping to
+the right paragraph (Phase 91), the Develop nav's new "Tools" label (Phase 92), and
+the Ideas Board view with at least one image actually attached (Phase 93) —
+including confirming `loadAssets` being called from both `Sidebar.tsx` and now
+`IdeaInboxPanel.tsx`/`IdeaDetailDialog.tsx` doesn't cause any duplicate-load
+weirdness. After that, real dictionary-backed spell-check and the thesaurus/
+synonym lookup are both blocked from this side — this sandbox has no npm registry
+access (confirmed via `npm view`, 403 Forbidden), and both need a new bundled
+package. They're buildable, just not by me here; flagging that plainly rather than
+silently skipping them. Also still outstanding from Phase 82: putting Idea System
 Milestone 1 in front of two or three first-time authors and watching their
 reaction, per the spec's own "how we'll know it worked" section — that reaction,
-not more building, should decide what actually gets built next between Idea System
-Milestone 2 (mind-map view) and the rest of the book graph (Milestone 3 — Phase 90
-cleared its data-model prerequisite; the graph UI itself is still unbuilt). Phase
-B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
-Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/
-synonym lookup), plus the Develop nav "Tools" section cleanup discussed but not
-built in Phase 83.
+not more building, should decide what Idea System Milestone 2 (mind-map view) and
+the rest of the book graph (Milestone 3 — Phase 90 cleared its data-model
+prerequisite; the graph UI itself is still unbuilt) actually look like.

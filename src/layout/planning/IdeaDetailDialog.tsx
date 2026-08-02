@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ArrowRight, Trash2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, ImagePlus, Trash2, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -13,6 +13,8 @@ import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
 import { useContentStore } from '@/store/contentStore'
 import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useAssetStore } from '@/store/assetStore'
+import { useImageUpload } from '@/hooks/useImageUpload'
 import { updateIdeaWithHistory, deleteIdeaWithHistory, promoteIdeaWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
 import { IDEA_STATUSES, IDEA_STATUS_LABELS, type IdeaStatus } from '@/types/idea'
@@ -54,6 +56,8 @@ export function IdeaDetailDialog({ projectId, ideaId, open, onOpenChange }: Idea
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
   const setAppMode = useUiStore((s) => s.setAppMode)
   const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
+  const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
+  const loadAssets = useAssetStore((s) => s.loadAssets)
 
   const [textDraft, setTextDraft] = useState(idea?.text ?? '')
   const [tagsDraft, setTagsDraft] = useState((idea?.tags ?? []).join(', '))
@@ -61,7 +65,26 @@ export function IdeaDetailDialog({ projectId, ideaId, open, onOpenChange }: Idea
   const [promotingKind, setPromotingKind] = useState<Layer0EntityKind | null>(null)
   const [promoteDraft, setPromoteDraft] = useState<Record<string, string>>({})
 
+  // Develop mode has its own top-level shell (`PlanningShell.tsx`), separate
+  // from the editor's `Sidebar.tsx` — which is what normally triggers
+  // `loadAssets` on mount. A project opened straight into Develop (e.g. a
+  // restored session) might never have mounted that sidebar this session,
+  // so reference images picked here wouldn't resolve to a real object URL
+  // yet. Idempotent — reloading assets that are already loaded is harmless.
+  useEffect(() => {
+    loadAssets(projectId)
+  }, [projectId, loadAssets])
+
+  const { openPicker: openImagePicker, inputProps: imageInputProps } = useImageUpload(projectId, (assetId) => {
+    if (!idea) return
+    updateIdeaWithHistory(projectId, ideaId, { imageAssetIds: [...(idea.imageAssetIds ?? []), assetId] }, 'Add reference image')
+  })
+
   if (!idea) return null
+
+  const removeImage = (assetId: string) => {
+    updateIdeaWithHistory(projectId, ideaId, { imageAssetIds: (idea.imageAssetIds ?? []).filter((id) => id !== assetId) }, 'Remove reference image')
+  }
 
   const commitText = () => {
     if (textDraft.trim() !== idea.text) updateIdeaWithHistory(projectId, ideaId, { text: textDraft }, 'Edit idea')
@@ -179,6 +202,38 @@ export function IdeaDetailDialog({ projectId, ideaId, open, onOpenChange }: Idea
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="idea-tags">Tags</Label>
             <Input id="idea-tags" placeholder="comma, separated, tags" value={tagsDraft} onChange={(e) => setTagsDraft(e.target.value)} onBlur={commitTags} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Reference images</Label>
+            {(idea.imageAssetIds ?? []).length > 0 && (
+              <div className="grid grid-cols-4 gap-2">
+                {(idea.imageAssetIds ?? []).map((assetId) => {
+                  const url = getObjectUrl(assetId)
+                  return (
+                    <div
+                      key={assetId}
+                      className="group/thumb relative aspect-square overflow-hidden rounded-[var(--radius-button)] border border-border bg-background-secondary"
+                    >
+                      {url && <img src={url} alt="" className="size-full object-cover" />}
+                      <button
+                        type="button"
+                        onClick={() => removeImage(assetId)}
+                        aria-label="Remove reference image"
+                        className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-background/90 text-text-secondary opacity-0 transition-opacity duration-150 hover:text-danger group-hover/thumb:opacity-100"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <Button type="button" variant="outline" size="sm" className="w-fit gap-1.5" onClick={openImagePicker}>
+              <ImagePlus className="size-3.5" />
+              Add reference image
+            </Button>
+            <input {...imageInputProps} />
           </div>
 
           {linkedChapter && (
