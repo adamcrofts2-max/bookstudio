@@ -182,6 +182,23 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           onReplace={decorative ? undefined : (newBlock) => chapterId && replaceBlockWithHistory(projectId, chapterId, block.id, newBlock)}
         />
         {chapterId && !decorative && (
+          // Phases 84-87 each gave the Idea badge its own independently
+          // positioned corner (top-right, bottom-right, shared top-left
+          // with Notes, then a positive inset top-left) and each attempt
+          // broke a different way — colliding with this exact toolbar,
+          // with the next block's own toolbar, with the next block's own
+          // badge, and finally with the block's own text. Root cause was
+          // never "wrong corner": it's that an always-visible, absolutely
+          // positioned overlay can't coexist safely with manuscript blocks
+          // packed edge-to-edge with zero padding. `BlockToolbar` itself
+          // has never had this problem because it's hover-gated — only one
+          // block's toolbar is ever visible at a time, so cross-block
+          // collision is structurally impossible. Phase 88 moves the Idea
+          // indicator into that proven container via its `children` slot
+          // instead of inventing a fifth position. Trade-off: no longer
+          // glanceable without hovering — `NotesPanel.tsx`'s
+          // `IdeasLinkedHere` (Inspector → Notes tab) is the always-visible
+          // path once a block is selected.
           <BlockToolbar
             selected={isSelected}
             canMoveUp={canMoveUp}
@@ -198,39 +215,23 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
             }}
             breakAfter={block.breakAfter}
             onToggleBreakAfter={() => editBlock(projectId, chapterId, block.id, { breakAfter: !block.breakAfter })}
-          />
+          >
+            <IdeaIndicatorBadge projectId={projectId} blockId={block.id} />
+          </BlockToolbar>
         )}
         {chapterId && !decorative && (
-          // Phase 86 put Notes+Ideas in one shared row but kept `-top-3` —
-          // NEGATIVE offset, meaning the row renders OUTSIDE the block's own
-          // box, 12px above it. That's the actual structural bug, not which
-          // corner: a block near the top of a printed page (e.g. the first
-          // paragraph right under a chapter heading, reported live) has
-          // nothing but page margin above it, so the badge row floats past
-          // the block's box into that margin — and since `BookRenderer`
-          // clips each page's content to its own printed boundary (has to,
-          // for accurate WYSIWYG/bleed preview), a badge sitting in the
-          // margin above the first block can render clipped or bleeding
-          // onto the page edge, exactly as screenshotted. `-bottom-3`
-          // (Phase 85) failed the identical way at the seam between blocks.
-          // Fix: `top-1`, a small POSITIVE inset — inside the block's own
-          // box, not outside it. A badge that never leaves its block's
-          // rendered area can't be clipped by the page (the block itself
-          // is already guaranteed to render within the page) and can't
-          // collide with a neighbouring block (it never enters the gap
-          // between blocks at all). This removes the whole class of bug
-          // by construction instead of relocating it to a new corner.
-          <div className="absolute top-1 left-1 z-10 flex items-center gap-1">
-            <NoteIndicatorBadge
-              projectId={projectId}
-              blockId={block.id}
-              onClick={() => {
-                select(chapterId, block.id)
-                setInspectorTab('notes')
-              }}
-            />
-            <IdeaIndicatorBadge projectId={projectId} blockId={block.id} />
-          </div>
+          // Restored to its pre-Phase-83 standalone position — Notes alone
+          // (without Ideas sharing the spot) never had a collision problem,
+          // so only Ideas needed to move.
+          <NoteIndicatorBadge
+            projectId={projectId}
+            blockId={block.id}
+            className="absolute -top-3 left-2 z-10"
+            onClick={() => {
+              select(chapterId, block.id)
+              setInspectorTab('notes')
+            }}
+          />
         )}
       </div>
     )

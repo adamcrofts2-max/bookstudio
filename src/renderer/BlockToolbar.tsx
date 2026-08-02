@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ChevronDown, ChevronUp, Copy, SeparatorHorizontal, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -22,6 +23,21 @@ interface BlockToolbarProps {
    */
   breakAfter?: boolean
   onToggleBreakAfter?: () => void
+  /**
+   * Extra content rendered at the start of this row, before Move up —
+   * currently `IdeaIndicatorBadge` (Phase 88). Not a general-purpose slot
+   * for its own sake: after three attempts at giving indicator badges their
+   * own independently-positioned corner (Phases 84-87), each one either
+   * collided with a neighbouring block or with the page's own boundary,
+   * because "always visible, absolutely positioned outside normal flow" is
+   * inherently fragile for content stacked as tightly as manuscript
+   * paragraphs. This toolbar's own position has been stable since Phase 4
+   * precisely because it's hover-gated — reusing that proven container
+   * instead of inventing a fourth position is the actual fix, not another
+   * offset. Ideas linked to a block remain visible without hovering via the
+   * Inspector's Notes tab (`NotesPanel.tsx`'s `IdeasLinkedHere`).
+   */
+  children?: ReactNode
 }
 
 const iconButtonClass =
@@ -60,6 +76,7 @@ export function BlockToolbar({
   selected,
   breakAfter,
   onToggleBreakAfter,
+  children,
 }: BlockToolbarProps) {
   return (
     <div
@@ -71,6 +88,7 @@ export function BlockToolbar({
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
     >
+      {children && <div className="mr-0.5 flex items-center border-r border-border pr-1">{children}</div>}
       <button type="button" className={iconButtonClass} onClick={onMoveUp} disabled={!canMoveUp} aria-label="Move block up" title="Move up">
         <ChevronUp className="size-3.5" />
       </button>
