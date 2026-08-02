@@ -202,6 +202,18 @@ export function PlanningShell({ project }: PlanningShellProps) {
                   bookForm={project.bookForm}
                 />
               ))}
+              <Separator className="my-2" />
+
+              {/* "Tools" — Generate Prompt / Paste Response are a real
+                 two-step bulk-AI workflow (Phase 143/144), not clutter, but
+                 they're a different kind of thing from the Ideas-promotion
+                 categories above: those are "content you're building up,"
+                 this is "an action you run." A small muted section label
+                 makes that distinction legible instead of the two rows
+                 reading as one more entity category. Discussed in the
+                 Phase 83 design review, deliberately not built then —
+                 Phase 92 closes it out. */}
+              <p className="px-3 pb-1 pt-1 text-xs font-medium uppercase tracking-[0.08em] text-text-muted">Tools</p>
               <ToolNavButton
                 icon={Sparkles}
                 label="Generate Prompt"
