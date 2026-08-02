@@ -5435,18 +5435,55 @@ in this file, not evidence of a real problem in the two changed files. Worth a q
 click-through below (Chrome tool availability was intermittent this session — see the
 Phase 78 entry above for the same caveat).
 
+## Phase 80 — Fix: Search tab invisible in Sidebar (flex overflow) (2026-08-02)
+
+User reported Search still not visible, with a screenshot showing only Chapters /
+Structure / Assets in the Sidebar's tab row — even though Phase 75 genuinely added a
+fourth "Search" `TabsTrigger` (confirmed in the committed source, not a push/deploy
+question). Root cause, found by reading `src/components/ui/tabs.tsx`: `TabsTrigger`
+used `whitespace-nowrap` with no `min-w-0`, and CSS flex items default to
+`min-width: auto` — their content's natural nowrap size — regardless of `flex-1`. Four
+labels at the original `px-3 text-sm` sizing don't fit the Sidebar's fixed 264px width;
+the browser doesn't wrap, scroll, or truncate anything by default in that situation, it
+just lets the flex row overflow silently. The fourth trigger — Search — rendered
+entirely outside the visible box with no scrollbar and no visual sign anything was
+wrong, exactly matching "it just isn't there" from every angle the user checked. This
+is a real, reproducible CSS bug, unrelated to git/deploy state — it would have failed
+identically on a local dev server or the live site.
+
+Fix, two parts:
+1. `src/components/ui/tabs.tsx`: added `min-w-0` and swapped `whitespace-nowrap` for
+   `truncate` (which already includes it) on the shared `TabsTrigger` primitive — every
+   tab row in the app now degrades to an ellipsis under real space pressure instead of
+   silently overflowing off-screen. Defensive, app-wide, one change.
+2. `src/layout/Sidebar.tsx`: the real fix for this specific row — matched
+   `Inspector.tsx`'s already-proven-in-this-codebase tight density (`px-1.5 text-xs`,
+   `gap-0.5`) instead of leaving it at `px-3 text-sm`, the same sizing Inspector
+   already uses successfully to fit five tabs (Page/Type/Image/Notes/Theme) in a
+   similarly constrained panel.
+
+`tsc -b --force` clean. Could not visually confirm in a live browser this session — no
+network access in this sandbox to install a headless browser, and Chrome MCP tools
+drive the user's actual browser against a URL, not this sandbox's local dev server.
+Root-caused with high confidence from the actual computed CSS rules, not a guess: worth
+one quick look after pulling to confirm all four tabs now read cleanly at the sidebar's
+default width.
+
 ## Recommended next task
-Push the currently-unpushed local commits (Phase 76 through 79) so the live deployment
+Push the currently-unpushed local commits (Phase 76 through 80) so the live deployment
 matches `main` — the sandbox has no git push credentials, so this needs the user's own
 terminal, same constraint as the still-open #105/#162 tasks. Once pushed, live-verify in
-Chrome: Reading Mode's new page-turn arrows/keyboard nav/page counter (this phase), plus
-the still-outstanding Phase 76-78 batch (empty-chapter "Start writing" prompt,
-select-on-focus for pre-filled fields, first-name-only paste-back mention detection).
-Also confirm Search actually appears on the live site post-deploy — the code has been
-confirmed present on `origin/main` (`git reflog show remotes/origin/main`) and the
-currently-served bundle was confirmed genuinely current via its `304 Not Modified`
-response, so the gap is downstream of git, most likely a Vercel build/config issue only
-visible from the Vercel dashboard.
+Chrome: the Search tab is now visible and clickable (this phase), Reading Mode's new
+page-turn arrows/keyboard nav/page counter (Phase 79), plus the still-outstanding Phase
+76-78 batch (empty-chapter "Start writing" prompt, select-on-focus for pre-filled
+fields, first-name-only paste-back mention detection). The earlier open question of
+whether the *deployed* bundle was also missing Phase 75-78 entirely for a separate,
+Vercel-side reason (raised because the served bundle 304'd as genuinely current yet
+still lacked Search) is now most likely explained by this same overflow bug rather than
+a build/config issue — but that's not confirmed, since it's still not known whether the
+screenshot that prompted this fix was taken from local dev or the live deployment.
+Worth checking the Vercel dashboard's build log anyway if Search is still missing after
+this fix ships and is confirmed pulled.
 Read `docs/PLANNING_MODE_UX_AUDIT.md` for the full first-time-author audit report and
 its prioritised recommendations — the single highest-priority open item it flags is
 still the pre-existing "insert AI-drafted prose into the manuscript with a reviewable

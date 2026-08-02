@@ -632,6 +632,16 @@ daily use of everything built so far.)*
       already used by `dialog.tsx`/`select.tsx`) — a short slide+fade, not a
       literal 3D page-flip, per `CLAUDE.md`'s "subtle and purposeful"
       animation guidance.
+- [x] Fix: Search Sidebar tab invisible due to flex-row overflow — shipped
+      2026-08-02 (Phase 80, user-reported with a screenshot). `TabsTrigger`
+      (`components/ui/tabs.tsx`) had `whitespace-nowrap` with no `min-w-0`;
+      flex items default to `min-width: auto`, so once Search became a
+      fourth tab the row silently overflowed the Sidebar's fixed 264px
+      width instead of wrapping/scrolling/truncating — the tab rendered
+      fully off-screen with zero visual sign anything was wrong. Fixed the
+      shared primitive (`min-w-0` + `truncate`, app-wide defensive fix) and
+      re-sized Sidebar's row to `Inspector.tsx`'s already-proven tight
+      density (`px-1.5 text-xs`) so all four tabs actually fit.
 - [x] AI Workspace: scoped prompt generator (`ClipboardProvider`) — shipped
       2026-08-01 (Phase 66). `types/aiProvider.ts` defines the swappable
       `AiProvider` interface (`sendPrompt(text)`) plus the v1

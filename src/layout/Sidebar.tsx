@@ -267,11 +267,18 @@ export function Sidebar({ project }: SidebarProps) {
       </div>
 
       <Tabs defaultValue="chapters" className="flex min-h-0 flex-1 flex-col px-3">
-        <TabsList className="w-full">
-          <TabsTrigger value="chapters" className="flex-1">Chapters</TabsTrigger>
-          <TabsTrigger value="structure" className="flex-1">Structure</TabsTrigger>
-          <TabsTrigger value="assets" className="flex-1">Assets</TabsTrigger>
-          <TabsTrigger value="search" className="flex-1">Search</TabsTrigger>
+        {/* Same tight density Inspector.tsx already uses for its own
+           5-tab row (px-1.5 text-xs) — this row went from 3 tabs to 4 when
+           Search was added, and at the original px-3 text-sm sizing all 4
+           labels together don't fit this sidebar's fixed 264px width. Every
+           TabsTrigger now has min-w-0 + truncate as a safety net (see
+           tabs.tsx), but the real fix is sizing that actually fits instead
+           of relying on ellipsis. */}
+        <TabsList className="w-full gap-0.5">
+          <TabsTrigger value="chapters" className="flex-1 px-1.5 text-xs">Chapters</TabsTrigger>
+          <TabsTrigger value="structure" className="flex-1 px-1.5 text-xs">Structure</TabsTrigger>
+          <TabsTrigger value="assets" className="flex-1 px-1.5 text-xs">Assets</TabsTrigger>
+          <TabsTrigger value="search" className="flex-1 px-1.5 text-xs">Search</TabsTrigger>
         </TabsList>
 
         <TabsContent value="chapters" className="flex min-h-0 flex-1 flex-col">
