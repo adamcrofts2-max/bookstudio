@@ -217,6 +217,60 @@ export function insertBlockWithHistory(
 }
 
 /**
+ * Splits one paragraph block into two at an arbitrary point within its
+ * content — the store-level half of "pressing Enter mid-paragraph starts a
+ * new paragraph" (Phase 111, 2026-08-02, user: "when writing a paragraph
+ * and pressing enter shouldn't it by default start a new paragraph?"). Before
+ * this, every text block's Enter key only ever committed the whole field and
+ * exited editing (`blocks/shared.tsx`'s `useEditableField`) — there was no
+ * way to create a second paragraph without leaving the flow of typing to
+ * find the "+" inserter, which is exactly the kind of friction that makes
+ * writing feel like fighting the tool instead of an enjoyable task.
+ *
+ * `beforeHtml` replaces the existing block's content in place; `afterHtml`
+ * becomes a brand-new paragraph block inserted immediately after it. Both
+ * changes land in a single `replaceChapterBlocks` call — one undo step for
+ * what is, from the user's perspective, one keystroke (Enter), not two (an
+ * edit plus a separate insert) — same "one user action, one undo step"
+ * principle `insertBlocksWithHistory` below already established for
+ * multi-block AI-draft inserts. Returns the new block's id so the caller
+ * (`Page.tsx`, via `onSplit`) can select it for immediate editing with the
+ * caret at its start; `undefined` if the chapter/block can no longer be
+ * found or the block isn't actually a paragraph (defensive — `onSplit` is
+ * only ever wired from the paragraph block type, see `BlockContentProps`).
+ */
+export function splitParagraphWithHistory(
+  projectId: string,
+  chapterId: string,
+  blockId: string,
+  beforeHtml: string,
+  afterHtml: string,
+): string | undefined {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return undefined
+  const index = chapter.blocks.findIndex((b) => b.id === blockId)
+  const oldBlock = index >= 0 ? chapter.blocks[index] : undefined
+  if (!oldBlock || oldBlock.type !== 'paragraph') return undefined
+
+  const updatedOriginal: ContentBlock = { ...oldBlock, html: beforeHtml }
+  const newBlock: ContentBlock = { ...oldBlock, id: generateId('block'), html: afterHtml }
+  const oldBlocks = chapter.blocks
+  const newBlocks = [...oldBlocks.slice(0, index), updatedOriginal, newBlock, ...oldBlocks.slice(index + 1)]
+
+  useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Split paragraph',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, oldBlocks),
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks),
+  )
+
+  return newBlock.id
+}
+
+/**
  * Inserts several blocks at once, as a single undo step — used by
  * `AiDraftInsertDialog.tsx` to commit a whole reviewed batch of AI-drafted
  * blocks together, matching a real author's mental model ("insert this

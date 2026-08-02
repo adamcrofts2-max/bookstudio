@@ -7174,3 +7174,121 @@ feels right; (7) Phase 101's CMYK export — generate one PDF with
 crashes the exporter. Real dictionary-backed spell-check and thesaurus/
 synonym lookup remain blocked — no npm registry access in this sandbox,
 unchanged from every earlier phase.
+
+## Phase 111 (2026-08-02) — Enter-splits-paragraph + Typewriter mode
+
+User, verbatim: "writing should feel like an enjoyable task. when writing a
+paragraph and pressing enter shouldn't it by default start a new paragraph?
+how about adding an option for typewriter mode(sound). what else makes
+writing easy and enjoyable on the best writing documents. think." Three
+parts: a real bug (Enter didn't split), a new feature (typewriter mode), and
+an open-ended brainstorm (presented separately to the user, not built
+unprompted — building every idea on spec would be a large, unrequested
+scope jump for one session).
+
+### Enter splits a paragraph in place
+
+**Root cause**: `useEditableField`'s `handleKeyDown` (`src/blocks/shared.tsx`)
+unconditionally called `blur()` on Enter for every block type, which routes
+to `handleBlur` → commit-and-exit-editing. There was no code path that split
+a block's content at the caret at all — not a regression, a gap that existed
+since inline editing was first built.
+
+**Fix, spread across the existing layers rather than a special case**:
+- `src/blocks/splitAtCaret.ts` (new): `splitElementAtCaret(el)` uses two DOM
+  `Range`s (element-start→caret, caret→element-end) with `cloneContents()`
+  to split arbitrary inline-formatted HTML at the caret without losing bold/
+  italic/link runs, then runs each half through the existing `sanitiseInline`
+  (`src/parser/html.ts`) — no second sanitiser, no new allowed-tag list.
+- `src/blocks/shared.tsx`: `useEditableField` gained an optional `onSplit`
+  callback and caret-position-aware `startEditing(caretPosition?: 'start' |
+  'end')`. When `onSplit` is provided and Enter is pressed with an active
+  selection, `handleKeyDown` calls it with both halves instead of blurring
+  to commit; `skipCommitRef` prevents the ordinary blur-commit from firing a
+  stale race with the block's un-split full content afterward.
+- `src/renderer/BlockContent.tsx` / `src/blocks/types/paragraph.tsx`: new
+  `onSplit`/`autoEditCaretPosition` props, wired only for `paragraph` — every
+  other block type (heading, list item, quote, etc.) is untouched and keeps
+  today's Enter-commits-and-exits behaviour, since "split into two" isn't
+  meaningful for e.g. a heading the same way it is for prose.
+- `src/store/editorActions.ts`: new `splitParagraphWithHistory(projectId,
+  chapterId, blockId, beforeHtml, afterHtml)` — replaces the original block
+  with the "before" half and inserts a fresh paragraph block for the "after"
+  half via one `replaceChapterBlocks` call, wrapped in one
+  `historyStore.record()` (one user action, one undo step, matching
+  `insertBlocksWithHistory`'s established pattern).
+- `src/store/selectionStore.ts`: `selectForEdit` gained an optional
+  `caretPosition: 'start' | 'end'` parameter and a new
+  `editRequestCaretPosition` field, so `Page.tsx` can auto-select the new
+  second-half block for editing with the caret at its *start* rather than
+  its end — pressing Enter and continuing to type should land the cursor
+  where the new paragraph actually begins, not past its (empty, at that
+  point) content.
+- `src/renderer/Page.tsx`: wires `onSplit` to `splitParagraphWithHistory` +
+  `selectForEdit(chapterId, newBlockId, 'start')`.
+
+**Type-error fixup**: `startEditing`'s new optional parameter broke five
+call sites that had been passing the function reference directly as a
+`onDoubleClick`/`onClick` handler (`shared.tsx`'s `ListItemField` and
+`TableCellField`, `heading.tsx`, `paragraph.tsx`,
+`layout/inspector/TypographyPanel.tsx`) — React was passing the
+`MouseEvent` as the first argument, which the new signature's `'start' |
+'end' | undefined` type correctly rejected at compile time. Fixed by
+wrapping each as `() => x.startEditing()`.
+
+**Verified**: `npx tsc -b --force` — zero errors, full project. Not yet
+live-verified in Chrome (this sandbox has no way to push/preview); a real
+click-through (type a paragraph, press Enter mid-sentence, confirm two
+paragraphs with correct content and one undo step) is still owed, same
+standing caveat as every other unverified item in this file's Phase
+104-108/95-103 sections above.
+
+### Typewriter mode
+
+New `src/hooks/useTypewriterMode.ts`, active only in Focus Mode's `write`
+view (`FocusModeLayout.tsx`) — the normal three-column editor has enough
+surrounding chrome (Sidebar/Toolbar/Inspector) that forcibly centring the
+caret would fight it; distraction-free writing is specifically the mode
+this makes sense in.
+
+Two independent, togglable behaviours:
+1. **Caret-centring scroll.** Listens to `selectionchange` (fires on every
+   caret move — typing, arrow keys, click), reads the caret's
+   `Range.getBoundingClientRect()` (falling back to the focused element's
+   own rect if the range reports an empty box, which some browsers do for a
+   collapsed selection at a text-node boundary), walks up from
+   `document.activeElement` to the nearest `overflow-y: auto`/`scroll`
+   ancestor with real scrollable content, and `scrollBy`s it so the caret's
+   vertical midpoint lands on the container's midpoint. Deliberately DOM-
+   generic rather than wired through `Page.tsx`/`BlockContent.tsx` — it only
+   needs "where's the caret" and "what scrolls," both answerable for any
+   contentEditable field without a new prop threaded through every block
+   type.
+2. **Key-click sound.** Synthesised with the Web Audio API on every
+   qualifying `keydown` while a contentEditable field is focused — a short
+   decaying filtered-noise burst (`AudioContext.createBuffer` +
+   `BiquadFilterNode` bandpass), not a sampled/fetched audio file, so there's
+   nothing to license or bundle. Enter gets a longer, lower-pitched variant
+   for a carriage-return "thunk." Modifier combos (Ctrl/Cmd/Alt) and
+   non-typing keys are excluded so undo/redo, save, and navigation stay
+   silent. `AudioContext` is created lazily on first qualifying keystroke
+   (needs a user gesture) and torn down on unmount.
+
+State: `uiStore.typewriterMode` / `typewriterSound`, both persisted
+(`zustand/persist`) like `showThumbnails` — a standing preference, not
+session state, unlike `focusMode` itself which deliberately does *not*
+persist. Surfaced as two pill controls in `FocusModeLayout`'s existing
+floating toolbar, visible only in `write` mode (a "Typewriter" toggle, and —
+once that's on — a speaker icon to mute/unmute the click).
+
+**Verified**: `npx tsc -b --force` — zero errors. `npx oxlint` and `npx tsx
+scripts/smoke-test.ts` both fail in this sandbox for pre-existing,
+unrelated reasons (`oxlint`: `Bus error (core dumped)`, same category of
+sandbox-environment failure as the already-documented `vite build` Node 22
+ESM-loader crash; `smoke-test.ts`: `ERR_MODULE_NOT_FOUND` resolving
+`zustand/esm/vanilla.mjs`, a Node 22 vs. this `zustand` version's package
+exports mismatch, also unrelated to any code touched this session — both
+reproduce identically against files untouched by this phase). Web Audio
+output and real scroll-centring geometry can't be meaningfully verified
+headlessly either way; both are owed a live-browser check together with the
+Enter-split feature above.

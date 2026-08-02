@@ -245,6 +245,46 @@ daily use of everything built so far.)*
       variant-pair spellings ("colour"/"color", "realise"/"realize" each
       correct in exactly one dictionary, wrong in the other) plus a shared
       real typo caught correctly by both — see STATUS.md.
+- [x] Enter starts a new paragraph (Phase 111, 2026-08-02, user: "when
+      writing a paragraph and pressing enter shouldn't it by default start a
+      new paragraph?") — previously every inline-editable field (paragraph
+      included) treated Enter as "commit and exit editing," with no way to
+      split a paragraph in place. New `splitElementAtCaret`
+      (`blocks/splitAtCaret.ts`, DOM `Range`-based) + `useEditableField`'s
+      new optional `onSplit` callback, wired only for the `paragraph` block
+      type (headings/list items/quotes/etc. keep today's commit-and-exit
+      Enter, where "split into two" doesn't make sense). Persisted via new
+      `editorActions.splitParagraphWithHistory` — one `replaceChapterBlocks`
+      call, one undo step, matching this codebase's "one user action, one
+      undo step" rule. The new second half is auto-selected for editing with
+      the caret placed at its *start* (`selectionStore.editRequestCaretPosition`),
+      not its end, so typing continues naturally. Verified via `tsc`; not
+      yet live-verified in Chrome (see Phase K's standing verification gap
+      for why — this sandbox can't push/preview).
+- [x] Typewriter mode (Phase 111, 2026-08-02, user: "how about adding an
+      option for typewriter mode(sound)") — new `useTypewriterMode` hook,
+      active only in Focus Mode's `write` view. Keeps the caret's line
+      vertically centred as the user types (driven by `selectionchange` +
+      the caret's `Range.getBoundingClientRect()`, scrolled via the nearest
+      `overflow-y: auto/scroll` ancestor — DOM-driven rather than plumbed
+      through every block type, since centring only needs "where's the
+      caret" generically). Optional key-click sound is synthesised with Web
+      Audio (short filtered noise burst, no external asset to license or
+      fetch), with a distinct lower "thunk" for Enter. Two independent
+      toggles (`uiStore.typewriterMode`/`typewriterSound`, persisted like
+      `showThumbnails`) surfaced as pill buttons in `FocusModeLayout`'s
+      floating toolbar, visible only in `write` mode. Verified via `tsc`;
+      sound/scroll behaviour needs live-browser verification (Web Audio and
+      real scroll geometry can't be meaningfully unit-tested headlessly).
+- [ ] Enter-to-split for list items (currently only `paragraph` gets
+      `onSplit` — pressing Enter mid-item in a list still just commits/exits
+      rather than creating a new `<li>`, which is the same "feels broken"
+      gap the user flagged for paragraphs, just not yet asked about).
+- [ ] Backspace-at-start-of-block-merges-with-previous-block (the natural
+      companion to Enter-splits-paragraph — word processors merge the
+      current block into the previous one when Backspace is pressed at
+      position 0; not implemented, no user request yet for this specific
+      half of the pair).
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 

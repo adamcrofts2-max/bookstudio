@@ -1,9 +1,11 @@
-import { BookOpenText, PenLine, X } from 'lucide-react'
+import { BookOpenText, PenLine, Volume2, VolumeX, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { BookRenderer } from '@/renderer/BookRenderer'
 import { useContentStore } from '@/store/contentStore'
 import { useUiStore, type FocusMode } from '@/store/uiStore'
+import { useTypewriterMode } from '@/hooks/useTypewriterMode'
+import { cn } from '@/lib/utils'
 import type { Project } from '@/types'
 
 interface FocusModeLayoutProps {
@@ -27,6 +29,12 @@ interface FocusModeLayoutProps {
 export function FocusModeLayout({ project, mode }: FocusModeLayoutProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
   const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const typewriterMode = useUiStore((s) => s.typewriterMode)
+  const typewriterSound = useUiStore((s) => s.typewriterSound)
+  const toggleTypewriterMode = useUiStore((s) => s.toggleTypewriterMode)
+  const toggleTypewriterSound = useUiStore((s) => s.toggleTypewriterSound)
+
+  useTypewriterMode(mode === 'write' && typewriterMode, typewriterSound)
 
   return (
     <div className="relative flex h-dvh w-full flex-col bg-background">
@@ -36,6 +44,35 @@ export function FocusModeLayout({ project, mode }: FocusModeLayoutProps) {
           {mode === 'write' ? 'Distraction-free writing' : 'Reading mode'}
         </span>
         <span className="text-xs text-text-muted">{mode === 'read' ? '· ← → to turn pages · Esc to exit' : '· Esc to exit'}</span>
+        {mode === 'write' && (
+          <>
+            <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-pressed={typewriterMode}
+              className={cn('h-7 gap-1.5 rounded-full px-2.5 text-xs', typewriterMode && 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]')}
+              onClick={toggleTypewriterMode}
+              title="Typewriter mode: keeps your line centred as you type"
+            >
+              Typewriter
+            </Button>
+            {typewriterMode && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-pressed={typewriterSound}
+                aria-label={typewriterSound ? 'Mute key sound' : 'Enable key sound'}
+                title={typewriterSound ? 'Mute key sound' : 'Enable key sound'}
+                className={cn('size-7', typewriterSound && 'text-[var(--color-accent)]')}
+                onClick={toggleTypewriterSound}
+              >
+                {typewriterSound ? <Volume2 className="size-3.5" /> : <VolumeX className="size-3.5" />}
+              </Button>
+            )}
+            <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+          </>
+        )}
         <Button variant="ghost" size="icon" aria-label="Exit focus mode" onClick={() => setFocusMode('none')}>
           <X className="size-3.5" />
         </Button>

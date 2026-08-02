@@ -36,9 +36,29 @@ export interface BlockContentProps {
    * edit mode immediately once this block is selected, rather than waiting
    * for a double-click. */
   autoEdit?: boolean
+  /** Where the caret should land when `autoEdit` fires — `'end'` (the
+   * long-standing default: the Virtual Editor's "Edit" action, a fresh
+   * block from the "+" inserter) or `'start'` (Phase 111: the second half
+   * of a just-split paragraph, so the cursor lands at the very beginning of
+   * its new content rather than past it). Only meaningful alongside
+   * `autoEdit`. */
+  autoEditCaretPosition?: 'start' | 'end'
   /** Called once autoEdit has been acted on, so the requester (selectionStore)
    * can clear the pending request and avoid re-triggering. */
   onAutoEditHandled?: () => void
+  /**
+   * Enter-mid-paragraph support (Phase 111, 2026-08-02, user: "when writing
+   * a paragraph and pressing enter shouldn't it by default start a new
+   * paragraph?"). Called with the sanitised HTML on either side of the
+   * caret; `Page.tsx` wires this to `editorActions.splitParagraphWithHistory`
+   * (replace this block with `before`, insert a new paragraph block holding
+   * `after` immediately after it, one undo step) and then selects that new
+   * block with `autoEditCaretPosition: 'start'`. Only the `paragraph` block
+   * type wires this today — every other type keeps its existing "Enter
+   * commits and exits" behaviour, since "split into two" doesn't make sense
+   * for e.g. a heading or a list item the same way it does for prose.
+   */
+  onSplit?: (before: string, after: string) => void
 }
 
 /**

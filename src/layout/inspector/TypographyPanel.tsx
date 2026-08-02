@@ -89,7 +89,7 @@ function ParagraphTextEditor({ projectId, chapterId, block }: ParagraphTextEdito
         ref={(el) => {
           field.ref.current = el
         }}
-        onClick={!field.isEditing ? field.startEditing : undefined}
+        onClick={!field.isEditing ? () => field.startEditing() : undefined}
         contentEditable={field.isEditing}
         suppressContentEditableWarning
         onBlur={field.handleBlur}

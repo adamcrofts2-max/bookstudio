@@ -39,7 +39,7 @@ function HeadingRender(props: BlockRenderProps) {
         primary.ref.current = el
       }}
       onClick={!primary.isEditing ? onSelect : undefined}
-      onDoubleClick={editable ? primary.startEditing : undefined}
+      onDoubleClick={editable ? () => primary.startEditing() : undefined}
       contentEditable={primary.isEditing}
       suppressContentEditableWarning
       onBlur={primary.isEditing ? primary.handleBlur : undefined}

@@ -14,7 +14,7 @@ import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
 
 function ParagraphRender(props: BlockRenderProps) {
-  const { block, theme, dropCap, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled } = props
+  const { block, theme, dropCap, selected, onSelect, editable, onCommit, onSplit, autoEdit, autoEditCaretPosition, onAutoEditHandled } = props
 
   const primary = useEditableField({
     mode: 'html',
@@ -22,11 +22,12 @@ function ParagraphRender(props: BlockRenderProps) {
     onCommit: (value) => {
       if (block.type === 'paragraph') onCommit?.({ html: value })
     },
+    onSplit: onSplit && block.type === 'paragraph' ? onSplit : undefined,
   })
 
   useEffect(() => {
     if (autoEdit && editable) {
-      primary.startEditing()
+      primary.startEditing(autoEditCaretPosition ?? 'end')
       onAutoEditHandled?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,7 +42,7 @@ function ParagraphRender(props: BlockRenderProps) {
           primary.ref.current = el
         }}
         onClick={!primary.isEditing ? onSelect : undefined}
-        onDoubleClick={editable ? primary.startEditing : undefined}
+        onDoubleClick={editable ? () => primary.startEditing() : undefined}
         contentEditable={primary.isEditing}
         suppressContentEditableWarning
         onBlur={primary.isEditing ? primary.handleBlur : undefined}

@@ -58,6 +58,18 @@ interface UiStoreState {
   projectSettingsOpen: boolean
   appMode: AppMode
   focusMode: FocusMode
+  /** Phase 111 (2026-08-02, user: "how about adding an option for
+   * typewriter mode(sound)"). Keeps the caret's line vertically centred as
+   * the user types, instead of drifting toward the bottom of the screen —
+   * see `src/hooks/useTypewriterMode.ts`. Only has any visible effect in
+   * Focus Mode's `write` view (`FocusModeLayout.tsx`); persisted like
+   * `showThumbnails` since it's a standing preference, not session state. */
+  typewriterMode: boolean
+  /** Whether typewriter mode also plays a soft synthesised key-click on
+   * each keystroke. Independent toggle so a user can keep the scroll-
+   * centring without the sound, or vice versa. Has no effect unless
+   * `typewriterMode` is also on. */
+  typewriterSound: boolean
 }
 
 interface UiStoreActions {
@@ -73,6 +85,8 @@ interface UiStoreActions {
   setProjectSettingsOpen: (open: boolean) => void
   setAppMode: (mode: AppMode) => void
   setFocusMode: (mode: FocusMode) => void
+  toggleTypewriterMode: () => void
+  toggleTypewriterSound: () => void
 }
 
 /**
@@ -95,6 +109,8 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       projectSettingsOpen: false,
       appMode: 'editor',
       focusMode: 'none',
+      typewriterMode: false,
+      typewriterSound: false,
 
       setAppearance: (mode) => set({ appearance: mode }),
       toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
@@ -120,6 +136,8 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       setProjectSettingsOpen: (open) => set({ projectSettingsOpen: open }),
       setAppMode: (mode) => set({ appMode: mode }),
       setFocusMode: (mode) => set({ focusMode: mode }),
+      toggleTypewriterMode: () => set((state) => ({ typewriterMode: !state.typewriterMode })),
+      toggleTypewriterSound: () => set((state) => ({ typewriterSound: !state.typewriterSound })),
     }),
     {
       name: 'book-studio.ui',

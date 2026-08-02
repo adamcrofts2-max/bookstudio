@@ -35,6 +35,17 @@ interface SelectionState {
    */
   editRequestId: string | null
   /**
+   * Where the caret should land once the requested block actually enters
+   * edit mode — `'end'` (matching every pre-existing caller: the Virtual
+   * Editor's "Edit" action, a fresh block from the "+" inserter, etc.) or
+   * `'start'`, used by `editorActions.splitParagraphWithHistory`'s caller
+   * (`Page.tsx`, wiring `onSplit`) so pressing Enter mid-paragraph lands the
+   * cursor at the very beginning of the new second half — the same place
+   * every real word processor puts it, not wherever "end of content"
+   * happens to be. Only meaningful while `editRequestId` is non-null.
+   */
+  editRequestCaretPosition: 'start' | 'end'
+  /**
    * Non-null means "scroll the manuscript view to this chapter's opening
    * page, this exact page, or this exact block" (Sidebar's chapter nav /
    * ThumbnailRail's page thumbnails / Virtual Editor's Locate & Edit
@@ -52,8 +63,12 @@ interface SelectionState {
     requestId: string
   } | null
   select: (chapterId: string, blockId: string) => void
-  /** Same as `select`, but also flags the selection for immediate editing. */
-  selectForEdit: (chapterId: string, blockId: string) => void
+  /** Same as `select`, but also flags the selection for immediate editing.
+   * `caretPosition` defaults to `'end'` — pass `'start'` for a block whose
+   * content is brand new from the caret's perspective (e.g. the second half
+   * of a just-split paragraph), so the cursor doesn't land past content the
+   * user hasn't actually looked at yet. */
+  selectForEdit: (chapterId: string, blockId: string, caretPosition?: 'start' | 'end') => void
   /** Selects a structural page (clearing any block/chapter selection) —
    * used by the Sidebar's Structure tab rows and by clicking a structural
    * page directly in the on-screen preview. */
@@ -83,19 +98,35 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
   selectedStructuralPageId: null,
   selectedCoverElementId: null,
   editRequestId: null,
+  editRequestCaretPosition: 'end',
   scrollRequest: null,
   select: (chapterId, blockId) =>
-    set({ selectedChapterId: chapterId, selectedBlockId: blockId, selectedStructuralPageId: null, selectedCoverElementId: null, editRequestId: null }),
-  selectForEdit: (chapterId, blockId) =>
+    set({
+      selectedChapterId: chapterId,
+      selectedBlockId: blockId,
+      selectedStructuralPageId: null,
+      selectedCoverElementId: null,
+      editRequestId: null,
+      editRequestCaretPosition: 'end',
+    }),
+  selectForEdit: (chapterId, blockId, caretPosition = 'end') =>
     set({
       selectedChapterId: chapterId,
       selectedBlockId: blockId,
       selectedStructuralPageId: null,
       selectedCoverElementId: null,
       editRequestId: generateId('edit-request'),
+      editRequestCaretPosition: caretPosition,
     }),
   selectStructuralPage: (pageId) =>
-    set({ selectedStructuralPageId: pageId, selectedBlockId: null, selectedChapterId: null, selectedCoverElementId: null, editRequestId: null }),
+    set({
+      selectedStructuralPageId: pageId,
+      selectedBlockId: null,
+      selectedChapterId: null,
+      selectedCoverElementId: null,
+      editRequestId: null,
+      editRequestCaretPosition: 'end',
+    }),
   selectCoverElement: (elementId) => set({ selectedCoverElementId: elementId }),
   consumeEditRequest: () => set({ editRequestId: null }),
   requestScrollToChapter: (chapterId) =>
@@ -116,6 +147,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       selectedStructuralPageId: null,
       selectedCoverElementId: null,
       editRequestId: null,
+      editRequestCaretPosition: 'end',
       scrollRequest: null,
     }),
 }))

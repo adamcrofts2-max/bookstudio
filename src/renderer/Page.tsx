@@ -31,6 +31,7 @@ import {
   movePageWithHistory,
   deletePageBlocksWithHistory,
   deleteChapterWithHistory,
+  splitParagraphWithHistory,
 } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -129,7 +130,9 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const clearSelection = useSelectionStore((s) => s.clear)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const editRequestId = useSelectionStore((s) => s.editRequestId)
+  const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
+  const selectForEdit = useSelectionStore((s) => s.selectForEdit)
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
   const selectStructuralPage = useSelectionStore((s) => s.selectStructuralPage)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
@@ -198,7 +201,17 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           onSelect={decorative ? undefined : () => chapterId && handleSelect(chapterId, block)}
           editable={!decorative}
           onCommit={decorative ? undefined : (updates) => chapterId && editBlock(projectId, chapterId, block.id, updates)}
+          onSplit={
+            decorative
+              ? undefined
+              : (before, after) => {
+                  if (!chapterId) return
+                  const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
+                  if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+                }
+          }
           autoEdit={isSelected && editRequestId !== null}
+          autoEditCaretPosition={editRequestCaretPosition}
           onAutoEditHandled={consumeEditRequest}
           projectId={decorative ? undefined : projectId}
           onReplace={decorative ? undefined : (newBlock) => chapterId && replaceBlockWithHistory(projectId, chapterId, block.id, newBlock)}
