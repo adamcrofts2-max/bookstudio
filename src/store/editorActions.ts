@@ -215,6 +215,41 @@ export function insertBlockWithHistory(
 }
 
 /**
+ * Inserts several blocks at once, as a single undo step — used by
+ * `AiDraftInsertDialog.tsx` to commit a whole reviewed batch of AI-drafted
+ * blocks together, matching a real author's mental model ("insert this
+ * draft") rather than N separate undo entries for N paragraphs. Modelled on
+ * `deletePageBlocksWithHistory`'s bulk pattern below: snapshot the chapter's
+ * full block array before mutating, mutate via one `replaceChapterBlocks`
+ * call (not N `insertBlock` calls), and undo restores that exact snapshot.
+ * A no-op if `blocks` is empty or the chapter can't be found.
+ */
+export function insertBlocksWithHistory(
+  projectId: string,
+  chapterId: string,
+  afterBlockId: string | null,
+  blocks: ContentBlock[],
+): void {
+  if (blocks.length === 0) return
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return
+
+  const oldBlocks = chapter.blocks
+  const insertAt = afterBlockId ? oldBlocks.findIndex((b) => b.id === afterBlockId) + 1 : 0
+  const newBlocks = [...oldBlocks.slice(0, insertAt), ...blocks, ...oldBlocks.slice(insertAt)]
+
+  useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Insert AI draft',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, oldBlocks),
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks),
+  )
+}
+
+/**
  * History-aware replacement for `contentStore.deleteBlock`. Captures the
  * block's current position (via the id of its immediate predecessor, or
  * `null` if it was first) and a full snapshot BEFORE deleting, so undo can

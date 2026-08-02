@@ -1,4 +1,4 @@
-import { Plus, ImagePlus } from 'lucide-react'
+import { Plus, ImagePlus, Sparkles } from 'lucide-react'
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { getBlockTypeDefinition } from '@/blocks/registry'
@@ -14,6 +14,11 @@ interface InsertBlockButtonProps {
    * block even exists, unlike every other type's blank starting point).
    * Phase 51. */
   onInsertImage: (assetId: string) => void
+  /** Opens `AiDraftInsertDialog.tsx` scoped to this exact gap — a separate
+   * callback rather than a new `InsertableBlockType`, since a pasted AI
+   * draft can expand into several blocks at once, not one blank block of a
+   * chosen type. Phase F (`docs/PLANNING_MODE_UX_AUDIT.md` finding #2). */
+  onInsertAiDraft: () => void
   /**
    * True only for a brand-new chapter's very first block — there's no
    * existing content to hover between yet, and nothing on the page hints
@@ -44,7 +49,7 @@ interface InsertBlockButtonProps {
  * same click-to-upload flow the Cover designer and placeholder-to-real-
  * image conversion also use.
  */
-export function InsertBlockButton({ projectId, onInsert, onInsertImage, emptyChapter }: InsertBlockButtonProps) {
+export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
   const { openPicker, inputProps } = useImageUpload(projectId, onInsertImage)
 
   const menu = (
@@ -52,6 +57,10 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, emptyCha
       <DropdownMenuItem onClick={openPicker} className="gap-2">
         <ImagePlus className="size-3.5" />
         Image
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={onInsertAiDraft} className="gap-2">
+        <Sparkles className="size-3.5" />
+        AI Draft…
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       {INSERTABLE_BLOCK_TYPES.map((type) => {

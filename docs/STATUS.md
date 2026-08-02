@@ -5492,3 +5492,93 @@ to be the actual bottleneck between "Book Studio helped me plan" and "Book Studi
 helped me write." Phase B's remaining item: real (dictionary-backed) spell-check
 (flagged 2026-08-01). Phase F still has two deliberately-deferred items
 (`ApiKeyProvider`; a thesaurus/synonym lookup).
+
+## Phase 81 — Insert AI-drafted prose into the manuscript (reviewable) (2026-08-02)
+
+Picked up as the next task per `CLAUDE.md`'s "highest-priority unchecked phase" rule,
+deliberately jumping Phase F ahead of Phase B's only remaining open item (real
+spell-check) — spell-check has no user-reported pain behind it, while this gap was
+independently flagged three separate times (Phase 68's original scoping, the
+Phase 74-78 SUGGESTIONS.md entries, and the live first-time-author audit's finding #2)
+as the actual bottleneck between planning a book in this app and writing it.
+
+**The gap:** `PromptGeneratorPanel`'s own copy told the user to "paste the result back
+into your manuscript yourself" — Phase 68 (`PasteBackPanel`) only closed the *bible*
+half of that round trip (syncing Character/Location notes from an AI reply); getting
+drafted prose itself into the manuscript was still fully manual, one paragraph at a
+time, no assistance at all.
+
+**Design decision — reuse the existing "+" inserter instead of a new top-level
+control.** `InsertBlockButton.tsx` already renders at every gap between blocks (and
+before the first / after the last) with a menu of insertable block types — it already
+carries exactly the two pieces of context a "insert this AI draft here" feature needs:
+which chapter, and which exact position. A new toolbar button would have needed its own
+chapter/position picker UI to reconstruct that same context from scratch. Added one new
+menu item ("AI Draft…", `Sparkles` icon) alongside the existing "Image" and 12 block
+types; clicking it opens `AiDraftInsertDialog.tsx` scoped to that exact gap via a new
+`{ chapterId, afterBlockId }` state field on `Page.tsx` (mirrors the existing
+`isRenamingTitle`/`titleDraft` pattern of small page-local dialog state — each `Page`
+instance owns its own, so multiple chapters' gaps never fight over one shared piece of
+state).
+
+**Parsing:** `src/parser/markdown.ts` gained `parseMarkdownDraftBlocks(source):
+ContentBlock[]` — Markdown-flavoured (most AI replies use `**emphasis**`, occasional
+headings, and lists), reusing `marked` exactly like the real manuscript importer.
+Refactored the existing `parseMarkdown`'s token-handling switch into a shared
+`tokenToBlock` helper first, so the two callers can't silently drift apart — the *only*
+real difference is heading handling: a manuscript import's H1 starts a new chapter, but
+a pasted draft snippet has no chapters to start, so every heading depth (including H1)
+maps to an ordinary heading block instead (an AI-drafted "# Chapter 12" line becomes a
+heading the user can keep as a scene-break marker or delete, never a phantom new
+chapter). Verified with a standalone `tsx` smoke script (`aidraft_smoke.mjs`) against a
+sample draft mixing a heading, two paragraphs, a blockquote, and a list — every token
+mapped to the expected block type, and the H1 correctly became a level-2 heading block
+rather than splitting the manuscript.
+
+**Commit:** new `insertBlocksWithHistory(projectId, chapterId, afterBlockId, blocks)`
+in `editorActions.ts`, modelled on the existing `deletePageBlocksWithHistory`'s bulk
+pattern — snapshot the chapter's whole block array once, splice the reviewed batch in
+via one `replaceChapterBlocks` call (not N individual `insertBlock` calls), and undo
+restores the exact snapshot. The whole pasted draft becomes one undo step, matching an
+author's actual mental model ("insert this draft") rather than N separate undo entries
+for N paragraphs.
+
+**Review, not automatic insertion:** matches this codebase's established "AI proposes,
+a human accepts" rule (`docs/AI_WORKSPACE_VISION.md`, and `PasteBackPanel`'s own
+Accept/Reject pattern) even though there's only one confirm action here rather than
+per-suggestion accept/reject — every candidate block is shown with its type badge and a
+text preview (reusing `virtualEditor/textExtract.ts`'s existing `blockPlainText`, not a
+new extraction function) before the Insert button is enabled, and nothing is written to
+the manuscript until it's clicked.
+
+**Scope deliberately left for later**, matching this feature's own "small, honest
+start" (same phrase this codebase already uses for the continuity/field-guide
+checkers): no per-block accept/reject (only whole-batch insert or cancel — a fast
+follow if a batch turns out to need partial acceptance in practice); no image blocks in
+parsed drafts (an AI reply is text, not an asset); repositioning an inserted block after
+the fact reuses the existing move-up/down block toolbar buttons rather than needing a
+position picker inside the dialog itself.
+
+`tsc -b --force` clean. `npx oxlint` still crashes with the same sandbox-level "Bus
+error" seen in Phase 80 — not evidence of a lint finding in these files specifically.
+Not live-verified in Chrome this session (same tool-availability caveat as the last
+several phases) — worth a real click-through after pulling: open a chapter, hover a
+gap, "AI Draft…", paste a short multi-paragraph sample, confirm the preview and the
+Insert button both look right, and confirm Undo removes the whole batch in one step.
+
+## Recommended next task
+Push the currently-unpushed local commits (Phase 76 through 81) so the live deployment
+matches `main` — the sandbox has no git push credentials, same constraint as the
+still-open #105/#162 tasks. Once pushed, live-verify in Chrome: the new "AI Draft…"
+insert flow (this phase), the Search tab actually being visible now (Phase 80), Reading
+Mode's page-turn arrows/keyboard nav (Phase 79), plus the still-outstanding Phase 76-78
+batch (empty-chapter "Start writing" prompt, select-on-focus for pre-filled fields,
+first-name-only paste-back mention detection).
+Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
+Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/
+synonym lookup). `docs/VISION.md`'s new "Long-Term Platform Vision" section (2026-08-02)
+is worth a read before scoping the Idea System / Develop redesign
+(`docs/IDEA_SYSTEM_PLAN.md`, spec-ready but not started) — several of that spec's
+assumptions (structured data primarily feeding AI generation, versus primarily helping
+the author navigate their own book) are exactly what the vision doc's new risk log
+flags as unresolved.

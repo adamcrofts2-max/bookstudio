@@ -684,12 +684,20 @@ daily use of everything built so far.)*
       chapter's "Untitled Chapter" title) didn't select on focus, so typing merged
       into it instead of replacing it. Phase 78 (2026-08-02). See
       `docs/PLANNING_MODE_UX_AUDIT.md`.
-- [ ] **Highest-priority open gap, confirmed by live audit**: no assisted way to
-      insert AI-drafted prose into the manuscript — Generate Prompt's own copy says
-      "paste the result back into your manuscript yourself," but that's currently a
-      fully manual, unassisted, block-by-block process. See
-      `docs/PLANNING_MODE_UX_AUDIT.md` finding #2 and Phase 68's SUGGESTIONS.md entry
-      for the original scoping.
+- [x] **Insert AI-drafted prose into the manuscript with a reviewable diff** —
+      shipped 2026-08-02 (Phase 81). Was the highest-priority open gap confirmed by
+      the live audit (`docs/PLANNING_MODE_UX_AUDIT.md` finding #2) — Generate
+      Prompt's own copy said "paste the result back into your manuscript yourself,"
+      a fully manual, unassisted, block-by-block process. New "AI Draft…" item in
+      `InsertBlockButton`'s existing "+" menu (every gap between blocks, not a new
+      top-level control) opens `AiDraftInsertDialog.tsx`: paste text, preview the
+      parsed candidate blocks, confirm — nothing touches the manuscript until
+      Insert is clicked. Parses via a new `parseMarkdownDraftBlocks` (`parser/
+      markdown.ts`), sharing its token-mapping with the existing manuscript-import
+      parser rather than duplicating it; a new `insertBlocksWithHistory`
+      (`editorActions.ts`) commits the whole batch as one undo step. Reusing the
+      exact gap the user clicked means the dialog needs no separate chapter/
+      position picker — see docs/STATUS.md Phase 81 for the full design reasoning.
 - [x] AI Workspace: continuity checker over Layer 0 data, extending the Virtual
       Editor's checker architecture (Phase C) — shipped 2026-08-01 (Phase 74).
       New `layer0Bible?: Layer0Bible` field threaded through `CheckerContext`

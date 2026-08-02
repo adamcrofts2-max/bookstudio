@@ -9,6 +9,26 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 81 (2026-08-02) — AI-drafted-prose insertion
+
+- **No per-block accept/reject within a batch.** Insert is all-or-nothing for the
+  whole pasted draft — if only 2 of 5 parsed blocks are actually wanted, the user
+  inserts all 5 and deletes the unwanted ones afterward (already easy: the per-block
+  hover toolbar's delete button). Worth adding per-block checkboxes if batches turn
+  out to commonly need partial acceptance in practice, mirroring `PasteBackPanel`'s
+  per-suggestion Accept/Reject instead of one confirm button.
+- **No merge-into-existing-paragraph option.** Every parsed block always inserts as a
+  brand-new block, even if the intent was "extend this existing paragraph with a
+  sentence." Reasonable for v1 (drafting a new scene is the more common case a
+  paste-in like this targets), but worth a "append to selected block" toggle if usage
+  shows otherwise.
+- **Preview cards show plain text only** (via `blockPlainText`), so a pasted
+  `**bold**`/`_italic_` paragraph's formatting is invisible in the review step even
+  though it's preserved correctly in the actual inserted block (the parser keeps real
+  HTML via `marked.parseInline`). A user reviewing the preview has no way to confirm
+  emphasis came through right until after inserting. Worth rendering the preview's
+  paragraph blocks with real HTML if this turns out to matter in practice.
+
 ## After Phase 79 (2026-08-02) — Reading Mode page-turning
 
 - Page-turn buttons/keyboard nav ship this phase, but there's no click-anywhere-on-page

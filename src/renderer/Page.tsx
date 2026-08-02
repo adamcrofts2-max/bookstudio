@@ -10,6 +10,7 @@ import { BlockToolbar } from '@/renderer/BlockToolbar'
 import { PageToolbar } from '@/renderer/PageToolbar'
 import { NoteIndicatorBadge } from '@/renderer/NoteIndicatorBadge'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
+import { AiDraftInsertDialog } from '@/renderer/AiDraftInsertDialog'
 import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
@@ -123,6 +124,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
   const [isRenamingTitle, setIsRenamingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState('')
+  // Which gap's "AI Draft…" menu item was clicked, if any — carries the
+  // exact chapter + insert position `AiDraftInsertDialog.tsx` needs, the
+  // same `(chapterId, afterBlockId)` pair every other insert path in this
+  // file already threads through. `null` means the dialog is closed.
+  const [aiDraftTarget, setAiDraftTarget] = useState<{ chapterId: string; afterBlockId: string | null } | null>(null)
 
   const isRight = page.side === 'right'
   const marginLeft = isRight ? pageBox.marginInnerPx : pageBox.marginOuterPx
@@ -259,6 +265,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           projectId={projectId}
           onInsert={(type) => handleInsertBlock(chapterId, afterId, type)}
           onInsertImage={(assetId) => handleDropAsset(chapterId, afterId, assetId)}
+          onInsertAiDraft={() => setAiDraftTarget({ chapterId, afterBlockId: afterId })}
           emptyChapter={emptyChapter}
         />
       </div>
@@ -533,6 +540,19 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
         >
           {page.number}
         </div>
+      )}
+
+      {aiDraftTarget && (
+        <AiDraftInsertDialog
+          projectId={projectId}
+          chapterId={aiDraftTarget.chapterId}
+          afterBlockId={aiDraftTarget.afterBlockId}
+          open
+          onOpenChange={(next) => {
+            if (!next) setAiDraftTarget(null)
+          }}
+          onInserted={(firstBlockId) => handleSelect(aiDraftTarget.chapterId, { id: firstBlockId, type: 'paragraph' })}
+        />
       )}
     </div>
   )
