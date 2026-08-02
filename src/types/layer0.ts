@@ -92,6 +92,12 @@ export interface TimelineEvent extends BaseLayer0Entity {
    * and never required — a beat with no chapter assigned just shows
    * "Not linked to a chapter yet". */
   linkedChapterId?: string
+  /** Which Outline Template this beat was seeded from, if any (Phase 84) —
+   * lets `OutlineTemplatesPanel.tsx` show "already added" beats under each
+   * template with a remove option, instead of applying being a one-way,
+   * invisible action. Absent for manually-added events, exactly like every
+   * other optional provenance field in this codebase. */
+  sourceTemplateId?: string
 }
 
 /** An in-world term, invented word, or piece of jargon worth defining once

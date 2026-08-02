@@ -9,6 +9,29 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 84 (2026-08-02) — Live-verify fixes
+
+- **The badge-collision bug (`IdeaIndicatorBadge` on top of `BlockToolbar`'s delete
+  button) shipped in Phase 83 and wasn't caught until live use** — `tsc` has no way to
+  catch two absolutely-positioned elements sharing coordinates. Worth a habit going
+  forward: when adding a new absolutely-positioned overlay to `Page.tsx`'s block
+  wrapper, grep the file first for existing `absolute` classes rather than picking a
+  corner that "should" be free.
+- **`IdeasLinkedHere` and the margin `IdeaIndicatorBadge` are now two separate reads
+  of the same `linkedBlockId` filter** (`renderer/IdeaIndicatorBadge.tsx` and
+  `layout/inspector/NotesPanel.tsx`) — fine at today's scale, but if a third surface
+  ever needs "ideas for this block," worth pulling the filter into a shared
+  `ideaStore.getIdeasForBlock` call site convention rather than a third inline
+  `.filter()`.
+- **`OutlineTemplatesPanel`'s "Already added" list has no per-beat edit, only remove**
+  — clicking a beat there doesn't jump to editing it; the user has to go to the
+  Chronology category. A "click to edit" affordance (same pattern `EntityListPanel`
+  rows already use) would close that loop.
+- **The Pinterest/moodboard request needs a real design pass, not a quick add** —
+  logged as an unscoped ROADMAP item rather than guessed at, since where images
+  actually live (new Idea field vs new Layer 0 kind vs board view over existing data)
+  materially changes the data model.
+
 ## After Phase 83 (2026-08-02) — Idea System / Develop Milestone 1.1
 
 - **Still not live-verified in Chrome this session** — same standing gap as Phase 82,

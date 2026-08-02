@@ -212,7 +212,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           />
         )}
         {chapterId && !decorative && (
-          <IdeaIndicatorBadge projectId={projectId} blockId={block.id} className="absolute -top-3 right-2 z-10" />
+          // `-bottom-3 right-2`, not `-top-3 right-2` — that's exactly where
+          // `BlockToolbar`'s delete (Trash2) button sits, and unlike Notes'
+          // badge this one isn't hover-gated, so it was rendering directly
+          // on top of the trash icon on hover/selection (Phase 84 fix).
+          <IdeaIndicatorBadge projectId={projectId} blockId={block.id} className="absolute -bottom-3 right-2 z-10" />
         )}
       </div>
     )

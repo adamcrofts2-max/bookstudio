@@ -5772,17 +5772,68 @@ finding from this change. Not live-verified in Chrome this session — same stan
 as every phase since 76, still blocked on the sandbox having no git push access (see
 "Recommended next task" below).
 
+## Phase 84 — Live-verify fixes: badge/toolbar collision, description display, applied-beats view (2026-08-02)
+
+User pushed Phase 79-83 live and confirmed it deployed correctly (screenshot matched
+the Phase 82 build exactly), then live-clicked the fiction/non-fiction picker,
+adaptive labels, and filtered Outline Templates in Chrome themselves — all confirmed
+working as designed (verified independently in this session too, same result). Live
+use immediately surfaced three real bugs/gaps Phase 83's own `tsc` pass couldn't catch
+since they're behavioural, not type errors:
+
+1. **`IdeaIndicatorBadge` rendered on top of `BlockToolbar`'s delete button** — both
+   were positioned `-top-3 right-2` on the block wrapper. `NoteIndicatorBadge` sits at
+   `-top-3 left-2` and is hover-gated via `BlockToolbar`'s own group; `IdeaIndicatorBadge`
+   is NOT hover-gated (shows whenever a block has a linked idea), so on any block with
+   both a linked idea and hover/selection, the lightbulb badge and the Trash2 delete
+   icon rendered exactly on top of each other. Reported by the user as "ideas bulb is
+   currently covered by recycle/bin" — moved to `-bottom-3 right-2` in `Page.tsx`.
+2. **Timeline/Chronology event descriptions never showed in the list** — `layer0FormConfig.ts`'s
+   `timelineEvent.secondaryKey` was `'when'`, but `applyOutlineTemplate` only ever sets
+   `description` (every beat's guidance text, e.g. "Where the account begins, and the
+   state of things beforehand" for Starting Point), never `when`. Every template-seeded
+   event showed its title with nothing underneath. Changed `secondaryKey` to
+   `'description'` — `when` is still a real, editable field on the form, just not what
+   the compact row displays.
+3. **Outline Templates had no way to see or remove what you'd already applied** — added
+   `TimelineEvent.sourceTemplateId` (set by `applyOutlineTemplate`), and
+   `OutlineTemplatesPanel.tsx` now lists each template's already-added beats underneath
+   its Apply button, each with a remove (`deleteLayer0EntityWithHistory`) button.
+
+Also shipped, from the same review round: **Ideas linked to the selected block now
+also surface in the Inspector's Notes tab** (`NotesPanel.tsx`'s new `IdeasLinkedHere`
+section, reusing `ideaStore.getIdeasForBlock`) — direct answer to "shouldn't the saved
+ideas also appear under paragraph text in the right sidebar." Deliberately folded into
+the existing Notes tab rather than added as a sixth Inspector tab — five tabs already
+needed a tightened-padding fix once (Phase 80's Sidebar equivalent, Phase 86's Inspector
+fix) to avoid overflow in the 300px panel; adding a sixth risked the same regression.
+Renders nothing when there are no linked ideas, matching `IdeaIndicatorBadge`'s own
+"quiet unless relevant" rule — this panel is read-only-plus-"Open" (launches the real
+`IdeaDetailDialog`), not a second idea-capture surface.
+
+**Not yet built, discussed in the same round:** a Pinterest/moodboard-style visual
+place for example ideas and reference images (user: "theres no place for example
+ideas/images think pinterest") — a genuinely bigger feature (image support on Ideas/
+References, a board/grid layout, not just a list) rather than a quick fix alongside
+the three bugs above. Logged in ROADMAP.md rather than built blind this pass.
+
+Verification: `npx tsc -b --force` clean. Live-tested directly in Chrome against
+`bookstudio-rose.vercel.app` this session (not just read the code) — created a real
+non-fiction project, confirmed the fork/labels/template-filtering worked, then found
+the badge-collision bug by inspecting `BlockToolbar.tsx`'s actual CSS classes once the
+user reported it, rather than guessing.
+
 ## Recommended next task
-Push this session's commits (Phase 79 through 83) from the user's own terminal — the
-sandbox still has no git push credentials, same standing constraint as the open
-#105/#162 tasks — then live-verify Phase 83 in Chrome: the fiction/non-fiction picker
-in New Project, the adaptive Develop labels on a non-fiction project, the margin idea
-badge appearing/expanding correctly in Write mode, the filtered Outline Templates list,
-and the new chapter `Select` on Timeline/Chronology rows. Also still outstanding from
-Phase 82: putting Milestone 1 in front of two or three first-time authors and watching
-their reaction, per the spec's own "how we'll know it worked" section — that reaction,
-not more building, should decide what actually gets built next between Idea System
-Milestone 2 (mind-map view) and the book graph (Milestone 3, needs chapter-association
+Push this Phase 84 commit, then live-verify the three fixes above plus the Ideas-in-
+Notes-tab addition directly in Chrome. Scope the Pinterest/moodboard idea properly
+before building it — needs a real design pass (where do images live: a new field on
+existing Ideas, a new Layer 0 kind, or a dedicated board view over References/
+Illustration Briefs?) rather than bolting a grid onto the current list UI. Also still
+outstanding from Phase 82: putting Milestone 1 in front of two or three first-time
+authors and watching their reaction, per the spec's own "how we'll know it worked"
+section — that reaction, not more building, should decide what actually gets built
+next between Idea System Milestone 2 (mind-map view) and the book graph (Milestone 3,
+needs chapter-association
 fields added to the other six Layer 0 kinds first — see ROADMAP.md Phase F).
 Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
 Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/

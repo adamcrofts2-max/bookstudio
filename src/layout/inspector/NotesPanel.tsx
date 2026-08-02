@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessageSquare, Check, RotateCcw, Trash2 } from 'lucide-react'
+import { MessageSquare, Check, RotateCcw, Trash2, Lightbulb } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -7,10 +7,12 @@ import { Separator } from '@/components/ui/separator'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useNotesStore, EMPTY_NOTES, type Note } from '@/store/notesStore'
+import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
 import { addNoteWithHistory, updateNoteTextWithHistory, setNoteResolvedWithHistory, deleteNoteWithHistory } from '@/store/editorActions'
 import { useContentStore } from '@/store/contentStore'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
+import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
 import { cn } from '@/lib/utils'
 
 interface NotesPanelProps {
@@ -115,12 +117,62 @@ function NewNoteComposer({ onAdd }: { onAdd: (text: string) => void }) {
 }
 
 /**
+ * "Ideas linked here" — the Inspector-sidebar half of the answer to "shouldn't
+ * saved ideas also appear under paragraph text" (Phase 84). `IdeaIndicatorBadge`
+ * (`renderer/IdeaIndicatorBadge.tsx`) already puts a quiet margin badge on the
+ * block itself; this is the same data (`ideaStore.getIdeasForBlock`) surfaced
+ * a second way, in the same place Notes already lives, for anyone who reads
+ * the right sidebar rather than the manuscript margin. Read-only list here —
+ * "Open" launches the real `IdeaDetailDialog` (edit, status, promotion)
+ * rather than a third re-implementation of that UI. Renders nothing when
+ * there are no linked ideas, same "quiet unless relevant" rule the badge
+ * itself follows — capturing a new idea is still the lightbulb affordance's
+ * job, not this panel's.
+ */
+function IdeasLinkedHere({ projectId, blockId }: { projectId: string; blockId: string }) {
+  const ideas = useIdeaStore((s) => s.byProject[projectId] ?? EMPTY_IDEAS).filter((idea) => idea.linkedBlockId === blockId)
+  const [openIdeaId, setOpenIdeaId] = useState<string | null>(null)
+
+  if (ideas.length === 0) return null
+
+  return (
+    <>
+      <Separator />
+      <div className="flex flex-col gap-2">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
+          <Lightbulb className="size-3.5 text-[var(--color-warning)]" />
+          Ideas linked here ({ideas.length})
+        </p>
+        {ideas.map((idea) => (
+          <button
+            key={idea.id}
+            type="button"
+            onClick={() => setOpenIdeaId(idea.id)}
+            className="flex flex-col gap-1 rounded-[var(--radius-card)] border border-border p-2.5 text-left transition-colors duration-150 hover:border-[var(--color-accent)]/40"
+          >
+            <p className="line-clamp-2 text-sm text-text-primary">{idea.text.trim() || <em className="text-text-muted">(empty)</em>}</p>
+            <span className="text-[0.65rem] text-text-secondary">{idea.promotedTo ? 'Promoted' : idea.status}</span>
+          </button>
+        ))}
+      </div>
+      {openIdeaId && (
+        <IdeaDetailDialog projectId={projectId} ideaId={openIdeaId} open onOpenChange={(next) => !next && setOpenIdeaId(null)} />
+      )}
+    </>
+  )
+}
+
+/**
  * Inspector's "Notes" tab — editorial notes attached to whichever block or
  * structural page is currently selected (`selectionStore`), an authoring-
  * only side channel never read by PDF/EPUB/HTML export (see
  * `notesStore.ts`'s doc comment). Selecting nothing shows an empty state;
  * selecting a target with existing notes lists them (resolved notes shown
- * dimmed, at the end) above a composer for adding another.
+ * dimmed, at the end) above a composer for adding another. Also surfaces
+ * any Ideas linked to the selected block, via `IdeasLinkedHere` above —
+ * Notes and Ideas are conceptually distinct (Notes flag existing text,
+ * Ideas grow into new content — see docs/STATUS.md Phase 83) but share this
+ * one screen since both are "things attached to the block I'm looking at."
  */
 export function NotesPanel({ projectId }: NotesPanelProps) {
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
@@ -198,6 +250,8 @@ export function NotesPanel({ projectId }: NotesPanelProps) {
           </div>
         </>
       )}
+
+      {target.blockId && <IdeasLinkedHere projectId={projectId} blockId={target.blockId} />}
     </div>
   )
 }

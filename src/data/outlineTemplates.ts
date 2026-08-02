@@ -195,6 +195,7 @@ export function applyOutlineTemplate(projectId: string, template: OutlineTemplat
         title: beat.title,
         description: beat.description,
         order: startOrder + i,
+        sourceTemplateId: template.id,
       },
       'Add timeline event',
     )

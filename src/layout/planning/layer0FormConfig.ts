@@ -53,7 +53,13 @@ export const LAYER0_FORM_CONFIG: Record<Layer0EntityKind, Layer0KindFormConfig> 
   },
   timelineEvent: {
     primaryKey: 'title',
-    secondaryKey: 'when',
+    // `description`, not `when` — Outline Template beats always populate
+    // `description` (the "what this beat is for" guidance text, e.g.
+    // "Where the account begins, and the state of things beforehand" for
+    // Starting Point) but never `when`, so the list row was showing nothing
+    // for every template-seeded event (Phase 84 fix). `when` stays a real,
+    // editable field on the form — just not the one the compact row shows.
+    secondaryKey: 'description',
     fields: [
       { key: 'title', label: 'Title', type: 'text', placeholder: 'What happens…' },
       { key: 'when', label: 'When', type: 'text', placeholder: 'e.g. Day 3, Spring Year 1…' },

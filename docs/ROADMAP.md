@@ -514,6 +514,18 @@ daily use of everything built so far.)*
       chapter-association fields on entities beyond Timeline Events (characters/
       locations currently have none) before the graph could be accurate, not
       just a rendering change.
+- [x] **Idea System live-verify fixes** — shipped 2026-08-02 (Phase 84), after the
+      user pushed Milestone 1.1 live and clicked through it in Chrome. Fixed:
+      `IdeaIndicatorBadge` rendering exactly on top of `BlockToolbar`'s delete
+      button (both at `-top-3 right-2`); Timeline/Chronology event descriptions
+      never displaying (`layer0FormConfig.ts`'s `secondaryKey` pointed at `when`,
+      which templates never set, instead of `description`, which they always
+      do); Outline Templates having no way to see or remove already-applied
+      beats (new `TimelineEvent.sourceTemplateId` + an "Already added" list with
+      remove under each template card). Also added: linked Ideas now surface in
+      the Inspector's Notes tab too (`NotesPanel.tsx`'s `IdeasLinkedHere`),
+      folded into the existing tab rather than a sixth one, to avoid repeating
+      the tab-row overflow this Inspector has already needed fixing once.
 - [x] Live first-time-author UX audit of Planning mode's full fiction and
       non-fiction workflows, in Chrome against the deployed build — 2026-08-02
       (Phase 77/78). Full findings, prioritised, in
@@ -770,6 +782,14 @@ daily use of everything built so far.)*
       `Idea.linkedChapterId`/`linkedBlockId` exist; the other six Layer 0 kinds
       have no chapter association at all yet. Do this after Milestone 2 ships
       and gets real reaction, not before.
+- [ ] Visual moodboard / Pinterest-style board for example ideas and reference
+      images (user, 2026-08-02): today's Ideas and References are text-only —
+      no way to pin an inspiration image or lay out visual references as a
+      board rather than a list. Needs a real design pass before building:
+      where do images actually live (a new optional field on `Idea`, a new
+      Layer 0 kind, or a board view layered over `References`/
+      `IllustrationBrief`?), and how does a board/grid layout coexist with the
+      existing list view rather than replacing it. Not scoped yet.
 - [ ] Develop nav cleanup: fold "Generate Prompt" + "Paste Response" (a real
       two-step bulk-AI workflow, not clutter — Phase 143/144) under a small
       muted "Tools" section header at the bottom of the nav, separated from the
