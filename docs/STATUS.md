@@ -6198,6 +6198,96 @@ truly nothing changes (wrong diagnosis, look elsewhere — e.g. a touch-specific
 scroll/gesture conflict on the block-list container, or the bottom nav/FAB
 overlapping the field once the keyboard opens and shrinks the visible viewport).
 
+## Phase 97 — Develop mode per-kind icons + Book Graph (Idea System Milestone 3) (2026-08-02)
+
+User: "design how the develop mode should look with an image. man icon by
+chracter for example nd then implement it. map view should be better." Showed a
+visual mockup first (two-panel widget: Develop's nav/list with a `User` icon next
+to Characters, and a small book-graph canvas with icon nodes connected to a
+central chapter), then built both pieces to match it.
+
+**`src/layout/planning/graphIcons.ts`** (new) — one small registry,
+`GRAPH_NODE_ICONS: Record<GraphNodeKind, LucideIcon>`, where `GraphNodeKind` is
+the eight `Layer0EntityKind`s plus `'idea'` and `'chapter'` (the two kinds
+Develop mode shows that Layer 0 itself doesn't own). Fixed, not hashed —
+unlike `IdeaMindMapView.tsx`'s tag-colour hashing, kind is a small closed enum
+where a stable per-kind icon matters more than avoiding a lookup table:
+`User` (Character), `MapPin` (Location), `Clock` (Timeline Event), `SpellCheck2`
+(Glossary Term), `BookMarked` (Reference), `Image` (Illustration Brief), `Ruler`
+(Style Rule), `FlaskConical` (Research Note), `Lightbulb` (Idea, matching every
+existing Ideas surface), `BookOpen` (Chapter). One registry, three call sites
+below — never three separate icon choices to keep in sync by hand.
+
+**Three call sites wired to it:**
+- `PlanningShell.tsx`'s `EntityKindNavButton` — every entity-kind nav row now
+  shows its icon before the plural label.
+- `EntityListPanel.tsx` — every entity row gets a small circular icon badge
+  (accent-tinted, `size-7`) to the left of its title, matching the mockup's
+  list rows exactly. Required restructuring the row's inner markup slightly:
+  the title button, Timeline Event's chapter `Select`, and the "Linked from…"
+  provenance button were previously all direct children of one `min-w-0 flex-1`
+  column div — that div is now nested one level inside a new icon+content row
+  wrapper, so the icon sits beside the whole column rather than sharing its
+  flex row (a real layout bug caught and fixed mid-edit, before running `tsc`).
+- **`BookGraphView.tsx`** (new) — see below.
+
+**`BookGraphView.tsx`** (new, Phase 97) — Idea System Milestone 3, the "book
+graph" item `docs/ROADMAP.md` had explicitly deferred until "Milestone 2 ships
+and gets real reaction" (Phase 94's own note). The user's "map view should be
+better" is that reaction, arriving sooner than the deferral anticipated — built
+now rather than re-deferred, same override pattern as Milestone 2 itself
+(Phase 94, "think about systems milestone two properly").
+
+- Generalises `IdeaMindMapView.tsx`'s hand-rolled force-directed layout (no
+  graph/viz library — still no npm registry access in this sandbox) from
+  `Idea`-only nodes to a generic `GraphNode { id, kind, label }` covering every
+  chapter, every Layer 0 entity, and every Idea in the project at once.
+- **Edges are real relationships, not proxies**: an entity or idea's
+  `linkedChapterId` (where it was captured from, or manually assigned for
+  Timeline Events) draws a line to that chapter; an idea's `relatedIdeaIds`
+  draws idea↔idea lines (unchanged from Milestone 2); an idea's `promotedTo`
+  draws a line from the idea to the real entity it became. Every edge is
+  validated against the actual visible node set before being drawn (an idea
+  promoted to an entity since deleted just doesn't get a dangling line).
+- **Clustering generalised from "by tag" to "by kind"**: the same cheap O(n)
+  centroid-attraction trick Milestone 2 used for tags now pulls same-kind
+  nodes toward each other's average position each layout iteration — so
+  without a single click, the graph visually separates into a "region of
+  characters," a "region of locations," etc., with actual chapter-link edges
+  free to pull individual nodes toward their chapter regardless of that
+  clustering pull.
+- **Chapters get a visually distinct treatment** (larger radius, accent-
+  tinted fill and ring) since they're structurally the spine everything else
+  connects through — every other kind shares one neutral ring style, icon is
+  the only differentiator between them, deliberately not a ten-colour
+  categorical palette (`CLAUDE.md`'s design-token discipline — colour still
+  means status/semantic state everywhere else in this app).
+- **Filterable by kind**: a chip row above the canvas (icon + label + count
+  per kind actually present) toggles that kind's nodes and every edge touching
+  them on/off — addresses the roadmap note's own "filterable by kind"
+  requirement.
+- **Click behaviour**: a chapter node jumps to that chapter in Write mode
+  (`setAppMode('editor')` + `requestScrollToChapter`, the same jump pattern
+  `EntityListPanel.tsx`'s "Linked from…" button already uses); an Idea node
+  opens the existing `IdeaDetailDialog` (one detail surface, not a second one
+  to build); any other entity node calls a new `onFocusKind` prop that
+  switches `PlanningShell`'s nav to that entity's own list — the graph
+  deliberately doesn't grow an inline edit surface of its own, "go edit it
+  properly" is one click away in the place that already has the full form.
+- Wired into `PlanningShell.tsx` as a new "Book Graph" nav entry (`Waypoints`
+  icon, via the existing `ToolNavButton`), placed directly below Ideas rather
+  than filed under either entity-kind group — it spans the whole book, same
+  reasoning Ideas itself gets top billing.
+
+Verification: `npx tsc -b --force` clean. Not live-verified in Chrome — same
+push limitation as every commit since Phase 89 (this sandbox can't push, so
+nothing testable against the actual deployed build). Specifically unverified:
+whether the force layout settles into visually sensible clusters on a real
+project with a realistic mix of entity counts (only reasoned through, not run
+against real data), whether the chip-toggle filtering feels right in practice,
+and whether clicking through to a chapter/idea/entity from the graph actually
+lands correctly end to end.
+
 ## Recommended next task
 Push everything from Phase 85 onward (13+ commits queued), then do one real Chrome
 pass (resized to a phone viewport, and ideally a real device) covering: the Notes

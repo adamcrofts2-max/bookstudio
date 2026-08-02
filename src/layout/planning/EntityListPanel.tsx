@@ -17,6 +17,7 @@ import {
 } from '@/store/editorActions'
 import { generateId } from '@/utils'
 import { getLayer0KindLabel, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, type Layer0EntityKind } from '@/types/layer0'
+import { GRAPH_NODE_ICONS } from '@/layout/planning/graphIcons'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
 import { Layer0FieldsForm } from '@/layout/planning/Layer0FieldsForm'
 import type { BookForm } from '@/types'
@@ -59,6 +60,7 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
   const config = LAYER0_FORM_CONFIG[kind]
   const labels = getLayer0KindLabel(kind, bookForm)
   const singularLower = labels.singular.toLowerCase()
+  const KindIcon = GRAPH_NODE_ICONS[kind]
   // Only fetched for the Timeline Event chapter-select below — reading
   // Content (Layer 2) from a Layer 0 UI is display-only, the exact same
   // read-only cross-layer reference `IdeaDetailDialog.tsx`'s "Jump to
@@ -188,7 +190,11 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
               key={entity.id}
               className="flex items-start justify-between gap-3 rounded-[var(--radius-card)] border border-border bg-panel p-3"
             >
-              <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-accent)]/10">
+                  <KindIcon className="size-3.5 text-[var(--color-accent)]" />
+                </div>
+                <div className="min-w-0 flex-1">
                 <button type="button" className="w-full text-left" onClick={() => openEdit(entity)}>
                   <p className="truncate text-sm font-medium text-text-primary">
                     {(entity[config.primaryKey] as string | undefined)?.trim() || 'Untitled'}
@@ -242,6 +248,7 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
                     Linked from {chapters.find((c) => c.id === entity.linkedChapterId)?.title || 'a chapter'}
                   </button>
                 )}
+                </div>
               </div>
               <div className="flex shrink-0 items-center gap-1">
                 {kind === 'timelineEvent' && (

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, ClipboardPaste, Lightbulb, ListTree, Sparkles } from 'lucide-react'
+import { ArrowLeft, ClipboardPaste, Lightbulb, ListTree, Sparkles, Waypoints } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,10 @@ import { useUiStore } from '@/store/uiStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
 import { LAYER0_ENTITY_KINDS, getLayer0KindLabel, LAYER0_KIND_TO_COLLECTION, type Layer0EntityKind } from '@/types/layer0'
+import { GRAPH_NODE_ICONS } from '@/layout/planning/graphIcons'
 import { EntityListPanel } from '@/layout/planning/EntityListPanel'
 import { IdeaInboxPanel } from '@/layout/planning/IdeaInboxPanel'
+import { BookGraphView } from '@/layout/planning/BookGraphView'
 import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
 import { PasteBackPanel } from '@/layout/planning/PasteBackPanel'
 import { OutlineTemplatesPanel } from '@/layout/planning/OutlineTemplatesPanel'
@@ -26,7 +28,7 @@ interface PlanningShellProps {
  * or one of the tool views ("Generate Prompt" / "Paste Response" / "Outline
  * Templates") — living in the same nav rather than a separate top-level
  * control, since they're still squarely part of this screen. */
-type PlanningView = 'ideas' | Layer0EntityKind | 'prompt-generator' | 'paste-back' | 'outline-templates'
+type PlanningView = 'ideas' | 'graph' | Layer0EntityKind | 'prompt-generator' | 'paste-back' | 'outline-templates'
 
 /** One tool-view nav row (icon + label, no count badge) — the shared markup
  * behind "Generate Prompt"/"Paste Response"/"Outline Templates" below.
@@ -86,6 +88,7 @@ function EntityKindNavButton({
   onClick: () => void
   bookForm?: BookForm
 }) {
+  const Icon = GRAPH_NODE_ICONS[kind]
   return (
     <button
       type="button"
@@ -97,7 +100,10 @@ function EntityKindNavButton({
           : 'text-text-secondary hover:bg-hover hover:text-text-primary',
       )}
     >
-      <span>{getLayer0KindLabel(kind, bookForm).plural}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <Icon className="size-3.5 shrink-0" />
+        <span className="truncate">{getLayer0KindLabel(kind, bookForm).plural}</span>
+      </span>
       {count > 0 && <span className="text-xs text-text-muted">{count}</span>}
     </button>
   )
@@ -171,6 +177,17 @@ export function PlanningShell({ project }: PlanningShellProps) {
                 {ideaCount > 0 && <span className="text-xs font-normal text-text-muted">{ideaCount}</span>}
               </button>
 
+              {/* Book Graph — spans the whole book (chapters + every Layer 0
+                 kind + Ideas), not one category, so it lives right below
+                 Ideas rather than filed under either entity-kind group. See
+                 `BookGraphView.tsx`'s doc comment for the full design. */}
+              <ToolNavButton
+                icon={Waypoints}
+                label="Book Graph"
+                active={activeView === 'graph'}
+                onClick={() => setActiveView('graph')}
+              />
+
               <Separator className="my-2" />
 
               <ToolNavButton
@@ -233,6 +250,8 @@ export function PlanningShell({ project }: PlanningShellProps) {
         <ScrollArea className="h-full min-w-0 flex-1">
           {activeView === 'ideas' ? (
             <IdeaInboxPanel projectId={project.id} />
+          ) : activeView === 'graph' ? (
+            <BookGraphView projectId={project.id} bookForm={project.bookForm} onFocusKind={(kind) => setActiveView(kind)} />
           ) : activeView === 'prompt-generator' ? (
             <PromptGeneratorPanel projectId={project.id} />
           ) : activeView === 'paste-back' ? (

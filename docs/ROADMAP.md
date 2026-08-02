@@ -808,13 +808,23 @@ daily use of everything built so far.)*
       wasn't on the table regardless). Pan (drag) + zoom (scroll/pinch) via a
       plain CSS transform on the `<svg>` itself. List/Board/Map now share one
       segmented toggle in `IdeaInboxPanel.tsx`.
-- [ ] Book graph (Idea System Milestone 3, discussed 2026-08-02): the mind-map
-      concept extended past Ideas to the whole book — chapters, characters,
-      places, ideas, images, and research as one connected, icon-coded graph
-      (person/map-pin/lightbulb/photo/file-text per kind, filterable by kind).
-      Data-model prerequisite (chapter/block association on every kind) is now
-      done (Phase 90) — this item is the graph UI itself, still unbuilt. Do this
-      after Milestone 2 ships and gets real reaction, not before.
+- [x] Book graph (Idea System Milestone 3, Phase 97, 2026-08-02): the mind-map
+      concept extended past Ideas to the whole book — chapters, every Layer 0
+      entity kind, and Ideas, all in one connected, icon-coded graph
+      (`BookGraphView.tsx`), filterable by kind (chip row above the canvas).
+      Built at the user's explicit request ("map view should be better")
+      rather than waiting for Milestone 2 reaction as originally planned.
+      Edges: `linkedChapterId` (entity/idea → chapter), `relatedIdeaIds`
+      (idea ↔ idea), `promotedTo` (idea → the entity it became). Same hand-
+      rolled force layout as `IdeaMindMapView.tsx`, generalised to cluster by
+      `kind` instead of `tag`.
+- [x] Per-kind icons in Develop mode (Phase 97, 2026-08-02, user: "man icon by
+      character for example"): `graphIcons.ts`'s `GRAPH_NODE_ICONS` gives every
+      kind (the eight Layer 0 kinds + Idea + Chapter) one fixed lucide icon —
+      `User` for Character, `MapPin` for Location, etc. Wired into the Develop
+      nav's entity-kind rows, every `EntityListPanel` row (small icon badge),
+      and the Book Graph's nodes — one registry, three call sites, not three
+      separate icon choices to keep in sync.
 - [x] Visual moodboard / Pinterest-style board for example ideas and reference
       images (Phase 93, 2026-08-02) — resolved the design question with a new
       optional `Idea.imageAssetIds?: string[]` (reusing the existing
