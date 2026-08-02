@@ -3,15 +3,21 @@
  *
  * Deterministic, synchronous, pure. Each checker reads the manuscript via
  * `extractTextSpans` and returns `Finding[]` — it never mutates a block.
- * These are the "real, working" checkers for this milestone; the rest of
- * the proofreading taxonomy (spelling, broken hyperlinks, malformed URLs,
- * ellipsis/dash consistency, missing spaces after punctuation, etc.) is
- * designed but not yet implemented — see docs/VIRTUAL_EDITOR.md.
+ * Spelling (below) is the one exception to "deterministic == instant": it
+ * depends on an offline dictionary that loads asynchronously the first time
+ * it's needed, gated through `isApplicable` exactly like the `pages`-
+ * dependent checkers elsewhere in this codebase — see `spellingChecker`'s
+ * own comment. The rest of the proofreading taxonomy (broken hyperlinks,
+ * malformed URLs, ellipsis/dash consistency, missing spaces after
+ * punctuation, etc.) remains designed but not yet implemented — see
+ * docs/VIRTUAL_EDITOR.md.
  */
 
 import type { Checker, CheckerContext, Finding } from '@/virtualEditor/types'
+import type { Layer0Bible } from '@/types/layer0'
 import { extractTextSpans, blockPlainText } from '@/virtualEditor/textExtract'
 import { patchTextField } from '@/virtualEditor/textPatch'
+import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
 import { generateId } from '@/utils/id'
 
 function makeFinding(partial: Omit<Finding, 'id' | 'category' | 'source'>): Finding {
@@ -349,6 +355,125 @@ export const quoteStyleConsistencyChecker: Checker = {
   },
 }
 
+/** A run of letters, optionally joined by a single internal apostrophe
+ * (straight or curly) — matches "don't"/"won't" as one token instead of
+ * splitting on the apostrophe, without also swallowing a leading/trailing
+ * quotation mark around a whole word (the regex only counts an apostrophe
+ * as part of the word when there's a letter immediately on both sides). */
+const WORD_PATTERN = /[A-Za-z]+(?:['’][A-Za-z]+)*/g
+
+/** Every Layer 0 bible entry's name, split into individual lowercase words
+ * — invented character/place names ("Kaelith", "Thornwood") are exactly
+ * the kind of word a generic dictionary has never heard of and a novelist
+ * chose on purpose, so they're excluded from spelling findings rather than
+ * flagged every single time they appear. Multi-word names ("Elara
+ * Thornwood") are split so each half is recognised individually, since
+ * prose might use either half alone. Timeline events/glossary terms/
+ * references/etc. are deliberately not included — their "name" is a title
+ * or phrase, not a word coined for this book, so excluding it would risk
+ * hiding a real typo inside it. */
+function collectLayer0Names(bible: Layer0Bible | undefined): Set<string> {
+  const names = new Set<string>()
+  if (!bible) return names
+  for (const entity of [...bible.characters, ...bible.locations]) {
+    for (const word of entity.name.split(/\s+/)) {
+      const cleaned = word.replace(/[^A-Za-z']/g, '').toLowerCase()
+      if (cleaned) names.add(cleaned)
+    }
+  }
+  return names
+}
+
+/** All-caps tokens longer than one letter ("NASA", "ISBN", "OK") are almost
+ * always intentional acronyms/abbreviations, not typos a dictionary lookup
+ * should judge — the same "reduce novelist-relevant false positives"
+ * reasoning as `collectLayer0Names` above, just for a shape a story bible
+ * can't enumerate in advance. */
+function looksLikeAcronym(word: string): boolean {
+  return word.length > 1 && word === word.toUpperCase() && word !== word.toLowerCase()
+}
+
+/**
+ * Real, dictionary-backed spelling — the one item in this file's own doc
+ * comment that used to say "designed but not yet implemented." Unblocked
+ * Phase 109 (2026-08-02) once the user installed `nspell` + `dictionary-en`
+ * from their own terminal (this sandbox has no npm registry access, so
+ * neither package could be added from here — see
+ * `spellcheckDictionary.ts`'s doc comment for the full loading story).
+ *
+ * **American English only, on purpose, for now**: `dictionary-en` contains
+ * "color"/"realize", not "colour"/"realise" — see
+ * `public/dictionaries/en/README.md`. Running it against this app's
+ * British-default Style Guide would flag half the language as misspelled,
+ * which is worse than not checking at all. `isApplicable` only turns this
+ * on when a project's Style Guide explicitly sets `englishVariant:
+ * 'american'`; every other project (including the British default and
+ * "no preference") honestly stays "Not yet analysed" for this one checker
+ * rather than drowning in false positives. Adding `dictionary-en-gb` later
+ * removes this restriction without changing this checker's shape at all.
+ */
+export const spellingChecker: Checker = {
+  id: 'proofreading.spelling',
+  category: 'proofreading',
+  label: 'Spelling',
+  description: 'Flags words not found in a bundled offline English dictionary.',
+  isApplicable(ctx) {
+    if (ctx.styleGuide && ctx.styleGuide.englishVariant !== 'american') return false
+    ensureSpellDictionaryLoading()
+    return isSpellDictionaryReady()
+  },
+  run(ctx: CheckerContext): Finding[] {
+    const speller = getSpeller()
+    if (!speller) return []
+    const ignoreWords = collectLayer0Names(ctx.layer0Bible)
+
+    const findings: Finding[] = []
+    for (const span of extractTextSpans(ctx.manuscript)) {
+      // One finding per distinct misspelling per span, not per occurrence —
+      // a typo repeated three times in one paragraph is one thing to fix,
+      // not three near-identical dashboard entries.
+      const flaggedInSpan = new Set<string>()
+      for (const match of span.text.matchAll(WORD_PATTERN)) {
+        const word = match[0]
+        const lower = word.toLowerCase()
+        if (flaggedInSpan.has(lower)) continue
+        if (looksLikeAcronym(word)) continue
+        if (ignoreWords.has(lower)) continue
+        if (speller.correct(word)) continue
+
+        flaggedInSpan.add(lower)
+        const suggestions = speller.suggest(word).slice(0, 3)
+        findings.push(
+          makeFinding({
+            checkerId: spellingChecker.id,
+            issueType: 'spelling',
+            severity: 'minor',
+            confidence: 0.65,
+            location: { chapterId: span.chapterId, blockId: span.blockId },
+            message:
+              suggestions.length > 0
+                ? `"${word}" isn't in the dictionary — did you mean "${suggestions[0]}"?`
+                : `"${word}" isn't in the dictionary.`,
+            whyItMatters:
+              'An unrecognised word is either a typo a reader will notice, or a deliberate name/term worth being consistent about — either way it is worth a second look.',
+            suggestedFix:
+              suggestions.length > 0
+                ? {
+                    summary: `Replace with "${suggestions[0]}"`,
+                    apply: (block) =>
+                      patchTextField(block, span.field, (text) =>
+                        text.replace(new RegExp(`\\b${escapeRegExp(word)}\\b`), suggestions[0]),
+                      ),
+                  }
+                : undefined,
+          }),
+        )
+      }
+    }
+    return findings
+  },
+}
+
 export const PROOFREADING_CHECKERS: Checker[] = [
   doubleSpaceChecker,
   repeatedWordChecker,
@@ -356,6 +481,7 @@ export const PROOFREADING_CHECKERS: Checker[] = [
   unmatchedBracketsChecker,
   missingTerminalPunctuationChecker,
   quoteStyleConsistencyChecker,
+  spellingChecker,
 ]
 
 function excerpt(text: string, fromEnd = false): string {

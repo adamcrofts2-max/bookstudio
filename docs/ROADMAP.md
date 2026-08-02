@@ -211,21 +211,34 @@ daily use of everything built so far.)*
       'block' | 'chapterTitle'` discriminant; a chapter-title match routes
       through `renameChapterWithHistory` instead of `patchTextField`+
       `editBlock`.
-- [ ] Real (dictionary-backed) spell-check, beyond the browser's native
-      `contentEditable` default — flagged 2026-08-01. Every editable field
-      in this codebase is a bare `contentEditable` element with the
-      `spellCheck` attribute never explicitly set (confirmed by audit), so
-      the browser's own default spellcheck likely already applies today —
-      not a bug, but also not something Book Studio controls, tests, or can
-      rely on consistently across browsers. A *real* checker (a bundled
-      dictionary via something like `nspell`/`typo-js` + Hunspell word
-      lists, surfaced as a genuine `proofreading`-category Virtual Editor
-      finding rather than only a native red squiggle) is a legitimate,
-      bigger feature — `virtualEditor/checkers/proofreading.ts`'s own doc
-      comment already explicitly scopes spelling out today ("no dictionary
-      lookup"), so this closes a gap that was a deliberate decision, not an
-      oversight, and should be revisited once there's appetite for the
-      bundle-size/licensing tradeoff a real dictionary brings. Not started.
+- [x] Real (dictionary-backed) spell-check (Phase 109, 2026-08-02) —
+      unblocked once the user installed `nspell` + `dictionary-en` from
+      their own terminal (this sandbox has no npm registry access, so
+      neither package could be added from here). New `spellingChecker` in
+      `virtualEditor/checkers/proofreading.ts`, backed by
+      `spellcheckDictionary.ts`'s async-loaded, module-cached `nspell`
+      instance — see that file's doc comment for how an async dictionary
+      load fits a checker architecture whose `run()` is required to be
+      synchronous (gated through `isApplicable`, the same pattern
+      `pipeline.ts` already uses for `pages`-dependent checkers). Two
+      deliberate false-positive reductions aimed specifically at this app's
+      audience: words matching a Layer 0 Character/Location name are
+      excluded (an invented character name isn't a typo), and all-caps
+      tokens are treated as acronyms, not misspellings. **American English
+      only** — `dictionary-en` doesn't contain "colour"/"realise", and this
+      app's Style Guide defaults to British, so the checker only runs when
+      a project's Style Guide explicitly sets `englishVariant: 'american'`;
+      every other project honestly stays "Not yet analysed" for this one
+      checker rather than flooding a British-default project with false
+      positives. Verified end-to-end against the real bundled dictionary in
+      a standalone Node script (real typos flagged with correct suggestions,
+      invented names and acronyms correctly excluded) — see STATUS.md.
+- [ ] British-English spelling — install `dictionary-en-gb`, copy its two
+      files into `public/dictionaries/en-gb/`, extend
+      `spellcheckDictionary.ts` to pick a dictionary folder from
+      `styleGuide.englishVariant` instead of always loading `en/`. The
+      loader is already variant-aware in spirit; only the second
+      dictionary's data and the folder-selection branch are missing.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 
@@ -280,10 +293,26 @@ daily use of everything built so far.)*
       one; hyperlinks get underline+accent colour, deliberately not a
       clickable annotation — see Phase 39's reasoning)
 - [x] Table cell text wrapping in PDF export — see STATUS.md Phase 39
-- [ ] Real font subsetting — **blocked in this environment**: pdf-lib 1.17.1
-      (the installed version) has no subsetting API at all, and getting one
-      would need installing a different/forked package, which needs npm
-      registry access this sandbox doesn't have
+- [ ] Real font subsetting — **re-diagnosed, Phase 109 (2026-08-02): the
+      earlier note above was wrong.** `@pdf-lib/fontkit` has been a real
+      dependency of this app since Phase 7 (needed for any custom-font
+      embedding at all, not just subsetting) and pdf-lib's `embedFont`
+      already accepts `{ subset: true }` — no new package needed, nothing
+      was ever actually blocked by npm access. The real blocker is
+      different and worse: `@pdf-lib/fontkit`'s subsetting encoder has a
+      genuine, longstanding, documented reliability bug (multiple open
+      GitHub issues — malformed/unsorted font `loca`-table offsets,
+      content-dependent crashes). Reproduced here directly: the exact same
+      font + text, subsetted repeatedly in a standalone script, sometimes
+      succeeded instantly, sometimes threw "Index out of range" mid-encode,
+      and sometimes hung indefinitely — real non-determinism, not a
+      one-off. A PDF export that randomly fails or freezes is a far worse
+      regression than a somewhat larger embedded font file, so `subset:
+      true` was tried in `src/pdf/fonts.ts`'s `embed()` and then explicitly
+      reverted rather than shipped — see that function's own comment and
+      STATUS.md's Phase 109 entry for the full reproduction. Revisit only
+      alongside a fixed `@pdf-lib/fontkit` release or a different
+      subsetting approach, not by re-flipping this flag.
 - [x] CMYK-aware export workflow for commercial print — shipped 2026-08-02
       (Phase 100+1): `ProjectSettings.colorProfile` ('rgb' default | 'cmyk'),
       naive RGB→CMYK conversion via pdf-lib's built-in `cmyk()` (no new

@@ -38,6 +38,19 @@ export interface ThemeFontSet {
 
 async function embed(doc: PDFDocument, url: string): Promise<PDFFont> {
   const bytes = await fetch(url).then((r) => r.arrayBuffer())
+  // Investigated real subsetting here (Phase 109, 2026-08-02) — see
+  // docs/STATUS.md's Phase 109 entry for the full story. Short version:
+  // pdf-lib DOES support real subsetting via the `@pdf-lib/fontkit` this
+  // app already registers (the earlier ROADMAP note claiming "no subsetting
+  // API at all" was a misdiagnosis — nothing needed installing), but
+  // `@pdf-lib/fontkit`'s subsetting encoder has a real, long-standing,
+  // documented reliability bug (multiple open GitHub issues — unsorted
+  // `loca` table offsets, content-dependent crashes) that reproduced here
+  // as a non-deterministic "Index out of range" crash AND a hang on the
+  // exact same input across repeated runs. A PDF export that randomly
+  // fails or freezes is a far worse regression than a somewhat larger font
+  // file, so `subset: true` is deliberately NOT enabled — do not flip this
+  // on without a fixed fontkit release or a different subsetting approach.
   return doc.embedFont(bytes)
 }
 

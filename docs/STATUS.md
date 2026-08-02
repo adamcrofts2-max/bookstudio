@@ -7009,6 +7009,98 @@ exact same visual output; an algorithmic change risks the layout settling
 differently and would need to be validated against the app's existing
 "pinned node" and "kind clustering" behaviour on top of everything else.
 
+## Phase 109 — Real spell-check (shipped) + real font subsetting (tried, reverted) (2026-08-02)
+
+User installed `nspell`, `dictionary-en`, and `@pdf-lib/fontkit` from their
+own terminal — the first time this session anything was unblocked by
+reaching outside this sandbox's no-npm-registry limitation. Two roadmap
+items were genuinely actionable as a result; they had very different
+outcomes.
+
+**Spell-check — shipped.** `dictionary-en`'s own package can't be
+`import`ed straight into this browser bundle: its `index.js` reads
+`.aff`/`.dic` off disk via Node's `fs/promises` at import time, which only
+works in a Node runtime. Copied both files into `public/dictionaries/en/`
+(see that folder's README) and fetch them at runtime instead — the same
+"static asset, fetched with `fetch()`" pattern `src/pdf/fonts.ts` already
+uses for this app's `.woff2` fonts. `nspell` ships no TypeScript types, so
+`src/types/nspell.d.ts` is a small hand-written ambient declaration
+covering only the methods actually called.
+
+New `src/virtualEditor/spellcheckDictionary.ts` loads and caches one
+`nspell` instance per app session (module-level singleton, not a store —
+read-only derived cache, not user-editable state). Every `Checker` in this
+codebase must be synchronous (`types.ts`'s own doc comment), so the async
+dictionary load can't happen inside `run()`; instead `spellingChecker.
+isApplicable` (new, in `checkers/proofreading.ts`) kicks off the load and
+reports itself inapplicable until ready — the exact same "Not yet analysed"
+pattern `pipeline.ts` already uses for `pages`-dependent checkers, applied
+to a new kind of dependency.
+
+Two deliberate false-positive reductions, both aimed at this app's actual
+audience (novelists inventing names, not writing generic prose):
+`collectLayer0Names` excludes any word matching a Character/Location name
+already in the project's Layer 0 bible, and `looksLikeAcronym` skips
+all-caps tokens ("NASA", "ISBN"). **American English only, on purpose**:
+`dictionary-en` contains "color"/"realize", not "colour"/"realise", and
+this app's Style Guide defaults to British — running the checker
+unconditionally would flag half the language as misspelled for the
+majority default. `isApplicable` only enables it when a project's Style
+Guide explicitly sets `englishVariant: 'american'`; every other project
+stays honestly "Not yet analysed" rather than drowning in false positives.
+`docs/ROADMAP.md` now tracks British support as its own follow-up item —
+the loader is already variant-shaped, only the second dictionary's data is
+missing.
+
+Verified two ways: `npx tsc -b --force` clean, and — since this sandbox
+can't run the actual Vite/browser build (see Phase 108's gap) — a
+standalone Node script loading the real bundled `.aff`/`.dic` files through
+`nspell` directly, feeding it a sample paragraph with three real typos
+("Recieve", "wierd", "beleive") plus two invented names ("Kaelith",
+"Thornwood") plus an acronym ("NASA"). Result: all three typos flagged with
+correct top suggestions, both invented names correctly excluded, the
+acronym correctly skipped, and "color"/"colour" sanity-checked against the
+dictionary directly to confirm the American-only gating decision was
+necessary, not overcautious.
+
+**Font subsetting — tried, then explicitly reverted.** `docs/ROADMAP.md`
+had this flagged as "blocked: pdf-lib has no subsetting API at all,
+needs npm access." That turned out to be wrong on inspection:
+`@pdf-lib/fontkit` has been a real dependency since Phase 7 (any custom
+TrueType/OpenType embedding needs it, subsetting or not — it's already
+`registerFontkit`'d in `exportPdf.ts`), and pdf-lib's `embedFont` has
+always accepted `{ subset: true }`. The one-line fix
+(`src/pdf/fonts.ts`'s `embed()` helper) was written, and then verified in
+a standalone script against every real font file this app ships
+(`public/fonts/*.woff2`) — first pass looked great: Inter shrank from
+~27KB to ~3.5KB per weight (an ~87% reduction), Source Serif 4 from ~23KB
+to ~16KB.
+
+Then a second, more adversarial pass (the same single embed, repeated
+several times in a row) surfaced real trouble: the exact same font and
+text, subsetted the exact same way, sometimes succeeded instantly,
+sometimes threw `RangeError: Index out of range` mid-encode inside
+`@pdf-lib/fontkit`'s `TTFSubset._addGlyph`, and once simply hung
+indefinitely. A web search confirmed this isn't sandbox-specific or
+self-inflicted — it's a real, longstanding, still-open bug in
+`@pdf-lib/fontkit`'s subsetting encoder (unsorted/malformed `loca`-table
+offsets; other reports describe content-dependent crashes like "breaks if
+text contains a dash"). Given a PDF export that randomly fails or hangs is
+a far more serious regression than a somewhat-larger embedded font file —
+this app's whole purpose is producing a reliable, print-ready PDF —
+`subset: true` was reverted rather than shipped. `fonts.ts`'s `embed()`
+now carries a comment explaining exactly this, so a future session doesn't
+either (a) re-trust the old wrong "no API" diagnosis, or (b) re-flip the
+flag without knowing it's a known live bug, not a config mistake.
+
+**Considered and rejected**: shipping subsetting only for a "safe" subset
+of fonts (e.g. only the two interior families, never the seven cover
+display fonts) to reduce blast radius. Rejected because the crash wasn't
+font-specific in testing — the *same* font (Inter 400) crashed on one run
+and succeeded cleanly on the next with identical input, meaning there's no
+"safe" subset of fonts to carve out; the bug is in the encoder's own
+internal state/timing, not triggered by any one font's data.
+
 ## Recommended next task
 Get a real build working from the user's own terminal — `npm run build`'s
 `vite.config.ts` load failure (Phase 108) blocks verifying not just this
