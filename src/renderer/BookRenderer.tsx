@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Loader2 } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 
+import { cn } from '@/lib/utils'
 import type { Project } from '@/types'
 import type { Manuscript } from '@/types/content'
 import { useUiStore } from '@/store/uiStore'
@@ -30,6 +31,19 @@ interface BookRendererProps {
    * preference itself (leaving the rail exactly as the user left it once
    * they exit focus mode). */
   hideThumbnails?: boolean
+  /**
+   * Reading Mode only: replaces the normal continuous vertical scroll with
+   * one spread at a time, page-turn arrows, a page counter, and Left/Right
+   * (or Page Up/Down) keyboard navigation — "read a book," not "scroll a
+   * document." `false`/`undefined` everywhere else preserves today's
+   * scrolling behaviour exactly, including for `decorative` non-Reading-Mode
+   * callers if any are ever added. The entering spread plays a short
+   * direction-aware slide+fade (`tailwindcss-animate`'s `animate-in`, the
+   * same utility `dialog.tsx`/`select.tsx` already use elsewhere in this
+   * codebase) rather than a full 3D flip — "subtle and purposeful," per
+   * `CLAUDE.md`'s animation guidance, not a skeuomorphic set piece.
+   */
+  paginated?: boolean
 }
 
 /**
@@ -58,7 +72,7 @@ function groupIntoSpreads(pages: LaidOutPage[]): LaidOutPage[][] {
   return spreads
 }
 
-export function BookRenderer({ project, manuscript, decorative, hideThumbnails }: BookRendererProps) {
+export function BookRenderer({ project, manuscript, decorative, hideThumbnails, paginated }: BookRendererProps) {
   const theme = resolveTheme(project.settings.themeId)
   const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
   const viewMode = useUiStore((s) => s.viewMode)
@@ -125,6 +139,72 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails }
   )
 
   const spreads = useMemo(() => (viewMode === 'spread' ? groupIntoSpreads(pages) : pages.map((p) => [p])), [pages, viewMode])
+
+  // Reading Mode pagination — one spread on screen at a time instead of
+  // today's continuous scroll. Local to this component (not uiStore/
+  // selectionStore) because "which spread am I reading" is view-transient,
+  // not something any other part of the app needs to read or that should
+  // survive leaving Reading Mode — reopening always starts back at the
+  // first spread, same as opening a physical book.
+  const [currentSpreadIndex, setCurrentSpreadIndex] = useState(0)
+  const [turnDirection, setTurnDirection] = useState<'next' | 'prev'>('next')
+
+  // Re-entering Reading Mode for a different project (or a manuscript whose
+  // spread count changed under us) should never leave the reader stranded
+  // past the end of the array or mid-book in a project they just opened.
+  useEffect(() => {
+    setCurrentSpreadIndex(0)
+  }, [project.id])
+  useEffect(() => {
+    setCurrentSpreadIndex((i) => Math.min(i, Math.max(0, spreads.length - 1)))
+  }, [spreads.length])
+
+  const goToSpread = (index: number, direction: 'next' | 'prev') => {
+    setCurrentSpreadIndex((i) => {
+      const clamped = Math.max(0, Math.min(index, spreads.length - 1))
+      if (clamped === i) return i
+      setTurnDirection(direction)
+      return clamped
+    })
+  }
+  const goToNextSpread = () => goToSpread(currentSpreadIndex + 1, 'next')
+  const goToPrevSpread = () => goToSpread(currentSpreadIndex - 1, 'prev')
+  const hasPrevSpread = currentSpreadIndex > 0
+  const hasNextSpread = currentSpreadIndex < spreads.length - 1
+
+  // Left/Right and Page Up/Down turn pages while Reading Mode is active.
+  // Gated on `paginated` so this listener does nothing (and isn't even
+  // attached) in the normal scrolling editor view.
+  useEffect(() => {
+    if (!paginated) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return
+      if (e.key === 'ArrowRight' || e.key === 'PageDown') {
+        e.preventDefault()
+        goToNextSpread()
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault()
+        goToPrevSpread()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paginated, currentSpreadIndex, spreads.length])
+
+  // "Page X of Y" — Y is the book's real total page count; X is the first
+  // numbered page in the spread currently on screen (a spread can be a
+  // single page for a chapter opener, so this can't just be `index * 2`).
+  const currentPageLabel = useMemo(() => {
+    const spread = spreads[currentSpreadIndex]
+    // Front-/back-matter structural pages carry `number: 0` (unnumbered, per
+    // composeBookPages's doc comment) — skip those when picking which
+    // number to display, so an opening title/copyright spread shows no
+    // count rather than a misleading "Page 0".
+    const firstNumbered = spread?.find((p) => p.number > 0)
+    return { current: firstNumbered?.number ?? null, total: pages.length }
+  }, [spreads, currentSpreadIndex, pages.length])
 
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
@@ -212,12 +292,68 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails }
         />
       )}
 
-      <div className="flex flex-1 items-start justify-center overflow-auto px-10 py-10">
+      <div className={cn('flex flex-1 justify-center overflow-auto px-10 py-10', paginated ? 'relative items-center' : 'items-start')}>
         {!heights ? (
           <div className="flex flex-col items-center gap-3 pt-24 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             <Loader2 className="size-5 animate-spin" />
             Laying out your book…
           </div>
+        ) : paginated ? (
+          <>
+            <div style={{ zoom }} className="flex flex-col items-center overflow-hidden">
+              {spreads[currentSpreadIndex] && (
+                <div
+                  key={currentSpreadIndex}
+                  className={cn(
+                    'flex flex-col items-center animate-in fade-in-0 duration-200 ease-[var(--ease-standard)]',
+                    turnDirection === 'next' ? 'slide-in-from-right-8' : 'slide-in-from-left-8',
+                  )}
+                >
+                  <LazySpread
+                    projectId={project.id}
+                    spread={spreads[currentSpreadIndex]}
+                    pageBox={pageBox}
+                    theme={theme}
+                    dropCapBlockIds={dropCapBlockIds}
+                    toc={toc}
+                    bookTitle={project.name}
+                    language={project.settings.language}
+                    forceVisible
+                    decorative={decorative}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Floating page-turn controls — same bordered/blurred pill
+               convention as FocusModeLayout's exit control, so Reading Mode
+               reads as one consistent chrome rather than two competing
+               overlay styles. */}
+            <button
+              type="button"
+              onClick={goToPrevSpread}
+              disabled={!hasPrevSpread}
+              aria-label="Previous page"
+              className="absolute left-4 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-panel/95 shadow-[var(--shadow-md)] backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+            <button
+              type="button"
+              onClick={goToNextSpread}
+              disabled={!hasNextSpread}
+              aria-label="Next page"
+              className="absolute right-4 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-panel/95 shadow-[var(--shadow-md)] backdrop-blur transition-opacity disabled:pointer-events-none disabled:opacity-0"
+            >
+              <ChevronRight className="size-5" />
+            </button>
+
+            {currentPageLabel.current !== null && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-border bg-panel/95 px-3 py-1 text-xs text-text-secondary shadow-[var(--shadow-md)] backdrop-blur">
+                Page {currentPageLabel.current} of {currentPageLabel.total}
+              </div>
+            )}
+          </>
         ) : (
           <div style={{ zoom }} className="flex flex-col items-center gap-10">
             {spreads.map((spread, i) => (

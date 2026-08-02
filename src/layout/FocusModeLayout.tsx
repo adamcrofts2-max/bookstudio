@@ -35,14 +35,14 @@ export function FocusModeLayout({ project, mode }: FocusModeLayoutProps) {
           {mode === 'write' ? <PenLine className="size-3.5" /> : <BookOpenText className="size-3.5" />}
           {mode === 'write' ? 'Distraction-free writing' : 'Reading mode'}
         </span>
-        <span className="text-xs text-text-muted">· Esc to exit</span>
+        <span className="text-xs text-text-muted">{mode === 'read' ? '· ← → to turn pages · Esc to exit' : '· Esc to exit'}</span>
         <Button variant="ghost" size="icon" aria-label="Exit focus mode" onClick={() => setFocusMode('none')}>
           <X className="size-3.5" />
         </Button>
       </div>
 
       {manuscript ? (
-        <BookRenderer project={project} manuscript={manuscript} decorative={mode === 'read'} hideThumbnails />
+        <BookRenderer project={project} manuscript={manuscript} decorative={mode === 'read'} hideThumbnails paginated={mode === 'read'} />
       ) : (
         <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center text-text-secondary">
           <p className="text-sm">This project has no manuscript to show yet.</p>

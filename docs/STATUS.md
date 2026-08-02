@@ -5383,12 +5383,70 @@ reasoned through against the actual pre-fill values in `projectTemplates.ts` (sa
 same tool-availability reason noted above — worth a quick manual click-through next
 session to be sure.
 
+## Phase 79 — Reading Mode: real page-turning (2026-08-02)
+
+User-requested directly: "we need to implement the page turning in reading mode."
+Reading Mode (Phase 73) reused `BookRenderer`'s normal continuous vertical-scrolling
+column with `decorative={true}` — correct for "book-like, non-editable" but wrong for
+"feels like reading a book": there was no page-at-a-time experience at all, just a long
+scroll with edit chrome switched off.
+
+- Added `paginated?: boolean` to `BookRendererProps`. `undefined`/`false` (every
+  existing caller except one) preserves today's scrolling-column render byte-for-byte —
+  this is a strictly additive branch, not a rewrite of the default path.
+  `FocusModeLayout.tsx` is the only caller that sets it, and only for `read` mode
+  (`paginated={mode === 'read'}`); `write` mode is unaffected and still scrolls.
+- When `paginated`, `BookRenderer` renders exactly one spread via `LazySpread` with
+  `forceVisible` (skipping the IntersectionObserver lazy-mount path entirely, since
+  there's only ever one spread on screen to mount), tracked by local
+  `currentSpreadIndex`/`turnDirection` state. Deliberately component-local rather than
+  `uiStore`: which page a reader is on is view-transient, not something any other part
+  of the app reads, and — like a physical book — reopening should start at spread 0,
+  not wherever a previous reading session left off. Two small effects keep the index
+  sane: reset to 0 on `project.id` change (opening a different book), and clamp to the
+  new last index if `spreads.length` ever shrinks under it.
+- Floating Previous/Next chevron buttons (disabled/invisible at the two ends) reuse
+  `FocusModeLayout`'s existing pill chrome verbatim (`border-border bg-panel/95
+  shadow-[var(--shadow-md)] backdrop-blur`) rather than inventing new visual language —
+  Reading Mode should read as one consistent floating-chrome system, not two competing
+  overlay styles. A bottom-center "Page X of Y" pill uses the same chrome. `X` is the
+  first *numbered* page in the current spread — `composeBookPages`'s front-/back-matter
+  structural pages carry `number: 0` (unnumbered by convention), so an opening
+  title/copyright spread correctly shows no counter rather than a misleading "Page 0".
+- Left/Right arrow keys and Page Up/Down turn pages, via a `keydown` listener gated on
+  `paginated` (attached only in Reading Mode, inert everywhere else) and skipped when
+  focus is inside an `<input>`/`<textarea>` — irrelevant in `decorative` Reading Mode
+  today, but guards against a future decorative-mode search box or similar stealing
+  keys. `FocusModeLayout`'s existing pill hint text now reads "← → to turn pages · Esc
+  to exit" when `mode === 'read'`.
+- The entering spread plays a short direction-aware transition —
+  `animate-in fade-in-0 slide-in-from-{left,right}-8 duration-200
+  ease-[var(--ease-standard)]`, `tailwindcss-animate` utilities already used identically
+  by `dialog.tsx`/`select.tsx` elsewhere in this codebase — rather than a literal 3D
+  page-flip. Chosen deliberately: `CLAUDE.md`'s Design Standards call for "subtle and
+  purposeful" motion, and no animation library beyond `tailwindcss-animate` exists in
+  this project (checked `package.json` before deciding not to reach for one).
+
+`tsc -b --force` clean. `npx oxlint` crashed with a sandbox-level "Bus error (core
+dumped)" on this call specifically — not a lint finding, the process itself didn't
+survive; matches the pre-existing sandbox-only `vite build` limitation noted elsewhere
+in this file, not evidence of a real problem in the two changed files. Worth a quick
+`npm run lint` from the user's own terminal to be sure, alongside the live Chrome
+click-through below (Chrome tool availability was intermittent this session — see the
+Phase 78 entry above for the same caveat).
+
 ## Recommended next task
-Push the currently-unpushed local commits (Phase 76, 77, 78) so the live deployment
+Push the currently-unpushed local commits (Phase 76 through 79) so the live deployment
 matches `main` — the sandbox has no git push credentials, so this needs the user's own
-terminal, same constraint as the still-open #105 task. Once pushed, live-verify all
-three of this batch's fixes in Chrome (empty-chapter "Start writing" prompt,
+terminal, same constraint as the still-open #105/#162 tasks. Once pushed, live-verify in
+Chrome: Reading Mode's new page-turn arrows/keyboard nav/page counter (this phase), plus
+the still-outstanding Phase 76-78 batch (empty-chapter "Start writing" prompt,
 select-on-focus for pre-filled fields, first-name-only paste-back mention detection).
+Also confirm Search actually appears on the live site post-deploy — the code has been
+confirmed present on `origin/main` (`git reflog show remotes/origin/main`) and the
+currently-served bundle was confirmed genuinely current via its `304 Not Modified`
+response, so the gap is downstream of git, most likely a Vercel build/config issue only
+visible from the Vercel dashboard.
 Read `docs/PLANNING_MODE_UX_AUDIT.md` for the full first-time-author audit report and
 its prioritised recommendations — the single highest-priority open item it flags is
 still the pre-existing "insert AI-drafted prose into the manuscript with a reviewable

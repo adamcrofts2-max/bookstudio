@@ -9,6 +9,26 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 79 (2026-08-02) — Reading Mode page-turning
+
+- Page-turn buttons/keyboard nav ship this phase, but there's no click-anywhere-on-page
+  affordance (tap left/right half of the page to turn) — deliberately deferred to avoid
+  interfering with any future decorative interactive content on a Reading Mode page.
+  Worth adding once it's clear no such content is coming, since it's the more natural
+  gesture on touch/trackpad.
+- No swipe gesture support (trackpad two-finger swipe, touch swipe) — arrows + keyboard
+  only for this first version. Same reasoning as above: cheap to add later, not worth
+  guessing at gesture thresholds before real usage data exists.
+- Page counter shows "Page X of Y" using the manuscript's real page numbers, but doesn't
+  yet show *which chapter* the reader is in — a persistent-but-subtle chapter label
+  (fades in/out with the counter pill) would help orient a reader in a long book without
+  reintroducing the full sidebar Reading Mode is designed to hide.
+- No remembered reading position across sessions (closing and reopening Reading Mode
+  always starts at spread 0) — deliberate for v1 (matches "opening a physical book"
+  framing in `docs/STATUS.md`'s Phase 79 entry), but a returning reader picking up a
+  long manuscript may want it remembered. Would need a small `byProject` map, most
+  naturally in `uiStore` alongside `focusMode` itself, if requested.
+
 ## After Phase 77/78 (2026-08-02) — first-time-author UX audit
 
 Full findings in `docs/PLANNING_MODE_UX_AUDIT.md`; this is the lower-priority residue

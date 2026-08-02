@@ -614,6 +614,24 @@ daily use of everything built so far.)*
       `useKeyboardShortcuts.ts`, which stays mounted in focus mode since it lives
       in `AppShell.tsx` above the branch) and takes priority over its existing
       deselect behaviour while focus mode is active.
+- [x] Reading Mode: real page-turning instead of continuous scroll —
+      shipped 2026-08-02 (Phase 79, user-requested). `BookRenderer` gets a
+      new `paginated?: boolean` prop, wired only from
+      `FocusModeLayout.tsx`'s `read` mode (`paginated={mode === 'read'}`);
+      every other caller is unaffected and keeps today's scrolling column
+      exactly as before. When paginated, `BookRenderer` renders exactly one
+      spread via `LazySpread` (`forceVisible`), tracked by local
+      `currentSpreadIndex`/`turnDirection` state (view-transient, not
+      persisted to any store — reopening a book starts at spread 0, like
+      opening a physical book), floating Previous/Next chevron buttons
+      matching `FocusModeLayout`'s existing pill chrome, a "Page X of Y"
+      counter (skips unnumbered front-/back-matter pages per
+      `composeBookPages`'s `number: 0` convention), and Left/Right + Page
+      Up/Down keyboard navigation. Transitions use `tailwindcss-animate`'s
+      `animate-in fade-in-0 slide-in-from-{left,right}-8` (the same utility
+      already used by `dialog.tsx`/`select.tsx`) — a short slide+fade, not a
+      literal 3D page-flip, per `CLAUDE.md`'s "subtle and purposeful"
+      animation guidance.
 - [x] AI Workspace: scoped prompt generator (`ClipboardProvider`) — shipped
       2026-08-01 (Phase 66). `types/aiProvider.ts` defines the swappable
       `AiProvider` interface (`sendPrompt(text)`) plus the v1
