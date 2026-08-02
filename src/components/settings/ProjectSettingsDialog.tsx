@@ -21,9 +21,20 @@ import {
 } from '@/components/ui/select'
 import { useProjectStore } from '@/store/projectStore'
 import { ThemeGallery } from '@/components/settings/ThemeGallery'
-import type { Project, TrimSize } from '@/types'
+import type { BookForm, Project, TrimSize } from '@/types'
 import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
 import type { StyleGuide } from '@/virtualEditor/types'
+
+/** Sentinel for "Not sure yet" (`bookForm === undefined`) — Radix `Select`
+ * requires non-empty string values, so `undefined` can't be a value
+ * directly; this is translated back to `undefined` in the `onValueChange`
+ * handler below. See `types/project.ts`'s `BookForm` doc comment. */
+const BOOK_FORM_UNSET = 'unset'
+const BOOK_FORM_OPTIONS: { id: BookForm | typeof BOOK_FORM_UNSET; label: string }[] = [
+  { id: 'fiction', label: 'Fiction' },
+  { id: 'nonfiction', label: 'Non-fiction' },
+  { id: BOOK_FORM_UNSET, label: 'Not sure yet' },
+]
 
 const TRIM_SIZES: { id: TrimSize; label: string }[] = [
   { id: '5x8', label: '5 × 8 in — Mass market' },
@@ -78,6 +89,7 @@ interface ProjectSettingsDialogProps {
 export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSettingsDialogProps) {
   const renameProject = useProjectStore((s) => s.renameProject)
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
+  const setProjectBookForm = useProjectStore((s) => s.setProjectBookForm)
   const [name, setName] = useState(project.name)
 
   const { settings } = project
@@ -118,6 +130,28 @@ export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSe
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="project-name">Project name</Label>
             <Input id="project-name" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label>Fiction or non-fiction?</Label>
+            <Select
+              value={project.bookForm ?? BOOK_FORM_UNSET}
+              onValueChange={(value) =>
+                setProjectBookForm(project.id, value === BOOK_FORM_UNSET ? undefined : (value as BookForm))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {BOOK_FORM_OPTIONS.map((option) => (
+                  <SelectItem key={option.id} value={option.id}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-text-secondary">Decides how Develop labels things and which templates it offers — never a data change.</p>
           </div>
 
           <Separator />

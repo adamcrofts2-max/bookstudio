@@ -3,8 +3,10 @@ import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useLayer0Store } from '@/store/layer0Store'
+import { useContentStore } from '@/store/contentStore'
 import {
   addLayer0EntityWithHistory,
   deleteLayer0EntityWithHistory,
@@ -12,14 +14,21 @@ import {
   updateLayer0EntityWithHistory,
 } from '@/store/editorActions'
 import { generateId } from '@/utils'
-import { LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, type Layer0EntityKind } from '@/types/layer0'
+import { getLayer0KindLabel, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, type Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
 import { Layer0FieldsForm } from '@/layout/planning/Layer0FieldsForm'
+import type { BookForm } from '@/types'
 
 interface EntityListPanelProps {
   projectId: string
   kind: Layer0EntityKind
+  bookForm?: BookForm
 }
+
+/** Sentinel for "no chapter assigned" in the Timeline Event chapter
+ * `Select` below — same reasoning as `ProjectSettingsDialog`'s
+ * `BOOK_FORM_UNSET`: Radix `Select` needs a non-empty string value. */
+const NO_CHAPTER_SENTINEL = 'none'
 
 /** A loosely-typed view of any one entity, for the generic list/form below
  * — see `layer0FormConfig.ts`'s doc comment for why this component is
@@ -43,11 +52,16 @@ const NEW_ENTITY_SENTINEL = 'new'
  * `editorActions.ts`'s history-wrapped Layer 0 actions so every change is
  * undoable exactly like every other kind of edit in this app.
  */
-export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
+export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelProps) {
   const collection = LAYER0_KIND_TO_COLLECTION[kind]
   const config = LAYER0_FORM_CONFIG[kind]
-  const labels = LAYER0_KIND_LABELS[kind]
+  const labels = getLayer0KindLabel(kind, bookForm)
   const singularLower = labels.singular.toLowerCase()
+  // Only fetched for the Timeline Event chapter-select below — reading
+  // Content (Layer 2) from a Layer 0 UI is display-only, the exact same
+  // read-only cross-layer reference `IdeaDetailDialog.tsx`'s "Jump to
+  // chapter" already relies on, never a write.
+  const chapters = useContentStore((s) => s.getManuscript(projectId))?.chapters ?? []
 
   // See `EntityRecord`'s doc comment for why this cast is the one
   // deliberately loosely-typed read in an otherwise fully-typed store.
@@ -154,14 +168,44 @@ export function EntityListPanel({ projectId, kind }: EntityListPanelProps) {
               key={entity.id}
               className="flex items-start justify-between gap-3 rounded-[var(--radius-card)] border border-border bg-panel p-3"
             >
-              <button type="button" className="min-w-0 flex-1 text-left" onClick={() => openEdit(entity)}>
-                <p className="truncate text-sm font-medium text-text-primary">
-                  {(entity[config.primaryKey] as string | undefined)?.trim() || 'Untitled'}
-                </p>
-                {config.secondaryKey && !!entity[config.secondaryKey] && (
-                  <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{entity[config.secondaryKey] as string}</p>
+              <div className="min-w-0 flex-1">
+                <button type="button" className="w-full text-left" onClick={() => openEdit(entity)}>
+                  <p className="truncate text-sm font-medium text-text-primary">
+                    {(entity[config.primaryKey] as string | undefined)?.trim() || 'Untitled'}
+                  </p>
+                  {config.secondaryKey && !!entity[config.secondaryKey] && (
+                    <p className="mt-0.5 line-clamp-2 text-xs text-text-secondary">{entity[config.secondaryKey] as string}</p>
+                  )}
+                </button>
+                {kind === 'timelineEvent' && (
+                  <div className="mt-1.5" onClick={(e) => e.stopPropagation()}>
+                    <Select
+                      value={(entity.linkedChapterId as string | undefined) ?? NO_CHAPTER_SENTINEL}
+                      onValueChange={(value) =>
+                        updateLayer0EntityWithHistory(
+                          projectId,
+                          collection,
+                          entity.id,
+                          { linkedChapterId: value === NO_CHAPTER_SENTINEL ? undefined : value } as never,
+                          'Link beat to chapter',
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-full max-w-56 text-xs">
+                        <SelectValue placeholder="Not linked to a chapter yet" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={NO_CHAPTER_SENTINEL}>Not linked to a chapter yet</SelectItem>
+                        {chapters.map((chapter) => (
+                          <SelectItem key={chapter.id} value={chapter.id}>
+                            {chapter.title || 'Untitled chapter'}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
-              </button>
+              </div>
               <div className="flex shrink-0 items-center gap-1">
                 {kind === 'timelineEvent' && (
                   <>

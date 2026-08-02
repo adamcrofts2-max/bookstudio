@@ -59,7 +59,7 @@ export async function buildProjectFile(source: ProjectFileSource): Promise<Blob>
   const manifest: ProjectFileManifest = {
     formatVersion: PROJECT_FILE_VERSION,
     exportedAt: new Date().toISOString(),
-    project: { name: project.name, category: project.category, settings: project.settings },
+    project: { name: project.name, category: project.category, bookForm: project.bookForm, settings: project.settings },
   }
 
   entries.push({ name: 'manifest.json', data: json(manifest) })

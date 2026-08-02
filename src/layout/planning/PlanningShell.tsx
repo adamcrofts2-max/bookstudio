@@ -9,13 +9,13 @@ import { cn } from '@/lib/utils'
 import { useUiStore } from '@/store/uiStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
-import { LAYER0_ENTITY_KINDS, LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type Layer0EntityKind } from '@/types/layer0'
+import { LAYER0_ENTITY_KINDS, getLayer0KindLabel, LAYER0_KIND_TO_COLLECTION, type Layer0EntityKind } from '@/types/layer0'
 import { EntityListPanel } from '@/layout/planning/EntityListPanel'
 import { IdeaInboxPanel } from '@/layout/planning/IdeaInboxPanel'
 import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
 import { PasteBackPanel } from '@/layout/planning/PasteBackPanel'
 import { OutlineTemplatesPanel } from '@/layout/planning/OutlineTemplatesPanel'
-import type { Project } from '@/types'
+import type { BookForm, Project } from '@/types'
 
 interface PlanningShellProps {
   project: Project
@@ -73,7 +73,19 @@ const REMAINING_KINDS: Layer0EntityKind[] = LAYER0_ENTITY_KINDS.filter((k) => !S
 /** One Layer 0 entity-kind nav row — pulled out since it's now rendered in
  * two separate groups (`SECONDARY_ROW_KINDS`, `REMAINING_KINDS`) rather
  * than one flat `LAYER0_ENTITY_KINDS.map`. */
-function EntityKindNavButton({ kind, count, active, onClick }: { kind: Layer0EntityKind; count: number; active: boolean; onClick: () => void }) {
+function EntityKindNavButton({
+  kind,
+  count,
+  active,
+  onClick,
+  bookForm,
+}: {
+  kind: Layer0EntityKind
+  count: number
+  active: boolean
+  onClick: () => void
+  bookForm?: BookForm
+}) {
   return (
     <button
       type="button"
@@ -85,7 +97,7 @@ function EntityKindNavButton({ kind, count, active, onClick }: { kind: Layer0Ent
           : 'text-text-secondary hover:bg-hover hover:text-text-primary',
       )}
     >
-      <span>{LAYER0_KIND_LABELS[kind].plural}</span>
+      <span>{getLayer0KindLabel(kind, bookForm).plural}</span>
       {count > 0 && <span className="text-xs text-text-muted">{count}</span>}
     </button>
   )
@@ -174,6 +186,7 @@ export function PlanningShell({ project }: PlanningShellProps) {
                   count={bible[LAYER0_KIND_TO_COLLECTION[kind]].length}
                   active={activeView === kind}
                   onClick={() => setActiveView(kind)}
+                  bookForm={project.bookForm}
                 />
               ))}
 
@@ -186,6 +199,7 @@ export function PlanningShell({ project }: PlanningShellProps) {
                   count={bible[LAYER0_KIND_TO_COLLECTION[kind]].length}
                   active={activeView === kind}
                   onClick={() => setActiveView(kind)}
+                  bookForm={project.bookForm}
                 />
               ))}
               <ToolNavButton
@@ -212,9 +226,9 @@ export function PlanningShell({ project }: PlanningShellProps) {
           ) : activeView === 'paste-back' ? (
             <PasteBackPanel projectId={project.id} />
           ) : activeView === 'outline-templates' ? (
-            <OutlineTemplatesPanel projectId={project.id} />
+            <OutlineTemplatesPanel projectId={project.id} bookForm={project.bookForm} />
           ) : (
-            <EntityListPanel projectId={project.id} kind={activeView} />
+            <EntityListPanel projectId={project.id} kind={activeView} bookForm={project.bookForm} />
           )}
         </ScrollArea>
       </div>

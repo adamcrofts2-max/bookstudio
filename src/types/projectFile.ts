@@ -1,4 +1,4 @@
-import type { ProjectCategory, ProjectSettings } from '@/types/project'
+import type { BookForm, ProjectCategory, ProjectSettings } from '@/types/project'
 import type { Manuscript } from '@/types/content'
 import type { StructuralPage } from '@/types/structuralPage'
 import type { Note } from '@/store/notesStore'
@@ -33,6 +33,11 @@ export interface ProjectFileManifest {
   project: {
     name: string
     category: ProjectCategory
+    /** See `types/project.ts`'s `BookForm` doc comment. Additive, same
+     * convention as `layer0Bible`/`ideas` below — an archive saved before
+     * this existed simply has no `bookForm` key, and Develop falls back to
+     * its pre-Phase-83 generic labels/templates for that project. */
+    bookForm?: BookForm
     settings: ProjectSettings
   }
 }

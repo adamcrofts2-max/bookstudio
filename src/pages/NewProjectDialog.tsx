@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { BookOpenText, HelpCircle, Notebook } from 'lucide-react'
 
 import {
   Dialog,
@@ -19,22 +20,35 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { cn } from '@/lib/utils'
 import { useProjectStore } from '@/store/projectStore'
 import { CATEGORY_TEMPLATES, seedProjectTemplate } from '@/data/projectTemplates'
 import { addIdeaWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
 import type { Idea } from '@/types/idea'
-import type { ProjectCategory } from '@/types'
+import type { BookForm, ProjectCategory } from '@/types'
 
-const CATEGORIES: { id: ProjectCategory; label: string }[] = [
-  { id: 'novel', label: 'Novel' },
-  { id: 'nonfiction', label: 'Non-fiction' },
-  { id: 'childrens', label: "Children's Book" },
-  { id: 'educational', label: 'Educational' },
-  { id: 'coffee-table', label: 'Coffee Table' },
-  { id: 'nature', label: 'Nature' },
-  { id: 'scientific', label: 'Scientific' },
-  { id: 'other', label: 'Other' },
+const CATEGORIES: { id: ProjectCategory; label: string; form: BookForm | 'either' }[] = [
+  { id: 'novel', label: 'Novel', form: 'fiction' },
+  { id: 'childrens', label: "Children's Book", form: 'fiction' },
+  { id: 'nonfiction', label: 'General Non-fiction', form: 'nonfiction' },
+  { id: 'educational', label: 'Educational', form: 'nonfiction' },
+  { id: 'coffee-table', label: 'Coffee Table', form: 'nonfiction' },
+  { id: 'nature', label: 'Nature', form: 'nonfiction' },
+  { id: 'scientific', label: 'Scientific', form: 'nonfiction' },
+  { id: 'other', label: 'Other', form: 'either' },
+]
+
+/** The three-way choice (Phase 83, `docs/IDEA_SYSTEM_PLAN.md` Milestone
+ * 1.1) that decides which Develop labels/templates a project sees —
+ * `undefined` ("Not sure yet") is a real, equally-valid third option, not a
+ * placeholder for the other two. See `types/project.ts`'s `BookForm` doc
+ * comment for why this is separate from `category` and always editable
+ * later from Project Settings, never a one-time gate. */
+const BOOK_FORM_OPTIONS: { id: BookForm | undefined; label: string; hint: string; icon: typeof BookOpenText }[] = [
+  { id: 'fiction', label: 'Fiction', hint: 'A story — novel, children’s book, memoir-as-narrative', icon: BookOpenText },
+  { id: 'nonfiction', label: 'Non-fiction', hint: 'Informational, instructional, or reference', icon: Notebook },
+  { id: undefined, label: 'Not sure yet', hint: 'Decide later from Project Settings', icon: HelpCircle },
 ]
 
 interface NewProjectDialogProps {
@@ -47,6 +61,9 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const createProject = useProjectStore((s) => s.createProject)
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
   const [idea, setIdea] = useState('')
+  // Also genuinely three-valued — `undefined` is "Not sure yet", a real
+  // choice, not "hasn't answered yet". See `BOOK_FORM_OPTIONS` above.
+  const [bookForm, setBookForm] = useState<BookForm | undefined>(undefined)
   // `undefined` — not a pre-selected default — is what makes category
   // genuinely optional (Develop Milestone 1, `docs/IDEA_SYSTEM_PLAN.md`):
   // the trim-size default and example-entry seeding below only run if the
@@ -54,13 +71,29 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   // whatever category happened to be selected first.
   const [category, setCategory] = useState<ProjectCategory | undefined>(undefined)
 
+  // Narrows the category list to whichever form was picked, "Other" always
+  // included since it's ambiguous by design. Picking a form after already
+  // choosing a category that no longer fits (e.g. "Novel" then switching to
+  // Non-fiction) clears it rather than leaving a mismatched selection sitting
+  // in the dropdown silently.
+  const visibleCategories = CATEGORIES.filter((c) => !bookForm || c.form === bookForm || c.form === 'either')
+
   const reset = () => {
     setIdea('')
+    setBookForm(undefined)
     setCategory(undefined)
   }
 
+  const handlePickBookForm = (next: BookForm | undefined) => {
+    setBookForm(next)
+    const stillFits = CATEGORIES.find((c) => c.id === category)
+    if (category && next && stillFits && stillFits.form !== next && stillFits.form !== 'either') {
+      setCategory(undefined)
+    }
+  }
+
   const handleCreate = () => {
-    const project = createProject(idea, category ?? 'other')
+    const project = createProject(idea, category ?? 'other', bookForm)
     if (category) {
       // Category-driven starting template — trim size default plus a few
       // clearly-marked example Develop entries, per `docs/ROADMAP.md`'s
@@ -111,13 +144,40 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
           </div>
 
           <div className="flex flex-col gap-1.5">
+            <Label>Fiction or non-fiction?</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {BOOK_FORM_OPTIONS.map((opt) => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={() => handlePickBookForm(opt.id)}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-[var(--radius-card)] border p-3 text-center transition-colors duration-150',
+                    bookForm === opt.id
+                      ? 'border-[var(--color-accent)] bg-[var(--color-accent)]/10'
+                      : 'border-border hover:bg-hover',
+                  )}
+                >
+                  <opt.icon className={cn('size-4', bookForm === opt.id ? 'text-[var(--color-accent)]' : 'text-text-secondary')} />
+                  <span className={cn('text-xs font-medium', bookForm === opt.id ? 'text-[var(--color-accent)]' : 'text-text-primary')}>
+                    {opt.label}
+                  </span>
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-text-secondary">
+              Decides how Develop labels things and which templates it offers — never a data change, and always editable later from Project Settings.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
             <Label>Category (optional)</Label>
             <Select value={category} onValueChange={(v) => setCategory(v as ProjectCategory)}>
               <SelectTrigger>
                 <SelectValue placeholder="Skip for now — decide later" />
               </SelectTrigger>
               <SelectContent>
-                {CATEGORIES.map((c) => (
+                {visibleCategories.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.label}
                   </SelectItem>

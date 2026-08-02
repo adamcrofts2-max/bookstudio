@@ -9,6 +9,7 @@ import { BlockContent } from '@/renderer/BlockContent'
 import { BlockToolbar } from '@/renderer/BlockToolbar'
 import { PageToolbar } from '@/renderer/PageToolbar'
 import { NoteIndicatorBadge } from '@/renderer/NoteIndicatorBadge'
+import { IdeaIndicatorBadge } from '@/renderer/IdeaIndicatorBadge'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
 import { AiDraftInsertDialog } from '@/renderer/AiDraftInsertDialog'
 import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
@@ -209,6 +210,9 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               setInspectorTab('notes')
             }}
           />
+        )}
+        {chapterId && !decorative && (
+          <IdeaIndicatorBadge projectId={projectId} blockId={block.id} className="absolute -top-3 right-2 z-10" />
         )}
       </div>
     )

@@ -26,6 +26,8 @@
  * guide's Character becoming "Species") is future work, not this one.
  */
 
+import type { BookForm } from '@/types/project'
+
 /** Every entity kind, in the exact order `docs/AI_WORKSPACE_VISION.md`
  * lists them — also the canonical order category pickers/prompt-bundle
  * assembly should present them in. */
@@ -81,6 +83,15 @@ export interface TimelineEvent extends BaseLayer0Entity {
   when?: string
   description?: string
   order: number
+  /** Which chapter this beat lands in, if the author has assigned one yet
+   * (Phase 83) — mirrors `Idea.linkedChapterId`/`Note.chapterId`'s exact
+   * "reference by id, don't duplicate the title" pattern. What makes an
+   * Outline Template beat ("Hook", "Midpoint"…) into an actual skeleton of
+   * the manuscript rather than a list that lives only in Develop, floating
+   * next to the real chapters instead of pointing at any of them. Optional
+   * and never required — a beat with no chapter assigned just shows
+   * "Not linked to a chapter yet". */
+  linkedChapterId?: string
 }
 
 /** An in-world term, invented word, or piece of jargon worth defining once
@@ -178,6 +189,32 @@ export const LAYER0_KIND_LABELS: Record<Layer0EntityKind, { singular: string; pl
   illustrationBrief: { singular: 'Illustration Brief', plural: 'Illustration Briefs', description: 'Artwork that needs to be made' },
   styleRule: { singular: 'Style Rule', plural: 'Style Rules', description: 'Standing rules the manuscript should follow' },
   researchNote: { singular: 'Research Note', plural: 'Research Notes', description: "Background notes that aren't manuscript text" },
+}
+
+/** Overrides for the three kinds whose fiction-coded wording ("Character",
+ * "Timeline") reads oddly on a non-fiction project (Phase 83) — a business
+ * book has no "characters". Only the kinds that actually need different
+ * words appear here; everything else (Glossary/References/Illustration
+ * Briefs/Style Rules/Research Notes) already reads as genre-neutral and is
+ * left out on purpose rather than repeated unchanged. Same underlying
+ * `Layer0Bible` collections and data either way — this is display text
+ * only, read through `getLayer0KindLabel` below, never `LAYER0_KIND_LABELS`
+ * directly once a project's `BookForm` is known. */
+const LAYER0_KIND_LABELS_NONFICTION: Partial<Record<Layer0EntityKind, { singular: string; plural: string; description: string }>> = {
+  character: { singular: 'Person', plural: 'People', description: 'People discussed or featured' },
+  location: { singular: 'Place', plural: 'Places', description: 'Places discussed or featured' },
+  timelineEvent: { singular: 'Chronology Event', plural: 'Chronology', description: 'Points on a chronological record, if this book has one' },
+}
+
+/** The one read site every nav row / list header / empty-state should use
+ * instead of indexing `LAYER0_KIND_LABELS` directly, so the fiction/
+ * non-fiction override above only has to be applied once. Falls back to
+ * the original fiction-leaning labels whenever `bookForm` is `'fiction'` or
+ * unset ("Not sure yet") — unchanged pre-Phase-83 behaviour for anyone who
+ * hasn't made the choice. */
+export function getLayer0KindLabel(kind: Layer0EntityKind, bookForm?: BookForm): { singular: string; plural: string; description: string } {
+  if (bookForm === 'nonfiction') return LAYER0_KIND_LABELS_NONFICTION[kind] ?? LAYER0_KIND_LABELS[kind]
+  return LAYER0_KIND_LABELS[kind]
 }
 
 /** Every entity kind, in canonical display order — the one place that

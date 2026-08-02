@@ -48,6 +48,14 @@ export interface Idea {
    * chapter, absent for an Idea captured from Develop directly. Not used
    * for anything beyond "jump back to where I was" in Milestone 1. */
   linkedChapterId?: string
+  /** The specific block this was captured against, if a block was selected
+   * at the time (Phase 83) — mirrors `Note.blockId`. Strictly more precise
+   * than `linkedChapterId`, which stays set alongside it (same "keep the
+   * parent id alongside the child id" convention `Note.chapterId` already
+   * uses) since a chapter-level link still means something once a block is
+   * deleted or the idea is captured with no block in focus. Powers
+   * `IdeaIndicatorBadge` — the small margin marker on the block itself. */
+  linkedBlockId?: string
   /** Set once, the moment an Idea is promoted — never cleared, never
    * overwritten. A promoted Idea stays visible in the inbox (filtered into
    * the Archived bucket by default) as a record of where that structured

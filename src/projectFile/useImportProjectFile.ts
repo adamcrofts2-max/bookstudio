@@ -52,7 +52,7 @@ export function useImportProjectFile() {
       const bytes = new Uint8Array(await file.arrayBuffer())
       const bundle = await parseProjectFile(bytes)
 
-      const project = createProject(bundle.manifest.project.name, bundle.manifest.project.category)
+      const project = createProject(bundle.manifest.project.name, bundle.manifest.project.category, bundle.manifest.project.bookForm)
       updateProjectSettings(project.id, bundle.manifest.project.settings)
       setManuscript(project.id, bundle.manuscript)
       replaceAllPages(project.id, bundle.structuralPages)

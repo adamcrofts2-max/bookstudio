@@ -483,6 +483,37 @@ daily use of everything built so far.)*
       anything) gets built next. Purely additive; every existing Layer 0 UI kept
       working unchanged throughout — confirmed by re-reading `EntityListPanel.tsx`'s
       only change (a shared field-rendering component, no behaviour change).
+- [x] **Idea System / Develop Milestone 1.1** — shipped 2026-08-02 (Phase 83),
+      user design-review pass on the live Milestone 1 build (screenshot-driven —
+      Generate Prompt/Paste Response read as clutter, Timeline/Outline Templates
+      didn't generalise to non-fiction, ideas had no visible link to the paragraph
+      they came from). Added: (1) `Project.bookForm` (`'fiction' | 'nonfiction' |
+      undefined` — a real third "not sure yet" state, never a forced choice),
+      chosen via a required-but-skippable three-card picker in New Project and
+      changeable later from Project Settings; (2) `getLayer0KindLabel`, the one
+      read site every Develop label goes through — relabels Characters→People,
+      Locations→Places, Timeline→Chronology for non-fiction projects, same
+      underlying `Layer0Bible` collections; (3) `Idea.linkedBlockId` +
+      `IdeaIndicatorBadge` (mirrors `Note.blockId`/`NoteIndicatorBadge` exactly) —
+      a quiet margin badge on any block with a linked idea, expanding inline
+      in Write mode instead of jumping to Develop; (4) `OutlineTemplate.form` +
+      `getOutlineTemplatesForForm` — Outline Templates now filters to the
+      project's `bookForm` (two new non-fiction templates added: Step-by-Step
+      Guide, Chronological Account — Problem→Solution already existed but was
+      shown alongside Hero's Journey/Save the Cat regardless of form); (5)
+      `TimelineEvent.linkedChapterId` + a chapter-`Select` on each Timeline/
+      Chronology row in `EntityListPanel.tsx` — an Outline Template beat can now
+      point at a real chapter instead of floating unconnected next to the
+      manuscript. Idea capture button position and the Generate Prompt/Paste
+      Response nav rows were deliberately left unchanged this pass — user
+      explicitly asked to keep the capture button where it is, and the
+      Tools-section nav cleanup discussed in review wasn't part of the agreed
+      build list. A full book-wide "mind map" (ideas *and* every Layer 0 entity
+      *and* chapters, icon-coded, as one connected graph) was discussed and
+      judged genuinely worthwhile, sequenced as its own follow-up: it needs
+      chapter-association fields on entities beyond Timeline Events (characters/
+      locations currently have none) before the graph could be accurate, not
+      just a rendering change.
 - [x] Live first-time-author UX audit of Planning mode's full fiction and
       non-fiction workflows, in Chrome against the deployed build — 2026-08-02
       (Phase 77/78). Full findings, prioritised, in
@@ -726,6 +757,25 @@ daily use of everything built so far.)*
       cross-layer import into `layout/planning`.
 - [ ] AI Workspace: `ApiKeyProvider` (direct API call, streamed diff) — deferred
       until there's a real story for cost/accounts (Phase G/H)
+- [ ] Idea System Milestone 2: Ideas mind-map view (list/mind-map toggle on the
+      same Ideas data — nodes are ideas, tag = cluster colour, edges are shared
+      tags or manual `relatedIdeaIds`). Design agreed 2026-08-02, not built.
+- [ ] Book graph (Idea System Milestone 3, discussed 2026-08-02): the mind-map
+      concept extended past Ideas to the whole book — chapters, characters,
+      places, ideas, images, and research as one connected, icon-coded graph
+      (person/map-pin/lightbulb/photo/file-text per kind, filterable by kind).
+      Needs a "which chapter(s) does this belong to" field added to Character/
+      Location/GlossaryTerm/Reference/IllustrationBrief/ResearchNote first —
+      today only `TimelineEvent.linkedChapterId` (Phase 83) and
+      `Idea.linkedChapterId`/`linkedBlockId` exist; the other six Layer 0 kinds
+      have no chapter association at all yet. Do this after Milestone 2 ships
+      and gets real reaction, not before.
+- [ ] Develop nav cleanup: fold "Generate Prompt" + "Paste Response" (a real
+      two-step bulk-AI workflow, not clutter — Phase 143/144) under a small
+      muted "Tools" section header at the bottom of the nav, separated from the
+      Ideas-promotion categories above it. Discussed in the Phase 83 design
+      review but deliberately not built — not part of the agreed build list for
+      that pass.
 
 ## Phase G — Accounts, Cloud & Collaboration
 

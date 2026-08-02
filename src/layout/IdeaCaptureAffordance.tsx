@@ -26,12 +26,17 @@ interface IdeaCaptureAffordanceProps {
  * closest available proxy for "whichever chapter is currently open," since
  * `BookRenderer` renders the whole manuscript as one continuous scroll
  * rather than a per-chapter editor. `null` (nothing selected yet) simply
- * omits the link, same as capturing from Develop directly.
+ * omits the link, same as capturing from Develop directly. `linkedBlockId`
+ * (Phase 83) is set the same way from `selectedBlockId` when a specific
+ * block happens to be selected — strictly additive, never required — and is
+ * what lets `IdeaIndicatorBadge` anchor this idea to the exact paragraph
+ * instead of just "somewhere in this chapter."
  */
 export function IdeaCaptureAffordance({ projectId }: IdeaCaptureAffordanceProps) {
   const [expanded, setExpanded] = useState(false)
   const [text, setText] = useState('')
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
+  const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
 
   const collapse = () => {
     setExpanded(false)
@@ -52,6 +57,7 @@ export function IdeaCaptureAffordance({ projectId }: IdeaCaptureAffordanceProps)
       updatedAt: now,
       status: 'new',
       ...(selectedChapterId ? { linkedChapterId: selectedChapterId } : {}),
+      ...(selectedBlockId ? { linkedBlockId: selectedBlockId } : {}),
     }
     addIdeaWithHistory(projectId, idea)
     collapse()

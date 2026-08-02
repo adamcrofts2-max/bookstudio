@@ -9,6 +9,37 @@ the 2026-08-01 instruction to append here after every commit.
 
 ---
 
+## After Phase 83 (2026-08-02) — Idea System / Develop Milestone 1.1
+
+- **Still not live-verified in Chrome this session** — same standing gap as Phase 82,
+  now covering five more surfaces: the fiction/non-fiction picker, adaptive labels on
+  a non-fiction project, the margin idea badge, the filtered Outline Templates list,
+  and the new Timeline chapter `Select`.
+- **The fiction/non-fiction "Not sure yet" escape hatch means most existing projects
+  will sit with `bookForm` unset indefinitely** unless something nudges the user to
+  Project Settings — worth watching whether real users ever go back and set it, or
+  whether it needs a gentler in-context prompt (e.g. a one-line banner in Develop:
+  "Set fiction/non-fiction to tailor these categories") rather than staying purely
+  opt-in.
+- **`IdeaIndicatorBadge` and `NoteIndicatorBadge` now sit on opposite top corners of
+  the same block** (`-top-3 left-2` vs `-top-3 right-2`) — fine at one badge per side,
+  but if a block ever needs more annotation types than these two, this positioning
+  scheme runs out of corners. Not a problem yet at n=2.
+- **The chapter `Select` added to Timeline/Chronology rows only covers `TimelineEvent`**
+  — the other seven Layer 0 kinds (Character, Location, Glossary Term, Reference,
+  Illustration Brief, Style Rule, Research Note) still have no "which chapter(s) is
+  this relevant to" field. Flagged as real follow-up work in ROADMAP.md (the "book
+  graph" item) rather than added here, since doing it properly for all seven at once
+  is a bigger pass than this batch scoped for.
+- **No non-fiction `ProjectCategory` values for memoir/history/biography specifically**
+  — the new Chronological Account template works for any of these, but the category
+  dropdown only offers the generic "Non-fiction" bucket for them. Worth adding
+  dedicated categories if trim-size/template seeding ever wants to differentiate a
+  memoir from, say, an educational workbook.
+- **Generate Prompt / Paste Response nav rows still sit unlabeled/unsectioned** in the
+  Develop sidebar, discussed at length in review (fold under a muted "Tools" header)
+  but deliberately not built this pass — see ROADMAP.md Phase F.
+
 ## After Phase 82 (2026-08-02) — Idea System / Develop Milestone 1
 
 - **Not live-verified in Chrome this session** — the largest gap in this batch. Worth

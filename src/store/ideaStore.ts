@@ -18,6 +18,9 @@ interface IdeaStoreState {
 
 interface IdeaStoreActions {
   getIdeas: (projectId: string) => Idea[]
+  /** Every Idea linked to one manuscript block — powers `IdeaIndicatorBadge`
+   * (Phase 83), mirrors `notesStore.getNotesForBlock`'s exact shape. */
+  getIdeasForBlock: (projectId: string, blockId: string) => Idea[]
   /** Low-level "insert this exact object" primitive — mirrors
    * `notesStore.addNote`/`layer0Store.addEntity`'s naming/shape, so
    * `editorActions.ts`'s history wrapper can restore an exact snapshot at
@@ -38,6 +41,9 @@ export const useIdeaStore = create<IdeaStoreState & IdeaStoreActions>()(
       byProject: {},
 
       getIdeas: (projectId) => get().byProject[projectId] ?? EMPTY_IDEAS,
+
+      getIdeasForBlock: (projectId, blockId) =>
+        (get().byProject[projectId] ?? EMPTY_IDEAS).filter((idea) => idea.linkedBlockId === blockId),
 
       addIdea: (projectId, idea) => {
         set((state) => ({

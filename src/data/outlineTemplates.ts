@@ -1,5 +1,6 @@
 import { addLayer0EntityWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
+import type { BookForm } from '@/types/project'
 
 /**
  * "Outlining / story-structure templates" (`docs/ROADMAP.md` Phase F) — a
@@ -31,11 +32,20 @@ export interface OutlineTemplate {
   label: string
   description: string
   beats: OutlineBeat[]
+  /** Which `BookForm` this template actually fits (Phase 83) — `'either'`
+   * for the couple of shapes generic enough to suit both (currently just
+   * the Picture Book Arc, since children's books span fiction and
+   * non-fiction). `getOutlineTemplatesForForm` below is the one place this
+   * gets filtered; nothing here changes what a template *does* once
+   * applied — still the same `applyOutlineTemplate` seeding Timeline/
+   * Chronology either way. */
+  form: BookForm | 'either'
 }
 
 export const OUTLINE_TEMPLATES: OutlineTemplate[] = [
   {
     id: 'three-act',
+    form: 'fiction',
     label: 'Three-Act Structure',
     description: 'The classic setup/confrontation/resolution shape — a solid default for most novels.',
     beats: [
@@ -51,6 +61,7 @@ export const OUTLINE_TEMPLATES: OutlineTemplate[] = [
   },
   {
     id: 'heros-journey',
+    form: 'fiction',
     label: "The Hero's Journey",
     description: "Joseph Campbell's monomyth — a departure/initiation/return arc, common in adventure and fantasy.",
     beats: [
@@ -70,6 +81,7 @@ export const OUTLINE_TEMPLATES: OutlineTemplate[] = [
   },
   {
     id: 'save-the-cat',
+    form: 'fiction',
     label: 'Save the Cat Beat Sheet',
     description: "Blake Snyder's 15-beat screenwriting structure — popular for tightly-plotted, commercial fiction.",
     beats: [
@@ -92,7 +104,8 @@ export const OUTLINE_TEMPLATES: OutlineTemplate[] = [
   },
   {
     id: 'problem-solution',
-    label: 'Problem → Solution (Non-fiction)',
+    form: 'nonfiction',
+    label: 'Problem → Solution',
     description: 'A persuasive-argument shape for non-fiction, self-help, or educational chapters.',
     beats: [
       { title: 'Hook', description: 'An opening that earns the reader\'s attention and signals what\'s at stake.' },
@@ -107,7 +120,37 @@ export const OUTLINE_TEMPLATES: OutlineTemplate[] = [
     ],
   },
   {
+    id: 'step-by-step',
+    form: 'nonfiction',
+    label: 'Step-by-Step Guide',
+    description: 'An instructional shape for how-to, technical, or reference chapters.',
+    beats: [
+      { title: 'Why This Matters', description: 'Ground the reader in what they will be able to do, and why it is worth doing.' },
+      { title: 'Before You Start', description: 'Prerequisites, materials, or context the reader needs first.' },
+      { title: 'Step 1', description: 'The first concrete action.' },
+      { title: 'Step 2', description: 'The next concrete action, building on Step 1.' },
+      { title: 'Step 3', description: 'Continue as far as the process actually requires — rename or add steps freely.' },
+      { title: 'Common Mistakes', description: "Where readers typically go wrong, and how to avoid or recover from it." },
+      { title: 'Result / Recap', description: 'What the reader should have by the end, and a quick summary of how they got there.' },
+    ],
+  },
+  {
+    id: 'chronological-account',
+    form: 'nonfiction',
+    label: 'Chronological Account',
+    description: 'An events-in-order shape for memoir, biography, or history chapters.',
+    beats: [
+      { title: 'Starting Point', description: 'Where the account begins, and the state of things beforehand.' },
+      { title: 'First Turning Point', description: 'The first event that changes the trajectory of the account.' },
+      { title: 'Developments', description: 'What follows from that turn — consequences, decisions, complications.' },
+      { title: 'Second Turning Point', description: "A further shift — often the account's central event." },
+      { title: 'Outcome', description: 'Where things stood once the central events had played out.' },
+      { title: 'Reflection', description: 'What it means in hindsight, or why it matters now.' },
+    ],
+  },
+  {
     id: 'picture-book-arc',
+    form: 'either',
     label: 'Picture Book Arc',
     description: 'A short six-beat shape suited to children\'s picture books.',
     beats: [
@@ -120,6 +163,15 @@ export const OUTLINE_TEMPLATES: OutlineTemplate[] = [
     ],
   },
 ]
+
+/** Narrows the full template list to whichever `BookForm` a project has —
+ * `'either'`-tagged templates always included, and the full unfiltered list
+ * comes back when `bookForm` is unset ("Not sure yet"), same fallback
+ * `getLayer0KindLabel` uses. */
+export function getOutlineTemplatesForForm(bookForm?: BookForm): OutlineTemplate[] {
+  if (!bookForm) return OUTLINE_TEMPLATES
+  return OUTLINE_TEMPLATES.filter((t) => t.form === bookForm || t.form === 'either')
+}
 
 /**
  * Appends every beat of `template` to `projectId`'s Timeline as a new

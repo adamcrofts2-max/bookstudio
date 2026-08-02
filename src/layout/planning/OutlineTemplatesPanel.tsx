@@ -2,10 +2,13 @@ import { ListTree, Plus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useLayer0Store } from '@/store/layer0Store'
-import { OUTLINE_TEMPLATES, applyOutlineTemplate, type OutlineTemplate } from '@/data/outlineTemplates'
+import { getOutlineTemplatesForForm, applyOutlineTemplate, type OutlineTemplate } from '@/data/outlineTemplates'
+import { getLayer0KindLabel } from '@/types/layer0'
+import type { BookForm } from '@/types/project'
 
 interface OutlineTemplatesPanelProps {
   projectId: string
+  bookForm?: BookForm
 }
 
 /**
@@ -18,8 +21,10 @@ interface OutlineTemplatesPanelProps {
  * thing undoes cleanly if it wasn't what the user wanted. See
  * `data/outlineTemplates.ts` for the template data itself.
  */
-export function OutlineTemplatesPanel({ projectId }: OutlineTemplatesPanelProps) {
+export function OutlineTemplatesPanel({ projectId, bookForm }: OutlineTemplatesPanelProps) {
   const timelineEventCount = useLayer0Store((s) => s.getBible(projectId).timelineEvents.length)
+  const timelineLabel = getLayer0KindLabel('timelineEvent', bookForm).plural
+  const templates = getOutlineTemplatesForForm(bookForm)
 
   const handleApply = (template: OutlineTemplate) => {
     applyOutlineTemplate(projectId, template, timelineEventCount)
@@ -30,13 +35,14 @@ export function OutlineTemplatesPanel({ projectId }: OutlineTemplatesPanelProps)
       <div>
         <h2 className="text-lg font-semibold text-text-primary">Outline templates</h2>
         <p className="text-sm text-text-secondary">
-          Apply a story structure to seed your Timeline with ordered beats — each one lands as an editable Timeline
-          Event you can rename, describe, and reorder from the Timeline category.
+          Apply a structure to seed your {timelineLabel} with ordered beats — each one lands as an editable event you
+          can rename, describe, link to a chapter, and reorder from the {timelineLabel} category.
+          {!bookForm && ' Showing every shape, fiction and non-fiction — set Fiction or Non-fiction in Project Settings to narrow this list.'}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        {OUTLINE_TEMPLATES.map((template) => (
+        {templates.map((template) => (
           <div key={template.id} className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-border bg-panel p-4">
             <div className="flex items-start gap-2.5">
               <ListTree className="mt-0.5 size-4 shrink-0 text-text-muted" />
@@ -48,7 +54,7 @@ export function OutlineTemplatesPanel({ projectId }: OutlineTemplatesPanelProps)
             <p className="text-xs text-text-muted">{template.beats.length} beats</p>
             <Button variant="secondary" size="sm" className="w-full gap-1.5" onClick={() => handleApply(template)}>
               <Plus className="size-3.5" />
-              {timelineEventCount > 0 ? `Add ${template.beats.length} events to Timeline` : 'Apply to Timeline'}
+              {timelineEventCount > 0 ? `Add ${template.beats.length} events to ${timelineLabel}` : `Apply to ${timelineLabel}`}
             </Button>
           </div>
         ))}

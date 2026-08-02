@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-import type { Project, ProjectCategory, ProjectSettings } from '@/types'
+import type { BookForm, Project, ProjectCategory, ProjectSettings } from '@/types'
 import { DEFAULT_PROJECT_SETTINGS } from '@/types'
 import { generateId } from '@/utils'
 
@@ -11,10 +11,14 @@ interface ProjectStoreState {
 }
 
 interface ProjectStoreActions {
-  createProject: (name: string, category?: ProjectCategory) => Project
+  createProject: (name: string, category?: ProjectCategory, bookForm?: BookForm) => Project
   deleteProject: (id: string) => void
   renameProject: (id: string, name: string) => void
   updateProjectSettings: (id: string, partial: Partial<ProjectSettings>) => void
+  /** Changes `bookForm` after creation — Project Settings' "Fiction /
+   * Non-fiction / Not sure yet" control, per `types/project.ts`'s doc
+   * comment on why this is never a one-time-only choice. */
+  setProjectBookForm: (id: string, bookForm: BookForm | undefined) => void
   setActiveProject: (id: string | null) => void
   getProject: (id: string) => Project | undefined
 }
@@ -34,12 +38,13 @@ export const useProjectStore = create<ProjectStore>()(
       projects: [],
       activeProjectId: null,
 
-      createProject: (name, category = 'other') => {
+      createProject: (name, category = 'other', bookForm) => {
         const now = new Date().toISOString()
         const project: Project = {
           id: generateId('proj'),
           name: name.trim() || 'Untitled Book',
           category,
+          ...(bookForm ? { bookForm } : {}),
           createdAt: now,
           updatedAt: now,
           settings: { ...DEFAULT_PROJECT_SETTINGS },
@@ -71,6 +76,14 @@ export const useProjectStore = create<ProjectStore>()(
             p.id === id
               ? { ...p, settings: { ...p.settings, ...partial }, updatedAt: new Date().toISOString() }
               : p,
+          ),
+        }))
+      },
+
+      setProjectBookForm: (id, bookForm) => {
+        set((state) => ({
+          projects: state.projects.map((p) =>
+            p.id === id ? { ...p, bookForm, updatedAt: new Date().toISOString() } : p,
           ),
         }))
       },

@@ -5677,22 +5677,114 @@ project via the new dialog, capture an idea while writing, open Develop, promote
 idea to a Character, confirm undo reverses the promotion in one step, reload the page
 and confirm Ideas survived (zustand `persist`).
 
+## Phase 83 — Idea System / Develop Milestone 1.1: fiction/non-fiction + margin ideas (2026-08-02)
+
+User feedback pass on the live Milestone 1 build (confirmed live/pushed — the user's
+own screenshot showed the real "test5" project's Develop screen matching Phase 82's
+build exactly, so the earlier "still looks like old planning mode" report traced back
+to a stale view, not a deploy gap). Design discussion covered nav clutter, the
+capture-button position, block-anchored idea visibility, fiction/non-fiction
+adaptivity, a mind-map view, and how Ideas differ from Notes; the user then approved a
+scoped build: fiction/non-fiction fork first (everything else depends on the signal),
+then margin idea badges, then the template/label split. Mind map and the full "book
+graph" were discussed at length and deliberately deferred — see ROADMAP.md's new
+Phase F items.
+
+**1. `Project.bookForm`** (`types/project.ts`) — `'fiction' | 'nonfiction' | undefined`.
+`undefined` ("Not sure yet") is a real third state, not a missing value — every read
+site falls back to today's generic fiction-leaning behaviour when it's unset, so
+existing/undecided projects don't regress. Deliberately separate from `category`
+(genre/subject, drives trim size + template seeding) — `bookForm` only ever changes
+Develop's *labels* and *which templates show*, never any stored data. Set via a
+required-but-skippable three-card picker (Fiction / Non-fiction / Not sure yet) in
+`NewProjectDialog.tsx`, which now also narrows the existing category dropdown to
+matching options (novel/childrens for fiction; nonfiction/educational/coffee-table/
+nature/scientific for non-fiction; "Other" always included). Changeable any time after
+from `ProjectSettingsDialog.tsx` via a new `projectStore.setProjectBookForm` action.
+Round-trips through `.bookstudio` export/import the same additive, no-version-bump way
+`layer0Bible`/`ideas` already do (`ProjectFileManifest.project.bookForm?`).
+
+**2. Adaptive Layer 0 labels** — `getLayer0KindLabel(kind, bookForm)` in
+`types/layer0.ts` is now the one read site every Develop nav row/list header goes
+through, replacing direct `LAYER0_KIND_LABELS[kind]` indexing in `PlanningShell.tsx`
+and `EntityListPanel.tsx`. For `bookForm === 'nonfiction'`: Character→Person/People,
+Location→Place/Places, Timeline Event→Chronology Event/Chronology. The other five
+kinds (Glossary/References/Illustration Briefs/Style Rules/Research Notes) already
+read as genre-neutral and were left unchanged. Same underlying `Layer0Bible`
+collections and data either way — display text only.
+
+**3. `Idea.linkedBlockId` + `IdeaIndicatorBadge`** (`src/renderer/
+IdeaIndicatorBadge.tsx`, new) — direct answer to "shouldn't saved ideas appear next to
+the paragraph they came from." Deliberately modeled on the existing `Note.blockId`/
+`NoteIndicatorBadge` pattern rather than inventing a new one: a quiet badge appears in
+a block's margin only when at least one Idea is linked to it, invisible otherwise. One
+real difference from Notes — clicking it expands an inline preview right there instead
+of jumping to a different panel, since Develop is a full top-level mode switch away
+and staying in Write mode was the whole point. "Open" on a card still launches the real
+`IdeaDetailDialog` (promotion, tags, related ideas) rather than re-implementing that
+UI a second time inline. `IdeaCaptureAffordance.tsx` now also reads
+`selectionStore.selectedBlockId` and sets `linkedBlockId` alongside `linkedChapterId`
+when a block happens to be selected at capture time — strictly additive, an Idea
+captured with nothing selected behaves exactly as before. The capture button's own
+position (bottom-right floating) was explicitly left unchanged — user asked to keep it
+where it is.
+
+**4. Outline Templates now filter by `bookForm`** — `OutlineTemplate.form:
+BookForm | 'either'` tags every template in `data/outlineTemplates.ts`;
+`getOutlineTemplatesForForm(bookForm)` is the one filter site
+`OutlineTemplatesPanel.tsx` now calls instead of rendering the full list unconditionally.
+Three-Act/Hero's Journey/Save the Cat are `'fiction'`; the existing Problem→Solution
+plus two new templates (Step-by-Step Guide; Chronological Account, for memoir/history/
+biography) are `'nonfiction'`; Picture Book Arc is `'either'`. A non-fiction author no
+longer sees Hero's Journey and Save the Cat cluttering the list; an undecided project
+still sees everything, unchanged from Phase 71. Panel copy also now reads through
+`getLayer0KindLabel('timelineEvent', bookForm)` so the same screen says "Chronology"
+for non-fiction and "Timeline" otherwise, including the apply-button label.
+
+**5. `TimelineEvent.linkedChapterId` + chapter `Select` in `EntityListPanel.tsx`** —
+direct answer to "if we're showing the timeline it should show the chapters next to
+each part." A Timeline/Chronology row now has a small chapter dropdown (reads
+`contentStore.getManuscript(projectId).chapters`, the same read-only cross-layer
+reference `IdeaDetailDialog`'s "Jump to chapter" already uses) so an Outline Template
+beat like "Hook" or "Midpoint" can point at a real chapter instead of floating,
+disconnected, next to the actual manuscript. `updateLayer0EntityWithHistory` handles
+the edit, so it's undoable like every other Layer 0 change. Only rendered for
+`kind === 'timelineEvent'` — the seven other entity kinds have no chapter field yet
+(see ROADMAP.md's new "book graph" item for why extending this to all eight is real,
+separate follow-up work, not a trivial copy-paste).
+
+**On "how are Ideas and Notes different"** (raised in review, not a code change):
+a Note is about text that already exists — a flag ("this needs work," "check this
+fact") that resolves to done and never leaves the manuscript layer. An Idea is about
+something that doesn't exist yet — a freeform thought that can be captured with no
+manuscript open at all, has a status progression (new → in-progress → used →
+archived), and has a promotion path into a structured Layer 0 entity. Phase 83's
+margin badge makes them look more alike on-page than before (both are now small badges
+that expand on click), so the distinction is worth restating rather than assuming it's
+obvious: Notes critique what's written; Ideas grow into what isn't written yet. No
+code changed here — flagging it because the visual similarity is new and genuinely
+worth another look once there's real usage to react to.
+
+Verification: `npx tsc -b --force` clean, zero errors, across every file this phase
+touched. `npx oxlint` bus-errors on every invocation in this sandbox — confirmed
+pre-existing (Phase 53's `@tailwindcss/node` truncation, ROADMAP.md Phase J), not a
+finding from this change. Not live-verified in Chrome this session — same standing gap
+as every phase since 76, still blocked on the sandbox having no git push access (see
+"Recommended next task" below).
+
 ## Recommended next task
-Live-verify the Idea System end to end in Chrome (above) — this is the biggest
-untested surface in the app right now. Then push the currently-unpushed local commits
-(Phase 76 through 82) so the live deployment matches `main` — the sandbox has no git
-push credentials, same constraint as the still-open #105/#162 tasks. Once pushed,
-also live-verify: the "AI Draft…" insert flow (Phase 81), the Search tab actually
-being visible now (Phase 80), Reading Mode's page-turn arrows/keyboard nav (Phase 79),
-plus the still-outstanding Phase 76-78 batch (empty-chapter "Start writing" prompt,
-select-on-focus for pre-filled fields, first-name-only paste-back mention detection).
-Per the spec's own "how we'll know Milestone 1 worked" section: once live-verified,
-worth putting in front of two or three people who haven't written a book before and
-watching whether they find the capture affordance unprompted, whether "turn this into
-a Character" makes sense without explanation, and whether skipping category on the New
-Project dialog reads as an option or as something broken — that reaction, not more
-building, should decide what Milestone 2 (automatic promotion suggestions, Board/
-Canvas views) actually needs.
+Push this session's commits (Phase 79 through 83) from the user's own terminal — the
+sandbox still has no git push credentials, same standing constraint as the open
+#105/#162 tasks — then live-verify Phase 83 in Chrome: the fiction/non-fiction picker
+in New Project, the adaptive Develop labels on a non-fiction project, the margin idea
+badge appearing/expanding correctly in Write mode, the filtered Outline Templates list,
+and the new chapter `Select` on Timeline/Chronology rows. Also still outstanding from
+Phase 82: putting Milestone 1 in front of two or three first-time authors and watching
+their reaction, per the spec's own "how we'll know it worked" section — that reaction,
+not more building, should decide what actually gets built next between Idea System
+Milestone 2 (mind-map view) and the book graph (Milestone 3, needs chapter-association
+fields added to the other six Layer 0 kinds first — see ROADMAP.md Phase F).
 Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
 Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/
-synonym lookup).
+synonym lookup), plus the Develop nav "Tools" section cleanup discussed but not built
+in Phase 83.
