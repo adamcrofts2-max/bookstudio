@@ -465,6 +465,17 @@ daily use of everything built so far.)*
       improvements to the current shape either way, but the bigger open items further
       down this phase (insert-AI-drafted-prose, category-aware sidebar) may want to
       wait on this decision rather than build further into the current model.
+- [ ] **Seed System Milestone 1 — spec ready, not started.**
+      `docs/SEED_SYSTEM_PLAN.md` (2026-08-02) is the concrete, buildable first slice
+      of the redesign above: a new `Seed` capture type + store, an always-present
+      capture rail beside the writing surface (not a separate destination), one List
+      view, and manual promotion into the existing Layer 0 entity types. Everything
+      bigger from the redesign conversation (Board/Canvas/Outline views, automatic
+      recurrence-based promotion suggestions, drag-to-associate) is explicitly
+      deferred past this milestone on purpose — the agreed plan is to build this
+      minimal slice, put it in front of a couple of real first-time authors, and let
+      that reaction decide what (if anything) gets built next. Purely additive; every
+      existing Layer 0 UI keeps working unchanged.
 - [x] Live first-time-author UX audit of Planning mode's full fiction and
       non-fiction workflows, in Chrome against the deployed build — 2026-08-02
       (Phase 77/78). Full findings, prioritised, in
