@@ -1128,11 +1128,14 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
       confirmed concretely in Phase 53 (2026-07-31): `@tailwindcss/node/dist/
-      index.mjs` is truncated mid-file in this sandbox, breaking `vite
-      build`'s config load, and `oxlint`'s native binding bus-errors. No
-      registry access to `npm install` a repair here — needs a real
-      `npm install` in a normal dev environment. See STATUS.md Phase 53's
-      verification caveat.
+      index.mjs` is truncated mid-file (17,347 bytes, cuts off mid-string).
+      Re-confirmed 2026-08-03 by inspecting the file directly — this is a
+      real on-disk corruption in the live-mounted project, not sandbox-only,
+      which is why `vite build`'s config load and `oxlint`'s native binding
+      have never actually been verified working this whole project. No
+      registry access to `npm install` a repair from this sandbox — the fix
+      (`npm ci`) is written up in `docs/TERMINAL_SETUP.md` for the user to
+      run from their own terminal. Leave unchecked until confirmed fixed.
 - [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
 - [ ] Full virtualisation of `LazySpread` (currently mount-only, never unmounts)
 - [ ] Profile and fix the structural-page mutation freeze (15–30s on a
