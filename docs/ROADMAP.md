@@ -465,17 +465,21 @@ daily use of everything built so far.)*
       improvements to the current shape either way, but the bigger open items further
       down this phase (insert-AI-drafted-prose, category-aware sidebar) may want to
       wait on this decision rather than build further into the current model.
-- [ ] **Seed System Milestone 1 — spec ready, not started.**
-      `docs/SEED_SYSTEM_PLAN.md` (2026-08-02) is the concrete, buildable first slice
-      of the redesign above: a new `Seed` capture type + store, an always-present
-      capture rail beside the writing surface (not a separate destination), one List
-      view, and manual promotion into the existing Layer 0 entity types. Everything
-      bigger from the redesign conversation (Board/Canvas/Outline views, automatic
-      recurrence-based promotion suggestions, drag-to-associate) is explicitly
-      deferred past this milestone on purpose — the agreed plan is to build this
-      minimal slice, put it in front of a couple of real first-time authors, and let
-      that reaction decide what (if anything) gets built next. Purely additive; every
-      existing Layer 0 UI keeps working unchanged.
+- [ ] **Idea System / Develop Milestone 1 — spec ready, not started.**
+      `docs/IDEA_SYSTEM_PLAN.md` (2026-08-02, revised same day — see its own
+      Revisions section) is the concrete, buildable first slice of the redesign
+      above: a new `Idea` capture type + store, a small persistent capture
+      affordance in Write (not a rail, not an always-visible wall), and Planning mode
+      renamed **Develop** with Ideas as its own landing view rather than eight equal
+      categories. Corrects the redesign conversation's own earlier overreach: Book
+      Studio stays a two-area product (the existing unified write/design/publish
+      editor, plus one optional Develop workspace), not four separate top-level
+      destinations. Everything bigger (Board/Canvas views, automatic recurrence-based
+      promotion suggestions, drag-to-associate) is explicitly deferred past this
+      milestone — the agreed plan is to build this minimal slice, put it in front of
+      a couple of real first-time authors, and let that reaction decide what (if
+      anything) gets built next. Purely additive; every existing Layer 0 UI keeps
+      working unchanged.
 - [x] Live first-time-author UX audit of Planning mode's full fiction and
       non-fiction workflows, in Chrome against the deployed build — 2026-08-02
       (Phase 77/78). Full findings, prioritised, in
