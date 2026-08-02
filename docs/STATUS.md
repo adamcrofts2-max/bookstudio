@@ -6046,21 +6046,126 @@ Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors (pre-existin
 unrelated). Not live-verified in Chrome — same push limitation as every commit
 since Phase 89.
 
+## Phase 95 — Mobile "on the go" mode: Writing + Idea capture (2026-08-02)
+
+User: "the site currently works for desktop but there should be an on the go mode
+for mobile users." This was a real product-shape decision, not a small scoped
+task — "on the go mode" could mean anything from a full responsive redesign of the
+fixed-page-canvas editor to a narrow mobile-only Idea-capture view — so asked a
+clarifying question with three options before writing any code. User picked
+**"Writing + Idea capture only"**: a simplified single-column mode to write/edit
+manuscript text and capture/browse Ideas (List/Board/Map), jump between chapters —
+explicitly excluding the page canvas, cover/back-cover designer, and precision
+layout tools from mobile. Those stay desktop-only by design, confirmed, not a gap
+to close later.
+
+Researched the existing architecture first (via a research-only subagent pass,
+since this touches the app's whole top-level shell): `AppShell.tsx`'s own doc
+comment states its 3-column layout ("Sidebar · (Toolbar + Workspace) · Inspector")
+"never moves" — confirmed unsuitable to make responsive rather than replace. The
+closest existing precedent for a state-driven whole-shell swap is `FocusModeLayout`
+(`AppShell` already swaps its entire tree for it when `focusMode !== 'none'`) — the
+model followed here, just gated on viewport width instead of a UI toggle, branching
+one level up in `EditorPage.tsx` (which already forks `AppShell` vs. `PlanningShell`
+on `appMode` — a third branch, not a new concept).
+
+**New pieces, all under `src/layout/mobile/`:**
+- **`useIsMobile.ts`** (`src/hooks/`) — the first viewport-reactive hook in this
+  codebase (confirmed via search: no `useMediaQuery`/`useIsMobile`/resize-hook
+  existed before). Modelled directly on `useTheme.ts`'s `matchMedia` + `change`-
+  listener pattern (the only existing precedent for browser-state hooks) rather
+  than inventing a new convention. 640px breakpoint (Tailwind's `sm`) — live,
+  resize-reactive, not a one-time check, and deliberately not a persisted user
+  setting: "mobile mode" is purely a function of viewport width.
+- **`src/components/ui/sheet.tsx`** — a bottom-sheet primitive, forked from
+  `dialog.tsx`'s Radix `Dialog` wiring rather than parameterising `DialogContent`
+  itself (positioning/animation differ enough — `bottom-0 inset-x-0` + slide vs.
+  `top-1/2 -translate-y-1/2` + zoom — that a shared `variant` prop threading
+  through every className wasn't worth it for a primitive only one mobile surface
+  uses today). Same Radix behaviour underneath: focus trap, Escape-to-close,
+  overlay-click-to-close.
+- **`MobileWriteView.tsx`** — chapter-switcher bottom sheet (`Sheet`) + a
+  continuous single-column flow of the active chapter's blocks. Reads the exact
+  same `contentStore.getManuscript(projectId).chapters` data as the desktop
+  canvas; edits go through the same history-wrapped `editBlock`/
+  `insertBlockWithHistory` (`editorActions.ts`) — undo/redo (`historyStore`) and
+  autosave (`useAutosaveSnapshots`, mounted by `MobileWorkspace`) work identically
+  to desktop with zero new code, by construction, not by re-testing. Inline
+  editing reuses `useEditableField` (`blocks/shared.tsx`) — the exact same
+  commit-on-blur/Enter, cancel-on-Escape hook every desktop block type uses — via
+  a new small `MobileTextField` wrapper. One deliberate change from desktop's
+  convention: fields start editing on a single tap, not double-click/double-tap
+  (unreliable on touch, and there's no separate select-vs-edit state to preserve
+  here — no toolbar/badge overlays in this simplified view).
+  - **Editable inline** (six block types with a single plain-text-ish field):
+    heading, paragraph, quote, pull-quote, callout, case-study.
+  - **Read-only preview card** (`MobileReadOnlyCard`): list, table, timeline, faq,
+    statistics, checklist (structured/array content — a phone-keyboard mini-form
+    for a table or FAQ list is real scope, deliberately deferred, not half-built)
+    and image, gallery, placeholder (no inline text at all; image editing is
+    Inspector-only today even on desktop). Each shows a plain-language summary and
+    "Edit on a larger screen."
+  - A floating "+" (`DropdownMenu`) adds a paragraph or heading at the end of the
+    chapter via `createDefaultBlock` + `insertBlockWithHistory` — the same
+    factory/action the desktop "+" inserter uses.
+- **`MobileIdeasView.tsx`** — a thin wrapper around the existing `IdeaInboxPanel`
+  (List/Board/Map, Phases 78-94). No fork needed: it was already reasonably
+  narrow-friendly (its own header/filter pills/segmented toggle all wrap, Board's
+  `columns-2 sm:columns-3` already had a narrow-screen fallback). Exists as a
+  named mobile-owned mount point so `MobileWorkspace` doesn't reach into
+  `layout/planning` directly, keeping room for mobile-only Ideas affordances later
+  without touching the shared desktop component.
+- **`MobileWorkspace.tsx`** — the top-level shell `EditorPage` mounts instead of
+  `AppShell`/`PlanningShell` when `useIsMobile()` is true: header (back-to-
+  projects, project name, theme toggle) + bottom Write/Ideas tab bar (the standard
+  thumb-reachable mobile nav pattern), no Sidebar/Toolbar/Inspector at all. Mounts
+  its own `useAutosaveSnapshots(project.id)` — this shell is a full alternative to
+  `AppShell`, not a child of it, so it needs its own copy of that project-scoped
+  effect. Deliberately does NOT mount `useKeyboardShortcuts`: every shortcut it
+  wires targets `selectionStore` state this view never populates, and there's no
+  hardware keyboard to bind delete/undo combos to anyway.
+- **`EditorPage.tsx`** — one new branch, checked before the existing `appMode`
+  fork: `if (isMobile) return <MobileWorkspace project={project} />`. No new route,
+  no change to `useParams`/`useProjectStore`/`setActiveProject`/`clearSelection` —
+  all of project-loading stays exactly as it was.
+
+**Self-caught bug**: initially used `size-4.5` for a couple of header icons —
+not a real Tailwind utility in this project's default spacing scale (no `4.5` step
+between `4` and `5`), so it would have silently generated no CSS and left the
+icons at lucide-react's unstyled default size. Caught by checking the class against
+what's actually used elsewhere in the codebase before considering this done; fixed
+to the existing `size-4` convention (matches every other small icon in the app).
+
+Verification: `npx tsc -b --force` clean (twice — once before, once after the
+`size-4.5` fix). `oxlint` still bus-errors (pre-existing, unrelated). **Not** live-
+verified in Chrome — same push limitation as every commit since Phase 89, and this
+is a bigger unverified surface than most: no confirmation yet that the shell
+actually swaps at the breakpoint in a real browser, that touch tap-to-edit feels
+right (vs. just working in a mouse-driven DOM inspector), or that the bottom sheet's
+slide animation/safe-area padding look right on an actual phone viewport.
+
 ## Recommended next task
-Push everything from Phase 85 onward, then do one real Chrome pass covering all of
-it: the Notes badge no longer clipping at a page's top edge (Phase 89), the
-selection-to-Develop menu end to end (Phase 90), "Linked from Chapter X" jumping to
-the right paragraph (Phase 91), the Develop nav's new "Tools" label (Phase 92), the
-Ideas Board view with at least one image attached (Phase 93), and the Map view
-(Phase 94) — pan/zoom feel, tag clustering with several tagged ideas, and edges
-actually appearing between manually-related ideas. Also confirm `loadAssets` being
-called from both `Sidebar.tsx` and now `IdeaInboxPanel.tsx`/`IdeaDetailDialog.tsx`
-doesn't cause any duplicate-load weirdness. After that, real dictionary-backed
-spell-check and the thesaurus/synonym lookup are both blocked from this side — this
-sandbox has no npm registry access (confirmed via `npm view`, 403 Forbidden), and
-both need a new bundled package. They're buildable, just not by me here; flagging
-that plainly rather than silently skipping them. Also still outstanding from Phase
-82: putting the whole Idea System in front of two or three first-time authors and
-watching their reaction, per the spec's own "how we'll know it worked" section —
-that reaction should decide what the book graph (Milestone 3 — Phase 90 cleared its
-data-model prerequisite; the graph UI itself is still unbuilt) actually looks like.
+Push everything from Phase 85 onward (13+ commits queued), then do one real Chrome
+pass (resized to a phone viewport, and ideally a real device) covering: the Notes
+badge no longer clipping at a page's top edge (Phase 89), the selection-to-Develop
+menu end to end (Phase 90), "Linked from Chapter X" jumping to the right paragraph
+(Phase 91), the Develop nav's new "Tools" label (Phase 92), the Ideas Board view
+with at least one image attached (Phase 93), the Map view (Phase 94) — pan/zoom
+feel, tag clustering, edges between related ideas — and Phase 95's whole mobile
+mode: does `MobileWorkspace` actually mount below 640px, does the chapter-switcher
+sheet open/close cleanly, does tapping a paragraph/heading actually enter edit mode
+and commit on blur, does the "+" menu insert correctly, and do List/Board/Map all
+still work as touch surfaces (Map's zoom is wheel-only today — pan via pointer
+events should work on touch, but pinch-zoom does not, a known gap, not yet fixed).
+Also confirm `loadAssets` being called from `Sidebar.tsx`, `IdeaInboxPanel.tsx`, and
+`IdeaDetailDialog.tsx` doesn't cause any duplicate-load weirdness. After that, real
+dictionary-backed spell-check and the thesaurus/synonym lookup are both blocked
+from this side — this sandbox has no npm registry access (confirmed via `npm view`,
+403 Forbidden), and both need a new bundled package. They're buildable, just not by
+me here; flagging that plainly rather than silently skipping them. Also still
+outstanding from Phase 82: putting the whole Idea System (and now mobile mode) in
+front of a few first-time authors and watching their reaction, per the spec's own
+"how we'll know it worked" section — that reaction should decide what the book
+graph (Milestone 3 — Phase 90 cleared its data-model prerequisite; the graph UI
+itself is still unbuilt) actually looks like, and whether mobile mode's scope
+boundary (no Develop categories beyond Ideas) holds up in practice.

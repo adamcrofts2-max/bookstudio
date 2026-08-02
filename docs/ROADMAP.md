@@ -887,6 +887,52 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] Automated accessibility (WCAG) audit beyond Radix's built-in semantics
 - [ ] UI internationalisation / localisation
 
+## Phase K — Mobile / On-the-go Mode
+
+*(Added 2026-08-02: "the site currently works for desktop but there should be an
+on the go mode for mobile users." User chose "Writing + Idea capture only" over
+two broader options (adapt everything responsively; Idea-capture-only with no
+writing) — the fixed-size, bleed/trim-precise page canvas, cover/back-cover
+designer, and precision layout tools are staying desktop-only by design, not
+a gap to close later.)*
+
+- [x] `useIsMobile` viewport-breakpoint hook (640px, matches Tailwind `sm`) +
+      `EditorPage` branch to `MobileWorkspace` instead of `AppShell`/
+      `PlanningShell` below that width (Phase 95, 2026-08-02). Live/resize-
+      reactive, not a one-time check — a window resized across the
+      breakpoint switches shells immediately.
+- [x] `MobileWorkspace` shell: header (back-to-projects, project name, theme
+      toggle) + bottom Write/Ideas tab bar, no Sidebar/Toolbar/Inspector
+      (Phase 95).
+- [x] `MobileWriteView`: chapter-switcher bottom sheet + continuous single-
+      column block flow for the active chapter, reading/writing the same
+      `contentStore` data as desktop through the same history-wrapped
+      `editBlock`/`insertBlockWithHistory` actions (undo/redo + autosave
+      behave identically, no parallel edit path). Inline tap-to-edit for the
+      six plain-text block types (heading/paragraph/quote/pull-quote/
+      callout/case-study); everything else (list/table/timeline/faq/
+      statistics/checklist/image/gallery/placeholder) renders as a read-only
+      preview card — a phone-keyboard mini-form for a table or FAQ list is
+      real scope, deliberately deferred rather than half-built (Phase 95).
+      "+" adds a paragraph or heading at the end of the chapter.
+- [x] `MobileIdeasView`: thin wrapper around the existing `IdeaInboxPanel`
+      (List/Board/Map, Phases 78-94) — no fork needed, it was already
+      reasonably narrow-friendly (Phase 95).
+- [ ] Not yet live-verified in Chrome (this sandbox can't push) — owed:
+      resize-triggered shell switch, chapter-switcher sheet, inline edit of
+      each of the six text-bearing block types, autosave firing from mobile
+      edits, and Ideas List/Board/Map on a narrow viewport. See STATUS.md
+      Phase 95's verification caveat.
+- [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
+      checklist) — currently read-only cards on mobile; would need small
+      per-type mini-forms, not a plain contentEditable field.
+- [ ] Mobile image/gallery block insertion (asset picker UI) — desktop-only
+      today, same underlying gap `defaultContent.ts` already documents for
+      the desktop "+" inserter.
+- [ ] Decide whether Develop's non-Idea categories (Characters, Locations,
+      Timeline, etc.) ever belong on mobile, or stay a deliberate desktop-
+      only scope boundary — not decided yet, out of scope for this milestone.
+
 ---
 
 ### How to use this file
