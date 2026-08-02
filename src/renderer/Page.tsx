@@ -40,6 +40,18 @@ import { generateId } from '@/utils'
 import { cn } from '@/lib/utils'
 
 /**
+ * Headroom (px) added around the content-flow container beyond the page's
+ * own safe margin, purely so hover overlays that hang outside a block's own
+ * box (`BlockToolbar`'s `-top-3`, `NoteIndicatorBadge`'s `-top-3`) have
+ * somewhere to render without being clipped by that container's own
+ * `overflow-hidden` when the block is first/last in the page's flow. See the
+ * doc comment on the content-flow container below (Phase 89) for the full
+ * root-cause explanation. Comfortably larger than the 12px (`-top-3`) any
+ * current overlay uses.
+ */
+const BLOCK_OVERLAY_BUFFER_PX = 16
+
+/**
  * Thin drop target rendered between two adjacent blocks (or before the
  * first / after the last) so a dragged asset thumbnail can be placed there.
  * Renders nothing at all — zero DOM — while no drag is in progress, so it
@@ -452,10 +464,35 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
         lang={language}
         className="absolute overflow-hidden"
         style={{
-          top: pageBox.marginTopPx,
-          bottom: pageBox.marginBottomPx,
+          // Phase 89 — this container's own `overflow-hidden` box previously
+          // started at EXACTLY `marginTopPx`/`marginBottomPx`, i.e. flush
+          // with the printable safe margin, with zero headroom above or
+          // below it. That's the actual root cause behind every "badge cut
+          // off at the top" report (Phases 87-88): it was never about page
+          // clipping in general (there's plenty of room in the page's own
+          // margin) — it was this specific container clipping ITSELF at its
+          // own top/bottom edge. A block that happens to be first/last in
+          // the flow has its own top/bottom edge at this container's local
+          // y=0, so anything hanging outside the block's box (BlockToolbar's
+          // `-top-3`, NoteIndicatorBadge's `-top-3`) pokes into negative
+          // local coordinates and gets clipped by *this* div, regardless of
+          // how generous the page's actual margin is. Confirmed live: a
+          // paragraph flush at a content page's top edge clipped the Note
+          // badge while an interior block's identical badge rendered fine.
+          // Fix: pull this container's top/bottom edge outward by a small
+          // buffer and compensate with equal padding, so text still starts
+          // at the exact same visual position (pagination-neutral — nothing
+          // about block flow or measured heights changes) but the clip box
+          // now has genuine headroom for a `-top-3`/`-bottom-3` overlay.
+          // Clamped to the actual margin so a project with a smaller-than-
+          // buffer safe margin can't push the container above the page's
+          // own bounds.
+          top: pageBox.marginTopPx - Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginTopPx),
+          bottom: pageBox.marginBottomPx - Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginBottomPx),
           left: marginLeft,
           right: marginRight,
+          paddingTop: Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginTopPx),
+          paddingBottom: Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginBottomPx),
         }}
       >
         {page.kind === 'toc' && (
