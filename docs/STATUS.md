@@ -7101,6 +7101,42 @@ and succeeded cleanly on the next with identical input, meaning there's no
 "safe" subset of fonts to carve out; the bug is in the encoder's own
 internal state/timing, not triggered by any one font's data.
 
+## Phase 110 — British-English spelling (2026-08-02)
+
+User: "installed gb" — installed `dictionary-en-gb` right after Phase 109
+shipped the American-only spelling checker, closing the follow-up item
+that phase's entry deliberately left open.
+
+`spellcheckDictionary.ts` was rewritten from a single module-level
+`speller`/`loadPromise` pair into a small `Record<Variant, DictionaryEntry>`
+keyed by `StyleGuide['englishVariant']` (`'american' | 'british'` — this
+field, unlike every other Style Guide field, has no third "no preference"
+option, which simplified the design: there's no "check both" case to
+handle, only "which one exact dictionary does this project's Style Guide
+call for"). `DICTIONARY_PATH_BY_VARIANT` maps each variant to its
+`public/dictionaries/<key>/` folder; adding a third variant later (e.g.
+Australian/Canadian English) means one new map entry plus widening the
+`StyleGuide.englishVariant` union, nothing else in the loader's shape
+changes. `dictionary-en-gb`'s two files were copied into a new sibling
+`public/dictionaries/en-gb/` folder the same way Phase 109's American
+dictionary was.
+
+`spellingChecker` (`checkers/proofreading.ts`) lost its "American-only,
+everyone else stays Not yet analysed" gate entirely — a new
+`effectiveEnglishVariant(ctx)` helper (`ctx.styleGuide?.englishVariant ??
+'british'`, matching `DEFAULT_STYLE_GUIDE`) now always resolves to a real
+variant, and `isApplicable`/`run` both load and read whichever single
+dictionary that variant calls for. Every project gets real spell-check now,
+not just ones with Style Guide explicitly set to American.
+
+Verified in a standalone Node script (this sandbox still can't run the
+actual browser build — see Phase 108's gap) against both real bundled
+dictionaries directly: "color"/"realize" correct only in the American
+dictionary, "colour"/"realise" correct only in the British one, and a
+shared real typo ("beleive") correctly caught with the same right
+suggestion ("believe") by both — confirming the variant split is actually
+doing its job, not just present in the code.
+
 ## Recommended next task
 Get a real build working from the user's own terminal — `npm run build`'s
 `vite.config.ts` load failure (Phase 108) blocks verifying not just this

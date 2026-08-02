@@ -13,7 +13,7 @@
  * docs/VIRTUAL_EDITOR.md.
  */
 
-import type { Checker, CheckerContext, Finding } from '@/virtualEditor/types'
+import type { Checker, CheckerContext, Finding, StyleGuide } from '@/virtualEditor/types'
 import type { Layer0Bible } from '@/types/layer0'
 import { extractTextSpans, blockPlainText } from '@/virtualEditor/textExtract'
 import { patchTextField } from '@/virtualEditor/textPatch'
@@ -393,37 +393,40 @@ function looksLikeAcronym(word: string): boolean {
   return word.length > 1 && word === word.toUpperCase() && word !== word.toLowerCase()
 }
 
+/** `StyleGuide.englishVariant` is a closed `'british' | 'american'` choice
+ * (unlike every other Style Guide field, it has no `'no-preference'`
+ * option), and `DEFAULT_STYLE_GUIDE.englishVariant` is `'british'` — so an
+ * absent `ctx.styleGuide` (a manuscript reviewed before Style Guide was
+ * ever opened) defaults to British here too, matching what the project
+ * would actually use once its Style Guide loads, rather than silently
+ * treating "unknown" as American. */
+function effectiveEnglishVariant(ctx: CheckerContext): StyleGuide['englishVariant'] {
+  return ctx.styleGuide?.englishVariant ?? 'british'
+}
+
 /**
  * Real, dictionary-backed spelling — the one item in this file's own doc
  * comment that used to say "designed but not yet implemented." Unblocked
  * Phase 109 (2026-08-02) once the user installed `nspell` + `dictionary-en`
- * from their own terminal (this sandbox has no npm registry access, so
- * neither package could be added from here — see
- * `spellcheckDictionary.ts`'s doc comment for the full loading story).
- *
- * **American English only, on purpose, for now**: `dictionary-en` contains
- * "color"/"realize", not "colour"/"realise" — see
- * `public/dictionaries/en/README.md`. Running it against this app's
- * British-default Style Guide would flag half the language as misspelled,
- * which is worse than not checking at all. `isApplicable` only turns this
- * on when a project's Style Guide explicitly sets `englishVariant:
- * 'american'`; every other project (including the British default and
- * "no preference") honestly stays "Not yet analysed" for this one checker
- * rather than drowning in false positives. Adding `dictionary-en-gb` later
- * removes this restriction without changing this checker's shape at all.
+ * (American) from their own terminal, then extended the same day once they
+ * also installed `dictionary-en-gb` (British) — this sandbox has no npm
+ * registry access, so none of the three packages could be added from here.
+ * See `spellcheckDictionary.ts`'s doc comment for the full loading story
+ * and why each variant is its own independently-loaded dictionary rather
+ * than one combined word list.
  */
 export const spellingChecker: Checker = {
   id: 'proofreading.spelling',
   category: 'proofreading',
   label: 'Spelling',
-  description: 'Flags words not found in a bundled offline English dictionary.',
+  description: 'Flags words not found in a bundled offline English dictionary (British or American, per the Style Guide).',
   isApplicable(ctx) {
-    if (ctx.styleGuide && ctx.styleGuide.englishVariant !== 'american') return false
-    ensureSpellDictionaryLoading()
-    return isSpellDictionaryReady()
+    const variant = effectiveEnglishVariant(ctx)
+    ensureSpellDictionaryLoading(variant)
+    return isSpellDictionaryReady(variant)
   },
   run(ctx: CheckerContext): Finding[] {
-    const speller = getSpeller()
+    const speller = getSpeller(effectiveEnglishVariant(ctx))
     if (!speller) return []
     const ignoreWords = collectLayer0Names(ctx.layer0Bible)
 

@@ -233,12 +233,18 @@ daily use of everything built so far.)*
       positives. Verified end-to-end against the real bundled dictionary in
       a standalone Node script (real typos flagged with correct suggestions,
       invented names and acronyms correctly excluded) — see STATUS.md.
-- [ ] British-English spelling — install `dictionary-en-gb`, copy its two
-      files into `public/dictionaries/en-gb/`, extend
-      `spellcheckDictionary.ts` to pick a dictionary folder from
-      `styleGuide.englishVariant` instead of always loading `en/`. The
-      loader is already variant-aware in spirit; only the second
-      dictionary's data and the folder-selection branch are missing.
+- [x] British-English spelling (Phase 110, 2026-08-02) — user installed
+      `dictionary-en-gb`; data copied to `public/dictionaries/en-gb/`,
+      `spellcheckDictionary.ts` rewritten to key its cache by
+      `StyleGuide.englishVariant` (`'american'` → `en/`, `'british'` →
+      `en-gb/`) instead of always loading the one American dictionary. The
+      `spellingChecker`'s earlier "American-only, everyone else stays Not
+      yet analysed" gate is gone — every project now gets real spell-check
+      in whichever variant its own Style Guide (or the British default)
+      actually uses. Verified both dictionaries independently against real
+      variant-pair spellings ("colour"/"color", "realise"/"realize" each
+      correct in exactly one dictionary, wrong in the other) plus a shared
+      real typo caught correctly by both — see STATUS.md.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 

@@ -1,14 +1,17 @@
 /**
- * Loads the bundled offline Hunspell dictionary once per app session and
- * caches the resulting `nspell` instance for every later Virtual Editor
+ * Loads the bundled offline Hunspell dictionaries once per app session and
+ * caches the resulting `nspell` instances for every later Virtual Editor
  * review — Phase 109 (2026-08-02), the real dictionary-backed spell-check
  * `docs/ROADMAP.md` had listed as blocked since Phase B ("no npm registry
  * access in this sandbox"). Unblocked once the user installed `nspell` +
- * `dictionary-en` from their own terminal, where the registry is reachable
- * — see `public/dictionaries/en/README.md` for why the dictionary *data*
- * still isn't imported straight from that npm package (it reads files off
- * disk via Node's `fs`, which doesn't exist in a browser bundle) and lives
- * as a fetched `public/` asset instead.
+ * `dictionary-en` (American) from their own terminal, where the registry is
+ * reachable — see `public/dictionaries/en/README.md` for why the dictionary
+ * *data* still isn't imported straight from those npm packages (they read
+ * files off disk via Node's `fs`, which doesn't exist in a browser bundle)
+ * and lives as a fetched `public/` asset instead. Extended the same day once
+ * the user also installed `dictionary-en-gb`, so British spelling is a real,
+ * separate dictionary rather than the checker staying restricted to
+ * American-only projects.
  *
  * Deliberately module-level singleton state, not a store: this is
  * read-only, derived-once infrastructure with nothing a user ever edits —
@@ -16,57 +19,88 @@
  * `Checker` in this codebase is synchronous (`types.ts`'s own doc comment),
  * so an async dictionary load can't happen inside `run()` itself; instead
  * `spellingChecker.isApplicable` (see `checkers/proofreading.ts`) calls
- * `ensureSpellDictionaryLoading()` to kick off (or no-op if already
- * started) the fetch, and reports itself inapplicable — "Not yet analysed",
- * the same honest fallback `pipeline.ts` already gives publishingStandards/
- * layout before `pages` exists — until `isSpellDictionaryReady()` flips
- * true. In practice the ~550KB dictionary fetches and parses in well under
- * a second, so this only matters for the very first review right after the
- * app loads.
+ * `ensureSpellDictionaryLoading(variant)` to kick off (or no-op if already
+ * started) the fetch for whichever one variant the project actually needs,
+ * and reports itself inapplicable — "Not yet analysed", the same honest
+ * fallback `pipeline.ts` already gives publishingStandards/layout before
+ * `pages` exists — until `isSpellDictionaryReady(variant)` flips true. In
+ * practice each ~550KB dictionary fetches and parses in well under a
+ * second, so this only matters for the very first review of each variant
+ * right after the app loads.
+ *
+ * Each project only ever needs one dictionary at a time (`StyleGuide.
+ * englishVariant` is a closed `'british' | 'american'` choice, not a
+ * "check both" option), but both are loaded lazily and independently keyed
+ * — a session with both a British-default and an American-set project open
+ * across tabs/reloads never re-fetches a dictionary it's already cached,
+ * and never fetches the one it never needed.
  */
 import nspell, { type NSpell } from 'nspell'
+import type { StyleGuide } from '@/virtualEditor/types'
 
-let speller: NSpell | undefined
-let loadPromise: Promise<void> | null = null
+type Variant = StyleGuide['englishVariant']
 
-function load(): Promise<void> {
-  if (!loadPromise) {
-    loadPromise = Promise.all([
-      fetch('/dictionaries/en/index.aff').then((response) => response.arrayBuffer()),
-      fetch('/dictionaries/en/index.dic').then((response) => response.arrayBuffer()),
+/** `StyleGuide.englishVariant` is the only piece of state callers pass in;
+ * this is the one place that knows which `public/dictionaries/<key>/`
+ * folder (and therefore which actual Hunspell dictionary) a variant maps
+ * to. Adding a third variant (e.g. Australian/Canadian English) later means
+ * widening `StyleGuide.englishVariant` and adding one entry here — nothing
+ * else in this file changes shape. */
+const DICTIONARY_PATH_BY_VARIANT: Record<Variant, string> = {
+  american: '/dictionaries/en',
+  british: '/dictionaries/en-gb',
+}
+
+interface DictionaryEntry {
+  speller?: NSpell
+  loadPromise: Promise<void> | null
+}
+
+const entries: Record<Variant, DictionaryEntry> = {
+  american: { loadPromise: null },
+  british: { loadPromise: null },
+}
+
+function load(variant: Variant): Promise<void> {
+  const entry = entries[variant]
+  if (!entry.loadPromise) {
+    const basePath = DICTIONARY_PATH_BY_VARIANT[variant]
+    entry.loadPromise = Promise.all([
+      fetch(`${basePath}/index.aff`).then((response) => response.arrayBuffer()),
+      fetch(`${basePath}/index.dic`).then((response) => response.arrayBuffer()),
     ])
       .then(([aff, dic]) => {
-        speller = nspell({ aff: new Uint8Array(aff), dic: new Uint8Array(dic) })
+        entry.speller = nspell({ aff: new Uint8Array(aff), dic: new Uint8Array(dic) })
       })
       .catch((error) => {
         // Fails closed, not open: a network hiccup or a missing dictionary
-        // file leaves the checker permanently "Not yet analysed" (see
-        // `isSpellDictionaryReady`) rather than silently reporting zero
-        // misspellings — a false "all clear" would be worse than not
-        // checking at all, since a user might actually trust it.
-        console.error('Spell-check dictionary failed to load', error)
-        loadPromise = null // allow a retry on the next isApplicable check
+        // file leaves the checker permanently "Not yet analysed" for this
+        // variant (see `isSpellDictionaryReady`) rather than silently
+        // reporting zero misspellings — a false "all clear" would be worse
+        // than not checking at all, since a user might actually trust it.
+        console.error(`Spell-check dictionary (${variant}) failed to load`, error)
+        entry.loadPromise = null // allow a retry on the next isApplicable check
       })
   }
-  return loadPromise
+  return entry.loadPromise
 }
 
 /** Fire-and-forget — safe and cheap to call on every pipeline run (a no-op
- * once loading has started or finished). Call from a checker's
- * `isApplicable`, not from module-load time: nothing should fetch network
- * data just because this module was imported, only when a review is
- * actually attempted. */
-export function ensureSpellDictionaryLoading(): void {
-  void load()
+ * once loading for this variant has started or finished). Call from a
+ * checker's `isApplicable`, not from module-load time: nothing should fetch
+ * network data just because this module was imported, only when a review
+ * is actually attempted, and only for the one variant actually needed. */
+export function ensureSpellDictionaryLoading(variant: Variant): void {
+  void load(variant)
 }
 
-export function isSpellDictionaryReady(): boolean {
-  return speller !== undefined
+export function isSpellDictionaryReady(variant: Variant): boolean {
+  return entries[variant].speller !== undefined
 }
 
-/** `undefined` until `isSpellDictionaryReady()` is true — callers must
- * check readiness first, exactly like every other optional `CheckerContext`
- * field in this codebase. */
-export function getSpeller(): NSpell | undefined {
-  return speller
+/** `undefined` until `isSpellDictionaryReady(variant)` is true — callers
+ * must check readiness first, exactly like every other optional
+ * `CheckerContext` field in this codebase. */
+export function getSpeller(variant: Variant): NSpell | undefined {
+  return entries[variant].speller
 }
