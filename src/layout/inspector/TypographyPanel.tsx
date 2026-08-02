@@ -7,7 +7,7 @@ import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
-import { editBlock } from '@/store/editorActions'
+import { editBlock, splitParagraphWithHistory, mergeParagraphWithPreviousHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useEditableField } from '@/blocks/shared'
 import { stripHtml, wordCount } from '@/utils'
@@ -52,6 +52,10 @@ interface ParagraphTextEditorProps {
   projectId: string
   chapterId: string
   block: ParagraphBlock
+  /** The full chapter block list — needed to find the immediately preceding
+   * sibling, so Backspace-at-start can tell whether merging into it is
+   * possible (mirrors `Page.tsx`'s `canMergeWithPrevious`, Phase 113). */
+  chapterBlocks: ContentBlock[]
 }
 
 /**
@@ -68,17 +72,59 @@ interface ParagraphTextEditorProps {
  * paragraph fully remounts it (resetting edit state); the mount effect then
  * immediately enters edit mode, since the whole point is "click a paragraph,
  * get an editable box" with no extra click required.
+ *
+ * Phase 113 (2026-08-03, user: "writing in book studio still doesn't feel
+ * smooth... when a user is writing a paragraph and presses return/enter
+ * then it should start a new paragraph automatically"): this editor is a
+ * live-verified case of exactly that complaint — its own help text used to
+ * say "Enter saves", meaning Enter here just committed and exited, with no
+ * way to keep flowing into a new paragraph, even though the on-canvas
+ * editor already got this fix in Phase 111. Now wired to the same
+ * `onSplit`/`onMergeWithPrevious` callbacks `paragraph.tsx` uses, through
+ * the exact same `editorActions.splitParagraphWithHistory`/
+ * `mergeParagraphWithPreviousHistory` — one behaviour, two editing
+ * surfaces, not two competing implementations. After a split/merge,
+ * `selectForEdit` points the *shared* `selectionStore` selection at the
+ * resulting block with the right caret position; because this component
+ * fully remounts whenever `selectedBlockId` changes (`key={block.id}` in
+ * the parent), its mount effect reads that same
+ * `editRequestCaretPosition` to decide where to place the caret — no need
+ * for the on-canvas editor's "retry until focus sticks" machinery here,
+ * since this box isn't subject to the paginated layout engine's async
+ * remounts (see `useTypewriterMode`/`Page.tsx`'s own doc comments for why
+ * that race exists there and not here).
  */
-function ParagraphTextEditor({ projectId, chapterId, block }: ParagraphTextEditorProps) {
+function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: ParagraphTextEditorProps) {
+  const selectForEdit = useSelectionStore((s) => s.selectForEdit)
+  const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
+
+  const indexInChapter = chapterBlocks.findIndex((b) => b.id === block.id)
+  const previousBlock = indexInChapter > 0 ? chapterBlocks[indexInChapter - 1] : undefined
+  const canMergeWithPrevious = previousBlock?.type === 'paragraph'
+
   const field = useEditableField({
     mode: 'html',
     initialValue: block.html,
     onCommit: (value) => editBlock(projectId, chapterId, block.id, { html: value }),
+    onSplit: (before, after) => {
+      const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
+      if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+    },
+    onMergeWithPrevious: canMergeWithPrevious
+      ? () => {
+          const result = mergeParagraphWithPreviousHistory(projectId, chapterId, block.id)
+          if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset)
+        }
+      : undefined,
   })
 
   useEffect(() => {
-    field.startEditing()
-    // Only on mount — see the `key={block.id}` note above.
+    field.startEditing(editRequestCaretPosition)
+    // Only on mount — see the `key={block.id}` note above. Deliberately
+    // capturing whatever `editRequestCaretPosition` was at mount time (the
+    // eslint-disable is for the same reason `paragraph.tsx`'s equivalent
+    // effect has one): re-running this on every store change would re-enter
+    // edit mode mid-typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -97,7 +143,7 @@ function ParagraphTextEditor({ projectId, chapterId, block }: ParagraphTextEdito
         className="min-h-[100px] cursor-text rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-sm leading-relaxed text-text-primary outline-none focus:border-[var(--color-accent)]"
         {...(!field.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
       />
-      <p className="text-xs text-text-secondary">Enter saves · Shift+Enter for a line break · Esc cancels</p>
+      <p className="text-xs text-text-secondary">Enter starts a new paragraph · Shift+Enter for a line break · Esc cancels</p>
     </div>
   )
 }
@@ -189,7 +235,13 @@ export function TypographyPanel({ projectId }: TypographyPanelProps) {
       <Separator />
 
       {block.type === 'paragraph' && (
-        <ParagraphTextEditor key={block.id} projectId={projectId} chapterId={chapter.id} block={block} />
+        <ParagraphTextEditor
+          key={block.id}
+          projectId={projectId}
+          chapterId={chapter.id}
+          block={block}
+          chapterBlocks={chapter.blocks}
+        />
       )}
 
       {block.type === 'heading' && (

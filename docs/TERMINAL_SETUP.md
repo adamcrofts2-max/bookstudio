@@ -21,7 +21,26 @@ Every command below assumes you're in the first one:
 cd /d "C:\book studio copy"
 ```
 
-## 1. Fix a corrupted install (do this first)
+## 1. Fix a corrupted install (do this first — this is very likely why Enter still feels broken too)
+
+**Update 2026-08-03**: confirmed directly — `npm run build` fails with
+`failed to load config from vite.config.ts / SyntaxError: Invalid or
+unexpected token`. `vite.config.ts` itself was checked line by line and is
+clean (7 lines, no syntax errors, no stray characters). The real failure is
+one level deeper: loading the config pulls in `@tailwindcss/vite`, which
+pulls in the same truncated `@tailwindcss/node/dist/index.mjs` described
+below — reproduced by importing that exact file directly, which throws the
+identical error at the exact byte where the file cuts off.
+
+`npm run dev` loads `vite.config.ts` the same way `npm run build` does —
+so if `build` fails on this, **`dev` almost certainly has been failing to
+start too.** That would mean the app you've been testing "Enter doesn't
+start a new paragraph automatically" in was never actually running this
+project's current code — Phases 111 and 112 (Enter-splits-paragraph,
+Backspace-merges-paragraph, the auto-focus fix) may simply never have
+loaded in your browser. Run Step 1 below, then restart `npm run dev` and
+test again before assuming there's still a code bug.
+
 
 There's a genuinely broken file already on disk in this project's
 `node_modules`, confirmed by directly inspecting it:

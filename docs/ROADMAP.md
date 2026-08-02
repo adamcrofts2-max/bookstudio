@@ -265,6 +265,17 @@ daily use of everything built so far.)*
       — the new block's auto-focus now retries across pagination-driven
       remounts instead of consuming its one-shot edit request before focus
       actually lands (see STATUS.md).
+- [x] Enter-splits-paragraph in the Inspector's sidebar paragraph editor too
+      (Phase 113, 2026-08-03) — found by actually looking at the live
+      deployment (screenshot), which showed the user typing in
+      `TypographyPanel.tsx`'s "Type" tab paragraph box, not the on-canvas
+      editor Phase 111 fixed. That box's own help text used to say "Enter
+      saves" — a completely separate `useEditableField` instance that never
+      got `onSplit`/`onMergeWithPrevious` wired up. Now uses the same
+      `splitParagraphWithHistory`/`mergeParagraphWithPreviousHistory` the
+      canvas uses. See STATUS.md for why this editor doesn't need the
+      canvas's "retry until focus sticks" complexity (it isn't subject to
+      the paginated layout engine's async remounts). Verified via `tsc`.
 - [x] Typewriter mode (Phase 111, 2026-08-02, user: "how about adding an
       option for typewriter mode(sound)") — new `useTypewriterMode` hook,
       active only in Focus Mode's `write` view. Keeps the caret's line
@@ -725,13 +736,13 @@ daily use of everything built so far.)*
       already flagged in `docs/SUGGESTIONS.md`).
 - [ ] Thesaurus / synonym lookup — flagged 2026-08-01 alongside search and
       spellcheck. Needs a bundled synonym dataset (client-only, no-backend
-      architecture, same reasoning `ClipboardProvider` below uses). Package
-      identified 2026-08-03: `moby` (npm), from the same `wooorm`/`words`
-      family as the already-installed `nspell`/`dictionary-en` — see
-      `docs/TERMINAL_SETUP.md` for the install command. Not started —
-      wiring it up (an "Ideas"-style lookup panel or a right-click "Find a
-      synonym" on selected text, mirroring `spellcheckDictionary.ts`'s
-      async-load pattern) is next once it's installed.
+      architecture, same reasoning `ClipboardProvider` below uses). `moby`
+      (npm) is now installed (2026-08-03, user ran it from their own
+      terminal — see `package.json`), from the same `wooorm`/`words` family
+      as `nspell`/`dictionary-en`. Not yet wired up — next step is a lookup
+      UI (an "Ideas"-style panel or a right-click "Find a synonym" on
+      selected text), mirroring `spellcheckDictionary.ts`'s async-load
+      pattern.
 - [x] Distraction-free writing mode, plus a reading mode (user-requested
       alongside it, 2026-08-01) — shipped 2026-08-01 (Phase 73). One shared
       `uiStore.focusMode: 'none' | 'write' | 'read'` rather than two independent

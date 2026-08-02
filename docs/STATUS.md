@@ -7381,3 +7381,77 @@ yet live-verified in Chrome — same standing sandbox limitation as Phase
 111; owed a real click-through (type two paragraphs, press Backspace at the
 start of the second, confirm one merged paragraph with the caret at the
 seam and one undo step restores both).
+
+## Phase 113 (2026-08-03) — Enter-splits-paragraph reaches the sidebar editor too
+
+User, after Phase 111/112 shipped: "writing in book studio still doesn't
+feel smooth. when a user is writing a paragraph and presses return/enter
+then it should start a new paragraph automatically below... think about
+this." Re-auditing `paragraph.tsx`/`shared.tsx` found nothing wrong — the
+canvas-side fix was (and is) correct. The actual gap only showed up by
+looking at the real, currently-deployed app: a screenshot of the live
+Vercel deployment (`bookstudio-hyu5xi3yq-adam-86.vercel.app`) showed the
+user typing in the Inspector's **Type tab paragraph box**
+(`TypographyPanel.tsx`'s `ParagraphTextEditor`), not the on-canvas editor —
+a second, entirely separate `useEditableField` instance, added in Phase 51
+as "a dedicated, always-visible box in the sidebar so a user doesn't have
+to precisely double-click the right spot." Its own help text still read
+"Enter saves" — because it never received `onSplit`/`onMergeWithPrevious`
+at all when Phases 111/112 were built; only the canvas path did.
+
+**Fix**: wired the exact same `editorActions.splitParagraphWithHistory`/
+`mergeParagraphWithPreviousHistory` into `ParagraphTextEditor` — one
+behaviour, shared through the same store actions, not a second parallel
+implementation. Differences from the canvas wiring, and why they're
+correct here specifically:
+- `canMergeWithPrevious` needs the full chapter block list to find the
+  preceding sibling; `TypographyPanel` now passes `chapterBlocks={chapter
+  .blocks}` down as a new prop (it already had this list, just hadn't
+  threaded it through).
+- Caret placement after a split/merge: the canvas needed the elaborate
+  "consume the edit request only on real `onFocus`, so a pagination-driven
+  remount can retry" mechanism from Phase 111's follow-up fix, because the
+  canvas is inside the paginated layout engine (`HeightMeasurer`/
+  `BookRenderer`'s async height measurement can force a remount). This
+  sidebar box is **not** — it's driven purely by `selectedBlockId` matching
+  (`key={block.id}` on the parent), with no pagination involved, so a
+  plain "read `editRequestCaretPosition` in the mount effect" is safe and
+  sufficient: `field.startEditing(editRequestCaretPosition)` instead of the
+  old unconditional `field.startEditing()`.
+- Both editing surfaces share the same `selectionStore`, so triggering a
+  split/merge from the sidebar also sets `editRequestId`, which the canvas
+  block's own `autoEdit` will also see and attempt to act on. Deliberately
+  left as-is rather than building cross-component focus arbitration: worst
+  case is a harmless double-attempt (whichever `.focus()` call runs last —
+  in practice the sidebar's, given render order — wins actual keyboard
+  focus), not a functional break. Flagged here rather than silently
+  ignored, in case it's ever visibly janky enough to revisit.
+
+Help text updated from "Enter saves" to "Enter starts a new paragraph".
+
+**Also this session**: chased down the *other* thread from the same
+message — confirmed, with hard evidence, that `npm run build`'s
+`SyntaxError: Invalid or unexpected token` when loading `vite.config.ts`
+is **not** a `vite.config.ts` problem. That file was re-read in full (7
+lines, clean) and reproduced the failure by importing the actual
+downstream culprit directly: `node_modules/@tailwindcss/node/dist/
+index.mjs` throws the identical `SyntaxError` at the exact byte where the
+file's content stops — a truncated file (17,347 bytes, cuts off mid
+string-literal), first flagged in Phase 53 (2026-07-31) and still
+unresolved. `npm run dev` loads the same config the same way, so this
+almost certainly also means **the dev server has never started** on this
+machine either — the live Vercel deployment the user is testing against is
+a separate, already-built artifact from before Phases 111-113, which is
+also sufficient on its own to explain "writing still doesn't feel smooth":
+none of this work has reached that deployment yet. Fix (`npm ci`, run from
+the user's own terminal — no registry access here) documented in
+`docs/TERMINAL_SETUP.md`, updated today to lead with this connection.
+
+**Verified**: `npx tsc -b --force` — zero errors (confirmed via `timeout
+42 npx tsc -b --force`; the plain invocation hit unrelated sandbox I/O
+slowness this session and needed the `timeout` wrapper to return cleanly
+within budget — not a code issue, same file compiled clean either way).
+Not live-verified in Chrome. The real test is on the user's end: run
+`docs/TERMINAL_SETUP.md`'s `npm ci`, push to GitHub, redeploy (or run
+`npm run dev` locally), then confirm Enter/Backspace in *both* the canvas
+and the Inspector's Type tab.
