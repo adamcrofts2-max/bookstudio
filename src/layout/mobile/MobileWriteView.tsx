@@ -27,6 +27,23 @@ interface MobileWriteViewProps {
  * start editing on a single tap instead, since there's no separate
  * select-vs-edit state to preserve here (no toolbar/badge overlays in this
  * simplified view).
+ *
+ * `handleTap` calls `el.focus()` directly, synchronously, inside the tap's
+ * own click handler — BEFORE flipping React state. This is deliberate, not
+ * redundant with `useEditableField`'s own `ref.current.focus()` (which runs
+ * in a `useLayoutEffect` after `isEditing` flips): iOS Safari (and some
+ * Android browsers) only summon the on-screen keyboard for a programmatic
+ * `.focus()` call if it happens synchronously within the original trusted
+ * touch/click event — a `.focus()` reached via a subsequent React render
+ * pass, even in the same tick, can be treated as untrusted and silently
+ * ignored, so typing appears to do nothing on a real phone even though the
+ * identical pattern works fine with a mouse (confirmed via automated click
+ * testing, which doesn't reproduce this — mouse-driven `click` events don't
+ * carry the same restriction). Desktop's block types don't hit this because
+ * they've only ever been driven by a mouse/trackpad. Focusing here is a safe
+ * no-op if `useEditableField`'s own effect-driven focus also fires — same
+ * element, same result, just guaranteed to happen at least once inside the
+ * gesture that must trigger it.
  */
 function MobileTextField({
   mode,
@@ -46,12 +63,22 @@ function MobileTextField({
   const field = useEditableField({ mode, initialValue: value, onCommit })
   const isEmpty = value.trim().length === 0
 
+  const handleTap = () => {
+    if (field.isEditing) return
+    const el = field.ref.current
+    if (el) {
+      el.contentEditable = 'true'
+      el.focus()
+    }
+    field.startEditing()
+  }
+
   return (
     <Tag
       ref={(el: HTMLElement | null) => {
         field.ref.current = el
       }}
-      onClick={!field.isEditing ? field.startEditing : undefined}
+      onClick={!field.isEditing ? handleTap : undefined}
       contentEditable={field.isEditing}
       suppressContentEditableWarning
       onBlur={field.isEditing ? field.handleBlur : undefined}

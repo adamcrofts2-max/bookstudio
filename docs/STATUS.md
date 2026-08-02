@@ -6144,6 +6144,60 @@ actually swaps at the breakpoint in a real browser, that touch tap-to-edit feels
 right (vs. just working in a mouse-driven DOM inspector), or that the bottom sheet's
 slide animation/safe-area padding look right on an actual phone viewport.
 
+## Phase 96 — Mobile write mode: fix taps not entering edit mode on real phones (2026-08-02)
+
+User, after pushing/redeploying Phase 95 and testing on an actual phone: "It works,
+but I dont actually seem to be able to make edits and write." Investigated rather
+than guessed:
+
+- Resized a real Chrome window to phone width and drove `MobileWriteView` with
+  automated mouse clicks — tapping a paragraph entered edit mode, typed text
+  committed correctly on blur, exactly as intended. This ruled out a broken
+  `contentStore`/`editBlock` wiring or a logic bug in `useEditableField` itself
+  (both mechanically fine), but automated mouse clicks can't reveal a real-
+  touchscreen-only failure.
+- Checked for the two other most common "can't type on mobile web" causes and
+  ruled both out: `index.html`'s viewport meta tag is already correct
+  (`width=device-width, initial-scale=1.0` — a missing/wrong one would make
+  `useIsMobile`'s 640px check fail on real phones and silently fall back to the
+  cramped desktop shell instead; confirmed that's not happening here), and there's
+  no global `user-select`/`touch-action` CSS anywhere in `src/` that could be
+  blocking touch input (confirmed via search).
+- Root cause: **`useEditableField`'s `.focus()` call runs inside a
+  `useLayoutEffect`, fired after `isEditing` flips to `true` via `setState`** —
+  correct and sufficient for a mouse click, but iOS Safari (and some Android
+  browsers) only summon the on-screen keyboard for a programmatic `.focus()` if
+  it happens *synchronously inside the original trusted touch/click event*. A
+  `.focus()` reached one render pass later — even in the same tick — can be
+  treated as untrusted and silently dropped, so the field never actually gets
+  real focus and typing does nothing, while the exact same code path works fine
+  under a mouse (which doesn't carry this restriction) — matching both what
+  automated testing showed and what the user reported. This is a latent gap in
+  `useEditableField` itself, just never surfaced before: every existing consumer
+  (`paragraph.tsx`, `heading.tsx`, etc.) has only ever been driven by a mouse, on
+  the desktop-only shell.
+- Fix, scoped to `MobileWriteView.tsx`'s new `MobileTextField` only (left the
+  shared `useEditableField` hook and every desktop block type untouched, since
+  they're proven working and this isn't a risk worth taking on them for a bug
+  that can't manifest on a mouse-driven surface): the tap handler now calls
+  `el.focus()` directly on the DOM node, synchronously, before calling
+  `field.startEditing()` — guaranteeing at least one focus call happens inside
+  the trusted gesture, satisfying the stricter mobile browsers. `useEditableField`'s
+  own effect-driven focus still runs afterward too (harmless, idempotent — same
+  element, same result).
+
+**Verification caveat, stated plainly**: `npx tsc -b --force` clean. Could not
+verify this actually fixes real-phone typing — the diagnosis (synchronous-focus-
+inside-gesture) is the single most well-documented cause of exactly this symptom,
+and the fix is a standard, low-risk mitigation for it, but I have no real
+touchscreen device available to confirm, and mouse-driven automated testing
+cannot reproduce or disprove the original bug either way. If this doesn't fully
+fix it once redeployed, the next things to check on a real device: whether tapping
+now shows a cursor/keyboard at all (partial fix, something else also blocking) vs.
+truly nothing changes (wrong diagnosis, look elsewhere — e.g. a touch-specific
+scroll/gesture conflict on the block-list container, or the bottom nav/FAB
+overlapping the field once the keyboard opens and shrinks the visible viewport).
+
 ## Recommended next task
 Push everything from Phase 85 onward (13+ commits queued), then do one real Chrome
 pass (resized to a phone viewport, and ideally a real device) covering: the Notes
