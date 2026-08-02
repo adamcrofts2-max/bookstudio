@@ -260,7 +260,11 @@ daily use of everything built so far.)*
       the caret placed at its *start* (`selectionStore.editRequestCaretPosition`),
       not its end, so typing continues naturally. Verified via `tsc`; not
       yet live-verified in Chrome (see Phase K's standing verification gap
-      for why — this sandbox can't push/preview).
+      for why — this sandbox can't push/preview). Follow-up same day: fixed
+      a reported "new block appears but needs a manual click to type" race
+      — the new block's auto-focus now retries across pagination-driven
+      remounts instead of consuming its one-shot edit request before focus
+      actually lands (see STATUS.md).
 - [x] Typewriter mode (Phase 111, 2026-08-02, user: "how about adding an
       option for typewriter mode(sound)") — new `useTypewriterMode` hook,
       active only in Focus Mode's `write` view. Keeps the caret's line

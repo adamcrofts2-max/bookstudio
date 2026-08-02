@@ -25,11 +25,22 @@ function ParagraphRender(props: BlockRenderProps) {
     onSplit: onSplit && block.type === 'paragraph' ? onSplit : undefined,
   })
 
+  // `startEditing` is re-issued (idempotently) every time `autoEdit` flips
+  // true — including on a *fresh* remount of this exact block, not just its
+  // first mount. That matters because a just-split paragraph's new "after"
+  // half is brand new to the layout engine: its real height isn't known
+  // until `HeightMeasurer` reports it (see `BookRenderer.tsx`), so the very
+  // first pagination pass that places it uses a fallback guess. If the real
+  // height differs enough to shift page boundaries, this component can
+  // remount once the corrected layout lands — which would silently drop the
+  // focus this effect just set, with no user-visible retry, if the edit
+  // request had already been consumed (reported 2026-08-02: "starts a new
+  // block but you have to click it again to start typing"). Consuming the
+  // request from `onFocus` below instead of here means `editRequestId`
+  // stays live — and this effect keeps re-firing `startEditing` — across
+  // any number of such remounts, until a focus genuinely sticks.
   useEffect(() => {
-    if (autoEdit && editable) {
-      primary.startEditing(autoEditCaretPosition ?? 'end')
-      onAutoEditHandled?.()
-    }
+    if (autoEdit && editable) primary.startEditing(autoEditCaretPosition ?? 'end')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit])
 
@@ -45,6 +56,7 @@ function ParagraphRender(props: BlockRenderProps) {
         onDoubleClick={editable ? () => primary.startEditing() : undefined}
         contentEditable={primary.isEditing}
         suppressContentEditableWarning
+        onFocus={autoEdit ? () => onAutoEditHandled?.() : undefined}
         onBlur={primary.isEditing ? primary.handleBlur : undefined}
         onKeyDown={primary.isEditing ? primary.handleKeyDown : undefined}
         className={cn(

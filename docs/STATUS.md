@@ -7243,6 +7243,34 @@ paragraphs with correct content and one undo step) is still owed, same
 standing caveat as every other unverified item in this file's Phase
 104-108/95-103 sections above.
 
+**Follow-up fix, same day**: user reported the shipped version "starts a
+new block but you have to click it again to start typing" — the auto-focus
+wasn't sticking. Root cause: the new "after" half is brand-new to the
+layout engine, so `BookRenderer`'s `HeightMeasurer` hasn't measured its
+real height yet on the very first pagination pass (`heights[b.id] ?? 24`
+fallback in `BookRenderer.tsx`). If the real height (reported moments
+later, async) differs enough to shift page boundaries, `Page.tsx` can remount
+the block once corrected layout lands — and the original code consumed
+`selectionStore.editRequestId` synchronously inside the mount effect, right
+after calling `startEditing()`, with no way to tell whether that particular
+`.focus()` call actually stuck. A remount after consumption meant nobody
+would ever retry.
+
+Fix (`src/blocks/types/paragraph.tsx`): moved the `onAutoEditHandled?.()`
+call out of the mount effect and into a new `onFocus` handler on the `<p>`,
+gated on `autoEdit`. The mount effect now only calls `startEditing()` — it
+no longer assumes that attempt was the one that "took." Because
+`editRequestId` now stays live until a real DOM focus event fires, the
+effect re-fires `startEditing()` on every remount this block goes through
+(caused by pagination settling on the new block's real height), and
+whichever mount is the final, stable one is the one whose focus lands and
+consumes the request — self-healing regardless of how many corrective
+pagination passes occur, rather than a single best-effort attempt. Verified
+via `npx tsc -b --force` (zero errors); still owed the same live-Chrome
+click-through as the base feature above — this fix can't be meaningfully
+confirmed without an actual browser and a multi-line paragraph long enough
+to force a real pagination shift.
+
 ### Typewriter mode
 
 New `src/hooks/useTypewriterMode.ts`, active only in Focus Mode's `write`
