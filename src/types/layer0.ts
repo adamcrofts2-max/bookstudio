@@ -61,6 +61,16 @@ export interface Character extends BaseLayer0Entity {
   role?: string
   description?: string
   notes?: string
+  /** Where this was captured from, if created by highlighting manuscript
+   * text and sending it to Develop (Phase 90) rather than added by hand in
+   * Develop directly — same "reference by id, keep the parent id alongside
+   * the child id" pattern `Idea.linkedChapterId`/`linkedBlockId` and
+   * `TimelineEvent.linkedChapterId` already use. Absent for anything added
+   * the ordinary way. Doubles as the chapter-association field the future
+   * book graph (docs/ROADMAP.md, Idea System Milestone 3) needs — this was
+   * the explicitly logged prerequisite blocking it. */
+  linkedChapterId?: string
+  linkedBlockId?: string
 }
 
 /** A place the story visits — a room, a building, a city, a whole world. */
@@ -68,6 +78,9 @@ export interface Location extends BaseLayer0Entity {
   name: string
   description?: string
   notes?: string
+  /** See `Character.linkedChapterId`'s doc comment — identical purpose. */
+  linkedChapterId?: string
+  linkedBlockId?: string
 }
 
 /** One point on the story's internal timeline. `when` is intentionally
@@ -108,6 +121,9 @@ export interface TimelineEvent extends BaseLayer0Entity {
 export interface GlossaryTerm extends BaseLayer0Entity {
   term: string
   definition: string
+  /** See `Character.linkedChapterId`'s doc comment — identical purpose. */
+  linkedChapterId?: string
+  linkedBlockId?: string
 }
 
 /** A source the author is drawing on — research material, inspiration, or
@@ -119,6 +135,9 @@ export interface ReferenceEntry extends BaseLayer0Entity {
   url?: string
   citation?: string
   notes?: string
+  /** See `Character.linkedChapterId`'s doc comment — identical purpose. */
+  linkedChapterId?: string
+  linkedBlockId?: string
 }
 
 /** A brief for artwork that needs to be commissioned or generated —
@@ -130,6 +149,11 @@ export interface IllustrationBrief extends BaseLayer0Entity {
   title: string
   description?: string
   referenceAssetId?: string
+  /** See `Character.linkedChapterId`'s doc comment — identical purpose.
+   * Especially useful here: "this sentence needs an illustration" is
+   * exactly the selected-text-to-Develop capture case (Phase 90). */
+  linkedChapterId?: string
+  linkedBlockId?: string
 }
 
 /** One standing rule the manuscript should follow consistently — spelling
@@ -150,6 +174,9 @@ export interface ResearchNote extends BaseLayer0Entity {
   title: string
   body?: string
   sourceUrl?: string
+  /** See `Character.linkedChapterId`'s doc comment — identical purpose. */
+  linkedChapterId?: string
+  linkedBlockId?: string
 }
 
 /** One project's whole Layer 0 story bible — every entity collection,

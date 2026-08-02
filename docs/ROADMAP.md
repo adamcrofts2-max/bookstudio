@@ -769,6 +769,28 @@ daily use of everything built so far.)*
       cross-layer import into `layout/planning`.
 - [ ] AI Workspace: `ApiKeyProvider` (direct API call, streamed diff) — deferred
       until there's a real story for cost/accounts (Phase G/H)
+- [x] Idea/Notes badge clipping — actual root cause fixed (Phase 89, 2026-08-02),
+      after four guessed corner/offset fixes (Phases 85-88) each traded one
+      collision for another. Real cause: `Page.tsx`'s content-flow container clips
+      at exactly the safe margin with zero headroom, so a block first/last in the
+      page's flow has any `-top-3`-style overlay poke into the container's own
+      negative local coordinates. Gave the container a small buffer, compensated
+      with equal padding so text position is unaffected. Not yet live-verified
+      (sandbox can't push) — see STATUS.md Phase 89 for full detail.
+- [x] Book graph data-model prerequisite: added `linkedChapterId`/`linkedBlockId`
+      to Character/Location/GlossaryTerm/Reference/IllustrationBrief/ResearchNote
+      (Phase 90, 2026-08-02) — the exact six-kind gap this item used to flag.
+      Cleared as a side effect of building selection-to-Develop capture below, not
+      as standalone work.
+- [x] Selection-to-Develop capture (Phase 90, 2026-08-02, user-proposed): highlight
+      a name or sentence in the manuscript, get a "+" affordance offering
+      Character/Location/Illustration Brief/Glossary Term/Research Note/Save as
+      Idea, created directly (no capture-then-promote detour) and linked back to
+      the exact chapter+block it came from. `renderer/SelectionDevelopMenu.tsx`.
+      Not yet live-verified (sandbox can't push) — see STATUS.md Phase 90.
+- [ ] Show "linked from Chapter X" on entities created via Phase 90's selection
+      capture in `EntityListPanel.tsx` — the data exists on the entity now
+      (`linkedChapterId`), the list/detail view doesn't surface it yet.
 - [ ] Idea System Milestone 2: Ideas mind-map view (list/mind-map toggle on the
       same Ideas data — nodes are ideas, tag = cluster colour, edges are shared
       tags or manual `relatedIdeaIds`). Design agreed 2026-08-02, not built.
@@ -776,12 +798,9 @@ daily use of everything built so far.)*
       concept extended past Ideas to the whole book — chapters, characters,
       places, ideas, images, and research as one connected, icon-coded graph
       (person/map-pin/lightbulb/photo/file-text per kind, filterable by kind).
-      Needs a "which chapter(s) does this belong to" field added to Character/
-      Location/GlossaryTerm/Reference/IllustrationBrief/ResearchNote first —
-      today only `TimelineEvent.linkedChapterId` (Phase 83) and
-      `Idea.linkedChapterId`/`linkedBlockId` exist; the other six Layer 0 kinds
-      have no chapter association at all yet. Do this after Milestone 2 ships
-      and gets real reaction, not before.
+      Data-model prerequisite (chapter/block association on every kind) is now
+      done (Phase 90) — this item is the graph UI itself, still unbuilt. Do this
+      after Milestone 2 ships and gets real reaction, not before.
 - [ ] Visual moodboard / Pinterest-style board for example ideas and reference
       images (user, 2026-08-02): today's Ideas and References are text-only —
       no way to pin an inspiration image or lay out visual references as a

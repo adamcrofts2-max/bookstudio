@@ -5823,19 +5823,127 @@ non-fiction project, confirmed the fork/labels/template-filtering worked, then f
 the badge-collision bug by inspecting `BlockToolbar.tsx`'s actual CSS classes once the
 user reported it, rather than guessing.
 
+## Phase 85-89 — Idea/Notes badge clipping: four guessed fixes, then the actual root cause (2026-08-02)
+
+Phase 84's fix (badge moved to `-bottom-3 right-2`) immediately collided with the
+*next* block's own `BlockToolbar` (always `-top-3 right-2` — blocks stack close
+enough that adjacent blocks' overlays touch). Phase 85 moved it to `-bottom-3 left-2`;
+that collided with the next block's `NoteIndicatorBadge` (always `-top-3 left-2`) —
+same adjacency problem, different side, reported as "notes appear off visible screen."
+Phase 86 merged Notes+Ideas into one shared row at `-top-3 left-2` (Notes' original
+position) so they'd lay out side-by-side instead of owning separate spots — this
+escaped the *page's* own clipped boundary when the block sat near a page top (no
+room above the first paragraph under a chapter heading), reported via screenshot as
+"still appears off page." Phase 87 swapped to `top-1 left-1` — a positive inset,
+inside the block's own box instead of outside it — which fixed the clipping but
+now visibly overlapped the block's own text (paragraphs have zero internal
+padding): "N[badge]ng in this garden" instead of "Nothing in this garden."
+
+Four attempts, four different corners, four different failures — the common thread
+being "an always-visible, absolutely-positioned overlay can't coexist safely with
+manuscript blocks packed edge-to-edge with zero padding." Phase 88 stopped guessing
+at a fifth corner and instead moved `IdeaIndicatorBadge` into `BlockToolbar`'s own
+`children` slot (new prop) — that toolbar has been stable since Phase 4 precisely
+because it's hover-gated, so only one block's toolbar is ever visible at a time and
+cross-block collision is structurally impossible. `NoteIndicatorBadge` reverted to
+its original standalone `-top-3 left-2` spot, since Notes alone (without Ideas
+sharing the position) had never actually been the broken half of Phase 86.
+
+That reintroduced Phase 87's exact bug for Notes alone: user reported it again
+("still doesn't work as its showing in the actual page and gets cut off by the top
+margin"). This time, instead of guessing another offset, actually read
+`Page.tsx`'s content-flow container — found the real root cause. That container
+(`className="absolute overflow-hidden"`) is positioned at exactly
+`top: pageBox.marginTopPx` / `bottom: pageBox.marginBottomPx`, i.e. its own clip
+box starts flush with the safe margin, zero headroom. A block that's first/last in
+that flow has its own edge sitting at this container's local `y=0`, so anything
+hanging outside the block's box (`-top-3`) pokes into negative local coordinates
+and gets clipped by *this specific div* — regardless of how generous the page's
+actual printed margin is. That's why `BlockToolbar` "usually" worked (rarely
+hovered on a page's literal first block) while the badge kept breaking (always
+visible, no luck involved) — it was never about which corner, it was this one
+container's own top/bottom edge. Phase 89 gave the container a small buffer
+(16px, more than the 12px `-top-3` needs) on top and bottom, pulling its edge
+outward and compensating with equal `paddingTop`/`paddingBottom` so text still
+starts at the exact same visual position — pagination-neutral, nothing about block
+flow or measured heights changes. Clamped to the actual margin so a project with a
+smaller-than-buffer safe margin can't push the container above the page's bounds.
+
+Verification: `npx tsc -b --force` clean at every step. Phases 85-88 were each
+committed without a live screenshot check (sandbox has no git push access, so
+nothing could be verified against the deployed build until the user pushed and
+reported back) — worth being explicit that this is *why* four guesses shipped in a
+row rather than one: each "fix" could only be reasoned about, not seen, until the
+next round-trip. Phase 89's fix is reasoned through the actual clipping container's
+CSS rather than guessed, which is a meaningfully different confidence level, but is
+still unverified against the live site as of this entry — needs the user to push
+and report back before being called closed.
+
+## Phase 90 — Selection-to-Develop: highlight text, send it straight to a Develop entity (2026-08-02)
+
+User proposal: highlighting a name or sentence in the manuscript should offer a
+direct "+ Character" / "+ Illustration Brief" action, rather than requiring a trip
+to Develop to add it by hand. Judged a strong fit and built the same session:
+
+- **`types/layer0.ts`**: added `linkedChapterId?`/`linkedBlockId?` to `Character`,
+  `Location`, `GlossaryTerm`, `ReferenceEntry`, `IllustrationBrief`, and
+  `ResearchNote` — the exact six kinds ROADMAP.md's Book Graph (Idea System
+  Milestone 3) entry already listed as missing a chapter-association field before
+  that milestone could start. `TimelineEvent`/`Idea` already had the identical
+  field; `StyleRule` deliberately excluded (a standing rule isn't "this sentence").
+  Additive/optional only — no project-file version bump, `layer0.json` is
+  serialized wholesale so nothing else needed touching.
+- **`renderer/SelectionDevelopMenu.tsx`** (new): tracks `window.getSelection()` via
+  the exact `selectionchange` pattern `FloatingFormatToolbar.tsx` already
+  established, but deliberately not gated on `isEditing` — rendered manuscript
+  text is natively selectable without entering edit mode, and "flag this" is a
+  read-time action. `position: fixed`, same as `FloatingFormatToolbar`, so it's
+  immune to the exact page-clipping class of bug Phases 85-89 just went through —
+  no repeat of that saga for this new surface. One instance per rendered `Page`
+  (not per block): resolves which block owns the current selection via
+  `.closest('[data-block-id]')` on the selection's anchor node, filtered against
+  that page's own block-id set so concurrently-mounted pages (`LazySpread`
+  virtualisation keeps neighbours warm) don't both react to the same selection.
+  On pick, creates the entity directly via `addLayer0EntityWithHistory`/
+  `addIdeaWithHistory` — skips the existing capture-then-promote two-step
+  (`IdeaCaptureAffordance.tsx` → `IdeaDetailDialog.tsx`'s promotion flow)
+  intentionally: that flow is for "I have a stray thought," this one is for "I
+  already know exactly what this is," so it's one click. Offers Character/
+  Person, Location/Place (adaptive labels via `getLayer0KindLabel`), Illustration
+  Brief, Glossary Term, Research Note, and "Save as Idea."
+- **`renderer/Page.tsx`**: renders one `SelectionDevelopMenu` per chapter-start/
+  content page with blocks, passing a `useMemo`'d block-id `Set` keyed on the
+  joined id list (not the `page.blocks` array reference, which `paginate.ts`
+  rebuilds every layout pass) so the listener doesn't needlessly re-subscribe on
+  every content-preserving re-render elsewhere in the book.
+
+Not built this pass: showing "linked from Chapter X" on the entity itself in
+`EntityListPanel.tsx` (the data exists now, the display doesn't yet) — logged as a
+follow-up, not scope-creeped into this commit.
+
+Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors in this sandbox
+(pre-existing, ROADMAP.md Phase J, unrelated to this change). Not live-verified in
+Chrome — same push limitation as Phase 89; needs the user to push before either can
+be screenshot-confirmed.
+
 ## Recommended next task
-Push this Phase 84 commit, then live-verify the three fixes above plus the Ideas-in-
-Notes-tab addition directly in Chrome. Scope the Pinterest/moodboard idea properly
-before building it — needs a real design pass (where do images live: a new field on
-existing Ideas, a new Layer 0 kind, or a dedicated board view over References/
-Illustration Briefs?) rather than bolting a grid onto the current list UI. Also still
+Push Phases 85-90, then live-verify in Chrome: confirm the Notes badge no longer
+clips at a page's top edge (Phase 89), and click through the new selection-to-
+Develop menu end to end — select a name, add as Character, confirm it appears in
+Develop's Character list with the capture working from both a plain read (no edit
+mode) and mid-edit selection. Also confirm `LazySpread`'s virtualisation doesn't
+leave a stale `SelectionDevelopMenu` reacting after its page unmounts. After that,
+show "linked from Chapter X" on entities created via Phase 90 in
+`EntityListPanel.tsx`. Scope the Pinterest/moodboard idea properly before building
+it — needs a real design pass (where do images live: a new field on existing
+Ideas, a new Layer 0 kind, or a dedicated board view over References/Illustration
+Briefs?) rather than bolting a grid onto the current list UI. Also still
 outstanding from Phase 82: putting Milestone 1 in front of two or three first-time
 authors and watching their reaction, per the spec's own "how we'll know it worked"
 section — that reaction, not more building, should decide what actually gets built
-next between Idea System Milestone 2 (mind-map view) and the book graph (Milestone 3,
-needs chapter-association
-fields added to the other six Layer 0 kinds first — see ROADMAP.md Phase F).
-Phase B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
-Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/
-synonym lookup), plus the Develop nav "Tools" section cleanup discussed but not built
-in Phase 83.
+next between Idea System Milestone 2 (mind-map view) and the rest of the book graph
+(Milestone 3 — Phase 90 just cleared its data-model prerequisite; the graph UI
+itself is still unbuilt). Phase B's remaining item: real (dictionary-backed)
+spell-check (flagged 2026-08-01). Phase F still has two deliberately-deferred items
+(`ApiKeyProvider`; a thesaurus/synonym lookup), plus the Develop nav "Tools" section
+cleanup discussed but not built in Phase 83.

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
 import type { PageBox } from '@/renderer/pageGeometry'
@@ -10,6 +10,7 @@ import { BlockToolbar } from '@/renderer/BlockToolbar'
 import { PageToolbar } from '@/renderer/PageToolbar'
 import { NoteIndicatorBadge } from '@/renderer/NoteIndicatorBadge'
 import { IdeaIndicatorBadge } from '@/renderer/IdeaIndicatorBadge'
+import { SelectionDevelopMenu } from '@/renderer/SelectionDevelopMenu'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
 import { AiDraftInsertDialog } from '@/renderer/AiDraftInsertDialog'
 import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
@@ -159,6 +160,15 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   // since the toolbar's move-up/down bounds need the full chapter's block
   // list, not just this page's slice.
   const chapter = page.chapterId ? manuscript?.chapters.find((c) => c.id === page.chapterId) : undefined
+
+  // Memoised on the joined id list rather than `page.blocks` itself —
+  // `paginate.ts` rebuilds `LaidOutPage` objects (and their `blocks`
+  // arrays) on every layout pass, so the array reference changes far more
+  // often than its actual contents. `SelectionDevelopMenu` re-subscribes
+  // its `selectionchange` listener whenever this identity changes, so a
+  // stable identity across content-preserving re-renders avoids needlessly
+  // flapping that listener on every keystroke elsewhere in the book.
+  const pageBlockIds = useMemo(() => new Set(page.blocks.map((b) => b.id)), [page.blocks.map((b) => b.id).join('|')]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Wrapped in a stable `data-block-id` anchor so the Virtual Editor's
   // Locate/Edit actions (via `selectionStore.requestScrollToBlock` /
@@ -586,6 +596,10 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
         {page.kind === 'content' && renderBlocksWithDropZones(page.blocks)}
       </div>
+
+      {(page.kind === 'chapter-start' || page.kind === 'content') && page.chapterId && !decorative && page.blocks.length > 0 && (
+        <SelectionDevelopMenu projectId={projectId} chapterId={page.chapterId} blockIds={pageBlockIds} />
+      )}
 
       {page.kind !== 'blank' && page.kind !== 'structural' && (
         <div
