@@ -788,9 +788,13 @@ daily use of everything built so far.)*
       Idea, created directly (no capture-then-promote detour) and linked back to
       the exact chapter+block it came from. `renderer/SelectionDevelopMenu.tsx`.
       Not yet live-verified (sandbox can't push) — see STATUS.md Phase 90.
-- [ ] Show "linked from Chapter X" on entities created via Phase 90's selection
-      capture in `EntityListPanel.tsx` — the data exists on the entity now
-      (`linkedChapterId`), the list/detail view doesn't surface it yet.
+- [x] Show "linked from Chapter X" on entities created via Phase 90's selection
+      capture (Phase 91, 2026-08-02) — `EntityListPanel.tsx` now shows a
+      read-only "Linked from <chapter>" row with a jump action (reuses
+      `IdeaDetailDialog.tsx`'s exact mode-switch + scroll-request pattern,
+      preferring the precise `linkedBlockId` over the chapter when both are
+      set) for every kind except Timeline Event, which already has its own
+      manual chapter-assignment `Select` for this same field.
 - [ ] Idea System Milestone 2: Ideas mind-map view (list/mind-map toggle on the
       same Ideas data — nodes are ideas, tag = cluster colour, edges are shared
       tags or manual `relatedIdeaIds`). Design agreed 2026-08-02, not built.

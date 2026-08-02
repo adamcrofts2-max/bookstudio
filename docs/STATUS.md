@@ -5917,33 +5917,45 @@ to Develop to add it by hand. Judged a strong fit and built the same session:
   rebuilds every layout pass) so the listener doesn't needlessly re-subscribe on
   every content-preserving re-render elsewhere in the book.
 
-Not built this pass: showing "linked from Chapter X" on the entity itself in
-`EntityListPanel.tsx` (the data exists now, the display doesn't yet) — logged as a
-follow-up, not scope-creeped into this commit.
-
 Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors in this sandbox
 (pre-existing, ROADMAP.md Phase J, unrelated to this change). Not live-verified in
 Chrome — same push limitation as Phase 89; needs the user to push before either can
 be screenshot-confirmed.
 
+## Phase 91 — Surface Phase 90's chapter links: "Linked from Chapter X" + jump (2026-08-02)
+
+Immediate follow-up so Phase 90's new `linkedChapterId`/`linkedBlockId` fields
+weren't write-only. `EntityListPanel.tsx` now shows a read-only "Linked from
+&lt;chapter&gt;" row with a jump action under any entity that has one, for every
+kind except Timeline Event (which already has its own manual chapter-assignment
+`Select` for the same field, and this is provenance display, not a hand-editable
+assignment, for the other six). Reuses `IdeaDetailDialog.tsx`'s exact "Jump to
+chapter" pattern (`setAppMode('editor')` + a `selectionStore` scroll request),
+preferring the precise `requestScrollToBlock` over `requestScrollToChapter` when
+`linkedBlockId` is also set — same "most precise id wins" rule `Idea.linkedBlockId`
+already established.
+
+Verification: `npx tsc -b --force` clean. `oxlint` still bus-errors (pre-existing).
+Not live-verified — same push limitation.
+
 ## Recommended next task
-Push Phases 85-90, then live-verify in Chrome: confirm the Notes badge no longer
-clips at a page's top edge (Phase 89), and click through the new selection-to-
-Develop menu end to end — select a name, add as Character, confirm it appears in
-Develop's Character list with the capture working from both a plain read (no edit
-mode) and mid-edit selection. Also confirm `LazySpread`'s virtualisation doesn't
-leave a stale `SelectionDevelopMenu` reacting after its page unmounts. After that,
-show "linked from Chapter X" on entities created via Phase 90 in
-`EntityListPanel.tsx`. Scope the Pinterest/moodboard idea properly before building
-it — needs a real design pass (where do images live: a new field on existing
-Ideas, a new Layer 0 kind, or a dedicated board view over References/Illustration
-Briefs?) rather than bolting a grid onto the current list UI. Also still
-outstanding from Phase 82: putting Milestone 1 in front of two or three first-time
-authors and watching their reaction, per the spec's own "how we'll know it worked"
-section — that reaction, not more building, should decide what actually gets built
-next between Idea System Milestone 2 (mind-map view) and the rest of the book graph
-(Milestone 3 — Phase 90 just cleared its data-model prerequisite; the graph UI
-itself is still unbuilt). Phase B's remaining item: real (dictionary-backed)
-spell-check (flagged 2026-08-01). Phase F still has two deliberately-deferred items
-(`ApiKeyProvider`; a thesaurus/synonym lookup), plus the Develop nav "Tools" section
-cleanup discussed but not built in Phase 83.
+Push Phases 85-91, then live-verify in Chrome: confirm the Notes badge no longer
+clips at a page's top edge (Phase 89), click through the selection-to-Develop menu
+end to end (select a name, add as Character, confirm it appears in Develop's
+Character list, working from both a plain read and mid-edit selection), and click
+"Linked from Chapter X" → confirm it switches to Write mode and scrolls to the
+right paragraph (Phase 91). Also confirm `LazySpread`'s virtualisation doesn't
+leave a stale `SelectionDevelopMenu` reacting after its page unmounts. Scope the
+Pinterest/moodboard idea properly before building it — needs a real design pass
+(where do images live: a new field on existing Ideas, a new Layer 0 kind, or a
+dedicated board view over References/Illustration Briefs?) rather than bolting a
+grid onto the current list UI. Also still outstanding from Phase 82: putting
+Milestone 1 in front of two or three first-time authors and watching their
+reaction, per the spec's own "how we'll know it worked" section — that reaction,
+not more building, should decide what actually gets built next between Idea System
+Milestone 2 (mind-map view) and the rest of the book graph (Milestone 3 — Phase 90
+cleared its data-model prerequisite; the graph UI itself is still unbuilt). Phase
+B's remaining item: real (dictionary-backed) spell-check (flagged 2026-08-01).
+Phase F still has two deliberately-deferred items (`ApiKeyProvider`; a thesaurus/
+synonym lookup), plus the Develop nav "Tools" section cleanup discussed but not
+built in Phase 83.

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowRight, ChevronDown, ChevronUp, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { EmptyState } from '@/components/common/EmptyState'
 import { useLayer0Store } from '@/store/layer0Store'
 import { useContentStore } from '@/store/contentStore'
+import { useSelectionStore } from '@/store/selectionStore'
+import { useUiStore } from '@/store/uiStore'
 import {
   addLayer0EntityWithHistory,
   deleteLayer0EntityWithHistory,
@@ -62,6 +64,9 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
   // read-only cross-layer reference `IdeaDetailDialog.tsx`'s "Jump to
   // chapter" already relies on, never a write.
   const chapters = useContentStore((s) => s.getManuscript(projectId))?.chapters ?? []
+  const requestScrollToBlock = useSelectionStore((s) => s.requestScrollToBlock)
+  const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
+  const setAppMode = useUiStore((s) => s.setAppMode)
 
   // See `EntityRecord`'s doc comment for why this cast is the one
   // deliberately loosely-typed read in an otherwise fully-typed store.
@@ -137,6 +142,21 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
     deleteLayer0EntityWithHistory(projectId, collection, id, `Delete ${singularLower}`)
   }
 
+  /** Jumps to wherever an entity was captured from (Phase 90's selection-to-
+   * Develop capture) — prefers the exact paragraph (`linkedBlockId`) over
+   * just the chapter when both are set, same "most precise id wins" idea
+   * `Idea.linkedBlockId`'s own doc comment already establishes. Mirrors
+   * `IdeaDetailDialog.tsx`'s "Jump to chapter" mode-switch + scroll-request
+   * pattern exactly. */
+  function jumpToSource(entity: EntityRecord) {
+    const chapterId = entity.linkedChapterId as string | undefined
+    if (!chapterId) return
+    setAppMode('editor')
+    const blockId = entity.linkedBlockId as string | undefined
+    if (blockId) requestScrollToBlock(chapterId, blockId)
+    else requestScrollToChapter(chapterId)
+  }
+
   return (
     <div className="flex flex-col gap-4 p-6">
       <div className="flex items-center justify-between gap-4">
@@ -204,6 +224,23 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
                       </SelectContent>
                     </Select>
                   </div>
+                )}
+                {kind !== 'timelineEvent' && !!entity.linkedChapterId && (
+                  // Read-only provenance, not an editable assignment like
+                  // Timeline Event's Select above — this is only ever set
+                  // automatically by Phase 90's selection-to-Develop capture,
+                  // never something a user picks by hand for these six kinds.
+                  <button
+                    type="button"
+                    className="mt-1.5 flex items-center gap-1 text-xs text-text-muted hover:text-[var(--color-accent)]"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      jumpToSource(entity)
+                    }}
+                  >
+                    <ArrowRight className="size-3" />
+                    Linked from {chapters.find((c) => c.id === entity.linkedChapterId)?.title || 'a chapter'}
+                  </button>
                 )}
               </div>
               <div className="flex shrink-0 items-center gap-1">
