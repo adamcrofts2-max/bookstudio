@@ -6370,28 +6370,182 @@ pass once live: does a dragged node feel like it's really under the cursor
 at different zoom levels, does releasing outside the canvas behave
 sensibly, does "Reset layout" clear things as expected.
 
+## Phase 99 — Book Graph: labeled relationships + central Book hub, Ideas Map consolidation, Toolbar/Inspector overlap fix (2026-08-02)
+
+Four fixes/features from one round of user feedback after Phase 98 landed
+("the map view mode still only shows orange circles and no way to drag and
+connect intuitively... in the center should be the book? How is this
+different from book graph and are both needed?... the right sidebar, hide
+inspector and keyboard shortcuts overlap it").
+
+**Root cause of "still orange circles, no drag"**: the user was looking at
+the *old* Ideas-only "Map" view (`IdeaMindMapView.tsx`, Phase 94) inside the
+Ideas List/Board/Map toggle — a completely different component from the new
+Book Graph (Phase 97/98), which already has icons and drag. Both existed
+side by side, which is exactly the "are both needed?" confusion. Answer: no.
+Removed Map from `IdeaInboxPanel.tsx`'s toggle (now just List/Board) and
+replaced it with an "Open Book Graph" text button that switches
+`PlanningShell`'s nav — Book Graph already shows every Idea, with real
+icons, drag, and (now) relationship edges, so the old Map was a strictly
+worse duplicate. `IdeaMindMapView.tsx` is renamed to `.tsx.deleted` (this
+sandbox's FUSE mount rejects a real `unlink`/`rm`, same constraint noted for
+git's lock files all session — renaming out of the `.tsx` extension removes
+it from the TypeScript/Vite build the same as a real delete would).
+
+**Labeled relationships** (`types/layer0.ts`): added `Layer0Relationship
+{ id, aId, bId, label, createdAt, updatedAt }` and a `relationships:
+Layer0Relationship[]` collection on `Layer0Bible` — deliberately cross-kind
+(either id can belong to any Layer 0 entity or an Idea), not scoped to
+Character-only, since a Character-to-Location relationship ("childhood
+home") is just as real as Character-to-Character ("mother/daughter", the
+user's own example). Reuses `layer0Store.ts`'s existing generic
+`addEntity`/`deleteEntity` and `editorActions.ts`'s
+`addLayer0EntityWithHistory`/`deleteLayer0EntityWithHistory` as-is — zero new
+store code, since `Layer0Relationship extends BaseLayer0Entity` is all that
+infrastructure needs. Existing projects' persisted bibles won't have this
+collection; defended in two places — `layer0Store.ts`'s `asEntities` helper
+now defaults a missing collection to `[]` instead of spreading `undefined`,
+and `getBible` backfills a missing `relationships` field on read (same
+object reference when already present, so no extra re-renders in the common
+case).
+
+New `Layer0RelationshipsSection.tsx` — a "Relationships" block inside
+`EntityListPanel.tsx`'s edit dialog (any of the eight kinds, once the entity
+has a real id, i.e. not while composing a brand-new one): lists existing
+relationships with a remove button, and an add control (a `Select` built
+from every entity + idea in the project, plus a free-text label input like
+"mother / daughter").
+
+**Central Book hub** (`BookGraphView.tsx`, user: "in the center should be
+the book?"): a synthetic `kind: 'book'` node (id `__book__`, never a real
+entity/chapter id), labeled with the project's own title, permanently pinned
+at the graph's origin — no drag handlers attached at all, so it can never be
+moved, unlike every other node. Every chapter gets an edge straight to it
+(the "spine"), so the whole manuscript visibly radiates from one center
+instead of chapters floating as their own disconnected cluster. New `Book`
+icon (closed book) from lucide-react, deliberately different from
+`BookOpen` (chapters) since they sit right next to each other.
+
+**Relationship edges**: `GraphEdge` gained an optional `label`; edges built
+from `bible.relationships` carry their label through to render as a small
+pill (`foreignObject` + centered text) at the edge's midpoint, dashed and in
+`--color-text-primary` rather than the accent every structural edge uses —
+visually a different *kind* of line ("the author said these two are
+connected, and here's how") from an ordinary chapter-link edge. The book's
+own spine edges render thicker/more opaque than a regular structural edge,
+same accent hue, no new colour invented.
+
+**Toolbar/Inspector overlap fix** (`Toolbar.tsx`): root cause was the same
+family of bug as Phase 98's Sidebar fix — the header had no `overflow-
+hidden`, and its fixed-width right-hand button group (Undo/Redo through
+Hide Inspector/Keyboard shortcuts) had nothing stopping it from painting
+past the header's own right edge once the row ran out of room, which reads
+as "these buttons overlap the Inspector column" since that column sits
+directly to the right. Added `overflow-hidden` to the header and an
+explicit `shrink-0` on the button group; doesn't change anything in the
+common case, only stops the crowded case from visually escaping into
+Inspector.
+
+**Concept mockup**: before implementing, showed the user an SVG mockup of
+the target design (hub-and-spoke, book center, chapter spine, icon nodes,
+a labeled "mother / daughter" relationship edge, a legend) via the
+visualize tool, then built to match it.
+
+Verification: `npx tsc -b --force` clean (had to also thread the new
+`onOpenBookGraph` prop through `MobileIdeasView.tsx`, the one other caller
+of `IdeaInboxPanel` — mobile's Book Graph button drops out to Develop mode
+via `setAppMode('planning')`, since Develop itself isn't mobile-optimised
+yet). None of this is pushed or hand-tested against a real running build —
+same standing caveat as every phase this session.
+
+## Phase 100 — Mobile editability: chapter management, block reorder/delete, photo insertion, undo (2026-08-02)
+
+Direct response to "it should feel like a mini version of book studio on the
+go... still being able to edit content and make a book whilst looking great
+on a mobile." Phase 95/96 gave mobile a way to *view and tweak* an existing
+manuscript's text; this phase closes the gap toward actually *building* a
+book from mobile, without pulling in anything print/layout-precision-related
+that a touch screen genuinely can't do well.
+
+**`MobileWriteView.tsx`**:
+- Chapters can now be created, renamed, and deleted from the chapter-switcher
+  sheet (previously switch-only) — `addChapterWithHistory`,
+  `renameChapterWithHistory`, `deleteChapterWithHistory`, reused verbatim
+  from `editorActions.ts`, same as desktop's `Sidebar.tsx`. "New chapter"
+  drops straight into rename mode, matching desktop's own UX convention.
+- Every block gets a small, always-visible (not hover-only — there's no
+  hover on touch) "⋮" menu: Move up, Move down, Delete — through
+  `moveBlockWithHistory`/`deleteBlockWithHistory`, the exact same actions
+  desktop's block hover-toolbar uses. Rendered as a slim row above each
+  block's own content rather than an overlay on top of it, so it never
+  covers text or an image regardless of block type.
+- The "+" insert menu gained "Add photo" — opens the device's native photo
+  picker (`<input type="file" accept="image/*">`, no `capture` attribute, so
+  both camera and photo library are offered, not camera-only), imports via
+  `assetStore.importFiles` (identical to desktop's Sidebar Assets tab), and
+  inserts a plain `ImageBlock` — same shape `Page.tsx`'s desktop asset-drop
+  handler creates (`{ assetId, caption: undefined, rotation: 0,
+  widthPercent: 100 }`). This is a real, high-value mobile-specific
+  capability: a phone is most people's best camera, and reference photos/
+  illustration source images are a genuine on-the-go use case.
+
+**`MobileWorkspace.tsx`**: added an Undo button to the header (no Redo —
+one button keeps the already-cramped header from crowding further, and undo
+is the one that matters for "wrong button"). Necessary now that mobile has
+real destructive actions (delete block, delete chapter) it didn't have
+before this phase — matches `CLAUDE.md`'s "support undo and redo throughout"
+non-negotiable, same `historyStore` desktop's Toolbar already uses.
+
+**Deliberately still out of scope** (unchanged from Phase 95's original
+decision, and still the right line): no page-canvas/precision layout, no
+cover designer, no structural front/back-matter pages, no Develop mode
+beyond Ideas (+ the new "Open Book Graph" hop-out button). Editing an
+*existing* structured block (table/FAQ/list) or an existing image's focal
+point stays desktop-only. Those are real, larger scope — see
+`docs/AI_WORKSPACE_VISION.md`'s reasoning against mixing precision desktop
+tools into this shell.
+
+Verification: not yet run — this sandbox's Linux VM went down mid-session
+("VM service not running") right as this phase finished, so `npx tsc -b`
+hasn't confirmed clean yet. Every new call (`addChapterWithHistory`,
+`deleteBlockWithHistory`, `moveBlockWithHistory`, `renameChapterWithHistory`,
+`deleteChapterWithHistory`, `assetStore.importFiles`) is copied from an
+existing, already-typechecked call site elsewhere in this codebase (mostly
+`Sidebar.tsx`/`Page.tsx`), so the risk of a real type error is low, but this
+must be confirmed with a real `tsc -b --force` pass — and committed — the
+moment the sandbox is back, before anything else touches these files.
+
+## Product strategy research (2026-08-02, not a code phase)
+
+Separate, non-code deliverable requested directly by the user: deep market
+research across the writing/publishing/planning software market (Scrivener,
+Atticus, Reedsy Studio, Ulysses, Dabble, LivingWriter, Novlr, Vellum,
+InDesign, Affinity Publisher, Pressbooks, Milanote, Notion, Obsidian, plus
+story-bible tools Campfire/World Anvil and AI tools Sudowrite/NovelCrafter/
+Laterpress found along the way), synthesized into a product strategy —
+written to `docs/PRODUCT_STRATEGY_RESEARCH.md`. Core finding: every
+competitor researched picks one of "plan," "write," or "format/export" and
+stops; nobody unifies a story bible, manuscript, and print/EPUB output in
+one data model the way this codebase's own `Layer 0 → Content → Theme/
+Layout → Export` architecture already does. Full reasoning, per-product
+detail, and an honest "where competitors already win and can't realistically
+be beaten head-on" section live in that file — not duplicated here since it
+isn't a code change.
+
 ## Recommended next task
-Push everything from Phase 85 onward (13+ commits queued), then do one real Chrome
-pass (resized to a phone viewport, and ideally a real device) covering: the Notes
-badge no longer clipping at a page's top edge (Phase 89), the selection-to-Develop
-menu end to end (Phase 90), "Linked from Chapter X" jumping to the right paragraph
-(Phase 91), the Develop nav's new "Tools" label (Phase 92), the Ideas Board view
-with at least one image attached (Phase 93), the Map view (Phase 94) — pan/zoom
-feel, tag clustering, edges between related ideas — and Phase 95's whole mobile
-mode: does `MobileWorkspace` actually mount below 640px, does the chapter-switcher
-sheet open/close cleanly, does tapping a paragraph/heading actually enter edit mode
-and commit on blur, does the "+" menu insert correctly, and do List/Board/Map all
-still work as touch surfaces (Map's zoom is wheel-only today — pan via pointer
-events should work on touch, but pinch-zoom does not, a known gap, not yet fixed).
-Also confirm `loadAssets` being called from `Sidebar.tsx`, `IdeaInboxPanel.tsx`, and
-`IdeaDetailDialog.tsx` doesn't cause any duplicate-load weirdness. After that, real
-dictionary-backed spell-check and the thesaurus/synonym lookup are both blocked
-from this side — this sandbox has no npm registry access (confirmed via `npm view`,
-403 Forbidden), and both need a new bundled package. They're buildable, just not by
-me here; flagging that plainly rather than silently skipping them. Also still
-outstanding from Phase 82: putting the whole Idea System (and now mobile mode) in
-front of a few first-time authors and watching their reaction, per the spec's own
-"how we'll know it worked" section — that reaction should decide what the book
-graph (Milestone 3 — Phase 90 cleared its data-model prerequisite; the graph UI
-itself is still unbuilt) actually looks like, and whether mobile mode's scope
-boundary (no Develop categories beyond Ideas) holds up in practice.
+The moment this sandbox's Linux VM comes back: run `npx tsc -b --force` on
+Phase 100's mobile changes (unverified due to the VM outage above), fix
+anything it surfaces, then commit both Phase 100 and the product-strategy
+doc. After that, push everything queued from Phase 85 onward (17+ commits),
+then one real Chrome pass — resized to a phone viewport and ideally a real
+device — covering every mobile claim made across Phases 95-100: does the
+chapter switcher's new add/rename/delete actually work by touch, does "Add
+photo" actually trigger the OS picker and insert correctly, does the new
+per-block "⋮" menu behave (move up/down disabled correctly at the ends,
+delete + undo round-trips cleanly), and does the header's new Undo button
+reach across into Ideas too (it should — `historyStore` is project-scoped,
+not view-scoped). Also still outstanding: everything listed in Phase 99's
+own unverified list (Book Graph drag/pin/relationship-edge feel, the
+Toolbar/Sidebar overflow fixes). Real dictionary-backed spell-check and
+thesaurus/synonym lookup remain blocked — no npm registry access in this
+sandbox, unchanged from every earlier phase.

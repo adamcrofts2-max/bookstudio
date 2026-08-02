@@ -18,6 +18,9 @@ import type { BookForm } from '@/types'
 interface BookGraphViewProps {
   projectId: string
   bookForm?: BookForm
+  /** The project's own title — used as the label on the central "Book" hub
+   * node (Phase 99, user 2026-08-02: "in the center should be the book?"). */
+  bookTitle: string
   /** Clicking a Layer 0 entity node switches `PlanningShell`'s nav to that
    * entity's own list — the graph doesn't grow its own inline edit surface;
    * "find and edit it properly" is one click away in the place that already
@@ -34,7 +37,19 @@ interface GraphNode {
 interface GraphEdge {
   a: string
   b: string
+  /** Present only for edges sourced from `Layer0Relationship` — rendered as
+   * a small captioned pill at the edge's midpoint (e.g. "mother / daughter",
+   * user 2026-08-02). Every other edge kind (chapter links, related ideas,
+   * promotions, the book's own spine to each chapter) stays a plain
+   * unlabeled line, exactly as before. */
+  label?: string
 }
+
+/** Sentinel id for the synthetic "Book" hub node — deliberately not a real
+ * entity/chapter id (those all come from `generateId(prefix)`, which always
+ * contains an underscore-joined prefix + random suffix and never produces
+ * this exact literal), so it can never collide with a real node. */
+const BOOK_NODE_ID = '__book__'
 
 interface Point {
   x: number
@@ -61,6 +76,7 @@ const GRAPH_KIND_ORDER: GraphNodeKind[] = ['chapter', ...LAYER0_ENTITY_KINDS, 'i
  * potential drag. */
 const DRAG_THRESHOLD_PX = 4
 
+const BOOK_RADIUS = 40
 const CHAPTER_RADIUS = 28
 const NODE_RADIUS = 22
 
@@ -223,7 +239,7 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  * discipline. Edges are real relationships only: an entity/idea's
  * `linkedChapterId`, an idea's `relatedIdeaIds`, and an idea's `promotedTo`.
  */
-export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphViewProps) {
+export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: BookGraphViewProps) {
   const chapters = useContentStore((s) => s.getManuscript(projectId))?.chapters ?? []
   const bible = useLayer0Store((s) => s.getBible(projectId))
   const ideas = useIdeaStore((s) => s.byProject[projectId]) ?? EMPTY_IDEAS
@@ -242,10 +258,22 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
     const nodeIds = new Set<string>()
     const count: Partial<Record<GraphNodeKind, number>> = {}
 
+    // The book itself — always present, always the first node, so every
+    // chapter below can spoke off it. Not counted in `countByKind`/
+    // `GRAPH_KIND_ORDER`'s filter chips: it's not a toggleable category,
+    // it's the one fixed anchor everything else is drawn relative to.
+    nodes.push({ id: BOOK_NODE_ID, kind: 'book', label: bookTitle || 'Untitled book' })
+    nodeIds.add(BOOK_NODE_ID)
+
     for (const chapter of chapters) {
       nodes.push({ id: chapter.id, kind: 'chapter', label: chapter.title || 'Untitled chapter' })
       nodeIds.add(chapter.id)
       count.chapter = (count.chapter ?? 0) + 1
+      // The spine: every chapter connects straight to the book, so the
+      // whole manuscript radiates from one visible center (user, 2026-08-02:
+      // "in the center should be the book?") instead of chapters floating
+      // as their own disconnected cluster.
+      edges.push({ a: BOOK_NODE_ID, b: chapter.id })
     }
 
     for (const kind of LAYER0_ENTITY_KINDS) {
@@ -277,16 +305,27 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
       }
     }
 
+    // Labeled relationship edges (Phase 99, user 2026-08-02: "if the
+    // characters are related it could show what that is with the line
+    // connection eg daughter/mother") — the one edge kind that carries a
+    // caption. Written from `Layer0RelationshipsSection.tsx`'s add control,
+    // read here exactly as stored: cross-kind by design, so a Character-to-
+    // Location relationship ("childhood home") draws the same way a
+    // Character-to-Character one does.
+    for (const rel of bible.relationships ?? []) {
+      edges.push({ a: rel.aId, b: rel.bId, label: rel.label })
+    }
+
     // Second pass for chapter links above already required both ends
-    // present via `linkedChapterId`/`nodeIds.has` checks — `promotedTo` and
-    // `relatedIdeaIds` are added optimistically above since their target may
-    // not have been visited yet in single-pass order; drop any edge whose
-    // far end never actually turned up as a node (e.g. a promoted entity
-    // since deleted).
+    // present via `linkedChapterId`/`nodeIds.has` checks — `promotedTo`,
+    // `relatedIdeaIds`, and `relationships` are all added optimistically
+    // above since their target may not have been visited yet in single-pass
+    // order (or may since have been deleted); drop any edge whose far end
+    // never actually turned up as a node.
     const validEdges = edges.filter((e) => nodeIds.has(e.a) && nodeIds.has(e.b))
 
     return { allNodes: nodes, allEdges: validEdges, countByKind: count }
-  }, [chapters, bible, ideas])
+  }, [chapters, bible, ideas, bookTitle])
 
   const visibleNodes = useMemo(() => allNodes.filter((n) => !hiddenKinds.has(n.kind)), [allNodes, hiddenKinds])
   const visibleIds = useMemo(() => new Set(visibleNodes.map((n) => n.id)), [visibleNodes])
@@ -298,6 +337,13 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
       const saved = savedPositions[node.id]
       if (saved) map.set(node.id, saved)
     }
+    // The book node is permanently pinned at the origin — never written to
+    // `graphLayoutStore` (it has no drag handlers at all, see the node
+    // render branch below), so this is the only place its position is ever
+    // set. Every chapter spokes off `BOOK_NODE_ID` (see the edge-building
+    // memo above), so pinning the book at (0,0) is what actually keeps it
+    // visually central rather than just "a node with more edges."
+    if (visibleNodes.some((n) => n.id === BOOK_NODE_ID)) map.set(BOOK_NODE_ID, { x: 0, y: 0 })
     return map
   }, [visibleNodes, savedPositions])
 
@@ -423,6 +469,12 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
   }
 
   function handleSelect(node: GraphNode) {
+    // The book node has no edit surface of its own (it's a synthetic
+    // stand-in for the whole project, not a Layer 0 entity or a chapter) —
+    // it also has no drag handlers attached below, so this branch is mostly
+    // defensive, but keeps `onFocusKind`'s `Layer0EntityKind`-only signature
+    // honest rather than ever being called with `'book'`.
+    if (node.kind === 'book') return
     if (node.kind === 'chapter') {
       setAppMode('editor')
       requestScrollToChapter(node.id)
@@ -438,6 +490,7 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
   function kindLabel(kind: GraphNodeKind): string {
     if (kind === 'chapter') return 'Chapters'
     if (kind === 'idea') return 'Ideas'
+    if (kind === 'book') return 'Book'
     return getLayer0KindLabel(kind, bookForm).plural
   }
 
@@ -496,22 +549,49 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
           onPointerUp={onBackgroundPointerUp}
           onPointerLeave={onBackgroundPointerUp}
         >
-          {visibleEdges.map(({ a, b }) => {
+          {visibleEdges.map(({ a, b, label }) => {
             const pa = a === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(a)
             const pb = b === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(b)
             if (!pa || !pb) return null
             const highlighted = hoveredId === a || hoveredId === b
+            // The book's own spine to each chapter reads as the manuscript's
+            // backbone — thicker and more opaque than an ordinary structural
+            // edge, but still the same accent colour (not a new hue) per
+            // `CLAUDE.md`'s design-token discipline.
+            const isSpine = a === BOOK_NODE_ID || b === BOOK_NODE_ID
+            // A labeled relationship edge (Phase 99) gets its own colour —
+            // `--color-text-primary` instead of the accent every structural
+            // edge uses — and a dash pattern, so "the author explicitly
+            // said these two are connected, and here's how" reads as a
+            // different kind of line from "this entity happens to be linked
+            // to this chapter."
+            const isRelationship = !!label
             return (
-              <line
-                key={`${a}-${b}`}
-                x1={pa.x}
-                y1={pa.y}
-                x2={pb.x}
-                y2={pb.y}
-                stroke="var(--color-accent)"
-                strokeWidth={highlighted ? 2 : 1}
-                strokeOpacity={highlighted ? 0.7 : 0.28}
-              />
+              <g key={`${a}-${b}-${label ?? ''}`}>
+                <line
+                  x1={pa.x}
+                  y1={pa.y}
+                  x2={pb.x}
+                  y2={pb.y}
+                  stroke={isRelationship ? 'var(--color-text-primary)' : 'var(--color-accent)'}
+                  strokeWidth={isSpine ? 3 : isRelationship ? 1.6 : highlighted ? 2 : 1}
+                  strokeOpacity={isRelationship ? 0.75 : isSpine ? 0.55 : highlighted ? 0.7 : 0.28}
+                  strokeDasharray={isRelationship ? '4,3' : undefined}
+                />
+                {label && (
+                  <foreignObject
+                    x={(pa.x + pb.x) / 2 - 55}
+                    y={(pa.y + pb.y) / 2 - 9}
+                    width={110}
+                    height={18}
+                    style={{ pointerEvents: 'none' }}
+                  >
+                    <div className="mx-auto flex h-[18px] w-fit max-w-full items-center justify-center truncate rounded-full border border-border bg-panel px-2 text-center text-[9px] leading-none text-text-primary shadow-[var(--shadow-sm)]">
+                      {label}
+                    </div>
+                  </foreignObject>
+                )}
+              </g>
             )
           })}
 
@@ -519,36 +599,53 @@ export function BookGraphView({ projectId, bookForm, onFocusKind }: BookGraphVie
             const p = node.id === draggingNodeId && dragPosition ? dragPosition : layout.positions.get(node.id)
             if (!p) return null
             const Icon = GRAPH_NODE_ICONS[node.kind]
+            const isBook = node.kind === 'book'
             const isChapter = node.kind === 'chapter'
             const isHovered = hoveredId === node.id
-            const isPinned = pinnedPositions.has(node.id)
-            const r = isChapter ? CHAPTER_RADIUS : NODE_RADIUS
-            const iconSize = isChapter ? 24 : 20
+            const isPinned = pinnedPositions.has(node.id) && !isBook
+            const r = isBook ? BOOK_RADIUS : isChapter ? CHAPTER_RADIUS : NODE_RADIUS
+            const iconSize = isBook ? 28 : isChapter ? 24 : 20
+            // The book node is the one fixed anchor (see `pinnedPositions`'s
+            // doc comment above) — no pointer handlers at all, so it can
+            // never be dragged, and no grab cursor, so it doesn't visually
+            // promise an interaction it doesn't have.
+            const dragHandlers = isBook
+              ? {}
+              : {
+                  onPointerDown: (e: React.PointerEvent<SVGGElement>) => onNodePointerDown(e, node),
+                  onPointerMove: onNodePointerMove,
+                  onPointerUp: (e: React.PointerEvent<SVGGElement>) => onNodePointerUp(e, node),
+                }
             return (
               <g
                 key={node.id}
                 transform={`translate(${p.x} ${p.y})`}
-                onPointerDown={(e) => onNodePointerDown(e, node)}
-                onPointerMove={onNodePointerMove}
-                onPointerUp={(e) => onNodePointerUp(e, node)}
+                {...dragHandlers}
                 onMouseEnter={() => setHoveredId(node.id)}
                 onMouseLeave={() => setHoveredId((v) => (v === node.id ? null : v))}
-                className={node.id === draggingNodeId ? 'cursor-grabbing' : 'cursor-grab'}
+                className={isBook ? undefined : node.id === draggingNodeId ? 'cursor-grabbing' : 'cursor-grab'}
               >
                 <circle
                   r={isHovered || node.id === draggingNodeId ? r + 3 : r}
-                  fill={isChapter ? 'var(--color-accent)' : 'var(--color-panel)'}
-                  fillOpacity={isChapter ? 0.14 : 1}
-                  stroke={isChapter ? 'var(--color-accent)' : 'var(--color-border)'}
-                  strokeWidth={isChapter ? 2.5 : isPinned ? 2 : 1.5}
-                  strokeDasharray={isPinned && !isChapter ? '3,2' : undefined}
+                  fill={isBook || isChapter ? 'var(--color-accent)' : 'var(--color-panel)'}
+                  fillOpacity={isBook ? 0.18 : isChapter ? 0.14 : 1}
+                  stroke={isBook || isChapter ? 'var(--color-accent)' : 'var(--color-border)'}
+                  strokeWidth={isBook ? 3 : isChapter ? 2.5 : isPinned ? 2 : 1.5}
+                  strokeDasharray={isPinned ? '3,2' : undefined}
                   className="transition-[r] duration-150"
                 />
                 <foreignObject x={-iconSize / 2} y={-iconSize / 2} width={iconSize} height={iconSize} style={{ pointerEvents: 'none' }}>
-                  <Icon className="size-full" style={{ color: isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />
+                  <Icon className="size-full" style={{ color: isBook || isChapter ? 'var(--color-accent)' : 'var(--color-text-secondary)' }} />
                 </foreignObject>
-                <foreignObject x={-60} y={r + 6} width={120} height={34} style={{ pointerEvents: 'none' }}>
-                  <div className="line-clamp-2 text-center text-[10px] leading-tight text-text-secondary">{node.label}</div>
+                <foreignObject x={-70} y={r + 6} width={140} height={34} style={{ pointerEvents: 'none' }}>
+                  <div
+                    className={cn(
+                      'line-clamp-2 text-center leading-tight',
+                      isBook ? 'text-[11px] font-semibold text-text-primary' : 'text-[10px] text-text-secondary',
+                    )}
+                  >
+                    {node.label}
+                  </div>
                 </foreignObject>
               </g>
             )

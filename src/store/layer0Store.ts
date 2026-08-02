@@ -20,6 +20,7 @@ export const EMPTY_LAYER0_BIBLE: Layer0Bible = {
   illustrationBriefs: [],
   styleRules: [],
   researchNotes: [],
+  relationships: [],
 }
 
 interface Layer0StoreState {
@@ -77,7 +78,15 @@ type Layer0Store = Layer0StoreState & Layer0StoreActions
  * stays fully generic and type-safe for callers; only this internal helper
  * needs to assert what's already true by construction. */
 function asEntities(collection: unknown): BaseLayer0Entity[] {
-  return collection as BaseLayer0Entity[]
+  // Defensive `?? []`, not just a cast: a project bible persisted before a
+  // given collection existed (this store predates `relationships`, Phase 99)
+  // has that key simply absent from its stored object — `persist` doesn't
+  // run a migration, it just rehydrates whatever shape was actually saved.
+  // Every existing collection is always populated by the time a project is
+  // created post-Phase-F, so this is a no-op for them; it's what stops
+  // `addEntity`/`deleteEntity` on a brand-new collection from throwing
+  // "cannot spread undefined" the first time it's touched on an old project.
+  return (collection as BaseLayer0Entity[] | undefined) ?? []
 }
 
 export const useLayer0Store = create<Layer0Store>()(
@@ -85,7 +94,17 @@ export const useLayer0Store = create<Layer0Store>()(
     (set, get) => ({
       byProject: {},
 
-      getBible: (projectId) => get().byProject[projectId] ?? EMPTY_LAYER0_BIBLE,
+      getBible: (projectId) => {
+        const bible = get().byProject[projectId] ?? EMPTY_LAYER0_BIBLE
+        // Same missing-collection defence as `asEntities` below, but for
+        // direct reads (`BookGraphView.tsx`/`EntityListPanel.tsx` read
+        // `.relationships` straight off this, never through `addEntity`) —
+        // returns the same object reference whenever the field is already
+        // present, so this never causes an extra re-render for the common
+        // case (every project created since Phase 99, or already touched
+        // once this session).
+        return bible.relationships ? bible : { ...bible, relationships: [] }
+      },
 
       addEntity: (projectId, collection, entity) => {
         set((state) => {

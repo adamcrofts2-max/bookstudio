@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Lightbulb, Moon, PenLine, Sun } from 'lucide-react'
+import { ArrowLeft, Lightbulb, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
 import { useTheme } from '@/hooks/useTheme'
+import { useHistoryStore } from '@/store/historyStore'
 import { MobileWriteView } from '@/layout/mobile/MobileWriteView'
 import { MobileIdeasView } from '@/layout/mobile/MobileIdeasView'
 import type { Project } from '@/types'
@@ -38,26 +39,42 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
   const navigate = useNavigate()
   const { resolved, setAppearance } = useTheme()
   const [tab, setTab] = useState<MobileTab>('write')
+  const canUndo = useHistoryStore((s) => s.canUndo(project.id))
+  const undo = useHistoryStore((s) => s.undo)
 
   useAutosaveSnapshots(project.id)
 
   return (
     <div className="flex h-dvh w-full flex-col bg-background">
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-panel px-3 py-2.5">
+      <header className="flex shrink-0 items-center justify-between gap-1 border-b border-border bg-panel px-2 py-2.5">
         <button
           type="button"
           onClick={() => navigate('/')}
           aria-label="Back to projects"
-          className="flex size-9 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-hover"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-hover"
         >
           <ArrowLeft className="size-4" />
         </button>
         <p className="min-w-0 flex-1 truncate text-center text-[15px] font-semibold text-text-primary">{project.name}</p>
+        {/* Undo (Phase 100, 2026-08-02) — mobile now has real destructive
+           actions (delete block, delete chapter), so it needs the same
+           safety net desktop's Toolbar always had; no Redo here — one
+           button, not two, keeps this cramped header from getting crowded,
+           and undo is the one that matters most for "oops, wrong button." */}
+        <button
+          type="button"
+          onClick={() => undo(project.id)}
+          disabled={!canUndo}
+          aria-label="Undo"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-hover disabled:pointer-events-none disabled:opacity-30"
+        >
+          <Undo2 className="size-4" />
+        </button>
         <button
           type="button"
           onClick={() => setAppearance(resolved === 'dark' ? 'light' : 'dark')}
           aria-label="Toggle theme"
-          className="flex size-9 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-hover"
+          className="flex size-9 shrink-0 items-center justify-center rounded-full text-text-secondary transition-colors duration-150 hover:bg-hover"
         >
           {resolved === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
         </button>

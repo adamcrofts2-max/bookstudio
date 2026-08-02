@@ -20,6 +20,7 @@ import { getLayer0KindLabel, LAYER0_KIND_TO_COLLECTION, type BaseLayer0Entity, t
 import { GRAPH_NODE_ICONS } from '@/layout/planning/graphIcons'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
 import { Layer0FieldsForm } from '@/layout/planning/Layer0FieldsForm'
+import { Layer0RelationshipsSection } from '@/layout/planning/Layer0RelationshipsSection'
 import type { BookForm } from '@/types'
 
 interface EntityListPanelProps {
@@ -297,6 +298,13 @@ export function EntityListPanel({ projectId, kind, bookForm }: EntityListPanelPr
             onChange={(key, value) => setDraft((d) => ({ ...d, [key]: value }))}
             idPrefix="layer0-field"
           />
+          {/* Only once this entity actually has a real id — a brand-new,
+             not-yet-saved entity (`NEW_ENTITY_SENTINEL`) has nothing for a
+             relationship to attach to yet. Save it first, then reopen to
+             connect it to other elements. */}
+          {editingId && editingId !== NEW_ENTITY_SENTINEL && (
+            <Layer0RelationshipsSection projectId={projectId} entityId={editingId} bookForm={bookForm} />
+          )}
           <DialogFooter>
             <Button type="button" variant="secondary" onClick={close}>
               Cancel

@@ -838,6 +838,24 @@ daily use of everything built so far.)*
       wider than 264px and pushing the row's own icons and the section's "+"
       button out of view. Root-caused via live Chrome reproduction (missing
       `min-w-0` on the label's flex-item span) and fixed with one class.
+- [x] Labeled relationships between any two Layer 0 entities/Ideas (Phase 99,
+      2026-08-02, user: "if the characters are related it could show what
+      that is with the line connection eg daughter/mother"). New
+      `Layer0Relationship` collection + `Layer0RelationshipsSection.tsx` add/
+      remove UI in the entity edit dialog; Book Graph draws each as a dashed,
+      captioned line at the edge's midpoint.
+- [x] Central "Book" hub node in the Book Graph (Phase 99, 2026-08-02, user:
+      "in the center should be the book?") — a permanently-pinned, non-
+      draggable node labeled with the project title, with every chapter
+      spoking off it as the spine.
+- [x] Consolidated the Ideas-only "Map" view into Book Graph (Phase 99,
+      2026-08-02, user: "How is this different from book graph and are both
+      needed?") — removed `IdeaMindMapView.tsx` and its List/Board/Map
+      toggle entry, replaced with an "Open Book Graph" button.
+- [x] Fix Toolbar buttons (Hide Inspector/Keyboard shortcuts) visually
+      bleeding onto the Inspector column (Phase 99, 2026-08-02) — same
+      missing-`overflow-hidden` family of bug as the Structure-tab fix,
+      one column over.
 - [x] Visual moodboard / Pinterest-style board for example ideas and reference
       images (Phase 93, 2026-08-02) — resolved the design question with a new
       optional `Idea.imageAssetIds?: string[]` (reusing the existing
@@ -939,16 +957,35 @@ a gap to close later.)*
       real scope, deliberately deferred rather than half-built (Phase 95).
       "+" adds a paragraph or heading at the end of the chapter.
 - [x] `MobileIdeasView`: thin wrapper around the existing `IdeaInboxPanel`
-      (List/Board/Map, Phases 78-94) — no fork needed, it was already
+      (List/Board, Map removed Phase 99) — no fork needed, it was already
       reasonably narrow-friendly (Phase 95).
+- [x] Mobile chapter management: add/rename/delete from the chapter-switcher
+      sheet, not just switch-between (Phase 100, 2026-08-02).
+- [x] Mobile block reorder + delete: always-visible per-block "⋮" menu
+      (Move up/down, Delete), same history-wrapped actions desktop's block
+      hover-toolbar uses (Phase 100).
+- [x] Mobile photo insertion: "+" menu's "Add photo" opens the device's
+      native picker and inserts a real `ImageBlock` via `assetStore
+      .importFiles` (Phase 100, user: "it should feel like a mini version of
+      book studio on the go... still being able to edit content and make a
+      book").
+- [x] Mobile Undo button in `MobileWorkspace`'s header (Phase 100) — needed
+      once mobile gained real destructive actions (delete block/chapter).
 - [ ] Not yet live-verified in Chrome (this sandbox can't push) — owed:
-      resize-triggered shell switch, chapter-switcher sheet, inline edit of
-      each of the six text-bearing block types, autosave firing from mobile
-      edits, and Ideas List/Board/Map on a narrow viewport. See STATUS.md
-      Phase 95's verification caveat.
+      resize-triggered shell switch, chapter-switcher sheet (including the
+      new add/rename/delete), inline edit of each of the six text-bearing
+      block types, the new per-block "⋮" menu, "Add photo" actually
+      triggering the OS picker, the new header Undo button, autosave firing
+      from mobile edits, and Ideas List/Board on a narrow viewport. See
+      STATUS.md Phase 95/100's verification caveats — Phase 100 additionally
+      hasn't even had a local `tsc` pass yet due to a sandbox VM outage.
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
+- [ ] Mobile access to Develop mode beyond Ideas (Characters, Locations, Book
+      Graph, etc.) — today's "Open Book Graph" button drops out to the
+      desktop-shaped `PlanningShell`, which isn't mobile-optimised; a real
+      mobile Develop experience is unscoped future work, not started.
 - [ ] Mobile image/gallery block insertion (asset picker UI) — desktop-only
       today, same underlying gap `defaultContent.ts` already documents for
       the desktop "+" inserter.

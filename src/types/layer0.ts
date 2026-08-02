@@ -179,10 +179,47 @@ export interface ResearchNote extends BaseLayer0Entity {
   linkedBlockId?: string
 }
 
+/** A named connection between any two Layer 0 entities (or Ideas) — "Elena
+ * is the mother of Mira", "The Lighthouse is Callan's home", etc. Deliberately
+ * NOT scoped to Character-to-Character only: the user asked for this against
+ * "the different elements of the book" broadly, and a book graph edge is
+ * just as meaningful between a Character and a Location. `label` is free
+ * text for the same reason `Character.role`/`StyleRule.rule` are — real
+ * relationships ("daughter", "rival", "childhood home", "mentor") don't sort
+ * into a fixed enum, and free text is still enough to render as an edge
+ * caption in `BookGraphView.tsx`.
+ *
+ * `aId`/`bId` reference ids from ANY collection (including `Idea.id`) — this
+ * type intentionally doesn't narrow which collection either side belongs to,
+ * since the whole point is cross-kind connections. Undirected in practice
+ * (the graph draws one line either way); `label` reads naturally from `aId`
+ * to `bId` when it's a directional relationship ("mother of"), same
+ * convention a family-tree tool would use.
+ *
+ * Reuses `layer0Store.ts`'s existing generic `addEntity`/`deleteEntity` +
+ * `editorActions.ts`'s `addLayer0EntityWithHistory`/
+ * `deleteLayer0EntityWithHistory` — extending `BaseLayer0Entity` is what
+ * makes that possible with zero new store code, the same "generic over
+ * `keyof Layer0Bible`" infrastructure every other collection already uses. */
+export interface Layer0Relationship extends BaseLayer0Entity {
+  aId: string
+  bId: string
+  label: string
+}
+
 /** One project's whole Layer 0 story bible — every entity collection,
  * keyed by kind. `layer0Store.ts` owns one of these per project; this is
  * also the exact shape a future project-file export/import round-trips
- * (see that store's own doc comment for what's deliberately deferred). */
+ * (see that store's own doc comment for what's deliberately deferred).
+ *
+ * `relationships` (Phase 99, user 2026-08-02: "if the characters are related
+ * it could show what that is with the line connection eg daughter/mother")
+ * is not one of the eight `Layer0EntityKind`s — it has no nav row, no
+ * `EntityListPanel` of its own, and isn't in `LAYER0_KIND_TO_COLLECTION` —
+ * it's a cross-cutting edge list `BookGraphView.tsx` reads directly and
+ * `EntityListPanel.tsx`'s edit dialog writes to via a small relationships
+ * section. Defaults to `[]` via `EMPTY_LAYER0_BIBLE`/`getBible` for any
+ * project bible persisted before this field existed. */
 export interface Layer0Bible {
   characters: Character[]
   locations: Location[]
@@ -192,6 +229,7 @@ export interface Layer0Bible {
   illustrationBriefs: IllustrationBrief[]
   styleRules: StyleRule[]
   researchNotes: ResearchNote[]
+  relationships: Layer0Relationship[]
 }
 
 /** Maps each `Layer0EntityKind` to its collection key on `Layer0Bible` —

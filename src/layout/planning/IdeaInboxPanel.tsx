@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LayoutGrid, Lightbulb, List, Network, Plus } from 'lucide-react'
+import { LayoutGrid, Lightbulb, List, Plus, Waypoints } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
@@ -10,10 +10,18 @@ import { useAssetStore } from '@/store/assetStore'
 import { addIdeaWithHistory } from '@/store/editorActions'
 import { IDEA_STATUSES, IDEA_STATUS_LABELS, type Idea, type IdeaStatus } from '@/types/idea'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
-import { IdeaMindMapView } from '@/layout/planning/IdeaMindMapView'
 
 interface IdeaInboxPanelProps {
   projectId: string
+  /** Switches `PlanningShell`'s nav to Book Graph — replaces the old
+   * Ideas-only "Map" view (Phase 94's `IdeaMindMapView.tsx`, removed Phase
+   * 99). User, 2026-08-02, on finding both views side by side: "How is this
+   * different from book graph and are both needed?" — no: Book Graph
+   * already shows every Idea (icon, draggable, real cross-kind edges) with
+   * everything else in the book, so a second, Ideas-only map with plain
+   * orange circles and no drag was a strictly worse duplicate, not a
+   * complementary view. This button is the replacement affordance. */
+  onOpenBookGraph: () => void
 }
 
 /** One status's dot colour — a quick visual scan cue in the inbox list,
@@ -44,21 +52,21 @@ const STATUS_DOT_CLASS: Record<IdeaStatus, string> = {
  * library — no new dependency, and this sandbox has no npm registry access
  * to add one even if it were worth it for what's still a fairly small grid.
  *
- * Phase 94 (Idea System Milestone 2) adds Map — see `IdeaMindMapView.tsx`
- * for the full design reasoning (why tags cluster spatially instead of
- * drawing a line per shared tag, why lines are reserved for manual
- * `relatedIdeaIds`, the hand-rolled force layout). All three views share
- * the same `visible` (status-filtered) idea list and the same
- * `IdeaDetailDialog` on click — one detail surface, three ways to browse.
- * List stays the default for anyone who never tags, links, or adds an
- * image to an Idea — Board and Map are both additive, never a replacement.
+ * Phase 94 (Idea System Milestone 2) added a third view, Map — since
+ * removed (Phase 99): Book Graph (`BookGraphView.tsx`) shows every Idea
+ * alongside chapters and every Layer 0 entity kind, with real icons,
+ * draggable positions, and labeled relationship edges Map never had, making
+ * a second Ideas-only map a strictly worse duplicate rather than a
+ * complementary view. List and Board share the same `visible` (status-
+ * filtered) idea list and the same `IdeaDetailDialog` on click; "Open Book
+ * Graph" next to the toggle is the one-click bridge to the richer view.
  */
-export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
+export function IdeaInboxPanel({ projectId, onOpenBookGraph }: IdeaInboxPanelProps) {
   const ideas = useIdeaStore((s) => s.byProject[projectId]) ?? EMPTY_IDEAS
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const [filter, setFilter] = useState<IdeaStatus | 'all'>('all')
-  const [view, setView] = useState<'list' | 'board' | 'map'>('list')
+  const [view, setView] = useState<'list' | 'board'>('list')
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
 
   // See `IdeaDetailDialog.tsx`'s identical effect for why this is needed
@@ -126,45 +134,43 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
               )
             })}
           </div>
-          {/* List/Board/Map toggle — a plain segmented row, not a dropdown,
-             since these are mutually-exclusive states someone will flip
-             between often. */}
-          <div className="flex shrink-0 items-center gap-0.5 rounded-[var(--radius-button)] border border-border p-0.5">
+          <div className="flex shrink-0 items-center gap-2">
+            {/* List/Board toggle — a plain segmented row, not a dropdown,
+               since these are mutually-exclusive states someone will flip
+               between often. */}
+            <div className="flex items-center gap-0.5 rounded-[var(--radius-button)] border border-border p-0.5">
+              <button
+                type="button"
+                onClick={() => setView('list')}
+                aria-label="List view"
+                title="List view"
+                className={cn(
+                  'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
+                  view === 'list' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
+                )}
+              >
+                <List className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setView('board')}
+                aria-label="Board view"
+                title="Board view"
+                className={cn(
+                  'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
+                  view === 'board' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
+                )}
+              >
+                <LayoutGrid className="size-3.5" />
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setView('list')}
-              aria-label="List view"
-              title="List view"
-              className={cn(
-                'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
-                view === 'list' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
-              )}
+              onClick={onOpenBookGraph}
+              className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-text-secondary transition-colors duration-150 hover:text-[var(--color-accent)]"
             >
-              <List className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('board')}
-              aria-label="Board view"
-              title="Board view"
-              className={cn(
-                'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
-                view === 'board' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
-              )}
-            >
-              <LayoutGrid className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setView('map')}
-              aria-label="Map view"
-              title="Map view"
-              className={cn(
-                'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
-                view === 'map' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
-              )}
-            >
-              <Network className="size-3.5" />
+              <Waypoints className="size-3.5" />
+              Open Book Graph
             </button>
           </div>
         </div>
@@ -204,7 +210,7 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
             </button>
           ))}
         </div>
-      ) : view === 'board' ? (
+      ) : (
         // Board — CSS multi-column masonry, not a grid: a grid forces every
         // row to the tallest cell's height, which would stretch every
         // text-only card up to match its image-having neighbours. Columns
@@ -235,8 +241,6 @@ export function IdeaInboxPanel({ projectId }: IdeaInboxPanelProps) {
             )
           })}
         </div>
-      ) : (
-        <IdeaMindMapView ideas={visible} onSelect={setSelectedIdeaId} />
       )}
 
       {selectedIdeaId && (

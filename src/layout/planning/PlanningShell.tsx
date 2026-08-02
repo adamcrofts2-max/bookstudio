@@ -249,9 +249,14 @@ export function PlanningShell({ project }: PlanningShellProps) {
 
         <ScrollArea className="h-full min-w-0 flex-1">
           {activeView === 'ideas' ? (
-            <IdeaInboxPanel projectId={project.id} />
+            <IdeaInboxPanel projectId={project.id} onOpenBookGraph={() => setActiveView('graph')} />
           ) : activeView === 'graph' ? (
-            <BookGraphView projectId={project.id} bookForm={project.bookForm} onFocusKind={(kind) => setActiveView(kind)} />
+            <BookGraphView
+              projectId={project.id}
+              bookForm={project.bookForm}
+              bookTitle={project.name}
+              onFocusKind={(kind) => setActiveView(kind)}
+            />
           ) : activeView === 'prompt-generator' ? (
             <PromptGeneratorPanel projectId={project.id} />
           ) : activeView === 'paste-back' ? (

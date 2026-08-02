@@ -141,7 +141,19 @@ export function Toolbar({ project }: ToolbarProps) {
   const redo = useHistoryStore((s) => s.redo)
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-panel px-3">
+    // `overflow-hidden` is load-bearing, same reasoning as `Sidebar.tsx`'s
+    // `StructuralPageRow` fix and this file's own line-182 comment below:
+    // without it, once the fixed-width button group on the right (Undo,
+    // Redo, mode toggles, Save/Load, Project Settings, Export, Hide
+    // Inspector, Keyboard shortcuts…) has no more room to give, it doesn't
+    // wrap or shrink — it just paints past this header's own right edge.
+    // Since this header sits directly against the Inspector column, that
+    // overflow visually bled onto Inspector's left edge instead of being
+    // clipped, which is what the user was seeing as "hide inspector and
+    // keyboard shortcuts overlap it" (2026-08-02). This doesn't change
+    // layout in the common case (plenty of room) — it only stops the
+    // crowded case from visually escaping into a sibling column.
+    <header className="flex h-14 shrink-0 items-center gap-1 overflow-hidden border-b border-border bg-panel px-3">
       {collapsed && (
         <IconButton label="Show sidebar" onClick={toggleSidebar}>
           <PanelLeft className="size-4" />
@@ -198,7 +210,7 @@ export function Toolbar({ project }: ToolbarProps) {
         )}
       </div>
 
-      <div className="flex items-center gap-1">
+      <div className="flex shrink-0 items-center gap-1">
         <IconButton
           label={resolved === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           onClick={() => setAppearance(resolved === 'dark' ? 'light' : 'dark')}
