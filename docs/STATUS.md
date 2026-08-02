@@ -6851,23 +6851,110 @@ live radius, which itself depends on zoom-independent SVG user-space units)
 is exactly the kind of math that's easy to get subtly wrong in a way only
 visible on screen.
 
+## Phase 106 — Book Graph: spine attaches only to Chapter 1 (2026-08-02)
+
+User: "but i think only the first chapter should attatch to the central
+book by default?"
+
+Phase 99 gave every chapter a direct spoke to the Book node; Phase 105 then
+added chapter-to-chapter sequence edges *alongside* those spokes. Once the
+sequence chain existed, every spoke past Chapter 1's was redundant — Chapter
+7 was already reachable from the Book by walking the chain, the direct spoke
+added a second path to the same place — and visually, a burst of N lines
+radiating from one point reads as "everything is directly attached to the
+book," not as a spine. Changed `BookGraphView.tsx`'s node/edge-building memo
+so the `edges.push({ a: BOOK_NODE_ID, b: chapter.id })` spoke only fires for
+`index === 0`; every other chapter's only path back to the Book is the
+existing `sequence: true` chain from Phase 105. Three doc comments elsewhere
+in the file (top-level component doc, `pinnedPositions` memo) were updated
+to describe the chain model instead of the old per-chapter-spoke model, so
+the reasoning stays legible next to the code it explains rather than going
+stale.
+
+No data-model change — this only changes which edges get pushed into the
+existing `GraphEdge[]` array the force layout and renderer already consume,
+so the physics (chapters still pull toward the Book, now transitively
+through their neighbours) and rendering (spine vs. sequence vs. relationship
+still three visually distinct edge styles) are unaffected.
+
+Verification: `npx tsc -b --force` clean. Not yet Chrome-verified.
+
+## Phase 107 — Fix Structure-tab overflow bug, actually (2026-08-02)
+
+User: "adding acknowledgements in front matter still pushes copy/delete etc
+off the sidebar so it cant be used" — the same bug Phase 98 (see Phase 98's
+STATUS entry / ROADMAP) supposedly already fixed, still reported broken.
+This is the same shape of regression Phase 104's Toolbar fix turned out to
+be: an earlier fix addressed a *symptom* without addressing the *cause*, so
+it resurfaced. Rather than trust that Phase 98's `min-w-0` on
+`StructuralPageRow`'s label span was sufficient and look elsewhere, I
+re-read that row from scratch and confirmed the class is still there and
+still correct in isolation — which meant the real constraint being violated
+had to live somewhere Phase 98 didn't look.
+
+Found it one level up: `src/components/ui/scroll-area.tsx` wraps every
+`ScrollArea`'s `children` via `@radix-ui/react-scroll-area`, whose
+`Viewport` internally wraps whatever's passed to it in a div styled
+`{ minWidth: '100%', display: 'table' }` (confirmed by reading the actual
+installed package source, not assumed from memory). Table auto-layout sizes
+a column to the max-content width of its contents unless something else
+constrains it — and `truncate`'s `white-space: nowrap` makes a label's
+min-content width equal to its full unwrapped width, so "Acknowledgements"
+forced the table wrapper (and therefore the whole Structure-tab row) wider
+than the 264px sidebar regardless of `min-w-0` on the row itself. Worse,
+the Viewport's `overflow-x` is `hidden` (shadcn's `ScrollBar` only wires up
+a vertical thumb by default) — not `scroll` — so the overflow wasn't even
+reachable by scrolling. It was just silently clipped, which is exactly
+"pushes copy/delete etc off the sidebar so it cant be used."
+
+Fixed once, at the shared primitive, rather than per-row: added
+`[&>div]:!block` to the `ScrollAreaPrimitive.Viewport`'s className, which
+targets Radix's own generated wrapper div (its one direct child) and
+overrides `display: table` → `block` (Tailwind's `!important` beats an
+inline style). A block-level wrapper sizes to its parent's width the normal
+way, so every row already using `min-w-0` + `truncate` inside *any*
+`ScrollArea` in the app — not just this one — now actually gets the
+shrink-to-fit behaviour it always looked like it should have had. This is
+the same "fix the cause once, app-wide, in the shared primitive" instinct
+Phase 104 used for the Toolbar (fold into `Inspector.tsx`'s own header
+rather than re-patch the crowded row) — a component-library-level bug
+class shouldn't need N per-row workarounds.
+
+**Considered and rejected**: adding a `max-w-[Npx]` or explicit width to
+`StructuralPageRow`'s label span instead. Would have "fixed" this one row
+while leaving the same table-layout gotcha live for every other
+`ScrollArea` consumer (Chapters sidebar, Assets grid, anything built later)
+— a per-row patch on a component-library-level bug, the exact pattern this
+investigation was launched to stop repeating.
+
+Verification: `npx tsc -b --force` clean. Not yet Chrome-verified — this is
+a CSS-cascade/specificity fix (`!important` overriding an inline style via
+a Tailwind arbitrary-variant selector), which is exactly the kind of change
+that's worth confirming renders correctly on a real page, not just type-
+checks.
+
 ## Recommended next task
-Push everything queued from Phase 85 through Phase 105 (20+ commits) — this
+Push everything queued from Phase 85 through Phase 107 (20+ commits) — this
 has been a standing, repeated ask across many sessions now; it requires the
 user's own terminal, not this sandbox. Once pushed, a real Chrome pass
 (resized to a normal laptop width, both Sidebar and Inspector open) is
-overdue and should cover, in order: (1) Phase 105's chapter sequence edges —
-arrowheads land outside the node circle at various zoom levels and node
-sizes, the legend reads clearly, the auto-layout visibly strings chapters
-into a rough order; (2) Phase 104's Toolbar — confirm Export is no longer
-clipped, the "More" menu holds everything it should, Hide Inspector on the
-Inspector's own header works and "Show inspector" reappears correctly when
-collapsed; (3) Phase 95-100's mobile claims — chapter switcher add/rename/
-delete, "Add photo" OS picker + insert, per-block "⋮" menu, header Undo
-reaching into Ideas too; (4) Phase 102-103's Book Graph — the three click
-semantics (select/drag/connect-mode) don't collide, per-node colour/size
-controls actually apply, search dimming feels right; (5) Phase 101's CMYK
-export — generate one PDF with `colorProfile: 'cmyk'` and one with `'rgb'`,
-confirm they differ and neither crashes the exporter. Real dictionary-backed
-spell-check and thesaurus/synonym lookup remain blocked — no npm registry
-access in this sandbox, unchanged from every earlier phase.
+overdue and should cover, in order: (1) Phase 107's ScrollArea fix — add an
+Acknowledgements page and confirm the row's label now actually ellipsizes
+and all four action icons stay visible and clickable, then spot-check the
+Chapters tab and Assets grid too since the fix is shared; (2) Phase 106's
+Book Graph spine change — confirm Chapter 1 alone spokes off the Book and
+the rest of the chain still visually reads as connected; (3) Phase 105's
+chapter sequence edges — arrowheads land outside the node circle at various
+zoom levels and node sizes, the legend reads clearly; (4) Phase 104's
+Toolbar — confirm Export is no longer clipped, the "More" menu holds
+everything it should, Hide Inspector on the Inspector's own header works and
+"Show inspector" reappears correctly when collapsed; (5) Phase 95-100's
+mobile claims — chapter switcher add/rename/delete, "Add photo" OS picker +
+insert, per-block "⋮" menu, header Undo reaching into Ideas too; (6) Phase
+102-103's Book Graph — the three click semantics (select/drag/connect-mode)
+don't collide, per-node colour/size controls actually apply, search dimming
+feels right; (7) Phase 101's CMYK export — generate one PDF with
+`colorProfile: 'cmyk'` and one with `'rgb'`, confirm they differ and neither
+crashes the exporter. Real dictionary-backed spell-check and thesaurus/
+synonym lookup remain blocked — no npm registry access in this sandbox,
+unchanged from every earlier phase.

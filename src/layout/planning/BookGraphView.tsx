@@ -284,8 +284,9 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  * survives):
  *
  * - *Chapter-centric by default* — yes, already true structurally (every
- *   chapter spokes off the central Book node, Phase 99) and reinforced here:
- *   chapters keep the largest non-book radius and the accent fill, so the
+ *   chapter chains back to the central Book node, Phase 99/106) and
+ *   reinforced here: chapters keep the largest non-book radius and the
+ *   accent fill, so the
  *   manuscript's spine reads as the graph's backbone at a glance even before
  *   anything is clicked.
  * - *Selecting a node shows its direct connections; the panel shows details;
@@ -454,8 +455,8 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     // pass over `bible` since this loop already visits every entity once.
     const secondary = new Map<string, string>()
 
-    // The book itself — always present, always the first node, so every
-    // chapter below can spoke off it. Not counted in `countByKind`/
+    // The book itself — always present, always the first node, so Chapter 1
+    // below has something to chain to. Not counted in `countByKind`/
     // `GRAPH_KIND_ORDER`'s filter chips: it's not a toggleable category,
     // it's the one fixed anchor everything else is drawn relative to.
     nodes.push({ id: BOOK_NODE_ID, kind: 'book', label: bookTitle || 'Untitled book' })
@@ -470,25 +471,35 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
       nodes.push({ id: chapter.id, kind: 'chapter', label: `${index + 1}. ${chapter.title || 'Untitled chapter'}` })
       nodeIds.add(chapter.id)
       count.chapter = (count.chapter ?? 0) + 1
-      // The spine: every chapter connects straight to the book, so the
-      // whole manuscript radiates from one visible center (user, 2026-08-02:
-      // "in the center should be the book?") instead of chapters floating
-      // as their own disconnected cluster.
-      edges.push({ a: BOOK_NODE_ID, b: chapter.id })
+      // The spine attaches only to Chapter 1 (Phase 106, user 2026-08-02:
+      // "i think only the first chapter should attach to the central book
+      // by default") — every other chapter reaches the Book transitively,
+      // through the reading-order chain below (Book → Ch.1 → Ch.2 → …), not
+      // through its own separate spoke. Phase 99–105 had every chapter
+      // spoke off the Book directly *and* chain to its neighbour, which was
+      // redundant for every chapter but the first once the chain existed,
+      // and, worse, visually undersold "spine": a burst of N lines radiating
+      // from one point doesn't read as a spine the way one continuous chain
+      // running through the Book does.
+      if (index === 0) {
+        edges.push({ a: BOOK_NODE_ID, b: chapter.id })
+      }
     })
 
     // Reading-order edges (Phase 105, user 2026-08-02: "should chapters
-    // link in order in the book graph") — a second, distinct connection
-    // alongside each chapter's spine link to the Book. Beyond just being
-    // visible information, these feed the same edge-spring physics every
-    // other edge already does (see `computeGraphLayout`'s doc comment): a
-    // chapter is now pulled toward both the Book *and* its neighbours in
-    // sequence, so the auto-layout naturally strings chapters out into a
-    // rough chain instead of scattering them evenly around the hub in
-    // whatever order they happened to be visited in. Rendered with a small
-    // arrowhead (the one edge kind here where direction actually matters)
-    // rather than reusing the plain spine or dashed-relationship styles —
-    // see the render loop below.
+    // link in order in the book graph") — now the *only* thing connecting
+    // Chapter 2 onward back to the Book (see the `index === 0` guard
+    // above), not an addition alongside a redundant direct spoke. Beyond
+    // just being visible information, these feed the same edge-spring
+    // physics every other edge already does (see `computeGraphLayout`'s
+    // doc comment): each chapter is pulled toward its neighbours in
+    // sequence, and the whole chain is pulled toward the Book only through
+    // Chapter 1 — so the auto-layout strings chapters out into one
+    // continuous line running through the Book, an actual spine, rather
+    // than a burst of individual spokes. Rendered with a small arrowhead
+    // (the one edge kind here where direction actually matters) rather than
+    // reusing the plain spine or dashed-relationship styles — see the
+    // render loop below.
     for (let i = 0; i < chapters.length - 1; i++) {
       edges.push({ a: chapters[i].id, b: chapters[i + 1].id, sequence: true })
     }
@@ -586,8 +597,9 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     // The book node is permanently pinned at the origin — never written to
     // `graphLayoutStore` (it has no drag handlers at all, see the node
     // render branch below), so this is the only place its position is ever
-    // set. Every chapter spokes off `BOOK_NODE_ID` (see the edge-building
-    // memo above), so pinning the book at (0,0) is what actually keeps it
+    // set. Chapter 1 chains directly to `BOOK_NODE_ID`, and every later
+    // chapter chains to it transitively (see the edge-building memo above),
+    // so pinning the book at (0,0) is what actually keeps it
     // visually central rather than just "a node with more edges."
     if (visibleNodes.some((n) => n.id === BOOK_NODE_ID)) map.set(BOOK_NODE_ID, { x: 0, y: 0 })
     return map

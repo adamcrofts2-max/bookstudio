@@ -891,6 +891,39 @@ daily use of everything built so far.)*
       literal straight-line layout — that would fight the "drag anywhere"
       mind-map premise the whole view is built on, and duplicate what the
       Chapters sidebar list already is.
+- [x] Book Graph: spine attaches only to Chapter 1 (Phase 106, 2026-08-02,
+      user: "i think only the first chapter should attach to the central
+      book by default?") — Phase 99–105 spoked every chapter directly off
+      the Book *and* chained it to its neighbour, which was redundant for
+      every chapter but the first once Phase 105's sequence chain existed,
+      and undersold "spine": a burst of N lines radiating from one point
+      doesn't read as a spine the way one continuous chain running through
+      the Book does. Now only Chapter 1 → Book is a direct edge; Chapter 2
+      onward reach the Book transitively through the existing reading-order
+      chain (Book → Ch.1 → Ch.2 → … ).
+- [x] Fix Structure-tab "Acknowledgements pushes copy/delete off the
+      sidebar" — still reported broken (Phase 107, 2026-08-02, user:
+      "adding acknowledgements in front matter still pushes copy/delete etc
+      off the sidebar so it cant be used"), despite Phase 98's `min-w-0`
+      fix. Real root cause was one level up from where Phase 98 looked:
+      Radix's `ScrollAreaPrimitive.Viewport` (`src/components/ui/scroll-
+      area.tsx`, used by every scrollable list in the app) wraps its
+      children in its own internal div styled `{ minWidth: '100%', display:
+      'table' }`. Table auto-layout sizes to the *max-content* width of its
+      contents, which for a `truncate` label (`white-space: nowrap`) is its
+      full unwrapped width — so the table wrapper grew the row wider than
+      the 264px sidebar regardless of the row's own `min-w-0`, and because
+      the Viewport's `overflow-x` is `hidden` (not `scroll`), the overflow
+      wasn't reachable by scrolling either — just silently clipped.
+      Fixed once, app-wide, in the shared primitive: `[&>div]:!block`
+      overrides Radix's inline `display: table` on that one generated
+      wrapper (Tailwind's `!important` beats an inline style), restoring
+      normal block sizing so `min-w-0` + `truncate` behaves the way every
+      row already assumed it did. Same "fix the cause, not the symptom a
+      second time" discipline as Phase 104's Toolbar fix — Phase 98's class
+      wasn't wrong, it just wasn't sufficient, and re-inspecting the same
+      row a second time (rather than trusting the earlier fix) is what
+      surfaced the actual constraint being violated one level up.
 - [ ] Book Graph layout-performance profiling — the hand-rolled force
       layout is O(n²) per iteration × 260 iterations, recomputed on most
       graph-shape changes. Reasoned to be fine at today's scale but never
