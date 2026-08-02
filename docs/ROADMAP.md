@@ -924,13 +924,20 @@ daily use of everything built so far.)*
       wasn't wrong, it just wasn't sufficient, and re-inspecting the same
       row a second time (rather than trusting the earlier fix) is what
       surfaced the actual constraint being violated one level up.
-- [ ] Book Graph layout-performance profiling — the hand-rolled force
-      layout is O(n²) per iteration × 260 iterations, recomputed on most
-      graph-shape changes. Reasoned to be fine at today's scale but never
-      actually profiled against a real 100+ chapter project with a full
-      Layer 0 bible (dozens of characters/locations/etc.). If it turns out
-      to lag, a Web Worker or an incremental (not full-recompute) layout is
-      the fix — not attempted speculatively against an unconfirmed problem.
+- [x] Book Graph layout-performance profiling (Phase 108, 2026-08-02) —
+      resolved the long-standing "reasoned to be fine, never measured"
+      deferral. Ran the actual algorithm (copied byte-for-byte into a Node
+      script, constants cross-checked against the real source) against a
+      synthetic 100-chapter novel with a full Layer 0 bible: a single
+      recompute took ~180-290ms; a stress case (~510 nodes) took ~440ms —
+      confirmed real lag, not a hypothetical one. Fix was the Web Worker
+      option the item's own text already named: extracted the unmodified
+      algorithm into `graphLayoutEngine.ts` (a pure module, same numbers,
+      same visuals) and moved its execution into `graphLayout.worker.ts`, so
+      the ~200-450ms of CPU work happens off the main thread instead of
+      freezing the UI mid-recompute. See STATUS.md Phase 108 for the request-
+      id staleness handling and why a persistent worker (not one-per-request)
+      was used.
 - [x] Book Graph: discoverable zoom controls, node-size control, and
       click-to-connect (Phase 102, 2026-08-02, user: "should be able to zoom
       in zoom out, make each node larger/smaller, connect easily by clicking

@@ -14,6 +14,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
+import type { Layout } from '@/layout/planning/graphLayoutEngine'
+import LayoutWorker from '@/layout/planning/graphLayout.worker?worker'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_TO_COLLECTION, getLayer0KindLabel, type Layer0EntityKind } from '@/types/layer0'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
 import { extractTextSpans } from '@/virtualEditor/textExtract'
@@ -63,18 +65,6 @@ interface GraphEdge {
  * this exact literal), so it can never collide with a real node. */
 const BOOK_NODE_ID = '__book__'
 
-interface Point {
-  x: number
-  y: number
-  vx: number
-  vy: number
-}
-
-interface Layout {
-  positions: Map<string, { x: number; y: number }>
-  bounds: { minX: number; minY: number; width: number; height: number }
-}
-
 /** Every kind order the graph's legend/filter row presents, in — chapters
  * first (the spine everything else hangs off), then the eight Layer 0 kinds
  * in their canonical order, Ideas last (the least "settled" kind, most
@@ -123,131 +113,6 @@ const DEFAULT_COLOR_SWATCH = '#4f8a5b'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
-}
-
-/**
- * A hand-rolled force-directed layout generalised from `IdeaMindMapView.tsx`'s
- * (same no-graph-library constraint — this sandbox has no npm registry
- * access, confirmed while scoping Phase 93/94). Two differences from that
- * one: nodes carry a `kind` instead of `tags`, so the cheap per-group
- * centroid attraction clusters by *kind* (all Characters drift near each
- * other) rather than by tag, and every edge here is a real, meaningful
- * connection (chapter links, related ideas, promotions) — never a stand-in
- * for "shares a tag" — so every edge here is drawn as a line, no separate
- * "cluster vs. line" distinction needed.
- *
- * `pinned` is Phase 98's addition (user, 2026-08-02: "they should be
- * dragable on the page to make a mind map") — a node the user has manually
- * dragged is excluded from position *integration* every iteration (it never
- * moves on its own) but still fully participates in the physics otherwise:
- * it still repels every other node and still pulls its edge-connected
- * neighbours toward it. That's what makes this a real mind map rather than
- * just a fixed auto-layout with an escape hatch — drag the two or three
- * nodes that matter into place, and everything else still arranges itself
- * sensibly around them instead of ignoring them.
- */
-function computeGraphLayout(nodes: GraphNode[], edges: GraphEdge[], pinned: Map<string, { x: number; y: number }>): Layout {
-  const points = new Map<string, Point>()
-  const n = nodes.length
-  nodes.forEach((node, i) => {
-    const fixed = pinned.get(node.id)
-    if (fixed) {
-      points.set(node.id, { x: fixed.x, y: fixed.y, vx: 0, vy: 0 })
-      return
-    }
-    const angle = (i / Math.max(n, 1)) * Math.PI * 2
-    const radius = 200 + (i % 3) * 35
-    points.set(node.id, { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius, vx: 0, vy: 0 })
-  })
-
-  const iterations = n > 1 ? 260 : 0
-  for (let iter = 0; iter < iterations; iter++) {
-    for (let i = 0; i < nodes.length; i++) {
-      const a = points.get(nodes[i].id)!
-      for (let j = i + 1; j < nodes.length; j++) {
-        const b = points.get(nodes[j].id)!
-        const dx = a.x - b.x
-        const dy = a.y - b.y
-        const distSq = Math.max(dx * dx + dy * dy, 1)
-        const dist = Math.sqrt(distSq)
-        const force = 6000 / distSq
-        const fx = (dx / dist) * force
-        const fy = (dy / dist) * force
-        a.vx += fx
-        a.vy += fy
-        b.vx -= fx
-        b.vy -= fy
-      }
-    }
-    for (const { a: aId, b: bId } of edges) {
-      const a = points.get(aId)
-      const b = points.get(bId)
-      if (!a || !b) continue
-      const dx = b.x - a.x
-      const dy = b.y - a.y
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1
-      const force = (dist - 150) * 0.018
-      const fx = (dx / dist) * force
-      const fy = (dy / dist) * force
-      a.vx += fx
-      a.vy += fy
-      b.vx -= fx
-      b.vy -= fy
-    }
-    const centroids = new Map<GraphNodeKind, { x: number; y: number; count: number }>()
-    for (const node of nodes) {
-      const p = points.get(node.id)!
-      const c = centroids.get(node.kind) ?? { x: 0, y: 0, count: 0 }
-      c.x += p.x
-      c.y += p.y
-      c.count += 1
-      centroids.set(node.kind, c)
-    }
-    for (const node of nodes) {
-      if (pinned.has(node.id)) continue
-      const c = centroids.get(node.kind)!
-      if (c.count < 2) continue
-      const p = points.get(node.id)!
-      p.vx += (c.x / c.count - p.x) * 0.006
-      p.vy += (c.y / c.count - p.y) * 0.006
-    }
-    for (const node of nodes) {
-      if (pinned.has(node.id)) continue
-      const p = points.get(node.id)!
-      p.vx += -p.x * 0.002
-      p.vy += -p.y * 0.002
-    }
-    for (const node of nodes) {
-      if (pinned.has(node.id)) continue
-      const p = points.get(node.id)!
-      p.vx *= 0.82
-      p.vy *= 0.82
-      p.x += p.vx
-      p.y += p.vy
-    }
-  }
-
-  const positions = new Map<string, { x: number; y: number }>()
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const node of nodes) {
-    const p = points.get(node.id)!
-    positions.set(node.id, { x: p.x, y: p.y })
-    minX = Math.min(minX, p.x)
-    maxX = Math.max(maxX, p.x)
-    minY = Math.min(minY, p.y)
-    maxY = Math.max(maxY, p.y)
-  }
-  if (!isFinite(minX)) {
-    minX = -140
-    maxX = 140
-    minY = -140
-    maxY = 140
-  }
-  const pad = 90
-  return { positions, bounds: { minX: minX - pad, minY: minY - pad, width: maxX - minX + pad * 2, height: maxY - minY + pad * 2 } }
 }
 
 /** Converts a pointer event's screen coordinates into the SVG's own user-
@@ -616,8 +481,43 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         .join('|'),
     [visibleNodes, visibleEdges, pinnedPositions],
   )
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const layout = useMemo(() => computeGraphLayout(visibleNodes, visibleEdges, pinnedPositions), [depKey])
+  // Layout runs in a persistent Web Worker (`graphLayout.worker.ts`), not a
+  // synchronous `useMemo`, as of Phase 108 (2026-08-02) — profiling showed a
+  // single recompute at "100+ chapter novel with a full Layer 0 bible" scale
+  // takes ~180-450ms of pure main-thread CPU (see `graphLayoutEngine.ts`'s
+  // doc comment for the numbers), which is long enough to freeze the whole
+  // app's UI mid-recompute if run inline. One worker instance lives for the
+  // component's lifetime rather than one-per-request — spinning up a new
+  // worker (loading its module, running top-level init) costs more than the
+  // computation itself does at small graph sizes, which would make the
+  // common case slower to "fix" the rare large-graph case.
+  const [layoutWorker] = useState(() => new LayoutWorker())
+  useEffect(() => () => layoutWorker.terminate(), [layoutWorker])
+
+  const [layout, setLayout] = useState<Layout>(() => ({
+    positions: new Map(),
+    bounds: { minX: -140, minY: -140, width: 280, height: 280 },
+  }))
+  // `requestId` guards against a stale response overwriting a fresher one:
+  // the worker processes requests in the order it receives them, but nothing
+  // guarantees they *finish* in that order is safe to assume forever, and a
+  // user toggling a kind filter twice in quick succession fires this effect
+  // twice before either response comes back. Only the response matching the
+  // most recently sent request is applied; an earlier one arriving late is
+  // silently dropped rather than flashing the graph back to a superseded
+  // arrangement.
+  const layoutRequestIdRef = useRef(0)
+  useEffect(() => {
+    const requestId = ++layoutRequestIdRef.current
+    layoutWorker.postMessage({ requestId, nodes: visibleNodes, edges: visibleEdges, pinned: pinnedPositions })
+    const handleMessage = (event: MessageEvent<{ requestId: number; positions: Map<string, { x: number; y: number }>; bounds: Layout['bounds'] }>) => {
+      if (event.data.requestId !== layoutRequestIdRef.current) return
+      setLayout({ positions: event.data.positions, bounds: event.data.bounds })
+    }
+    layoutWorker.addEventListener('message', handleMessage)
+    return () => layoutWorker.removeEventListener('message', handleMessage)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [depKey, layoutWorker])
 
   // Every node id directly reachable from `selectedNodeId` in one hop — the
   // "direct connections" the design review asked for. `null` when nothing

@@ -6933,8 +6933,96 @@ a Tailwind arbitrary-variant selector), which is exactly the kind of change
 that's worth confirming renders correctly on a real page, not just type-
 checks.
 
+## Phase 108 — Book Graph: move force layout off the main thread (2026-08-02)
+
+User: "next stages to work on now" — asked to pick the next roadmap item.
+Phases B through E's remaining unchecked boxes were all either explicitly
+deprioritised (drag-to-reorder), blocked on things this sandbox can't do
+(dictionary data / npm registry for spell-check and thesaurus; a backend for
+stock images, AI generation, and template sharing; an API-key/billing story
+for `AiReviewer` and the AI Workspace's `ApiKeyProvider`), or gated on a
+product decision only the user can make (`PLANNING_EXPERIENCE_REDESIGN.md`'s
+"capture first, structure follows" proposal — explicitly flagged in
+ROADMAP.md as "read before picking up more Planning-mode work"). Presented
+these options plus one genuinely actionable item; user picked the
+actionable one.
+
+**The measurement.** `docs/ROADMAP.md`'s Book Graph layout-performance item
+had sat as "reasoned to be fine, never actually profiled" since Phase 105.
+Rather than guess, copied `computeGraphLayout` byte-for-byte into a
+standalone Node script (`book_graph_perf_profile.mjs`, scratch — not
+committed) and cross-checked every numeric constant (repulsion `6000`, edge-
+spring `150`/`0.018`, centroid pull `0.006`, centering `0.002`, damping
+`0.82`, `260` iterations) against the real source to make sure the timing
+numbers meant something. Built a synthetic project matching the item's own
+"100+ chapter project with a full Layer 0 bible" description: 100 chapters
+chained in sequence, 20 entities per each of the 8 Layer 0 kinds, 80 ideas,
+and a relationship density realistic for a well-developed story bible (~340
+nodes total). Result: a single recompute took ~180-290ms; a stress case
+(~510 nodes) took ~440ms. Both are well past the ~100ms threshold where a
+synchronous main-thread computation reads as a UI freeze rather than
+"instant" — confirming the lag this item had speculated about but never
+measured, not a false alarm.
+
+**The fix.** `computeGraphLayout` and its supporting types moved out of
+`BookGraphView.tsx` into a new dependency-free module,
+`graphLayoutEngine.ts` — same algorithm, unmodified, just relocated so it
+can run in two places without drifting apart. A new
+`graphLayout.worker.ts` imports that module and runs it inside a native Web
+Worker (no new npm dependency — this sandbox still has no registry access,
+same constraint that ruled out a real graph-layout library back in Phase
+93/94). `BookGraphView.tsx` now creates one persistent worker instance for
+the component's lifetime (`useState(() => new LayoutWorker())`, terminated
+on unmount) rather than spinning up a fresh worker per recompute — worker
+module init cost would otherwise make the common small-graph case slower to
+"fix" the rare large-graph one. The previously-synchronous `useMemo` became
+a `postMessage`/`onmessage` round trip gated by the same `depKey` that
+triggered the old memo, with a monotonic `requestId` so a response that's
+been superseded by a newer request (e.g. two rapid filter-chip toggles) is
+silently dropped instead of flashing the graph back to a stale arrangement.
+
+Vite's `?worker` import suffix (`import LayoutWorker from
+'.../graphLayout.worker?worker'`) handles bundling both the worker's own
+module type and its `@/` path-aliased import of `graphLayoutEngine.ts` —
+standard, well-documented Vite behaviour, not a version-specific trick.
+
+**Verification gap, stated plainly**: `npx tsc -b --force` is clean, and the
+extracted algorithm's constants were cross-checked against the profiling
+script to make sure the numbers above are trustworthy. `npm run build`
+itself is currently broken in this sandbox for reasons unrelated to this
+change — `vite build` fails to even load the repo's own `vite.config.ts`
+(a Node 22 ESM loader error inside Vite 8's config-loader), confirmed by
+running the exact same command against the file completely unmodified.
+That means the actual Vite-bundled worker output — the one thing most worth
+confirming for a change like this — has **not** been verified end to end in
+this sandbox, only reasoned about from documented Vite behaviour. This is a
+new, distinct gap from this session's standing "not yet Chrome-verified"
+caveat and should be the first thing checked once the user can run a real
+build.
+
+**Considered and rejected**: reducing iteration count or adding spatial
+partitioning (Barnes-Hut-style bucketing) to bring the O(n²) repulsion pass
+down algorithmically instead. Would still block the main thread, just for
+less time — the actual complaint (a freeze, however short) isn't fixed,
+only shortened. The Web Worker fixes the complaint itself and preserves the
+exact same visual output; an algorithmic change risks the layout settling
+differently and would need to be validated against the app's existing
+"pinned node" and "kind clustering" behaviour on top of everything else.
+
 ## Recommended next task
-Push everything queued from Phase 85 through Phase 107 (20+ commits) — this
+Get a real build working from the user's own terminal — `npm run build`'s
+`vite.config.ts` load failure (Phase 108) blocks verifying not just this
+worker change but every future change's production bundle, and is a
+different, more urgent gap than the standing "not yet pushed" one. Once
+that's possible: (1) confirm the Book Graph still renders and computes a
+layout at all with the worker wired in — the riskiest change this session,
+since it moved a core piece of this view's data flow from sync to async;
+(2) load a real large project (or the synthetic one this profiling session
+built) and confirm the graph no longer visibly hangs the tab while
+recomputing; (3) then work through the rest of the accumulated Chrome-
+verification backlog below.
+
+Push everything queued from Phase 85 through Phase 108 (20+ commits) — this
 has been a standing, repeated ask across many sessions now; it requires the
 user's own terminal, not this sandbox. Once pushed, a real Chrome pass
 (resized to a normal laptop width, both Sidebar and Inspector open) is
