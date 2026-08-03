@@ -6,6 +6,7 @@ import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import { useEditableField, outlineClass } from '@/blocks/shared'
 import { FloatingFormatToolbar } from '@/renderer/FloatingFormatToolbar'
+import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
 import { pickFont, pickItalicFont } from '@/pdf/fonts'
 import { wrapRuns } from '@/pdf/textWrap'
 import { parseInlineRuns } from '@/pdf/htmlRuns'
@@ -27,6 +28,7 @@ function ParagraphRender(props: BlockRenderProps) {
     autoEdit,
     autoEditCaretPosition,
     onAutoEditHandled,
+    projectId,
   } = props
 
   const primary = useEditableField({
@@ -57,6 +59,12 @@ function ParagraphRender(props: BlockRenderProps) {
     if (autoEdit && editable) primary.startEditing(autoEditCaretPosition ?? 'end')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit])
+
+  // Phase 116 (2026-08-03): live, dictionary-backed spell-check underlining
+  // while this specific paragraph is being edited — see
+  // `useLiveSpellcheck.ts`'s own doc comment for the full design (why it's
+  // scoped to just the active field, how it avoids disturbing the caret).
+  useLiveSpellcheck(primary.ref, primary.isEditing, projectId)
 
   if (block.type !== 'paragraph') return null
 
@@ -92,7 +100,7 @@ function ParagraphRender(props: BlockRenderProps) {
         }}
         {...(!primary.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
       />
-      <FloatingFormatToolbar containerRef={primary.ref} active={primary.isEditing} />
+      <FloatingFormatToolbar containerRef={primary.ref} active={primary.isEditing} projectId={projectId} />
     </>
   )
 }

@@ -14,10 +14,10 @@
  */
 
 import type { Checker, CheckerContext, Finding, StyleGuide } from '@/virtualEditor/types'
-import type { Layer0Bible } from '@/types/layer0'
 import { extractTextSpans, blockPlainText } from '@/virtualEditor/textExtract'
 import { patchTextField } from '@/virtualEditor/textPatch'
 import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
+import { WORD_PATTERN, looksLikeAcronym, collectLayer0Names } from '@/virtualEditor/spellcheckWords'
 import { generateId } from '@/utils/id'
 
 function makeFinding(partial: Omit<Finding, 'id' | 'category' | 'source'>): Finding {
@@ -353,44 +353,6 @@ export const quoteStyleConsistencyChecker: Checker = {
     }
     return []
   },
-}
-
-/** A run of letters, optionally joined by a single internal apostrophe
- * (straight or curly) — matches "don't"/"won't" as one token instead of
- * splitting on the apostrophe, without also swallowing a leading/trailing
- * quotation mark around a whole word (the regex only counts an apostrophe
- * as part of the word when there's a letter immediately on both sides). */
-const WORD_PATTERN = /[A-Za-z]+(?:['’][A-Za-z]+)*/g
-
-/** Every Layer 0 bible entry's name, split into individual lowercase words
- * — invented character/place names ("Kaelith", "Thornwood") are exactly
- * the kind of word a generic dictionary has never heard of and a novelist
- * chose on purpose, so they're excluded from spelling findings rather than
- * flagged every single time they appear. Multi-word names ("Elara
- * Thornwood") are split so each half is recognised individually, since
- * prose might use either half alone. Timeline events/glossary terms/
- * references/etc. are deliberately not included — their "name" is a title
- * or phrase, not a word coined for this book, so excluding it would risk
- * hiding a real typo inside it. */
-function collectLayer0Names(bible: Layer0Bible | undefined): Set<string> {
-  const names = new Set<string>()
-  if (!bible) return names
-  for (const entity of [...bible.characters, ...bible.locations]) {
-    for (const word of entity.name.split(/\s+/)) {
-      const cleaned = word.replace(/[^A-Za-z']/g, '').toLowerCase()
-      if (cleaned) names.add(cleaned)
-    }
-  }
-  return names
-}
-
-/** All-caps tokens longer than one letter ("NASA", "ISBN", "OK") are almost
- * always intentional acronyms/abbreviations, not typos a dictionary lookup
- * should judge — the same "reduce novelist-relevant false positives"
- * reasoning as `collectLayer0Names` above, just for a shape a story bible
- * can't enumerate in advance. */
-function looksLikeAcronym(word: string): boolean {
-  return word.length > 1 && word === word.toUpperCase() && word !== word.toLowerCase()
 }
 
 /** `StyleGuide.englishVariant` is a closed `'british' | 'american'` choice

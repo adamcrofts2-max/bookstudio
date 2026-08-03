@@ -311,6 +311,35 @@ daily use of everything built so far.)*
       just local component state that a remount would silently wipe.
       Verified via `tsc`; not yet live-verified in Chrome (see Phase K's
       standing verification gap).
+- [x] Live spell-check underlining (Phase 116, 2026-08-03, user: "yes it
+      should have live spell check" — after clarifying that the existing
+      dictionary-backed spell-check, Phase 109/110, only ever surfaced as
+      Virtual Editor review findings, never as underlines while typing).
+      Scope confirmed with the user: underlines only in the paragraph
+      currently being edited (not every paragraph on the page at all
+      times), with a "Fix spelling" suggestion dropdown when a misspelled
+      word is selected. New `useLiveSpellcheck.ts` hook, wired into
+      `paragraph.tsx` alongside its existing `useEditableField`; debounced
+      re-scan on every `input` event walks the field's text nodes (never
+      its HTML string, so `<strong>`/`<em>`/`<a>` markup survives) and wraps
+      each misspelled word in a `<span class="book-spell-error">` (wavy
+      underline, `--color-danger` token, `src/index.css`). Reuses the exact
+      same nspell dictionary + false-positive rules
+      (`virtualEditor/spellcheckWords.ts`, extracted from
+      `checkers/proofreading.ts` so both surfaces can never drift apart) as
+      the Virtual Editor's `spellingChecker` — a word that's fine there is
+      fine here. Caret position is saved/restored across each re-wrap
+      (`blocks/caretOffset.ts`) so typing through a misspelled word never
+      visibly kicks the cursor — the same class of race this session
+      already hit twice with focus (Phase 111/115). `FloatingFormatToolbar`
+      gained a "Fix spelling" button (shown only when the selected single
+      word is actually misspelled) offering `nspell.suggest()` corrections,
+      applied via the same `execCommand('insertText', ...)` pattern as
+      Synonyms. Verified via `tsc`; not yet live-verified in Chrome (see
+      Phase K's standing verification gap) — flagged as the one item this
+      phase most needs real browser testing for, since caret-preservation
+      during live DOM mutation is exactly the kind of thing that looks
+      right in code review and wrong on a real keyboard.
 - [x] Backspace-at-start-of-paragraph-merges-with-previous-paragraph (Phase
       112, 2026-08-03) — the natural companion to Enter-splits-paragraph:
       pressing Backspace with the caret at the very start of a paragraph

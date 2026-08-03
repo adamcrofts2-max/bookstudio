@@ -408,4 +408,17 @@
     padding-top: 0.04em;
     font-weight: 600;
   }
+
+  /* Live spell-check underline (Phase 116, 2026-08-03) — applied by
+   * `renderer/useLiveSpellcheck.ts` to individual misspelled-word text
+   * ranges while the paragraph editor is active. Uses the existing
+   * `--color-danger` token rather than a new hardcoded colour, matching
+   * every other severity-coloured UI element in the app. */
+  .book-spell-error {
+    text-decoration-line: underline;
+    text-decoration-style: wavy;
+    text-decoration-color: var(--color-danger);
+    text-decoration-thickness: 1.5px;
+    text-underline-offset: 3px;
+  }
 }

@@ -85,13 +85,20 @@ function load(variant: Variant): Promise<void> {
   return entry.loadPromise
 }
 
-/** Fire-and-forget — safe and cheap to call on every pipeline run (a no-op
- * once loading for this variant has started or finished). Call from a
- * checker's `isApplicable`, not from module-load time: nothing should fetch
- * network data just because this module was imported, only when a review
- * is actually attempted, and only for the one variant actually needed. */
-export function ensureSpellDictionaryLoading(variant: Variant): void {
-  void load(variant)
+/** Safe and cheap to call on every pipeline run (a no-op — returns the same
+ * pending/settled promise — once loading for this variant has started or
+ * finished). Call from a checker's `isApplicable`, not from module-load
+ * time: nothing should fetch network data just because this module was
+ * imported, only when a review is actually attempted, and only for the one
+ * variant actually needed. Returns the load promise (Phase 116,
+ * 2026-08-03) so a caller that needs to react to completion — like
+ * `useLiveSpellcheck.ts`'s very first scan of a freshly-opened project,
+ * which may start before the dictionary has ever been requested — can
+ * `.then()` it instead of polling `isSpellDictionaryReady`; existing
+ * fire-and-forget callers (`proofreading.ts`'s `isApplicable`) are
+ * unaffected, since they already ignored the return value. */
+export function ensureSpellDictionaryLoading(variant: Variant): Promise<void> {
+  return load(variant)
 }
 
 export function isSpellDictionaryReady(variant: Variant): boolean {

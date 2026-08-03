@@ -7617,3 +7617,120 @@ still can't run in this sandbox (same corrupted `@tailwindcss/node`-adjacent
 `node_modules` state flagged since Phase 53/109 — see
 `docs/TERMINAL_SETUP.md`). Not live-verified in Chrome — same standing
 Phase K limitation as every recent phase.
+
+## Phase 116 (2026-08-03) — Live spell-check underlining
+
+User reported "dictionary still doesn't seem to show" after Phase 114/115.
+Clarifying question revealed the real gap: Phase 109/110's spell-check was
+real and dictionary-backed, but only ever surfaced as Virtual Editor review
+findings — never as underlines while typing, which is what the user
+actually expected ("yes it should have live spell check"). Asked two
+scoping questions before building: (1) underlines everywhere on the page at
+all times, or only in the actively-edited paragraph — user chose the
+latter, a materially smaller and safer change (no need to thread Style
+Guide/Layer 0 access into the *non-editing* render path, no risk of
+scanning every block on a long book continuously); (2) clicking a
+misspelled word should open a suggestion dropdown (not just show the
+underline) — user confirmed, mirroring the Synonyms button's existing UX.
+
+**Shared-logic extraction first**: `checkers/proofreading.ts`'s
+`WORD_PATTERN`/`looksLikeAcronym`/`collectLayer0Names` moved to a new
+`virtualEditor/spellcheckWords.ts`, imported back into `proofreading.ts`
+rather than left duplicated — both the Virtual Editor's batch checker and
+this new live surface need to agree on exactly which words count as "a
+word" and which known-good words are excluded (invented Layer 0 character/
+place names, all-caps acronyms), or a word flagged live but not in a review
+(or vice versa) would look like a bug rather than two independent
+implementations of the same rule. `spellcheckDictionary.ts`'s
+`ensureSpellDictionaryLoading` changed from `void`-returning to returning
+the load `Promise<void>` (matching `thesaurusDictionary.ts`'s
+`ensureThesaurusLoading` shape already established Phase 114) — the one
+existing caller (`proofreading.ts`'s `isApplicable`) already ignored the
+return value, so this is non-breaking; the new caller
+(`useLiveSpellcheck.ts`) needs to know when the very first dictionary fetch
+of a session completes.
+
+**Caret-offset helpers extracted too**: `placeCaretAtTextOffset` moved out
+of `shared.tsx` into a new `blocks/caretOffset.ts`, alongside a new
+`getCaretTextOffset` (the read-side counterpart, same probe-`Range`
+technique `splitAtCaret.ts`'s `isCaretAtElementStart` already uses). Kept
+in their own module rather than added to `splitAtCaret.ts` or left in
+`shared.tsx` to avoid an import cycle (`shared.tsx` already imports from
+`splitAtCaret.ts`; `useLiveSpellcheck.ts` needs both the split helpers'
+neighbourhood and the caret helpers, so a third shared module was cleaner
+than picking a side).
+
+**The live-scan mechanism** (`renderer/useLiveSpellcheck.ts`): on a 500ms
+debounce after every `input` event in the active paragraph field, walks
+its text nodes (via `TreeWalker`, never the field's HTML string — this
+must never disturb `<strong>`/`<em>`/`<a>` markup a paragraph might already
+contain) and wraps each misspelled word's exact substring in a
+`<span class="book-spell-error">`. Text nodes with zero misspelled words
+are left completely untouched (no DOM churn). Before each re-wrap pass, any
+previous pass's spans are fully unwrapped first (`unwrapMisspelledWords` +
+`Node.normalize()`) so every scan recomputes from the same clean baseline
+rather than trying to diff against the last one.
+
+**The caret-preservation problem, and why it needed the extracted
+helpers**: injecting a `<span>` mid-sentence while the user keeps typing
+would otherwise visibly kick the cursor to the wrong position the moment
+the debounced rescan fires — the same class of bug this session already
+hit twice with focus (Phase 111's split-paragraph race, Phase 115's
+list-item race), just for the caret instead of for which element has
+focus. Fixed by capturing `getCaretTextOffset(el)` immediately before
+unwrap+rewrap and restoring it with `placeCaretAtTextOffset(el, offset)`
+immediately after — both counting in the same plain-text-character units,
+so the round trip is exact regardless of how the misspelled-word spans
+shifted the DOM's text-node boundaries around it.
+
+**A question that turned out not to be a real risk**: whether `handleBlur`
+(which reads the live DOM via `sanitiseInline` to compute the value
+committed to the store) could read a paragraph's content *while* it still
+had leftover `<span class="book-spell-error">` decoration in it, before
+this hook's own unmount cleanup had a chance to strip it — a real risk if
+`sanitiseInline` treated an unrecognised tag as "drop the whole subtree."
+Checked `parser/html.ts` directly: `sanitiseInline`'s handling of any tag
+outside its `ALLOWED_INLINE_TAGS` allowlist (`STRONG`/`B`/`EM`/`I`/`A`/`BR`)
+is `out += sanitiseInline(el)` — unwrap and keep recursing into children,
+not delete. So a `book-spell-error` span reaching `sanitiseInline`, in any
+order relative to this hook's cleanup, always gets stripped down to its
+plain text content, never loses the text and never leaks the decoration
+markup into a saved paragraph. This hook's own cleanup-time unwrap is
+therefore a belt-and-suspenders visual nicety, not something load-bearing
+for data safety — worth writing down since it's exactly the kind of
+"looks fine until you think about event ordering" question this session's
+two prior focus bugs came from.
+
+**`FloatingFormatToolbar.tsx`**: gained a "Fix spelling" button
+(`SpellCheck2` icon, `text-danger` colour) shown only when the current
+single-word selection is genuinely misspelled by the same dictionary +
+exclusion rules, opening a dropdown of up to 12 `nspell.suggest()`
+corrections. Refactored the Synonyms dropdown's markup into a shared
+`WordSuggestionsDropdown` subcomponent (loading/empty/list states as
+props) rather than duplicating near-identical JSX a second time — both
+buttons are "pick a word from a short list to replace the selection,"
+differing only in what populates the list and how the states are worded.
+Needs the owning project's id (new `projectId` prop) to look up
+`StyleGuide.englishVariant` and the Layer 0 bible, the same two lookups
+`useLiveSpellcheck.ts` already does independently — in practice the
+dictionary is already warm by the time a user selects a word to fix, since
+`useLiveSpellcheck` starts fetching it the moment the field entered edit
+mode.
+
+**Known, deliberately-accepted limitation**: a misspelled word whose
+characters are split across two text nodes by an inline tag starting or
+ending mid-word (e.g. `wo<strong>rd</strong>` for "word") is checked as two
+separate fragments rather than one word, since the per-text-node scan
+doesn't merge across element boundaries. Judged low-priority — inline
+formatting starting or ending mid-word is rare in real prose — and
+consistent with this codebase's existing "documented simplification, not
+silently wrong" bar (e.g. the drop-cap PDF-export simplification in
+`paragraph.tsx`'s `drawParagraphPdf`).
+
+**Verified**: `npx tsc -b --force` (via `timeout 42 ...`) — zero errors.
+`oxlint` still can't run in this sandbox (same corrupted `node_modules`
+state). Not live-verified in Chrome — flagged in `docs/ROADMAP.md` as the
+item this phase most needs real browser testing for, since caret-
+preservation during live DOM mutation is exactly the kind of thing that
+can look correct in code review and misbehave on a real keyboard (IME
+composition, rapid typing outrunning the debounce, etc.).

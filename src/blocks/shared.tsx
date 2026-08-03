@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { sanitiseInline } from '@/parser/html'
 import { splitElementAtCaret, splitPlainTextAtCaret, isCaretAtElementStart } from '@/blocks/splitAtCaret'
+import { placeCaretAtTextOffset } from '@/blocks/caretOffset'
 import { cn } from '@/lib/utils'
 
 function placeCaretAtEnd(el: HTMLElement) {
@@ -25,36 +26,10 @@ function placeCaretAtStart(el: HTMLElement) {
   selection?.addRange(range)
 }
 
-/** Places the caret at a specific *text* offset (not raw HTML length)
- * within `el` — used when merging a block into its previous sibling
- * (Phase 112, `mergeParagraphWithPreviousHistory`) so the caret lands
- * exactly at the old seam between the two paragraphs' text, not at either
- * end. Walks `el`'s text nodes in document order, which is how a rendered
- * offset is actually counted regardless of intervening inline tags
- * (`<strong>`/`<em>`/links). Falls back to the very end if `offset`
- * exceeds the element's real text length (shouldn't happen — the caller
- * computes it from the same content — but a silent no-op caret would be a
- * worse failure mode than "lands at the end"). */
-function placeCaretAtTextOffset(el: HTMLElement, offset: number) {
-  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
-  let remaining = offset
-  let node = walker.nextNode() as Text | null
-  while (node) {
-    const length = node.data.length
-    if (remaining <= length) {
-      const range = document.createRange()
-      range.setStart(node, remaining)
-      range.collapse(true)
-      const selection = window.getSelection()
-      selection?.removeAllRanges()
-      selection?.addRange(range)
-      return
-    }
-    remaining -= length
-    node = walker.nextNode() as Text | null
-  }
-  placeCaretAtEnd(el)
-}
+// `placeCaretAtTextOffset` (used just below, for merges — Phase 112 — and by
+// `startEditing`'s numeric caret-position case) now lives in
+// `@/blocks/caretOffset`, shared with `renderer/useLiveSpellcheck.ts`
+// (Phase 116) rather than duplicated here.
 
 /** Enter commits (blurs to trigger the commit handler), Escape cancels
  * without committing. Shared by every inline-editable field across the
