@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bold, Italic, Link as LinkIcon, Sparkles, SpellCheck2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -218,7 +218,6 @@ export function FloatingFormatToolbar({ containerRef, active, projectId }: Float
   }
 
   const isSingleWord = !!selectedWord && SINGLE_WORD_PATTERN.test(selectedWord)
-  const synonyms = isSingleWord && selectedWord ? getSynonyms(selectedWord) : []
 
   const speller = spellDictReady ? getSpeller(variant) : undefined
   const ignoreWords = projectId ? collectLayer0Names(useLayer0Store.getState().getBible(projectId)) : new Set<string>()
@@ -229,7 +228,35 @@ export function FloatingFormatToolbar({ containerRef, active, projectId }: Float
     !looksLikeAcronym(selectedWord) &&
     !ignoreWords.has(selectedWord.toLowerCase()) &&
     !speller.correct(selectedWord)
-  const spellingSuggestions = isMisspelled && selectedWord && speller ? speller.suggest(selectedWord) : []
+
+  // Phase 120 (2026-08-03, user: reported the fix-spelling flow still
+  // didn't work right after Phase 119 made the dictionary real) —
+  // `speller.suggest()` and `getSynonyms()` are non-trivial searches (edit-
+  // distance candidate generation against a real, full-size dictionary /a
+  // ~12 MB thesaurus), not simple lookups. Before this fix both were called
+  // unconditionally on *every render* the instant a misspelled/single word
+  // was merely selected — including every intermediate `selectionchange`
+  // event a click or drag fires — regardless of whether the user had
+  // actually opened the dropdown to look at suggestions. That was cheap
+  // and unnoticeable while Phase 119's bug meant the dictionary was
+  // effectively empty (nothing to search), but now that the dictionary is
+  // real, repeatedly re-running `suggest()` synchronously on the main
+  // thread — once per render, every render, while any misspelled word is
+  // selected — was measured live to hang the tab entirely (CDP
+  // screenshot/eval calls timed out). `useMemo` alone isn't enough on its
+  // own (the *first* computation while merely selected is still the
+  // expensive one); gating on `spellingOpen`/`synonymsOpen` means the
+  // costly call only ever runs once, when the user actually asks for
+  // suggestions by clicking the button — not on every intermediate
+  // selection change before that.
+  const spellingSuggestions = useMemo(
+    () => (spellingOpen && isMisspelled && selectedWord && speller ? speller.suggest(selectedWord) : []),
+    [spellingOpen, isMisspelled, selectedWord, speller],
+  )
+  const synonyms = useMemo(
+    () => (synonymsOpen && isSingleWord && selectedWord ? getSynonyms(selectedWord) : []),
+    [synonymsOpen, isSingleWord, selectedWord],
+  )
 
   const saveCurrentRange = () => {
     const selection = window.getSelection()

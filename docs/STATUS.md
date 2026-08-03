@@ -7968,3 +7968,55 @@ persisted — pointing to something more serious than a one-shot focus
 race, possibly a non-converging remount/remeasure loop. This needs
 dedicated investigation before another fix attempt; see the new unchecked
 `docs/ROADMAP.md` entry.
+
+
+## Phase 120 (2026-08-03) — Fix: tab froze when selecting a misspelled word to fix it
+
+User report (right after confirming Phase 119's dictionary fix worked):
+"still no way to change the incorrect spellings." A follow-on bug, not a
+regression of Phase 119's fix itself.
+
+**What the live test showed**: on the now-correctly-flagged text
+"hello world sfdsdf fd  sefsdf", double-clicked directly on "sfdsdf" (the
+normal way to select a single word and reveal the floating toolbar's "Fix
+spelling" button) — the tab hung. `computer:screenshot` timed out at 30s,
+retried after waiting, timed out again. This reproduced twice.
+
+**Root cause**: `FloatingFormatToolbar.tsx` computed both
+`spellingSuggestions` (`speller.suggest(selectedWord)`) and `synonyms`
+(`getSynonyms(selectedWord)`) as plain `const` expressions evaluated on
+*every render* — not memoised — the instant `isMisspelled`/`isSingleWord`
+was true, i.e. the instant a misspelled or single word was merely
+*selected*, regardless of whether the user had clicked anything yet. The
+component also re-renders on every `selectionchange` event (its own
+`update()` effect), which a single click or drag fires multiple times.
+`nspell`'s `.suggest()` is not a dictionary lookup — it generates and
+tests candidate edits (transpositions, substitutions, etc.) against the
+*entire* loaded dictionary, a genuinely expensive synchronous search for a
+gibberish input with no close real-word match. This was invisible before
+Phase 119 (the dictionary was effectively empty, so there was nothing to
+search — fast, just wrong), but now that it's a real full-size English
+dictionary, repeatedly re-running that search on the main thread, once per
+render, on every intermediate selection-change event before the user even
+asked for suggestions, was measured live to hang the tab outright.
+
+**Fix**: wrapped both `spellingSuggestions` and `synonyms` in `useMemo`,
+and — more importantly than the memoisation itself — gated each on its
+own dropdown actually being open (`spellingOpen`/`synonymsOpen`), not
+merely on a qualifying word being selected. The expensive call now runs
+once, synchronously, when the user clicks "Fix spelling" or "Synonyms" to
+actually see suggestions — a single ~tens-of-milliseconds hitch is
+acceptable; re-running it on every render while merely *hovering past* a
+misspelled word during a click or drag is not.
+
+**Verified**: `npx tsc -b --force` — zero errors. Root-caused by
+reproducing the exact freeze live (twice) and reading
+`FloatingFormatToolbar.tsx`'s render path rather than guessing — the
+"unconditional, unmemoised expensive computation on every render" pattern
+was directly visible in the code once the freeze pointed at this file.
+Flagged (not confirmed) as a possible contributing factor to the
+still-open Enter-split freeze from the Phase 119 write-up above — same
+general class of bug (expensive synchronous work re-triggered by
+frequent, unrelated re-renders), though not verified as the same root
+cause. Not yet re-verified live in Chrome against this exact fix — needs
+a fresh push + Vercel deploy first, same standing gap.

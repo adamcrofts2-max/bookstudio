@@ -426,6 +426,34 @@ daily use of everything built so far.)*
       live re-test (type a real sentence, confirm no false-positive
       underlines, confirm "Fix spelling" offers real suggestions for an
       actual typo).
+- [x] Fix: tab froze when selecting a misspelled word to fix it (Phase 120,
+      2026-08-03, user: "still no way to change the incorrect spellings" —
+      reported right after confirming Phase 119's dictionary fix worked).
+      Live-tested: double-clicking a misspelled word (the normal way to
+      select it and reveal the "Fix spelling" button) hung the tab —
+      screenshot and JS-evaluation calls both timed out. Root cause:
+      `FloatingFormatToolbar`'s `spellingSuggestions`/`synonyms` were
+      computed unconditionally on *every render* the instant a
+      misspelled/single word was selected — including every intermediate
+      `selectionchange` a click or drag fires — not memoised, and not
+      gated on the suggestion dropdown actually being open.
+      `speller.suggest()` is an edit-distance search over the whole
+      dictionary, not a cheap lookup; this was invisible while Phase 119's
+      bug meant the dictionary was effectively empty (nothing to search),
+      but now that it's a real, full-size dictionary, repeatedly re-running
+      that search synchronously on the main thread on every render was
+      genuinely capable of hanging the tab. Fix: wrapped both in `useMemo`
+      and gated them on `spellingOpen`/`synonymsOpen` — the expensive call
+      now only runs once, when the user actually clicks the button to see
+      suggestions, not speculatively on every selection change beforehand.
+      May also be a contributing factor to the still-open Enter-split
+      freeze below (not confirmed as the same root cause, but the same
+      class of "expensive synchronous work on every render" problem).
+      Verified via `tsc`; root-caused by reproducing the freeze live and
+      reasoning through `FloatingFormatToolbar`'s render path — needs a
+      fresh deploy + live re-test (select a misspelled word, confirm no
+      hang, click "Fix spelling", confirm real suggestions appear and
+      applying one works).
 - [ ] Enter-split focus bug persisted after Phase 118's fix — needs deeper
       investigation (found 2026-08-03, still open). Live-re-testing the
       exact same Enter-at-end-of-paragraph flow against the Phase 118
