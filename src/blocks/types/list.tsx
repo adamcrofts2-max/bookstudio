@@ -12,15 +12,33 @@ import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
 
 function ListRender(props: BlockRenderProps) {
-  const { block, theme, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled } = props
+  const {
+    block,
+    theme,
+    selected,
+    onSelect,
+    editable,
+    onCommit,
+    autoEdit,
+    autoEditItemIndex,
+    onAutoEditHandled,
+    onSplitListItem,
+    onMergeListItemWithPrevious,
+  } = props
 
-  // The monolithic switch's shared `primary`/`attribution` fields were
-  // constructed unconditionally for every block type, but list blocks never
-  // rendered either one — the only externally observable effect of the old
-  // autoEdit effect for this block type was firing `onAutoEditHandled`, so
-  // that's the only part reproduced here.
+  // Phase 115 (2026-08-03) moved real per-item auto-focus onto each
+  // `ListItemField` itself (see `shared.tsx` — same "consume on real DOM
+  // focus, not on mount" pattern as `paragraph.tsx`'s Phase 111 fix). This
+  // effect now only has to cover the leftover case the old unconditional
+  // version handled: an `autoEdit` request that targets this list block but
+  // names no valid item (e.g. `selectForEdit` called without an
+  // `itemIndex` — the Virtual Editor's "Edit" action, or the "+" inserter,
+  // neither of which know about list items) — there's nothing for any item
+  // to focus, so the request must still be consumed here or it would hang
+  // forever.
   useEffect(() => {
-    if (autoEdit && editable) {
+    const itemCount = block.type === 'list' ? block.items.length : 0
+    if (autoEdit && editable && (autoEditItemIndex == null || autoEditItemIndex < 0 || autoEditItemIndex >= itemCount)) {
       onAutoEditHandled?.()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -51,6 +69,10 @@ function ListRender(props: BlockRenderProps) {
             items[i] = value
             onCommit?.({ items })
           }}
+          autoEdit={!!autoEdit && autoEditItemIndex === i}
+          onAutoEditHandled={onAutoEditHandled}
+          onSplit={onSplitListItem ? (before, after) => onSplitListItem(i, before, after) : undefined}
+          onMergeWithPrevious={i > 0 && onMergeListItemWithPrevious ? () => onMergeListItemWithPrevious(i) : undefined}
         />
       ))}
     </Tag>

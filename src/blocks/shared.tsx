@@ -1,7 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { sanitiseInline } from '@/parser/html'
-import { splitElementAtCaret, isCaretAtElementStart } from '@/blocks/splitAtCaret'
+import { splitElementAtCaret, splitPlainTextAtCaret, isCaretAtElementStart } from '@/blocks/splitAtCaret'
 import { cn } from '@/lib/utils'
 
 function placeCaretAtEnd(el: HTMLElement) {
@@ -62,22 +62,29 @@ function placeCaretAtTextOffset(el: HTMLElement, offset: number) {
  *
  * `onSplit`, when provided, changes what Enter does: instead of always
  * committing-and-exiting, it splits the field's content at the caret
- * (`splitElementAtCaret`) and hands both halves to the caller — which is
- * expected to replace this block with the "before" half and insert a new
- * block for the "after" half (see `paragraph.tsx` + `editorActions
- * .splitParagraphWithHistory`), the same "Enter starts a new paragraph"
- * behaviour every word processor has. Falls through to the ordinary
- * commit-and-blur if the split can't be computed (e.g. no active selection)
- * or if the caller doesn't pass `onSplit` at all — every other block type
- * (headings, quotes, list items, …) is completely unaffected.
+ * (`splitElementAtCaret` for `mode: 'html'` fields, `splitPlainTextAtCaret`
+ * for `mode: 'text'` fields) and hands both halves to the caller — expected
+ * to replace this field's own content with the "before" half and create
+ * somewhere to put the "after" half (a new sibling *block* for a paragraph,
+ * see `paragraph.tsx` + `editorActions.splitParagraphWithHistory`; a new
+ * `<li>` *within the same list block* for a list item, see `list.tsx` +
+ * `editorActions.splitListItemWithHistory`, Phase 115) — the same "Enter
+ * starts a new paragraph/item" behaviour every word processor and every
+ * bullet-list editor has. Falls through to the ordinary commit-and-blur if
+ * the split can't be computed (e.g. no active selection) or if the caller
+ * doesn't pass `onSplit` at all — every other block type (headings, quotes,
+ * table cells, …) is completely unaffected.
  *
- * `onMergeWithPrevious` (Phase 112) is `onSplit`'s companion: pressing
- * Backspace with the caret at the very start of the field (`isCaretAtElement
- * Start`) calls it instead of deleting nothing, so the block can be merged
- * into its previous sibling (`editorActions.mergeParagraphWithPreviousHistory`)
- * — the same "Backspace at the start of a line joins it with the line above"
- * behaviour every word processor has. Same opt-in shape as `onSplit`: absent
- * for every block type except `paragraph`. */
+ * `onMergeWithPrevious` (Phase 112, extended to list items Phase 115) is
+ * `onSplit`'s companion: pressing Backspace with the caret at the very start
+ * of the field (`isCaretAtElementStart`) calls it instead of deleting
+ * nothing, so the field's content can be merged into its previous sibling
+ * (`editorActions.mergeParagraphWithPreviousHistory` for paragraphs,
+ * `mergeListItemWithPreviousWithHistory` for list items) — the same
+ * "Backspace at the start of a line joins it with the line above" behaviour
+ * every word processor has. Same opt-in shape as `onSplit`: absent for every
+ * block type except `paragraph` and (per-item, only when there's a previous
+ * item to merge into) `list`. */
 export function useEditableField(options: {
   mode: 'text' | 'html'
   initialValue: string
@@ -126,8 +133,13 @@ export function useEditableField(options: {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      if (onSplit && ref.current && mode === 'html') {
-        const split = splitElementAtCaret(ref.current)
+      if (onSplit && ref.current) {
+        // `mode === 'html'` fields (paragraphs) need `splitElementAtCaret`'s
+        // clone-and-sanitise handling to preserve inline formatting across
+        // the split; `mode === 'text'` fields (list items, Phase 115) have
+        // no formatting to preserve, so the plain-text `Range.toString()`
+        // version is enough and skips the unnecessary HTML round-trip.
+        const split = mode === 'html' ? splitElementAtCaret(ref.current) : splitPlainTextAtCaret(ref.current)
         if (split) {
           // The split itself (both halves persisted atomically as one undo
           // step, via `onSplit`) is the real commit here — the ordinary
@@ -144,7 +156,6 @@ export function useEditableField(options: {
       e.key === 'Backspace' &&
       onMergeWithPrevious &&
       ref.current &&
-      mode === 'html' &&
       isCaretAtElementStart(ref.current)
     ) {
       // Same "the real commit happens inside the callback" reasoning as
@@ -184,12 +195,53 @@ interface ListItemFieldProps {
   text: string
   editable?: boolean
   onCommit: (value: string) => void
+  /** One-shot signal to enter edit mode immediately with the caret at this
+   * item's start — the item-level counterpart to `BlockContentProps.autoEdit`
+   * (Phase 115, 2026-08-03). `list.tsx` resolves which item this applies to
+   * from `selectionStore.editRequestItemIndex` before passing it down, so
+   * only ever one item at a time actually receives `autoEdit={true}`. */
+  autoEdit?: boolean
+  /** Called once `autoEdit` has been acted on (real DOM focus landed), so
+   * the requester (`selectionStore`) can clear the pending request. Consumed
+   * from `onFocus`, not the mount effect — same "retry across any number of
+   * remounts until focus genuinely sticks" reasoning as `paragraph.tsx`'s
+   * Phase 111 fix, needed here because splitting/merging a list item changes
+   * the whole list block's height, which can still trigger a pagination-
+   * driven remount before the new item's real position settles. */
+  onAutoEditHandled?: () => void
+  /** Enter-mid-item support (Phase 115) — splits this item's text at the
+   * caret; `list.tsx` wires this to insert a new `<li>` right after this one
+   * in the same list block, mirroring `paragraph.tsx`'s `onSplit`. */
+  onSplit?: (before: string, after: string) => void
+  /** Backspace-at-start-merges-with-the-previous-item (Phase 115),
+   * `onSplit`'s companion — only ever passed for an item that isn't already
+   * the list's first (nothing to merge into otherwise), mirroring
+   * `onMergeWithPrevious`'s scoping for paragraph blocks. */
+  onMergeWithPrevious?: () => void
 }
 
 /** One `<li>` — its own component so hooks stay unconditional regardless of
  * how many items a list has (see Rules of Hooks). Used by `list.tsx`. */
-export function ListItemField({ text, editable, onCommit }: ListItemFieldProps) {
-  const field = useEditableField({ mode: 'text', initialValue: text, onCommit })
+export function ListItemField({
+  text,
+  editable,
+  onCommit,
+  autoEdit,
+  onAutoEditHandled,
+  onSplit,
+  onMergeWithPrevious,
+}: ListItemFieldProps) {
+  const field = useEditableField({ mode: 'text', initialValue: text, onCommit, onSplit, onMergeWithPrevious })
+
+  // See the `onAutoEditHandled` doc comment above — re-issues `startEditing`
+  // every time `autoEdit` flips true, not just on first mount, so a
+  // pagination-driven remount mid-split doesn't silently strand the focus
+  // request (same pattern `paragraph.tsx` uses).
+  useEffect(() => {
+    if (autoEdit && editable) field.startEditing('start')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEdit])
+
   return (
     <li
       ref={(el) => {
@@ -198,6 +250,7 @@ export function ListItemField({ text, editable, onCommit }: ListItemFieldProps) 
       contentEditable={field.isEditing}
       suppressContentEditableWarning
       onDoubleClick={editable ? () => field.startEditing() : undefined}
+      onFocus={autoEdit ? () => onAutoEditHandled?.() : undefined}
       onBlur={field.isEditing ? field.handleBlur : undefined}
       onKeyDown={field.isEditing ? field.handleKeyDown : undefined}
       className={cn('pb-1', field.isEditing && 'outline outline-2 outline-offset-2 outline-[var(--color-warning)] rounded-sm')}

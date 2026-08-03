@@ -291,10 +291,26 @@ daily use of everything built so far.)*
       floating toolbar, visible only in `write` mode. Verified via `tsc`;
       sound/scroll behaviour needs live-browser verification (Web Audio and
       real scroll geometry can't be meaningfully unit-tested headlessly).
-- [ ] Enter-to-split for list items (currently only `paragraph` gets
-      `onSplit` — pressing Enter mid-item in a list still just commits/exits
-      rather than creating a new `<li>`, which is the same "feels broken"
-      gap the user flagged for paragraphs, just not yet asked about).
+- [x] Enter-to-split for list items (Phase 115, 2026-08-03) — the item this
+      entry used to describe as "not yet asked about" (only `paragraph` got
+      `onSplit`, so pressing Enter mid-item in a list just committed/exited,
+      the same "feels broken" gap the user actually flagged for paragraphs).
+      `useEditableField`'s `onSplit`/`onMergeWithPrevious` no longer require
+      `mode === 'html'` — a new `splitPlainTextAtCaret` (`splitAtCaret.ts`)
+      covers `mode: 'text'` fields (list items have no inline formatting to
+      preserve, so `Range.toString()` is enough, no HTML round-trip needed).
+      New `editorActions.splitListItemWithHistory`/
+      `mergeListItemWithPreviousWithHistory` splice one list block's `items`
+      array directly (no new sibling block, unlike the paragraph version —
+      a list item split stays within the same `<ul>`/`<ol>`). Reliable
+      auto-focus of the new/merged item needed one genuinely new piece:
+      `selectionStore.editRequestItemIndex`, the item-granularity
+      counterpart to `editRequestId`/`editRequestCaretPosition`, so the
+      "consume on real DOM focus, not on mount" retry pattern (Phase 111's
+      fix) survives a pagination-driven remount of the whole list block, not
+      just local component state that a remount would silently wipe.
+      Verified via `tsc`; not yet live-verified in Chrome (see Phase K's
+      standing verification gap).
 - [x] Backspace-at-start-of-paragraph-merges-with-previous-paragraph (Phase
       112, 2026-08-03) — the natural companion to Enter-splits-paragraph:
       pressing Backspace with the caret at the very start of a paragraph

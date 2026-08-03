@@ -73,6 +73,38 @@ export interface BlockContentProps {
    * text into a heading or list item isn't well-defined the same way.
    */
   onMergeWithPrevious?: () => void
+  /**
+   * Which list item (`items` array index) `autoEdit` applies to, or
+   * `undefined`/`null` (Phase 115, 2026-08-03). Only meaningful for the
+   * `list` block type — every other type ignores it. Set from
+   * `selectionStore.editRequestItemIndex`, the item-granularity counterpart
+   * to `autoEditCaretPosition` above: a `list` block's "block" is the whole
+   * `<ul>`/`<ol>`, not one `<li>`, so the block-level `autoEdit` alone can't
+   * say *which* item should receive focus.
+   */
+  autoEditItemIndex?: number | null
+  /**
+   * Enter-mid-list-item support (Phase 115) — `onSplit`'s list counterpart.
+   * Splitting a list item doesn't create a new sibling *block* the way a
+   * paragraph split does; it inserts a new `<li>` into this same list
+   * block's `items` array, so the callback needs to know which item index
+   * was split. Called with the item's index and the plain text on either
+   * side of the caret; `Page.tsx` wires this to
+   * `editorActions.splitListItemWithHistory` and then requests item
+   * `itemIndex + 1` for immediate editing via `selectForEdit`'s `itemIndex`
+   * parameter. Only wired for the `list` block type.
+   */
+  onSplitListItem?: (itemIndex: number, beforeText: string, afterText: string) => void
+  /**
+   * Backspace-at-start-of-a-list-item-merges-with-the-previous-item (Phase
+   * 115), `onSplitListItem`'s companion — `onMergeWithPrevious`'s list
+   * counterpart, scoped to items within the same list block. `Page.tsx`
+   * only ever wires this for the `list` block type; `list.tsx` itself only
+   * ever passes it down to an item that isn't already the list's first
+   * (nothing to merge into otherwise), mirroring `onMergeWithPrevious`'s
+   * "only pass the callback when it would do something" rule.
+   */
+  onMergeListItemWithPrevious?: (itemIndex: number) => void
 }
 
 /**

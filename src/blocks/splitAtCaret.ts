@@ -68,3 +68,28 @@ export function splitElementAtCaret(el: HTMLElement): CaretSplit | null {
     after: sanitiseInline(afterContainer),
   }
 }
+
+/**
+ * `splitElementAtCaret`'s plain-text counterpart (Phase 115, 2026-08-03) —
+ * used by `mode: 'text'` fields (currently just list items, `ListItemField`
+ * in `shared.tsx`), which have no inline formatting to preserve, so there's
+ * no need for `splitElementAtCaret`'s clone-and-sanitise-through-a-`<div>`
+ * approach. `Range.toString()` already returns exactly the rendered text a
+ * plain-text field cares about, with no HTML to strip back out.
+ */
+export function splitPlainTextAtCaret(el: HTMLElement): CaretSplit | null {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return null
+  const range = selection.getRangeAt(0)
+  if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) return null
+
+  const beforeRange = document.createRange()
+  beforeRange.selectNodeContents(el)
+  beforeRange.setEnd(range.startContainer, range.startOffset)
+
+  const afterRange = document.createRange()
+  afterRange.selectNodeContents(el)
+  afterRange.setStart(range.endContainer, range.endOffset)
+
+  return { before: beforeRange.toString(), after: afterRange.toString() }
+}

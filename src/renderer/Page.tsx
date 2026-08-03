@@ -33,6 +33,8 @@ import {
   deleteChapterWithHistory,
   splitParagraphWithHistory,
   mergeParagraphWithPreviousHistory,
+  splitListItemWithHistory,
+  mergeListItemWithPreviousWithHistory,
 } from '@/store/editorActions'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
@@ -132,6 +134,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const editRequestId = useSelectionStore((s) => s.editRequestId)
   const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
+  const editRequestItemIndex = useSelectionStore((s) => s.editRequestItemIndex)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
   const selectForEdit = useSelectionStore((s) => s.selectForEdit)
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
@@ -227,8 +230,27 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
                   if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset)
                 }
           }
+          onSplitListItem={
+            decorative || block.type !== 'list'
+              ? undefined
+              : (itemIndex, before, after) => {
+                  if (!chapterId) return
+                  const ok = splitListItemWithHistory(projectId, chapterId, block.id, itemIndex, before, after)
+                  if (ok) selectForEdit(chapterId, block.id, 'start', itemIndex + 1)
+                }
+          }
+          onMergeListItemWithPrevious={
+            decorative || block.type !== 'list'
+              ? undefined
+              : (itemIndex) => {
+                  if (!chapterId || itemIndex <= 0) return
+                  const caretOffset = mergeListItemWithPreviousWithHistory(projectId, chapterId, block.id, itemIndex)
+                  if (caretOffset !== undefined) selectForEdit(chapterId, block.id, caretOffset, itemIndex - 1)
+                }
+          }
           autoEdit={isSelected && editRequestId !== null}
           autoEditCaretPosition={editRequestCaretPosition}
+          autoEditItemIndex={editRequestItemIndex}
           onAutoEditHandled={consumeEditRequest}
           projectId={decorative ? undefined : projectId}
           onReplace={decorative ? undefined : (newBlock) => chapterId && replaceBlockWithHistory(projectId, chapterId, block.id, newBlock)}

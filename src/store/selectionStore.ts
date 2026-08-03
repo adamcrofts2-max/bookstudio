@@ -48,6 +48,22 @@ interface SelectionState {
    */
   editRequestCaretPosition: 'start' | 'end' | number
   /**
+   * Which list item (`ContentBlock.items` array index) `editRequestId`
+   * applies to, or `null` (Phase 115, 2026-08-03). Only meaningful when the
+   * requested block is a `list` — every other block type ignores it. A
+   * `list` block's "block" is the whole `<ul>`/`<ol>`, not one `<li>`, so
+   * the block-level `editRequestId` alone can't say *which* item should
+   * receive focus after `editorActions.splitListItemWithHistory`/
+   * `mergeListItemWithPreviousWithHistory` — this is the item-granularity
+   * counterpart, stored here (not local component state) for the same
+   * reason `editRequestId` itself is a store field and not a prop threaded
+   * down once: it needs to survive a pagination-driven remount of the list
+   * block and keep re-triggering `ListItemField`'s auto-focus effect until a
+   * real DOM focus lands (see `paragraph.tsx`'s Phase 111 doc comment for
+   * the exact race this pattern avoids).
+   */
+  editRequestItemIndex: number | null
+  /**
    * Non-null means "scroll the manuscript view to this chapter's opening
    * page, this exact page, or this exact block" (Sidebar's chapter nav /
    * ThumbnailRail's page thumbnails / Virtual Editor's Locate & Edit
@@ -71,8 +87,10 @@ interface SelectionState {
    * of a just-split paragraph), or a text-character offset for a block
    * whose content was just merged from two blocks into one (Phase 112), so
    * the cursor doesn't land past content the user hasn't actually looked at
-   * yet, or at the wrong end of a merge. */
-  selectForEdit: (chapterId: string, blockId: string, caretPosition?: 'start' | 'end' | number) => void
+   * yet, or at the wrong end of a merge. `itemIndex` (Phase 115) is only
+   * meaningful when `blockId` refers to a `list` block — see
+   * `editRequestItemIndex` above. */
+  selectForEdit: (chapterId: string, blockId: string, caretPosition?: 'start' | 'end' | number, itemIndex?: number) => void
   /** Selects a structural page (clearing any block/chapter selection) —
    * used by the Sidebar's Structure tab rows and by clicking a structural
    * page directly in the on-screen preview. */
@@ -103,6 +121,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
   selectedCoverElementId: null,
   editRequestId: null,
   editRequestCaretPosition: 'end',
+  editRequestItemIndex: null,
   scrollRequest: null,
   select: (chapterId, blockId) =>
     set({
@@ -112,8 +131,9 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       selectedCoverElementId: null,
       editRequestId: null,
       editRequestCaretPosition: 'end',
+      editRequestItemIndex: null,
     }),
-  selectForEdit: (chapterId, blockId, caretPosition: 'start' | 'end' | number = 'end') =>
+  selectForEdit: (chapterId, blockId, caretPosition: 'start' | 'end' | number = 'end', itemIndex) =>
     set({
       selectedChapterId: chapterId,
       selectedBlockId: blockId,
@@ -121,6 +141,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       selectedCoverElementId: null,
       editRequestId: generateId('edit-request'),
       editRequestCaretPosition: caretPosition,
+      editRequestItemIndex: itemIndex ?? null,
     }),
   selectStructuralPage: (pageId) =>
     set({
@@ -130,9 +151,10 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       selectedCoverElementId: null,
       editRequestId: null,
       editRequestCaretPosition: 'end',
+      editRequestItemIndex: null,
     }),
   selectCoverElement: (elementId) => set({ selectedCoverElementId: elementId }),
-  consumeEditRequest: () => set({ editRequestId: null }),
+  consumeEditRequest: () => set({ editRequestId: null, editRequestItemIndex: null }),
   requestScrollToChapter: (chapterId) =>
     set({
       selectedChapterId: chapterId,
@@ -152,6 +174,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       selectedCoverElementId: null,
       editRequestId: null,
       editRequestCaretPosition: 'end',
+      editRequestItemIndex: null,
       scrollRequest: null,
     }),
 }))

@@ -7532,3 +7532,88 @@ unrelated to any code change — see Phase 113's note). Not live-verified in
 Chrome — same standing limitation. Manually spot-checked several real
 words' synonym lists in the converted JSON (`cheerful`, `happy`) against
 the source data before building the UI on top of it.
+
+## Phase 115 (2026-08-03) — Enter-to-split for list items
+
+Continuing autonomously down `docs/ROADMAP.md` after Phase 114 (per the
+project's own "pick the next task from the highest-priority unchecked
+phase" rule) — the next unchecked Phase B item was this one, the explicit
+"not yet asked about" sibling gap the Phase 111 entry itself flagged:
+paragraphs could split on Enter, list items still couldn't.
+
+**Why this needed more than copying the paragraph code**: a list item isn't
+its own `ContentBlock` — `list.tsx` stores every item as a plain string in
+one block's `items: string[]`, rendered by `ListItemField`
+(`mode: 'text'`, no inline HTML). Two consequences: (1)
+`useEditableField`'s `onSplit`/`onMergeWithPrevious` previously hard-gated
+on `mode === 'html'` (so `splitElementAtCaret` could clone-and-sanitise
+formatted content) — a list item has no formatting to preserve, so a new
+`splitPlainTextAtCaret` (`splitAtCaret.ts`) does the same caret-relative
+`Range` split but returns plain `Range.toString()` halves, and the
+`mode === 'html'` gate on both Enter and Backspace handling was removed
+(mode picks which split function runs; `isCaretAtElementStart` already
+worked for plain text, no change needed there). (2) A list-item split
+doesn't create a new sibling *block* the way `splitParagraphWithHistory`
+does — it inserts a new `<li>` into the *same* block's `items` array, so
+the store-level action (`editorActions.splitListItemWithHistory`) works on
+one block's `items` field via `array.splice(itemIndex, 1, before, after)`,
+not a `chapter.blocks` restructure. `mergeListItemWithPreviousWithHistory`
+is the mirror: concatenates item `itemIndex` into `itemIndex - 1`, removes
+the now-redundant item, returns the character offset marking the old seam
+(no `stripHtml` needed — list items are already plain text). Both still one
+`replaceChapterBlocks` call, one undo step, same "one keystroke, one undo
+entry" rule the paragraph versions established.
+
+**The auto-focus problem, and why it needed a store change, not just a
+prop**: Phase 111's real bug (fixed the same session) was a focus race —
+consuming the one-shot edit request in a mount `useEffect` instead of
+`onFocus` meant a pagination-driven remount (async `HeightMeasurer`
+re-layout after content height changes) could silently strand the pending
+focus with no retry. List items are exactly as exposed to this: splitting
+one grows the whole list block's rendered height, which can just as
+plausibly trigger a remount before layout settles. Naively tracking "which
+item should auto-focus" as local state inside `ListRender` would have
+reintroduced the identical bug for lists — a remount wipes local component
+state along with it. Fixed by extending `selectionStore` with
+`editRequestItemIndex: number | null`, the item-granularity sibling of the
+existing `editRequestId`/`editRequestCaretPosition` (`selectForEdit` grew a
+fourth, optional `itemIndex` parameter). Because it lives in the store, not
+a component, it survives any number of remounts exactly like `editRequestId`
+already does — `ListItemField` re-issues `startEditing('start')` every time
+its own `autoEdit` prop flips true (mirroring `paragraph.tsx`'s effect
+verbatim) and only calls `onAutoEditHandled` from its own `onFocus`, so the
+request stays alive until a real focus lands. `list.tsx`'s `ListRender`
+resolves *which* item that is (`autoEditItemIndex === i`) and forwards a
+per-item `autoEdit` boolean down — `BlockContentProps` gained a matching
+`autoEditItemIndex` (harmless no-op for every other block type, which never
+reads it).
+
+One edge case handled explicitly: `selectForEdit` can still be called
+against a `list` block with no `itemIndex` at all (the Virtual Editor's
+"Edit" action and the "+" inserter both predate this feature and don't know
+about list items). `ListRender` keeps a small fallback effect for exactly
+this — if `autoEdit` fires but `autoEditItemIndex` doesn't resolve to any
+real item, it consumes the request itself (matching the *old* unconditional
+behaviour for list blocks) rather than leaving it to hang forever with no
+item claiming it.
+
+**Scope**: deliberately just `list` — `TableCellField`/other `ListItemField`
+consumers (`timeline.tsx`, `statistics.tsx`, `faq.tsx`, `checklist.tsx`,
+`structuralPages/shared.tsx`) all keep today's commit-and-exit Enter
+unchanged; the new `onSplit`/`onMergeWithPrevious`/`autoEdit` params on
+`ListItemField` are optional and `undefined` at every one of those call
+sites, so nothing about them changed behaviourally. `TypographyPanel.tsx`'s
+sidebar editor doesn't have a list-item editing surface at all (it's
+paragraph-only, per Phase 51/113), so there's no second surface to keep in
+sync here the way there was for paragraphs.
+
+**Verified**: `npx tsc -b --force` (via `timeout 42 ...`, same sandbox I/O
+workaround as recent phases) — zero errors after one real type error
+(`block.items` accessed before the `block.type !== 'list'` narrowing guard,
+inside the fallback effect which — being a hook — has to run unconditionally
+before that guard; fixed by computing `itemCount` from an inline
+`block.type === 'list' ? block.items.length : 0` check instead). `oxlint`
+still can't run in this sandbox (same corrupted `@tailwindcss/node`-adjacent
+`node_modules` state flagged since Phase 53/109 — see
+`docs/TERMINAL_SETUP.md`). Not live-verified in Chrome — same standing
+Phase K limitation as every recent phase.

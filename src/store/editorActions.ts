@@ -330,6 +330,104 @@ export function mergeParagraphWithPreviousHistory(
 }
 
 /**
+ * List's counterpart to `splitParagraphWithHistory` (Phase 115, 2026-08-03,
+ * ROADMAP Phase B: "Enter-to-split for list items"). A list item splitting
+ * doesn't create a new sibling *block* the way a paragraph split does — it
+ * inserts a new `<li>` into this same `list` block's `items` array, so the
+ * whole edit is a single splice of one array field rather than a
+ * block-array restructure. Still one `replaceChapterBlocks` call, one undo
+ * step, same "one keystroke, one undo entry" principle as the paragraph
+ * version. Returns `true` on success so the caller (`Page.tsx`, via
+ * `onSplitListItem`) knows to select `itemIndex + 1` for immediate editing;
+ * `false` (a no-op) if the chapter/block can't be found, the block isn't
+ * actually a `list`, or `itemIndex` is out of range — defensive, matching
+ * `splitParagraphWithHistory`.
+ */
+export function splitListItemWithHistory(
+  projectId: string,
+  chapterId: string,
+  blockId: string,
+  itemIndex: number,
+  beforeText: string,
+  afterText: string,
+): boolean {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return false
+  const index = chapter.blocks.findIndex((b) => b.id === blockId)
+  const oldBlock = index >= 0 ? chapter.blocks[index] : undefined
+  if (!oldBlock || oldBlock.type !== 'list') return false
+  if (itemIndex < 0 || itemIndex >= oldBlock.items.length) return false
+
+  const items = oldBlock.items.slice()
+  items.splice(itemIndex, 1, beforeText, afterText)
+  const updatedBlock: ContentBlock = { ...oldBlock, items }
+  const oldBlocks = chapter.blocks
+  const newBlocks = [...oldBlocks.slice(0, index), updatedBlock, ...oldBlocks.slice(index + 1)]
+
+  useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Split list item',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, oldBlocks),
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks),
+  )
+
+  return true
+}
+
+/**
+ * List's counterpart to `mergeParagraphWithPreviousHistory` (Phase 115) —
+ * merges item `itemIndex` into the immediately preceding item within the
+ * same `list` block (straight concatenation, no inserted separator, same as
+ * the paragraph merge) and removes the now-redundant item. Returns the
+ * *character* offset marking the old seam (the previous item's own text is
+ * always plain, so no `stripHtml` round-trip is needed here unlike the
+ * paragraph version) so the caller (`Page.tsx`, via
+ * `onMergeListItemWithPrevious`) can select item `itemIndex - 1` for
+ * editing with the caret exactly where the two items used to meet.
+ * `undefined` (a no-op) if `itemIndex` is the block's first item (nothing to
+ * merge into) or out of range, or the chapter/block can't be found —
+ * defensive, matching `mergeParagraphWithPreviousHistory`; `Page.tsx`
+ * additionally only ever wires `onMergeListItemWithPrevious` for an item
+ * that isn't already first.
+ */
+export function mergeListItemWithPreviousWithHistory(
+  projectId: string,
+  chapterId: string,
+  blockId: string,
+  itemIndex: number,
+): number | undefined {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return undefined
+  const index = chapter.blocks.findIndex((b) => b.id === blockId)
+  const oldBlock = index >= 0 ? chapter.blocks[index] : undefined
+  if (!oldBlock || oldBlock.type !== 'list') return undefined
+  if (itemIndex <= 0 || itemIndex >= oldBlock.items.length) return undefined
+
+  const caretOffset = oldBlock.items[itemIndex - 1].length
+  const items = oldBlock.items.slice()
+  items[itemIndex - 1] = items[itemIndex - 1] + items[itemIndex]
+  items.splice(itemIndex, 1)
+  const updatedBlock: ContentBlock = { ...oldBlock, items }
+  const oldBlocks = chapter.blocks
+  const newBlocks = [...oldBlocks.slice(0, index), updatedBlock, ...oldBlocks.slice(index + 1)]
+
+  useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'Merge list items',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, oldBlocks),
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks),
+  )
+
+  return caretOffset
+}
+
+/**
  * Inserts several blocks at once, as a single undo step — used by
  * `AiDraftInsertDialog.tsx` to commit a whole reviewed batch of AI-drafted
  * blocks together, matching a real author's mental model ("insert this
