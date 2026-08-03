@@ -7455,3 +7455,80 @@ Not live-verified in Chrome. The real test is on the user's end: run
 `docs/TERMINAL_SETUP.md`'s `npm ci`, push to GitHub, redeploy (or run
 `npm run dev` locally), then confirm Enter/Backspace in *both* the canvas
 and the Inspector's Type tab.
+
+## Phase 114 (2026-08-03) — Thesaurus / synonym lookup
+
+User asked "what next" after Phase 113 shipped. `docs/ROADMAP.md` already
+flagged Thesaurus as the next unblocked, no-API item — unblocked because
+the user had just run `npm install moby` from their own terminal per
+`docs/TERMINAL_SETUP.md`'s Step 2.
+
+**The recommended package was wrong.** Inspecting `node_modules/moby/
+package.json` after the install showed `main: index.js`, `bin: index.js`,
+and dependencies on `express`, `jade`, `lodash.union`, `thesaurus` — this
+`moby` (npm) resolves to `zeke/moby`, a CLI + Express + Jade website for
+searching Moby Thesaurus data, not the lightweight `words/moby` GitHub
+package the original web search implied. Pulling `express`/`jade` into a
+client-only Vite bundle would be actively wrong (server framework +
+templating engine, neither usable in a browser, likely wouldn't even
+import cleanly). Caught before any UI was built on top of it.
+
+**The fix was already sitting in `node_modules`**: `moby`'s own dependency
+`thesaurus` (`daizoru/node-thesaurus`, BSD-style-licensed OpenOffice/MyThes
+English data) is exactly the right shape — `node_modules/thesaurus/lib/
+th_en_US_new.js` is a plain `module.exports = { word: [synonyms...], ... }`
+object literal, no `fs`/Node APIs at module scope, safe to treat as pure
+data. `package.json` corrected: `moby` removed, `thesaurus` added as a
+direct dependency (`0.0.0`, matching what's already on disk — reconciles
+automatically next `npm install`).
+
+**Data**: converted via a one-off Node script (`public/thesaurus/en/
+README.md` documents the exact command for future refreshes) to
+`public/thesaurus/en/data.json` — 142,689 entries, ~11.9 MB. Same "static
+`public/` asset, fetched with `fetch()` at runtime, not `import`ed at build
+time" pattern the spell-check dictionaries already established
+(`public/dictionaries/en(-gb)/`), for the same reason: bundling ~12 MB into
+the main JS would slow every page load for a feature most sessions never
+open, whereas a lazily-fetched static asset only costs anything the first
+time a user actually requests a lookup. License copied alongside
+(`public/thesaurus/en/license`) — permissive BSD-style, same lineage as the
+Hunspell dictionary data already in this repo.
+
+**Loader**: `src/renderer/thesaurusDictionary.ts` — `ensureThesaurusLoading()`
+(idempotent, returns the load promise so callers can react to completion),
+`isThesaurusReady()`, `getSynonyms(word)` (case-insensitive; filters the
+headword itself out of its own synonym list, since the source data lists it
+as the first entry of each entry — documented in the `public/thesaurus/en/
+README.md` too, so a future reader of either file finds the same
+explanation). Fails closed on a fetch error, same as
+`spellcheckDictionary.ts`.
+
+**UI**: `FloatingFormatToolbar.tsx` (the existing Bold/Italic/Link toolbar
+that already appears above a text selection while editing a paragraph)
+gained a fourth button, "Synonyms" — shown only when the current selection
+is a single word (`SINGLE_WORD_PATTERN`, no phrases/partial-word
+selections). Clicking it opens a small dropdown of up to 12 synonyms;
+picking one replaces the selection via `document.execCommand('insertText',
+...)`, the same native-command approach already used for Bold/Italic/Link
+rather than manually splicing the DOM — this also means the replacement
+participates in the browser's native undo stack for free. The dropdown
+tracks loading state reactively (`thesaurusReady` local state, updated when
+the fetch promise resolves) rather than reading `isThesaurusReady()` once
+at render time, which would otherwise leave the dropdown stuck on "Loading…"
+forever if the fetch finished after it was opened but nothing else
+triggered a re-render. The fetch itself kicks off as soon as a paragraph
+field starts being edited (not on first Synonyms click), so it usually has
+a head start by the time a user actually wants it.
+
+Deliberately scoped to the on-canvas paragraph editor only for this first
+pass — `TypographyPanel.tsx`'s sidebar paragraph editor (Phase 113) doesn't
+render `FloatingFormatToolbar` at all today (it's a plain box, no
+bold/italic/link toolbar either), so it has no synonym lookup yet either;
+consistent scope, not a new gap.
+
+**Verified**: `npx tsc -b --force` — zero errors (used `timeout 42 ...`
+again this session; plain invocations kept hitting sandbox I/O slowness
+unrelated to any code change — see Phase 113's note). Not live-verified in
+Chrome — same standing limitation. Manually spot-checked several real
+words' synonym lists in the converted JSON (`cheerful`, `happy`) against
+the source data before building the UI on top of it.

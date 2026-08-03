@@ -67,23 +67,23 @@ rmdir /s /q node_modules
 npm install
 ```
 
-## 2. Install the one remaining package
+## 2. Nothing left to install — `npm ci` covers it
 
-Everything else the app currently uses is already installed
-(`nspell`, `dictionary-en`, `dictionary-en-gb`, `@pdf-lib/fontkit` — you
-installed these already, and spell-check is shipped and working). There's
-one more worth adding now, for the Thesaurus / synonym-lookup feature on
-the roadmap (not wired up in the code yet — this just unblocks building it
-next):
+**Update 2026-08-03**: you already ran `npm install moby` from here, which
+was genuinely the wrong package — it turned out to be a full CLI + web
+server tool (pulls in `express`, `jade`), not the lightweight dataset the
+Thesaurus feature actually needed. Already fixed on my end: `package.json`
+now lists `thesaurus` (the correct, tiny data package `moby` itself
+depended on) instead, and the synonym-lookup feature is built and wired up
+against it — a "Synonyms" button next to Bold/Italic/Link when you select a
+single word while editing a paragraph. `moby`'s now-unnecessary
+`express`/`jade` dependencies will just drop out the next time you run
+`npm install` or `npm ci` — nothing extra for you to run here, Step 1's
+`npm ci` already handles it.
 
-```bat
-npm install moby
-```
-
-`moby` is a small, offline synonym dataset (Moby Thesaurus + Open Office
-Thesaurus data) from the same publisher family as the dictionary packages
-you already installed — no API key, no network calls at runtime, same
-"bundled data, not a live service" pattern the spell-checker already uses.
+Everything else the app uses (`nspell`, `dictionary-en`, `dictionary-en-gb`,
+`@pdf-lib/fontkit`, now `thesaurus`) is already in `package.json` — no more
+manual `npm install`s needed for now.
 
 ## 3. Verify everything actually works
 
@@ -113,7 +113,7 @@ click-tested since the sandbox can't do it.
 
 ## 4. Push everything to GitHub
 
-Every commit through Phase 112 is sitting locally in this repo, unpushed —
+Every commit through Phase 114 is sitting locally in this repo, unpushed —
 the sandbox has no push access, so none of this session's work (or several
 sessions before it) has reached GitHub yet.
 

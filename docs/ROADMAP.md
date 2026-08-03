@@ -734,15 +734,25 @@ daily use of everything built so far.)*
       goal + a `Progress` bar + the last 7 days (gaps shown, not hidden) — opens by
       clicking the word count itself (no new toolbar button, given the crowding
       already flagged in `docs/SUGGESTIONS.md`).
-- [ ] Thesaurus / synonym lookup — flagged 2026-08-01 alongside search and
-      spellcheck. Needs a bundled synonym dataset (client-only, no-backend
-      architecture, same reasoning `ClipboardProvider` below uses). `moby`
-      (npm) is now installed (2026-08-03, user ran it from their own
-      terminal — see `package.json`), from the same `wooorm`/`words` family
-      as `nspell`/`dictionary-en`. Not yet wired up — next step is a lookup
-      UI (an "Ideas"-style panel or a right-click "Find a synonym" on
-      selected text), mirroring `spellcheckDictionary.ts`'s async-load
-      pattern.
+- [x] Thesaurus / synonym lookup (Phase 114, 2026-08-03) — flagged
+      2026-08-01 alongside search and spellcheck. The `moby` package the
+      user installed turned out to be the wrong one (`zeke/moby`, a CLI +
+      Express + Jade webserver tool, not a bundleable dataset) — swapped for
+      its own dependency `thesaurus` (`daizoru/node-thesaurus`), a plain
+      `word -> synonyms[]` JS object with no `fs`/Node APIs at module scope.
+      Converted to `public/thesaurus/en/data.json` (~12 MB, same "static
+      asset fetched lazily, not bundled" pattern as the spell-check
+      dictionaries — see that folder's README). New
+      `src/renderer/thesaurusDictionary.ts` (async-loaded, module-cached,
+      fails closed) + a "Synonyms" button in `FloatingFormatToolbar.tsx`,
+      shown only when the selection is a single word. Picking a synonym
+      replaces the selection via `execCommand('insertText', ...)` — the
+      same native-command approach Bold/Italic/Link already use, so it
+      participates in the browser's undo stack for free, no custom DOM
+      splicing. Verified via `tsc`; not yet live-verified in Chrome (see
+      Phase K's standing verification gap — this sandbox can't push/
+      preview). `package.json` corrected: `moby` removed, `thesaurus` added
+      directly.
 - [x] Distraction-free writing mode, plus a reading mode (user-requested
       alongside it, 2026-08-01) — shipped 2026-08-01 (Phase 73). One shared
       `uiStore.focusMode: 'none' | 'write' | 'read'` rather than two independent
