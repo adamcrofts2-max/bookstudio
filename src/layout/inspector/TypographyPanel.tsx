@@ -10,6 +10,8 @@ import { useContentStore } from '@/store/contentStore'
 import { editBlock, splitParagraphWithHistory, mergeParagraphWithPreviousHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useEditableField } from '@/blocks/shared'
+import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
+import { FloatingFormatToolbar } from '@/renderer/FloatingFormatToolbar'
 import { stripHtml, wordCount } from '@/utils'
 import type { Chapter, ContentBlock, ParagraphBlock, PlaceholderKind } from '@/types/content'
 
@@ -93,6 +95,23 @@ interface ParagraphTextEditorProps {
  * since this box isn't subject to the paginated layout engine's async
  * remounts (see `useTypewriterMode`/`Page.tsx`'s own doc comments for why
  * that race exists there and not here).
+ *
+ * Phase 117 (2026-08-03) added live spell-check underlining and the
+ * Synonyms/Fix-spelling floating toolbar here too, for the same "one
+ * behaviour, two editing surfaces" reason as the split/merge wiring above —
+ * found live-testing in Chrome that selecting a paragraph (including via
+ * the on-canvas double-click that's supposed to start editing *there*)
+ * always mounts this component fresh, and its own mount effect immediately
+ * calls `field.startEditing()`, which in practice usually wins actual DOM
+ * focus over `paragraph.tsx`'s own `primary.startEditing()` call. Before
+ * this fix, that meant a user who thought they were typing in the on-canvas
+ * field (which had live spell-check) was actually typing here (which
+ * didn't) — seeing only the *browser's own* native spellchecker underlining
+ * everything it didn't recognise, with no custom "Fix spelling" affordance
+ * at all. Rather than trying to win that focus race (Phase 51 designed this
+ * box to always grab focus on selection, on purpose), both surfaces now
+ * carry the exact same spell-check behaviour, so it doesn't matter which
+ * one actually ends up with focus.
  */
 function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: ParagraphTextEditorProps) {
   const selectForEdit = useSelectionStore((s) => s.selectForEdit)
@@ -128,6 +147,10 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Phase 117: same live spell-check as the on-canvas field — see this
+  // component's own doc comment for why both surfaces need it.
+  useLiveSpellcheck(field.ref, field.isEditing, projectId)
+
   return (
     <div className="flex flex-col gap-1.5">
       <Label>Paragraph text</Label>
@@ -138,11 +161,16 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
         onClick={!field.isEditing ? () => field.startEditing() : undefined}
         contentEditable={field.isEditing}
         suppressContentEditableWarning
+        // See the on-canvas field's identical comment (`paragraph.tsx`) —
+        // the browser's own native spellchecker would otherwise show a
+        // second, uncorrectable set of squiggles alongside the real one.
+        spellCheck={false}
         onBlur={field.handleBlur}
         onKeyDown={field.handleKeyDown}
         className="min-h-[100px] cursor-text rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-sm leading-relaxed text-text-primary outline-none focus:border-[var(--color-accent)]"
         {...(!field.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
       />
+      <FloatingFormatToolbar containerRef={field.ref} active={field.isEditing} projectId={projectId} />
       <p className="text-xs text-text-secondary">Enter starts a new paragraph · Shift+Enter for a line break · Esc cancels</p>
     </div>
   )

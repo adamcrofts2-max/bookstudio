@@ -78,6 +78,14 @@ function ParagraphRender(props: BlockRenderProps) {
         onDoubleClick={editable ? () => primary.startEditing() : undefined}
         contentEditable={primary.isEditing}
         suppressContentEditableWarning
+        // The browser's own native spellchecker would otherwise underline
+        // words independently of (and inconsistently with) the custom,
+        // dictionary-backed one `useLiveSpellcheck` just added above —
+        // Chrome's dictionary doesn't know this project's Layer 0 names or
+        // acronym exclusions, so leaving native spellcheck on would show a
+        // second, uncorrectable set of squiggles alongside the real one
+        // (Phase 117, 2026-08-03, found live-testing exactly this).
+        spellCheck={false}
         onFocus={autoEdit ? () => onAutoEditHandled?.() : undefined}
         onBlur={primary.isEditing ? primary.handleBlur : undefined}
         onKeyDown={primary.isEditing ? primary.handleKeyDown : undefined}

@@ -7734,3 +7734,85 @@ item this phase most needs real browser testing for, since caret-
 preservation during live DOM mutation is exactly the kind of thing that
 can look correct in code review and misbehave on a real keyboard (IME
 composition, rapid typing outrunning the debounce, etc.).
+
+## Phase 117 (2026-08-03) — Fix: live spell-check showed native squiggles, no way to correct
+
+User report: "its showing red lines under every word, and no way to
+correct. check in google chrome" — after Phase 116 shipped. Investigated
+live in Chrome (`mcp__claude-in-chrome__*`, the first genuinely real
+browser test any of this session's work has had) instead of guessing from
+the code, per the standing "not yet live-verified" caveat every recent
+phase has carried.
+
+**What the live test showed**: navigated to the deployed project, opened a
+chapter with a paragraph reading "dsdsd sdsdsd" (a test/placeholder
+string — every word in it genuinely is a non-word, so "every word
+underlined" was the *correct* output if this were real spell-check
+running). Double-clicked the on-canvas paragraph to start editing it, then
+inspected the live DOM directly
+(`document.querySelectorAll('[contenteditable="true"]')`,
+`document.activeElement`): only **one** contentEditable element existed at
+that moment, and it was `TypographyPanel.tsx`'s sidebar `ParagraphTextEditor`
+box (Type tab), not the on-canvas `<p>` — confirmed by its exact
+`className`. `document.querySelectorAll('.book-spell-error')` returned
+zero — my custom underlining span never appeared anywhere, because the
+field that actually had focus was one Phase 116 was never wired into.
+
+**Root cause**: `ParagraphTextEditor` (Phase 51, extended Phase 113) is
+rendered fresh (`key={block.id}`) the instant a paragraph becomes selected,
+and its mount effect calls `field.startEditing(editRequestCaretPosition)`
+unconditionally — by design, so "select a paragraph, get an editable box"
+needs no extra click. But *selecting* a paragraph happens on the same
+click/double-click that's meant to start editing the *on-canvas* field too
+(`paragraph.tsx`'s own `onDoubleClick={() => primary.startEditing()}`).
+Both call `ref.current.focus()` via their own `useLayoutEffect`, and in
+practice the sidebar's (rendered later in the component tree — Inspector
+is a later sibling than the main content column) wins actual DOM focus
+almost every time. This has been true since Phase 51/113 — nothing in
+Phase 116 introduced the race — but Phase 116 only extended live
+spell-check to the on-canvas field, so as soon as the user was (invisibly)
+typing in the sidebar box instead, they fell back to seeing *only* the
+**browser's own native spellchecker** (Chrome's built-in dictionary,
+completely unrelated to `nspell`/the bundled dictionary), which:
+(1) doesn't know this project's Layer 0 names/acronym exclusions, and more
+importantly (2) has no connection at all to the custom "Fix spelling"
+dropdown, which only ever renders inside `FloatingFormatToolbar` — a
+component `ParagraphTextEditor` never rendered. Confirmed directly:
+`document.activeElement.spellcheck` was `true` with no `spellcheck`
+attribute ever set on either contentEditable element — native spellcheck
+had been silently on (and, it turns out, doing the same "browser dictionary
+doesn't know this project's invented words" job worse) since long before
+this session, just never visibly conflicting with anything before now.
+
+**Fix — make both surfaces behave identically, rather than fight the focus
+race**: winning the race (e.g. reordering effects, adding an artificial
+delay to one side) would be fragile and exactly the kind of timing-based
+fix this session already learned not to trust (Phase 111/115's focus
+races). Instead: `useLiveSpellcheck` and `FloatingFormatToolbar` are now
+wired into `TypographyPanel.tsx`'s `ParagraphTextEditor` too — the same
+"one behaviour, two editing surfaces, not two competing implementations"
+principle that file's own doc comment already states for the split/merge
+wiring (Phase 113). Reusing `FloatingFormatToolbar` as-is (it positions
+itself via the Selection API's `getBoundingClientRect()`, so it works
+identically regardless of which container it's rendered inside) also gives
+the sidebar box Bold/Italic/Link/Synonyms for free — not scope creep, just
+the natural consequence of reusing an existing self-contained component
+rather than half-wiring a second one. Both contentEditable elements
+(`paragraph.tsx`'s `<p>` and `ParagraphTextEditor`'s `<div>`) now set
+`spellCheck={false}`, so the browser's own spellchecker can never again
+show a second, disconnected, uncorrectable set of squiggles alongside the
+real one.
+
+**Verified**: `npx tsc -b --force` (via `timeout 42 ...`; needed two
+attempts this time — the first hit the sandbox's 45s tool-call budget
+before finishing, a known I/O-slowness issue this session has hit before,
+not a code problem — the retry completed cleanly) — zero errors. The
+underlying focus race itself was deliberately left alone (not this bug's
+actual cause, and Phase 51 designed the sidebar's grab-focus-on-select
+behaviour on purpose) — both surfaces now carry identical spell-check
+behaviour regardless of which one wins it. Not yet re-verified live in
+Chrome against this exact fix (needs a fresh push + Vercel deploy first,
+same standing gap) — but this phase's diagnosis itself *was* done against
+the real deployed app, the first time this session's own live-Chrome
+tooling was used to actually root-cause a user-reported bug rather than
+reason about it from source alone.

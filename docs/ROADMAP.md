@@ -340,6 +340,30 @@ daily use of everything built so far.)*
       phase most needs real browser testing for, since caret-preservation
       during live DOM mutation is exactly the kind of thing that looks
       right in code review and wrong on a real keyboard.
+- [x] Fix: live spell-check showed the browser's own native squiggles with
+      no way to correct them (Phase 117, 2026-08-03, user: "its showing red
+      lines under every word, and no way to correct. check in google
+      chrome" — a real, live-Chrome-caught bug on the deployed build, not a
+      report about test/gibberish content). Live-tested in Chrome and found
+      the actual cause: selecting a paragraph (including via the on-canvas
+      double-click meant to start editing *there*) always mounts
+      `TypographyPanel.tsx`'s sidebar `ParagraphTextEditor` fresh, whose own
+      mount effect immediately calls `startEditing()` — in practice this
+      usually wins real DOM focus over the on-canvas field's own
+      `startEditing()` call. Since Phase 116's live spell-check was only
+      wired into the on-canvas field, a user typing in the sidebar box (most
+      of the time, without realising it) saw only the *browser's own*
+      native spellchecker underlining everything it didn't recognise, with
+      none of the new "Fix spelling" UI. Fixed by giving both editing
+      surfaces the identical behaviour instead of trying to win the focus
+      race: `useLiveSpellcheck` and `FloatingFormatToolbar` (Synonyms + Fix
+      spelling) are now wired into `ParagraphTextEditor` too, and both
+      contentEditable fields get `spellCheck={false}` so the browser's own
+      spellchecker can never show a second, disconnected set of squiggles
+      alongside the real one again. Verified via `tsc`; the underlying
+      focus race itself is left as-is (Phase 51 designed the sidebar box to
+      always grab focus on selection, on purpose) since both surfaces now
+      behave identically regardless of which one wins.
 - [x] Backspace-at-start-of-paragraph-merges-with-previous-paragraph (Phase
       112, 2026-08-03) — the natural companion to Enter-splits-paragraph:
       pressing Backspace with the caret at the very start of a paragraph
