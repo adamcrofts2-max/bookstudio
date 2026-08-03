@@ -7895,3 +7895,76 @@ but, per the standing gap every recent phase has flagged, the *fix itself*
 still needs a fresh push + Vercel deploy and one more live-Chrome pass
 (repeat the same caret-to-end + Enter test) to confirm it resolves the
 reported symptom end-to-end, not just in reasoning about the code.
+
+
+## Phase 119 (2026-08-03) — Fix: nspell dictionary silently parsed as garbage, flagging every word
+
+User report (after Phase 118 was live): "still not working, ALL words,
+even words typed like hello have red lines underneath ... There is also
+no way to even change the misspelt words automatically." A materially
+different, more serious report than Phase 117's — that one was about the
+*wrong* checker running; this one says the checker itself is wrong.
+
+**What the live test showed**: replaced the test paragraph's content with
+real English ("hello world") via the sidebar box and watched
+`.book-spell-error` spans appear on *both* words after the debounce. To
+rule out this being specific to the live-underline hook, ran the Virtual
+Editor's own "Review Entire Book" and inspected the Proofreading findings
+directly: it also reported `"hello" isn't in the dictionary` and `"world"
+isn't in the dictionary` — the exact same false positives, from the
+*Virtual Editor's* `spellingChecker`, which shares `spellcheckDictionary.ts`
+with the live hook. Same root cause, not two bugs. This also retroactively
+explains why Phase 116/117's "2 words flagged" readings on gibberish test
+content ("dsdsd sdsdsd") were never real evidence the checker worked —
+nonsense words get flagged whether the dictionary is correct or completely
+empty, so that test was blind to this exact bug the whole time.
+
+**Root cause**: read `node_modules/nspell/lib/util/dictionary.js` and
+`lib/util/affix.js` directly rather than assume. Both call
+`buf.toString('utf8')` on whatever they're handed. `Buffer.prototype
+.toString(encoding)` (Node) actually decodes bytes per the given encoding —
+but a plain `Uint8Array` (all a browser `fetch().arrayBuffer()` can ever
+produce) has no such override; its `.toString()` ignores the argument
+entirely and falls back to `Array.prototype.toString`, joining every byte
+as a decimal number ("83,69,84,32,85,84,70,45,56..." instead of the real
+"SET UTF-8..." text). `spellcheckDictionary.ts`'s `load()` was calling
+`nspell({ aff: new Uint8Array(aff), dic: new Uint8Array(dic) })` — every
+affix rule and every dictionary word was therefore being parsed from that
+garbage string, leaving the resulting speller with effectively nothing
+real in it. `.correct()` returning `false` for *every* word (real or not)
+explains all three symptoms at once: false-positive underlines on correct
+words, the false positives on gibberish looking "correct" by pure
+coincidence in earlier testing, and "Fix spelling" having nothing useful
+to suggest (`.suggest()` working off the same empty/garbled internal
+data).
+
+**Fix**: decode both fetched `ArrayBuffer`s with `new TextDecoder('utf-8')
+.decode(...)` into real JS strings before passing them to `nspell(...)`.
+A plain string's own `.toString()` also ignores an encoding argument, but
+harmlessly — it just returns itself unchanged — so this sidesteps the
+bug entirely rather than working around it. Two-line change plus an
+extended comment in `spellcheckDictionary.ts` explaining the exact
+byte-level mechanism for whoever touches this file next.
+
+**Verified**: `npx tsc -b --force` — zero errors (`NSpellDictionary`'s
+existing type already allowed `string` for both fields, so no type
+changes needed). Root-caused live: cross-checked two independent surfaces
+that share the same dictionary code path (rules out "just this one
+hook"), then read nspell's actual installed source rather than guessing
+at its API from the outside. Not yet re-verified live in Chrome against
+the fix itself (needs a fresh push + Vercel deploy first, same standing
+gap every phase this session has flagged) — the next live check should
+type a real sentence and confirm zero false-positive underlines, then
+confirm "Fix spelling" offers real suggestions for a genuine typo.
+
+**Still open**: the Enter-split focus bug (Phase 118) did not actually
+resolve — re-testing the identical flow against the confirmed-deployed
+Phase 118 bundle reproduced the same symptom (`document.activeElement`
+falls back to `<body>`, zero contenteditable elements). Worse, a repeat
+of the same test caused the tab to become genuinely unresponsive
+(`Page.captureScreenshot` and `Runtime.evaluate` both timed out, one at
+the full 45s), and a fresh reload afterward showed the split hadn't even
+persisted — pointing to something more serious than a one-shot focus
+race, possibly a non-converging remount/remeasure loop. This needs
+dedicated investigation before another fix attempt; see the new unchecked
+`docs/ROADMAP.md` entry.

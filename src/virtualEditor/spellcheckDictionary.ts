@@ -70,7 +70,29 @@ function load(variant: Variant): Promise<void> {
       fetch(`${basePath}/index.dic`).then((response) => response.arrayBuffer()),
     ])
       .then(([aff, dic]) => {
-        entry.speller = nspell({ aff: new Uint8Array(aff), dic: new Uint8Array(dic) })
+        // Phase 119 (2026-08-03, user: "ALL words, even words typed like
+        // hello have red lines underneath" / "no way to even change the
+        // misspelt words automatically") — nspell's dictionary parser
+        // (`lib/util/dictionary.js`, `lib/util/affix.js`) calls
+        // `buf.toString('utf8')` on whatever it's handed. That only decodes
+        // bytes correctly for a real Node `Buffer` (which overrides
+        // `toString` to accept an encoding); a plain `Uint8Array` — all a
+        // browser fetch can ever produce — ignores the `'utf8'` argument and
+        // falls back to `Array.prototype.toString`, joining every byte as a
+        // decimal number ("83,69,84,32...") instead of decoding real text.
+        // Every affix rule and every dictionary word was silently being
+        // parsed from that garbage string, so the resulting speller had
+        // effectively zero real words in it — `.correct()` returned `false`
+        // for *everything*, real or not (confirmed live: "hello"/"world"
+        // both flagged, and the Virtual Editor's own `spellingChecker`,
+        // which reuses this exact same dictionary, flagged them too — same
+        // root cause, not two separate bugs). Decoding to a plain JS string
+        // first sidesteps the problem entirely: `String.prototype.toString`
+        // takes no encoding argument and just returns itself, so nspell's
+        // `buf.toString('utf8')` call is a harmless no-op once `buf` is
+        // already a string.
+        const decoder = new TextDecoder('utf-8')
+        entry.speller = nspell({ aff: decoder.decode(aff), dic: decoder.decode(dic) })
       })
       .catch((error) => {
         // Fails closed, not open: a network hiccup or a missing dictionary

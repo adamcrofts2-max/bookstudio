@@ -394,6 +394,62 @@ daily use of everything built so far.)*
       exact before/after DOM state via `document.activeElement`/
       `contenteditable` inspection) but the fix itself needs a fresh deploy
       + live re-test to confirm it resolves the reported symptom end-to-end.
+- [x] Fix: nspell dictionary silently parsed as garbage, flagging every word
+      (Phase 119, 2026-08-03, user: "ALL words, even words typed like hello
+      have red lines underneath" / "no way to even change the misspelt
+      words automatically" — reported after Phase 118 was live). Live-tested
+      by replacing test content with real English ("hello world") and
+      checking both the live underline hook *and* the Virtual Editor's own
+      `spellingChecker` (same shared dictionary) — both flagged "hello" and
+      "world" as unrecognised, proving the earlier "2 words flagged"
+      readings on gibberish content (Phase 116/117) were never actually
+      evidence the checker worked; gibberish gets flagged whether the
+      checker is correct *or* completely broken, so this bug had been
+      latent and unverified since Phase 109. Root cause, found by reading
+      `nspell`'s own source: its dictionary/affix parsers call
+      `buf.toString('utf8')`, which only decodes real text for a Node
+      `Buffer` — a plain browser `Uint8Array` ignores the encoding argument
+      and falls back to `Array.prototype.toString`, producing a
+      comma-joined list of byte numbers instead of the actual word list.
+      `spellcheckDictionary.ts` was passing `new Uint8Array(arrayBuffer)`
+      straight to `nspell(...)`, so every affix rule and every dictionary
+      word was being parsed from that garbage, leaving the speller with
+      effectively nothing in it — `.correct()` returned `false` for every
+      word, real or not, which is also why "Fix spelling" had no usable
+      suggestions to offer. Fix: decode both fetched buffers with
+      `TextDecoder('utf-8')` into real strings before handing them to
+      `nspell` — a plain string's own `.toString()` ignores the encoding
+      argument too, but harmlessly, since it just returns itself unchanged.
+      Verified via `tsc`; root-caused live in Chrome by cross-checking two
+      independent surfaces that share the same dictionary and reading
+      nspell's actual source rather than assuming — needs a fresh deploy +
+      live re-test (type a real sentence, confirm no false-positive
+      underlines, confirm "Fix spelling" offers real suggestions for an
+      actual typo).
+- [ ] Enter-split focus bug persisted after Phase 118's fix — needs deeper
+      investigation (found 2026-08-03, still open). Live-re-testing the
+      exact same Enter-at-end-of-paragraph flow against the Phase 118
+      bundle (confirmed genuinely deployed via bundle marker check) showed
+      the identical symptom: `document.activeElement` fell back to `<body>`
+      with zero `contenteditable="true"` elements after the split. Phase
+      118's diagnosis (on-canvas field winning a later remount after the
+      sidebar's focus had already been consumed) does not fully explain
+      this, since the sidebar's own `onFocus` fix should have prevented
+      exactly that. While re-testing a second time, the tab became
+      genuinely unresponsive — screenshot and JS-evaluation calls both
+      timed out (one JS call hung the full 45s) — suggesting something
+      more serious than a one-shot focus race: possibly a non-converging
+      remount/remeasure loop triggered by the interaction between the
+      pagination engine and the new (empty) split paragraph, or an
+      interaction with `useLiveSpellcheck`'s rescan cycle. On a fresh page
+      load afterward, the split itself hadn't even persisted (the paragraph
+      was back to its single, pre-split state), suggesting the freeze
+      happened before autosave completed. This needs dedicated, careful
+      investigation — instrumenting the actual render/effect sequence
+      (temporary logging shipped in a build, read back live) rather than
+      another guess from source reading alone, since two attempts
+      (Phase 111's original fix, Phase 118) have each addressed a real but
+      incomplete piece of this without resolving the user-visible symptom.
 - [x] Backspace-at-start-of-paragraph-merges-with-previous-paragraph (Phase
       112, 2026-08-03) — the natural companion to Enter-splits-paragraph:
       pressing Backspace with the caret at the very start of a paragraph
