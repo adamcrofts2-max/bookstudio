@@ -106,7 +106,20 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
             type="button"
             aria-label="Insert block"
             title="Insert block"
-            className="relative z-10 flex size-5 items-center justify-center rounded-full border border-border bg-background-secondary text-text-secondary opacity-0 shadow-[var(--shadow-sm)] transition-opacity hover:text-text-primary group-hover/insert:opacity-100 data-[state=open]:opacity-100"
+            // Phase 122 (2026-08-03, user: "the green plus symbol covers
+            // spellings and synonyms so user cant click them") — this button
+            // sits in the gap directly above a block, which can be the exact
+            // screen position `FloatingFormatToolbar` renders its Fix
+            // spelling/Synonyms buttons above a selection near a paragraph's
+            // first line. `opacity-0` only hides it visually — an invisible
+            // element still receives pointer events by default, so clicks
+            // aimed at the (visually on-top, z-50) toolbar underneath it were
+            // landing on this hidden button/its dropdown trigger instead.
+            // `pointer-events-none` (re-enabled on hover, when it's actually
+            // visible and meant to be clickable) makes it truly inert while
+            // hidden, so it can never again silently steal a click from
+            // whatever happens to render in the same screen position.
+            className="relative z-10 flex size-5 items-center justify-center rounded-full border border-border bg-background-secondary text-text-secondary opacity-0 shadow-[var(--shadow-sm)] transition-opacity pointer-events-none hover:text-text-primary group-hover/insert:opacity-100 group-hover/insert:pointer-events-auto data-[state=open]:opacity-100 data-[state=open]:pointer-events-auto"
           >
             <Plus className="size-3" />
           </button>

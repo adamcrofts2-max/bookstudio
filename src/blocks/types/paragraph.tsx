@@ -75,7 +75,23 @@ function ParagraphRender(props: BlockRenderProps) {
           primary.ref.current = el
         }}
         onClick={!primary.isEditing ? onSelect : undefined}
-        onDoubleClick={editable ? () => primary.startEditing() : undefined}
+        // Phase 122 (2026-08-03, user: "doesn't work if you double click the
+        // word to highlight it, only if user drags") — this used to fire
+        // unconditionally on every double-click, including ones that happen
+        // *while already editing* (e.g. double-clicking a misspelled word to
+        // select it for the Fix-spelling toolbar). `startEditing()`'s own
+        // layout effect (`shared.tsx`) reassigns `innerHTML` and force-places
+        // the caret every time it runs — even when the content is textually
+        // identical, that's a fresh set of DOM nodes, which silently destroys
+        // whatever Selection/Range the browser's native double-click-selects-
+        // word behaviour had just created a moment earlier. A manual
+        // click-drag selection never had this problem because dragging never
+        // fires `dblclick` at all. Gating on `!primary.isEditing` leaves the
+        // original "double-click an unselected paragraph to start editing it"
+        // affordance intact (still fires exactly once, on the transition into
+        // edit mode) while letting every *subsequent* double-click behave as
+        // plain native word-selection once already editing.
+        onDoubleClick={editable && !primary.isEditing ? () => primary.startEditing() : undefined}
         contentEditable={primary.isEditing}
         suppressContentEditableWarning
         // The browser's own native spellchecker would otherwise underline

@@ -41,7 +41,11 @@ const iconButtonClass =
  * Fix-spelling buttons below (Phase 116) — both are "a short list of words,
  * pick one to replace the current selection," differing only in what
  * populates the list and how loading/empty states are worded. */
-function WordSuggestionsDropdown({
+// Exported (Phase 122, 2026-08-03) so `TypographyPanel.tsx`'s persistent
+// sidebar spelling-fix list can reuse the exact same dropdown UI instead of
+// a second implementation — see that file's `SpellingFixChip` for the
+// caller.
+export function WordSuggestionsDropdown({
   loading,
   loadingLabel,
   emptyLabel,

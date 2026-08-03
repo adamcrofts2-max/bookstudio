@@ -8063,3 +8063,82 @@ re-verified live in Chrome (needs a fresh push + Vercel deploy first) —
 the next check should click directly on a misspelled word and confirm the
 toolbar renders (no blank page), then confirm "Fix spelling" opens a real
 dropdown with usable suggestions.
+
+
+## Phase 122 (2026-08-03) — Three spelling-fix UX gaps + a persistent sidebar spelling list
+
+User report: "the green plus symbol covers spellings and synonyms so user
+cant click them. Also doesn't work if you double click the word to
+highlight it, only if user drags. There should also be a fix spelling
+button in the right sidebar below the paragraph text." Three distinct,
+independently-diagnosed issues, fixed in one batch.
+
+**(1) Invisible "+" insert-block button intercepting clicks.**
+`InsertBlockButton.tsx`'s gap button (`Plus` icon, `opacity-0` until
+hovered) sits directly above/between blocks — the exact screen region
+`FloatingFormatToolbar` renders its Bold/Italic/Link/Synonyms/Fix-spelling
+row above a selection near a paragraph's first line. `opacity-0` only
+hides an element visually; by default it still receives pointer events,
+so a click aimed at the (higher z-index, but that doesn't matter if the
+click never reaches it) toolbar underneath could land on this invisible
+button or its dropdown trigger instead. Fix: `pointer-events-none` on the
+button while hidden, `group-hover/insert:pointer-events-auto` /
+`data-[state=open]:pointer-events-auto` to restore it exactly when it's
+actually visible and meant to be clickable.
+
+**(2) Double-click-to-select-a-word not working, only drag-select.**
+`paragraph.tsx`'s on-canvas `<p>` had `onDoubleClick={editable ? () =>
+primary.startEditing() : undefined}` — unconditional, firing on *every*
+double-click regardless of whether the field was already in edit mode.
+`startEditing()`'s own `useLayoutEffect` (`shared.tsx`) reassigns
+`ref.current.innerHTML` and force-places the caret every time it runs,
+even when the content is textually identical — that's a fresh set of DOM
+nodes, which silently destroys whatever Selection/Range the browser's
+native "double-click selects the word under the cursor" behaviour had
+just created moments earlier in that same gesture. A manual click-drag
+selection never hit this because dragging never fires `dblclick` at all.
+Fix: gated `onDoubleClick` on `!primary.isEditing`, mirroring the
+`onClick={!isEditing ? ... : undefined}` pattern already used everywhere
+else in this codebase for exactly this "only transition once" reason —
+the first double-click on an unselected paragraph still enters edit mode
+as before; every double-click *after* that is now left alone as plain
+native word-selection.
+
+**(3) No persistent sidebar spelling-fix button.** The floating toolbar's
+Fix-spelling button only ever appears after the user has successfully
+*selected* the exact misspelled word — friction on its own even before
+(2)'s bug, especially in a narrow sidebar box with small text. Added a
+new, always-visible "Spelling" row below `TypographyPanel.tsx`'s sidebar
+paragraph box: one small chip per distinct misspelled word currently in
+the paragraph, each opening the same suggestion dropdown on click, no
+selection needed at all. Implementation notes: a `MutationObserver` on the
+field's contentEditable element reads the same `.book-spell-error` spans
+`useLiveSpellcheck` already creates and maintains (Phase 116) — this list
+can never drift from what the user sees underlined, since it's reading
+the exact same DOM state rather than re-implementing word-scanning.
+`WordSuggestionsDropdown` (previously a private function inside
+`FloatingFormatToolbar.tsx`) is now exported and reused as-is, rather than
+a second copy of the same dropdown UI. Each chip's suggestions are
+computed lazily via `useMemo`, gated on that specific chip's own open
+state — the exact same click-gated pattern Phase 120 established, since
+`speller.suggest()` is expensive and must never run speculatively.
+Applying a fix finds the first `.book-spell-error` span whose text matches
+the chip's word, selects its Range, focuses the field, and uses the same
+`execCommand('insertText', ...)` every other replacement path in this
+toolbar already uses — participates in the native undo stack for free,
+and the resulting `input` event feeds back into `useLiveSpellcheck`'s own
+rescan (updating the underline) and this chip list's `MutationObserver`
+automatically, with no manual re-scan needed.
+
+**Verified**: `npx tsc -b --force` — zero errors. Not yet live-verified in
+Chrome: this session's own browser-automation tooling became unreliable
+while investigating this report — repeated tab freezes/timeouts on plain
+clicks and page scrolls against the *already-deployed* (pre-Phase-122)
+bundle, i.e. not caused by any of today's source changes, most likely an
+environmental issue with the tooling itself rather than the app. Needs a
+fresh deploy and a live pass once that settles: click a misspelled word
+directly (should render fine, not crash, per Phase 121's fix), double-
+click a word while already editing and confirm the selection now survives
+and the toolbar appears, confirm the "+" button no longer eats clicks
+meant for the toolbar, and confirm the new sidebar spelling chips render
+and correctly apply a chosen suggestion.

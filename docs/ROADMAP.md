@@ -476,6 +476,48 @@ daily use of everything built so far.)*
       rather than guessing — needs a fresh deploy + live re-test (click a
       misspelled word, confirm the toolbar renders with no crash, confirm
       "Fix spelling" opens a real dropdown).
+- [x] Fix three real spelling-fix UX gaps + a persistent sidebar spelling
+      list (Phase 122, 2026-08-03, user: "the green plus symbol covers
+      spellings and synonyms so user cant click them. Also doesn't work if
+      you double click the word to highlight it, only if user drags. There
+      should also be a fix spelling button in the right sidebar below the
+      paragraph text"). Three distinct fixes, all in the same batch:
+      (1) The gap's "+" insert-block button (`InsertBlockButton.tsx`) sits
+      directly above a block and can occupy the exact same screen position
+      `FloatingFormatToolbar` renders its buttons — `opacity-0` only hides
+      it *visually*, an invisible element still receives pointer events by
+      default, so clicks aimed at the toolbar underneath were landing on
+      this hidden button instead. Fixed with `pointer-events-none`
+      (re-enabled on hover/open), so it's truly inert while invisible.
+      (2) `paragraph.tsx`'s on-canvas `onDoubleClick` called
+      `primary.startEditing()` unconditionally, including on a double-click
+      that happens *while already editing* — `startEditing()`'s own layout
+      effect reassigns `innerHTML` and force-places the caret every time,
+      silently destroying the native "double-click selects the word"
+      selection the browser had just made a moment earlier. A manual
+      click-drag selection never had this problem since dragging never
+      fires `dblclick`. Fixed by gating on `!primary.isEditing`, so this
+      only fires once, on the transition into edit mode, exactly like the
+      analogous `onClick`s elsewhere in this codebase already do.
+      (3) Added a persistent, always-visible "Spelling" chip row below
+      `TypographyPanel.tsx`'s sidebar paragraph box, one chip per distinct
+      misspelled word currently in the paragraph (via a `MutationObserver`
+      reading the same `.book-spell-error` spans `useLiveSpellcheck`
+      already maintains — no second word-scanning implementation), each
+      opening the same `WordSuggestionsDropdown` (now exported from
+      `FloatingFormatToolbar.tsx`) with the same click-gated, memoised
+      `speller.suggest()` call Phase 120 already established — no
+      selection required at all, closing the gap that made (1) and (2)
+      necessary to interact with in the first place. Verified via `tsc`;
+      not yet live-verified in Chrome — this session's own Chrome tooling
+      became unreliable while investigating this report (repeated tab
+      freezes/timeouts on plain clicks and scrolls, unrelated to any of
+      today's source changes, likely environmental) — needs a fresh
+      deploy + live re-test once that settles: click a misspelled word
+      directly (should render, not crash, thanks to Phase 121), double-
+      click a word while already editing to confirm it now stays selected,
+      confirm the "+" button no longer blocks toolbar clicks, and confirm
+      the new sidebar spelling chips appear and apply corrections.
 - [ ] Enter-split focus bug persisted after Phase 118's fix — needs deeper
       investigation (found 2026-08-03, still open). Live-re-testing the
       exact same Enter-at-end-of-paragraph flow against the Phase 118

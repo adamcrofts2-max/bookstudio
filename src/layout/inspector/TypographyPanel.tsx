@@ -1,5 +1,6 @@
-import { useEffect } from 'react'
-import { Type } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Type, SpellCheck2 } from 'lucide-react'
+import type { NSpell } from 'nspell'
 
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -7,11 +8,13 @@ import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
+import { useProjectStore } from '@/store/projectStore'
 import { editBlock, splitParagraphWithHistory, mergeParagraphWithPreviousHistory } from '@/store/editorActions'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useEditableField } from '@/blocks/shared'
 import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
-import { FloatingFormatToolbar } from '@/renderer/FloatingFormatToolbar'
+import { FloatingFormatToolbar, WordSuggestionsDropdown } from '@/renderer/FloatingFormatToolbar'
+import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
 import { stripHtml, wordCount } from '@/utils'
 import type { Chapter, ContentBlock, ParagraphBlock, PlaceholderKind } from '@/types/content'
 
@@ -49,6 +52,50 @@ const PLACEHOLDER_KIND_OPTIONS: { value: PlaceholderKind; label: string }[] = [
   { value: 'diagram', label: 'Diagram' },
   { value: 'generic', label: 'Other' },
 ]
+
+/**
+ * One misspelled word's persistent, always-visible fix affordance — the
+ * sidebar counterpart to `FloatingFormatToolbar`'s "Fix spelling" button
+ * (Phase 122, 2026-08-03, user: "There should also be a fix spelling button
+ * in the right sidebar below the paragraph text"). The floating toolbar
+ * requires the user to first select the exact word (itself fixed twice over
+ * in Phase 122 — see `paragraph.tsx`'s double-click comment — and easy to
+ * miss given how small a misspelled word can be in a narrow sidebar box);
+ * this list is always visible the instant `useLiveSpellcheck` finds
+ * anything wrong, no selection required. Reuses the exact same
+ * `WordSuggestionsDropdown` and lazy, click-gated `speller.suggest()` call
+ * `FloatingFormatToolbar` uses (see that file's Phase 120 comment for why
+ * suggestions are never computed until the dropdown actually opens — the
+ * same perf hazard applies here). */
+function SpellingFixChip({ word, speller, onApply }: { word: string; speller: NSpell | undefined; onApply: (word: string, replacement: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const suggestions = useMemo(() => (open && speller ? speller.suggest(word) : []), [open, speller, word])
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 rounded-[var(--radius-preview)] border border-danger/30 bg-danger/10 px-2 py-1 text-xs text-danger transition-colors hover:bg-danger/20"
+      >
+        <SpellCheck2 className="size-3" />
+        {word}
+      </button>
+      {open && (
+        <WordSuggestionsDropdown
+          loading={false}
+          loadingLabel=""
+          emptyLabel="No suggestions found"
+          items={suggestions}
+          onPick={(replacement) => {
+            onApply(word, replacement)
+            setOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
 
 interface ParagraphTextEditorProps {
   projectId: string
@@ -171,6 +218,67 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
   // component's own doc comment for why both surfaces need it.
   useLiveSpellcheck(field.ref, field.isEditing, projectId)
 
+  // Phase 122 (2026-08-03, user: "There should also be a fix spelling
+  // button in the right sidebar below the paragraph text") — a persistent,
+  // always-visible list of every misspelled word currently in this
+  // paragraph, each with its own one-click "pick a suggestion" affordance.
+  // The floating toolbar (above) only ever appears once the user has
+  // successfully *selected* the exact word first, which turned out to have
+  // real friction (small text in a narrow sidebar box, plus the two
+  // selection bugs `paragraph.tsx`'s Phase 122 comment and the invisible
+  // insert-button fix both address) — this list needs no selection at all.
+  //
+  // Deliberately reads `.book-spell-error` spans via a `MutationObserver`
+  // rather than re-implementing word-scanning here: `useLiveSpellcheck`
+  // above already walks this exact field's text nodes and maintains those
+  // spans as the single source of truth for "which words are currently
+  // flagged," debounced and caret-safe — observing its output is simpler
+  // and can never drift from what the user actually sees underlined.
+  const [misspelledWords, setMisspelledWords] = useState<string[]>([])
+  useEffect(() => {
+    const el = field.ref.current
+    if (!field.isEditing || !el) {
+      setMisspelledWords([])
+      return
+    }
+    const scan = () => {
+      const words = Array.from(el.querySelectorAll('.book-spell-error')).map((span) => span.textContent ?? '')
+      setMisspelledWords(Array.from(new Set(words)).filter(Boolean))
+    }
+    scan()
+    const observer = new MutationObserver(scan)
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+    return () => observer.disconnect()
+  }, [field.isEditing, field.ref])
+
+  const variant = useProjectStore.getState().getProject(projectId)?.settings.styleGuide?.englishVariant ?? 'british'
+  const [spellDictReady, setSpellDictReady] = useState(isSpellDictionaryReady(variant))
+  useEffect(() => {
+    if (!field.isEditing || spellDictReady) return
+    let cancelled = false
+    void ensureSpellDictionaryLoading(variant).then(() => {
+      if (!cancelled) setSpellDictReady(isSpellDictionaryReady(variant))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [field.isEditing, spellDictReady, variant])
+  const speller = spellDictReady ? getSpeller(variant) : undefined
+
+  const applySpellingFix = (word: string, replacement: string) => {
+    const el = field.ref.current
+    if (!el) return
+    const span = Array.from(el.querySelectorAll('.book-spell-error')).find((s) => s.textContent === word)
+    if (!span) return
+    const range = document.createRange()
+    range.selectNodeContents(span)
+    const selection = window.getSelection()
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+    el.focus()
+    document.execCommand('insertText', false, replacement)
+  }
+
   return (
     <div className="flex flex-col gap-1.5">
       <Label>Paragraph text</Label>
@@ -196,6 +304,16 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
         {...(!field.isEditing ? { dangerouslySetInnerHTML: { __html: block.html } } : {})}
       />
       <FloatingFormatToolbar containerRef={field.ref} active={field.isEditing} projectId={projectId} />
+      {misspelledWords.length > 0 && (
+        <div className="flex flex-col gap-1">
+          <p className="text-xs text-text-secondary">Spelling</p>
+          <div className="flex flex-wrap gap-1.5">
+            {misspelledWords.map((word) => (
+              <SpellingFixChip key={word} word={word} speller={speller} onApply={applySpellingFix} />
+            ))}
+          </div>
+        </div>
+      )}
       <p className="text-xs text-text-secondary">Enter starts a new paragraph · Shift+Enter for a line break · Esc cancels</p>
     </div>
   )
