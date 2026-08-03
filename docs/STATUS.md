@@ -7816,3 +7816,82 @@ same standing gap) — but this phase's diagnosis itself *was* done against
 the real deployed app, the first time this session's own live-Chrome
 tooling was used to actually root-cause a user-reported bug rather than
 reason about it from source alone.
+
+
+## Phase 118 (2026-08-03) — Fix: Enter-split left neither editing surface focused
+
+User report (after Phase 117 was live-deployed): "When I double click it
+just shows red squiggles again on all words. I also have to double click
+to start typing. If at the end of a paragraph the user hits enter shouldn't
+it start a new paragraph and immediately let them type without having to
+click again?" Three linked observations, investigated live in Chrome again
+rather than assumed.
+
+**What the live test showed**: navigated to the deployed project, confirmed
+via `fetch`-ing the deployed bundle's own source that Phase 117 was
+genuinely live (`hasFixSpelling`, `hasBookSpellError`, `hasSpellcheckFalse`
+all `true`, new bundle hash). Double-clicked the "dsdsd sdsdsd" test
+paragraph and inspected the DOM: exactly one contentEditable element
+existed (the sidebar's `ParagraphTextEditor`, matching its known
+`className`), with `document.querySelectorAll('.book-spell-error').length
+=== 2` — both nonsense words correctly flagged. That part is *working as
+designed*: gibberish test content really should show two underlines, and
+the sidebar box genuinely was the live, correctly-behaving editing surface
+at that moment (not evidence of a bug on its own).
+
+Then tested the actual reported flow: placed the caret at the end of that
+sidebar box's text (`Range`/`Selection` APIs) and sent a real `Return`
+keypress via the Chrome MCP's `computer:key` (not a synthetic JS event, so
+React's real `onKeyDown` handler fired). Inspected the DOM immediately
+after: the split *did* happen — Inspector correctly showed a new, empty,
+selected paragraph ("0 words", "Enter starts a new paragraph…" helper text)
+— but `document.activeElement` was `<body>` and
+`document.querySelectorAll('[contenteditable="true"]').length === 0`.
+Neither editing surface was focused or editable. Re-checked a few tool
+calls later (well past any pagination settling time): still stuck at
+`<body>`, confirming this wasn't just a slow remeasure not yet caught up.
+
+**Root cause**: read `shared.tsx`'s `useEditableField` (the `onSplit`
+handling in `handleKeyDown`), `Page.tsx`'s `autoEdit` wiring, and
+`TypographyPanel.tsx`'s `ParagraphTextEditor` mount effect side by side.
+`paragraph.tsx`'s on-canvas field only re-enters edit mode on a remount
+when `autoEdit` (`isSelected && editRequestId !== null`) is true, and only
+calls `onAutoEditHandled` (→ `selectionStore.consumeEditRequest`) from
+`onFocus` — deliberately, so the request survives across any number of
+pagination-driven remounts of a freshly-split paragraph until focus
+*genuinely* sticks (Phase 111's fix, and its own doc comment explicitly
+warns about exactly this remount hazard). `ParagraphTextEditor`, by
+contrast, always calls `startEditing()` unconditionally on mount — but
+**never told `selectionStore` its own focus had landed**. Sequence that
+actually played out: split fires → both surfaces' fresh instances mount →
+whichever focuses first (usually on-canvas, per tree order) fires `onFocus`
+→ consumes `editRequestId` → the sidebar's own mount effect then steals
+focus back a moment later (as designed, Phase 51) — but by now
+`editRequestId` is already `null`. When the layout engine's async height
+remeasure remounts the on-canvas paragraph a little later (exactly the
+scenario `paragraph.tsx`'s own comment warns about), its `autoEdit` is now
+`false` — the retry that's supposed to protect against this exact remount
+never fires, because the flag it depends on was already consumed by a
+focus that didn't end up sticking. Net result: the on-canvas field gives up
+permanently, the sidebar was never asked to hold its ground either, and
+nothing ends up focused.
+
+**Fix**: `ParagraphTextEditor`'s contentEditable `<div>` now also calls
+`consumeEditRequest()` from its own `onFocus`. This box is explicitly *not*
+subject to the paginated layout engine's async remounts (its own doc
+comment already noted this, for a different reason) — making it the one
+genuinely stable point in the whole race. Clearing the shared flag there,
+once its focus has actually landed, stops the on-canvas field from ever
+trying to reclaim focus on a *later* remount, since `autoEdit` will already
+read `false` by the time that remount happens. Two-line change plus an
+extended doc comment explaining the race for the next person who hits this
+file.
+
+**Verified**: `npx tsc -b --force` — zero errors. Diagnosed live against
+the real deployed app (confirmed exact before/after
+`document.activeElement`/`contenteditable` state via direct DOM
+inspection, and a real `Return` keypress rather than a synthetic event) —
+but, per the standing gap every recent phase has flagged, the *fix itself*
+still needs a fresh push + Vercel deploy and one more live-Chrome pass
+(repeat the same caret-to-end + Enter test) to confirm it resolves the
+reported symptom end-to-end, not just in reasoning about the code.

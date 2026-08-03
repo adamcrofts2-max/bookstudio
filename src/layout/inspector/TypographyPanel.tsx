@@ -112,10 +112,30 @@ interface ParagraphTextEditorProps {
  * box to always grab focus on selection, on purpose), both surfaces now
  * carry the exact same spell-check behaviour, so it doesn't matter which
  * one actually ends up with focus.
+ *
+ * Phase 118 (2026-08-03, user: "if the user hits enter shouldn't it start a
+ * new paragraph and immediately let them type without having to click
+ * again?") — found live-testing that a *second* focus-race bug had survived
+ * Phase 117's fix: this box's mount effect never told `selectionStore` that
+ * its own focus had landed, so `editRequestId` stayed live after a split
+ * even once this box was genuinely, stably focused. `paragraph.tsx`'s
+ * on-canvas field keeps retrying `startEditing()` on every pagination-driven
+ * remount of the freshly-split paragraph *as long as `editRequestId` is
+ * still set* (see its own doc comment) — with nothing here ever clearing
+ * that flag, the on-canvas field could win a later remount, steal focus back
+ * from this box, consume the request on that transient focus, and then lose
+ * focus itself on the *next* remount with no request left to retry against —
+ * leaving neither surface focused at all. The `onFocus` below closes that
+ * gap: since this box isn't subject to the layout engine's async remounts
+ * (see this comment's own note above on why), its focus is the one point of
+ * genuine stability in the whole race, so it's the right place to tell
+ * `selectionStore` the request is fulfilled — stopping the on-canvas side
+ * from ever trying to reclaim it on a later remount.
  */
 function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: ParagraphTextEditorProps) {
   const selectForEdit = useSelectionStore((s) => s.selectForEdit)
   const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
+  const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
 
   const indexInChapter = chapterBlocks.findIndex((b) => b.id === block.id)
   const previousBlock = indexInChapter > 0 ? chapterBlocks[indexInChapter - 1] : undefined
@@ -165,6 +185,11 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
         // the browser's own native spellchecker would otherwise show a
         // second, uncorrectable set of squiggles alongside the real one.
         spellCheck={false}
+        // Phase 118 — see this component's own doc comment: clearing the
+        // shared edit request here (not just in `paragraph.tsx`) is what
+        // stops the on-canvas field from trying to reclaim focus on a later
+        // pagination remount once this box has genuinely, stably focused.
+        onFocus={() => consumeEditRequest()}
         onBlur={field.handleBlur}
         onKeyDown={field.handleKeyDown}
         className="min-h-[100px] cursor-text rounded-[var(--radius-card)] border border-border bg-background px-3 py-2 text-sm leading-relaxed text-text-primary outline-none focus:border-[var(--color-accent)]"

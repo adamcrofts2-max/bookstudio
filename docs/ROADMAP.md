@@ -364,6 +364,36 @@ daily use of everything built so far.)*
       focus race itself is left as-is (Phase 51 designed the sidebar box to
       always grab focus on selection, on purpose) since both surfaces now
       behave identically regardless of which one wins.
+- [x] Fix: Enter-split left neither editing surface focused (Phase 118,
+      2026-08-03, user: "When I double click it just shows red squiggles
+      again on all words. I also have to double click to start typing. If
+      at the end of a paragraph the user hits enter shouldn't it start a new
+      paragraph and immediately let them type without having to click
+      again?"). Live-Chrome-diagnosed a second, distinct focus-race bug that
+      survived Phase 117's fix: after a split, `document.activeElement` fell
+      all the way back to `<body>` with zero `contenteditable="true"`
+      elements anywhere on the page — neither the on-canvas field nor the
+      sidebar box ended up focused. Root cause: `TypographyPanel.tsx`'s
+      `ParagraphTextEditor` mount effect always calls `startEditing()`
+      unconditionally, but never told `selectionStore` its focus had landed
+      — so `editRequestId` stayed live indefinitely after a split.
+      `paragraph.tsx`'s on-canvas field keeps retrying `startEditing()` on
+      every pagination-driven remount of the freshly-split paragraph *as
+      long as `editRequestId` is still set* (its own documented "retry until
+      focus genuinely sticks" behaviour, Phase 111). With nothing ever
+      clearing that flag from the sidebar's side, the on-canvas field could
+      win a later remount, steal focus back from the sidebar, consume the
+      request on that transient (soon to be superseded) focus, and then lose
+      focus itself on the *next* remount with no live request left to retry
+      against — leaving nobody focused. Fix: the sidebar's contentEditable
+      div now calls `consumeEditRequest()` `onFocus` too. Since that box
+      isn't subject to the layout engine's async remounts, its focus is the
+      one genuinely stable point in the whole race — clearing the flag there
+      stops the on-canvas field from ever trying to reclaim it on a later
+      remount. Verified via `tsc`; diagnosed live in Chrome (confirmed the
+      exact before/after DOM state via `document.activeElement`/
+      `contenteditable` inspection) but the fix itself needs a fresh deploy
+      + live re-test to confirm it resolves the reported symptom end-to-end.
 - [x] Backspace-at-start-of-paragraph-merges-with-previous-paragraph (Phase
       112, 2026-08-03) — the natural companion to Enter-splits-paragraph:
       pressing Backspace with the caret at the very start of a paragraph
