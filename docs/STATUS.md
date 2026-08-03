@@ -8020,3 +8020,46 @@ general class of bug (expensive synchronous work re-triggered by
 frequent, unrelated re-renders), though not verified as the same root
 cause. Not yet re-verified live in Chrome against this exact fix — needs
 a fresh push + Vercel deploy first, same standing gap.
+
+
+## Phase 121 (2026-08-03) — Fix: clicking a word to fix its spelling crashed to a blank page
+
+Own regression from Phase 120, caught immediately by the user: "when I
+click on a word to try and change it it ends up going to a blank
+unrendered page. there is no dropdown."
+
+**Root cause**: Phase 120 wrapped `spellingSuggestions` and `synonyms` in
+`useMemo(...)` to stop them being recomputed on every render — the right
+fix for the freeze, but placed *after* this component's existing
+`if (!rect) return null` early return. Hooks must run unconditionally, in
+the same order, on every render, with no exceptions — that's not a style
+preference, it's how React matches hook state to hook calls across
+renders. While `rect` is `null` (nothing selected), the component was
+calling zero hooks past that point; the instant a click creates a
+selection and `rect` becomes truthy, the same component instance suddenly
+calls two hooks it didn't call last render. React detects this mismatch
+and throws "Rendered more hooks than during the previous render" —
+a fatal error with no local recovery, which unmounts the whole render tree
+above the nearest error boundary (there isn't one around this component),
+producing exactly a blank page the instant you click a word.
+
+**Fix**: moved both `useMemo` calls — and the `isSingleWord`/`speller`/
+`ignoreWords`/`isMisspelled` `const`s they depend on — above the
+`if (!rect) return null` line, so every hook in this component is called
+unconditionally on every render regardless of whether anything is
+selected. Their own internal logic already guards "nothing to compute
+yet" correctly (checking `spellingOpen`/`synonymsOpen`/`isMisspelled`/
+`isSingleWord`/`selectedWord` inside the memoised callback body, returning
+`[]` when any of those aren't satisfied) — moving *where* the hook is
+*called* changes nothing about *when* the expensive work inside it
+actually runs, only fixes the illegal conditional hook-calling itself.
+
+**Verified**: `npx tsc -b --force` — zero errors. Root-caused by checking
+this component's hook-call order against React's own Rules of Hooks
+rather than assuming the Phase 120 fix was otherwise correct — re-reading
+the file after the user's report showed the early return sitting between
+the other hooks and the two new `useMemo` calls immediately. Not yet
+re-verified live in Chrome (needs a fresh push + Vercel deploy first) —
+the next check should click directly on a misspelled word and confirm the
+toolbar renders (no blank page), then confirm "Fix spelling" opens a real
+dropdown with usable suggestions.

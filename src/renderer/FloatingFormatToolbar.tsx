@@ -211,12 +211,6 @@ export function FloatingFormatToolbar({ containerRef, active, projectId }: Float
     return () => document.removeEventListener('selectionchange', update)
   }, [active, containerRef])
 
-  if (!rect) return null
-
-  const format = (command: string, value?: string) => {
-    document.execCommand(command, false, value)
-  }
-
   const isSingleWord = !!selectedWord && SINGLE_WORD_PATTERN.test(selectedWord)
 
   const speller = spellDictReady ? getSpeller(variant) : undefined
@@ -249,6 +243,22 @@ export function FloatingFormatToolbar({ containerRef, active, projectId }: Float
   // costly call only ever runs once, when the user actually asks for
   // suggestions by clicking the button — not on every intermediate
   // selection change before that.
+  //
+  // Phase 121 (2026-08-03, user: "when I click on a word to try and change
+  // it it ends up going to a blank unrendered page") — these two `useMemo`
+  // calls must run on *every* render, unconditionally, like every hook.
+  // Phase 120 put them after the `if (!rect) return null` early return
+  // below, which means React calls zero hooks here while nothing is
+  // selected and two extra hooks the instant a selection appears — a
+  // Rules-of-Hooks violation ("rendered more hooks than during the
+  // previous render") that crashes the whole render tree the moment a
+  // click creates a selection, which is exactly what a "blank page on
+  // click" looks like. Moving both above the early return (they already
+  // guard against `rect` being irrelevant via their own `spellingOpen`/
+  // `synonymsOpen`/`isMisspelled`/`isSingleWord` conditions inside the
+  // memoised callback, not via being skipped entirely) fixes this the
+  // same way every other hook in this component already has to be called
+  // before any conditional return.
   const spellingSuggestions = useMemo(
     () => (spellingOpen && isMisspelled && selectedWord && speller ? speller.suggest(selectedWord) : []),
     [spellingOpen, isMisspelled, selectedWord, speller],
@@ -257,6 +267,12 @@ export function FloatingFormatToolbar({ containerRef, active, projectId }: Float
     () => (synonymsOpen && isSingleWord && selectedWord ? getSynonyms(selectedWord) : []),
     [synonymsOpen, isSingleWord, selectedWord],
   )
+
+  if (!rect) return null
+
+  const format = (command: string, value?: string) => {
+    document.execCommand(command, false, value)
+  }
 
   const saveCurrentRange = () => {
     const selection = window.getSelection()

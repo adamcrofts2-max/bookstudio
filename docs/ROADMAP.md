@@ -454,6 +454,28 @@ daily use of everything built so far.)*
       fresh deploy + live re-test (select a misspelled word, confirm no
       hang, click "Fix spelling", confirm real suggestions appear and
       applying one works).
+- [x] Fix: clicking a word to fix its spelling crashed to a blank page
+      (Phase 121, 2026-08-03, user: "when I click on a word to try and
+      change it it ends up going to a blank unrendered page. there is no
+      dropdown" — reported immediately after Phase 120 deployed). Own
+      regression: Phase 120 converted `spellingSuggestions`/`synonyms` into
+      `useMemo` calls but left them positioned *after* this component's
+      `if (!rect) return null` early return. That's a Rules-of-Hooks
+      violation — React calls zero hooks here while nothing is selected and
+      two extra hooks the instant a selection appears, which throws
+      "Rendered more hooks than during the previous render" and crashes the
+      whole render tree the moment a click creates a selection — exactly a
+      "blank page on click." Fix: moved both `useMemo` calls (and the
+      `isSingleWord`/`speller`/`ignoreWords`/`isMisspelled` consts they
+      depend on) above the early return, so every hook in this component
+      runs unconditionally on every render like the rules require; their
+      own internal conditions (`spellingOpen`/`synonymsOpen`/etc.) already
+      handle "nothing to compute yet" correctly, so no behaviour changes
+      besides no longer crashing. Verified via `tsc`; root-caused by
+      reading the component's own hook-call order against React's rules
+      rather than guessing — needs a fresh deploy + live re-test (click a
+      misspelled word, confirm the toolbar renders with no crash, confirm
+      "Fix spelling" opens a real dropdown).
 - [ ] Enter-split focus bug persisted after Phase 118's fix — needs deeper
       investigation (found 2026-08-03, still open). Live-re-testing the
       exact same Enter-at-end-of-paragraph flow against the Phase 118
