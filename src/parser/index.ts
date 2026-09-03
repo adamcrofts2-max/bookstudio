@@ -2,10 +2,11 @@ import type { Manuscript } from '@/types/content'
 import { parseMarkdown } from '@/parser/markdown'
 import { parseText } from '@/parser/text'
 import { parseHtmlDocument } from '@/parser/html'
+import { ManuscriptImportError } from '@/parser/errors'
 
-export class UnsupportedManuscriptFormatError extends Error {
+export class UnsupportedManuscriptFormatError extends ManuscriptImportError {
   constructor(extension: string) {
-    super(`Unsupported manuscript format: "${extension}". Supported: .docx, .md, .txt, .html`)
+    super(`Unsupported manuscript format: "${extension}". Supported: .epub, .docx, .md, .txt, .html`)
     this.name = 'UnsupportedManuscriptFormatError'
   }
 }
@@ -34,6 +35,12 @@ export async function importManuscript(file: File, projectId: string): Promise<M
         const { parseDocx } = await import('@/parser/docx')
         return parseDocx(file, fallbackTitle, projectId)
       }
+      // Dynamically imported for the same reason `docx` is — the EPUB reader
+      // and its ZIP inflate path only load when someone actually imports one.
+      case 'epub': {
+        const { parseEpub } = await import('@/parser/epub')
+        return parseEpub(file, fallbackTitle, projectId)
+      }
       default:
         throw new UnsupportedManuscriptFormatError(extension)
     }
@@ -42,4 +49,4 @@ export async function importManuscript(file: File, projectId: string): Promise<M
   return { chapters, importedAt: new Date().toISOString(), sourceFileName: file.name }
 }
 
-export { UnsupportedManuscriptFormatError as ManuscriptImportError }
+export { ManuscriptImportError }

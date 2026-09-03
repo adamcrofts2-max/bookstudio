@@ -8218,3 +8218,83 @@ under `npm test` until it is fixed. Left alone deliberately — it is
 unrelated to this feature and outside what was authorised. Worth fixing next
 (likely: give the dictionary loader an absolute base URL, or skip it when
 there is no real origin).
+
+## Phase 124 (2026-09-03) — EPUB manuscript import
+
+Book Studio could already *export* EPUB but couldn't *read* one, so a book
+couldn't be reopened from its own output, and an author migrating from another
+tool (or importing a public-domain source) had no path in.
+
+### What shipped
+- `src/parser/epub.ts` — finds the package document via `META-INF/container.xml`,
+  reads the spine, and hands each document to the existing `parseHtmlDocument`.
+  Adds **no new dependency**: reuses `epub/zipReader.ts` (a generic ZIP reader,
+  not EPUB-specific) and the same block converter `.html`/`.docx` already use.
+- Images are extracted into the project's asset library via `putAsset`, exactly
+  as `parser/docx.ts` does, and de-duplicated so a picture used by two documents
+  imports once.
+- `src/parser/errors.ts` — a dependency-free `ManuscriptImportError` base. The
+  import UI needs to recognise a known failure without statically importing a
+  parser; a direct import of `EpubImportError` would have pulled the EPUB reader
+  and its ZIP inflate path into the main bundle, defeating the dynamic import.
+  Verified: the EPUB parser is its own 3.6KB chunk and the main bundle grew by
+  0.33KB (1,418.99 → 1,419.32KB).
+- `.epub` added to the picker's `accept` list and to both format-list strings.
+
+### Two shaping steps, both load-bearing
+`parseHtmlDocument` walks `document.body.children` — **direct children only** —
+and starts a new chapter at an `<h1>`. Real EPUBs satisfy neither assumption, so
+before hand-off each document is:
+- **Flattened**, hoisting block elements to the top level in document order.
+  Without this, almost every paragraph of a real book is silently skipped.
+- **Heading-promoted**, re-tagging the first heading as `<h1>` so chapter
+  splitting behaves identically to an `.html` import (EPUBs commonly title a
+  chapter with `<h2>`).
+
+### A content-loss bug caught by testing against a real file
+The first working version returned a clean-looking 14 chapters and 296
+paragraphs — and had **silently dropped every line of verse in the book**.
+Poetry is marked up as bare `<div class="line">` elements, which are not block
+tags, so the flattener walked straight past them. The Book of Enoch is largely
+verse; roughly 1,000 lines were missing while the importer appeared to work.
+
+Fixed by treating any element whose children are all *inline* tags as the
+innermost text-bearing element and emitting it as its own paragraph — one per
+line, which preserves the shape of the poetry. After the fix: 1,522 blocks
+instead of 403.
+
+The confirming evidence is a cross-check. The same EPUB was independently
+parsed by a separately-written extractor, and both now agree exactly on the
+counts of rare textual-critical characters — 68 corner brackets and 51 white
+brackets. Two independently-implemented parsers agreeing on the count of a
+rare character is strong evidence both are faithful; the pre-fix version
+reported 53 and 50.
+
+### Verified
+`npm run build` clean. `npm run lint` exits 0 with **49 warnings before and 49
+after**. 9 new assertions in `scripts/smoke-test.ts` (nav/empty-document
+skipping, chapter titles from the document's own heading, spine order, nested
+flattening, **verse-line preservation as a regression test for the bug above**,
+bracket fidelity, blockquote/list conversion, and a user-safe error for a
+non-EPUB file) — all passing in isolation.
+
+Also end-to-end verified against a real 268KB Project Gutenberg EPUB (R. H.
+Charles's 1917 *Book of Enoch*): 15 chapters in correct reading order with
+correct titles, 1,415 paragraphs, images and tables intact.
+
+### Known limitations, recorded rather than hidden
+- **Verse imports as one paragraph per line.** Line structure survives; the
+  semantic distinction does not, because the Content layer has no verse block
+  type. Tracked in `docs/ROADMAP.md`.
+- **Footnotes are not reattached.** Some toolchains (Project Gutenberg's
+  ebookmaker among them) gather a book's footnotes at the end of a *later*
+  document than the one referencing them, so they arrive as trailing text on
+  the wrong chapter. Tracked.
+- **Publisher boilerplate is imported, not stripped.** Only the EPUB *nav*
+  document (machine-generated, and Book Studio builds its own TOC) and
+  genuinely empty spine entries are skipped. Dropping a publisher's licence or
+  front pages would mean deleting text from the author's book on a keyword
+  guess — a worse failure than importing a chapter they can delete in one
+  click.
+- `npm test` remains broken on `main` for the reason recorded under Phase 123;
+  these assertions likewise don't execute under it until that is fixed.

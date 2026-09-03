@@ -2423,5 +2423,86 @@ check(
   )
 }
 
+// --- EPUB import (Phase 124) ---
+{
+  const { buildZip } = await import('../src/epub/zipWriter')
+  const { parseEpub } = await import('../src/parser/epub')
+  const enc = (t: string) => new TextEncoder().encode(t)
+
+  const container = `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`
+
+  const opf = `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>The Book of Enoch</dc:title></metadata>
+<manifest>
+  <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+  <item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>
+  <item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/>
+  <item id="empty" href="empty.xhtml" media-type="application/xhtml+xml"/>
+</manifest>
+<spine><itemref idref="nav"/><itemref idref="c1"/><itemref idref="c2"/><itemref idref="empty"/></spine>
+</package>`
+
+  // Deeply nested, exactly like real EPUBs: content wrapped in containers,
+  // with verse marked up as bare <div class="line"> elements.
+  const c1 = `<html><body>
+  <div class="chapter"><h2>Book of the Watchers</h2></div>
+  <p>The words of the blessing of Enoch.</p>
+  <div class="lg-container"><div class="linegroup"><div class="group">
+    <div class="line">And the eternal God will tread upon the earth,</div>
+    <div class="line">[And appear from His camp]</div>
+    <div class="line">And appear from the heaven &#x231C;of heavens&#x231D;.</div>
+  </div></div></div>
+  </body></html>`
+
+  const c2 = `<html><body><section><h2>The Parables</h2><p>The second vision.</p>
+  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul></section></body></html>`
+
+  const epubBytes = await buildZip([
+    { name: 'mimetype', data: enc('application/epub+zip') },
+    { name: 'META-INF/container.xml', data: enc(container) },
+    { name: 'OEBPS/content.opf', data: enc(opf) },
+    { name: 'OEBPS/nav.xhtml', data: enc('<html><body><nav><ol><li>Contents</li></ol></nav></body></html>') },
+    { name: 'OEBPS/c1.xhtml', data: enc(c1) },
+    { name: 'OEBPS/c2.xhtml', data: enc(c2) },
+    { name: 'OEBPS/empty.xhtml', data: enc('<html><body><div></div></body></html>') },
+  ])
+  const epubFile = new File([epubBytes as unknown as BlobPart], 'book.epub', { type: 'application/epub+zip' })
+  const epubChapters = await parseEpub(epubFile, 'Fallback', 'proj-epub')
+
+  check('epub: skips the nav document and empty spine entries', epubChapters.length === 2)
+  check(
+    'epub: takes each chapter title from its own first heading',
+    epubChapters[0]?.title === 'Book of the Watchers' && epubChapters[1]?.title === 'The Parables',
+  )
+  check('epub: keeps spine reading order', epubChapters[0].order === 0 && epubChapters[1].order === 1)
+
+  const c1Text = epubChapters[0].blocks.map((b) => (b.type === 'paragraph' ? b.html : '')).join('\n')
+  check('epub: flattens nested containers instead of dropping their text', c1Text.includes('words of the blessing'))
+  // Regression: verse lives in bare <div class="line"> elements, which are not
+  // block tags. An importer that only walks known block tags drops every line
+  // of poetry in the book while appearing to work.
+  check('epub: preserves verse lines held in non-block containers', c1Text.includes('the eternal God will tread'))
+  check(
+    'epub: keeps each verse line as its own block rather than merging them',
+    epubChapters[0].blocks.filter((b) => b.type === 'paragraph' && /eternal God|His camp|of heavens/.test(b.html)).length === 3,
+  )
+  check('epub: preserves textual-critical brackets verbatim', c1Text.includes('⌜of heavens⌝') && c1Text.includes('[And appear from His camp]'))
+
+  const c2Types = epubChapters[1].blocks.map((b) => b.type)
+  check('epub: converts blockquote and list blocks', c2Types.includes('quote') && c2Types.includes('list'))
+
+  // A non-EPUB file must fail with a message safe to show the user, not a
+  // stack trace from the ZIP reader.
+  const { ManuscriptImportError } = await import('../src/parser/errors')
+  let epubError: unknown
+  try {
+    await parseEpub(new File([enc('not a zip at all') as unknown as BlobPart], 'x.epub'), 'F', 'p')
+  } catch (err) { epubError = err }
+  check('epub: a non-EPUB file raises a user-safe ManuscriptImportError', epubError instanceof ManuscriptImportError)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)
