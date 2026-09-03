@@ -65,9 +65,29 @@ function load(variant: Variant): Promise<void> {
   const entry = entries[variant]
   if (!entry.loadPromise) {
     const basePath = DICTIONARY_PATH_BY_VARIANT[variant]
+    // Resolved against the document's own base URL rather than requested
+    // root-relative. Two reasons: a root-relative path breaks the moment the
+    // app is served from a sub-path (a project site, a preview deployment
+    // under a prefix), and outside a browser there is no origin to resolve
+    // `/dictionaries/...` against at all — Node rejects it with
+    // `ERR_INVALID_URL`, which is what made this loader throw under the test
+    // harness.
+    const url = (file: string): string => {
+      // `window.document` as well as bare `document`: a jsdom-style harness
+      // may expose one without the other, and a resolvable base is what
+      // decides whether this fetch can work at all.
+      const base =
+        (typeof document !== 'undefined' ? document.baseURI : undefined) ??
+        (typeof window !== 'undefined' ? window.document?.baseURI ?? window.location?.href : undefined)
+      try {
+        return base ? new URL(`.${basePath}/${file}`, base).toString() : `${basePath}/${file}`
+      } catch {
+        return `${basePath}/${file}`
+      }
+    }
     entry.loadPromise = Promise.all([
-      fetch(`${basePath}/index.aff`).then((response) => response.arrayBuffer()),
-      fetch(`${basePath}/index.dic`).then((response) => response.arrayBuffer()),
+      fetch(url('index.aff')).then((response) => response.arrayBuffer()),
+      fetch(url('index.dic')).then((response) => response.arrayBuffer()),
     ])
       .then(([aff, dic]) => {
         // Phase 119 (2026-08-03, user: "ALL words, even words typed like

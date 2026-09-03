@@ -21,7 +21,13 @@ const SANS_FAMILY = '"Inter", sans-serif'
  */
 const CUSTOM_FAMILY_CSS: Record<Exclude<CoverFontChoice, 'theme' | 'serif' | 'sans'>, string> = {
   anton: '"Anton", sans-serif',
-  'bebas-neue': '"Bebas Neue", sans-serif',
+  /** Deliberately resolves to Anton, not Bebas Neue. Bebas Neue cannot be
+   * embedded in an exported PDF (see `pdf/fonts.ts`'s `'bebas-neue'` entry
+   * for the full diagnosis), so rendering it on screen would show the author
+   * one typeface and print another — a WYSIWYG break, which this app treats
+   * as non-negotiable. A project saved with this choice keeps working and
+   * simply shows Anton in both places. */
+  'bebas-neue': '"Anton", sans-serif',
   oswald: '"Oswald", sans-serif',
   'playfair-display': '"Playfair Display", serif',
   'dm-serif-display': '"DM Serif Display", serif',

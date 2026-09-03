@@ -8298,3 +8298,93 @@ correct titles, 1,415 paragraphs, images and tables intact.
   click.
 - `npm test` remains broken on `main` for the reason recorded under Phase 123;
   these assertions likewise don't execute under it until that is fixed.
+
+## Phase 125 (2026-09-03) — Repair the test suite, and the production bug it was hiding
+
+`npm test` had been failing on `main`: 4 visible failures and a hard crash
+partway through, so **only 94 of 408 assertions ever ran**. Everything after
+the crash — roughly three quarters of the suite, including Phase 123's and
+124's new coverage — silently never executed. Four independent root causes.
+
+**Result: 408 passing, 0 failing, exit 0** (was 94 passing, 4 failing, crash).
+
+### 1. PDF export was broken for every user — a live production bug
+
+Not a test problem. `pdf/fonts.ts`'s `loadThemeFonts` embeds all custom cover
+fonts on **every** export, whether the book uses them or not, and
+`@pdf-lib/fontkit` throws `RangeError: Trying to access beyond buffer length`
+from `TTFGlyph._getCBox` on **Bebas Neue**. `exportBookToPdf` therefore threw
+before producing a single page — for every book, regardless of its fonts.
+
+Diagnosed rather than guessed:
+- The file is **not** corrupt. Its `loca` table matches
+  `head.indexToLocFormat` (short/2-byte) and `maxp.numGlyphs` (497), every
+  table lies inside the file, and no glyph offset runs past `glyf`.
+- A **freshly downloaded copy from Google Fonts crashes identically**, so
+  re-downloading the file cannot fix it. This is a fontkit defect on this
+  typeface.
+- The failure surfaces at `doc.save()`, not `embedFont`, so it cannot be
+  caught per-font at load time — a `try`/`catch` around the embed was tried
+  first and did not help.
+
+Fixed by not embedding it: `'bebas-neue'` now resolves to **Anton**, the
+closest working condensed display sans. Two supporting changes so this is
+coherent rather than a silent substitution:
+- `structuralPages/coverTypography.ts` maps the same id to Anton **on screen
+  too**. Rendering Bebas on screen and Anton in the PDF would break the
+  true-WYSIWYG guarantee this app treats as non-negotiable.
+- Bebas Neue was removed from both cover-font pickers so nobody new selects
+  it. The id is **kept** in `CustomCoverFontId`, so a project already saved
+  with it still loads and simply renders in Anton — this codebase's standing
+  "default in code, never migrate persisted data" convention.
+
+`embedOrFallback` was also added: a font that fails at embed time now falls
+back to a standard face with a logged error instead of taking down the whole
+export. It does not fix Bebas (whose failure is deferred to save), but it
+stops the *class* of failure from being fatal again.
+
+### 2. `runReview` is deferred by a tick; the tests asserted synchronously
+
+`virtualEditorStore.runReview` wraps `runPipeline` in
+`window.setTimeout(…, 0)` so the "Reviewing…" state paints before the
+synchronous pipeline blocks the main thread. That is correct and deliberate —
+but the tests read the report immediately afterwards, found none, and then
+dereferenced the missing report at `smoke-test.ts:621`, killing the run.
+**This was the crash that hid ~310 assertions.** Fixed test-side with a
+`flushReview()` helper awaited after each of the six `runReview` calls; the
+production deferral is untouched.
+
+### 3. The spell-check dictionary URL was root-relative
+
+`spellcheckDictionary.ts` fetched `/dictionaries/en-gb/index.aff`. Node
+rejects a root-relative URL with `ERR_INVALID_URL` (there is no origin to
+resolve it against), so the dictionary never loaded under the harness and
+every spelling-dependent checker silently reported "not analysed".
+
+Now resolved against `document.baseURI` (falling back to `window`), which is
+also a **real production improvement**: a root-relative path breaks the moment
+the app is served from a sub-path, such as a preview deployment under a
+prefix. The loader's existing fail-closed behaviour is preserved.
+
+The harness shim was widened to match: it previously served only `/fonts/`
+from `public/`, and now serves anything under `public/`, including absolute
+same-origin URLs. The spell-checker is therefore genuinely exercised by the
+suite for the first time.
+
+### 4. A stale assertion nobody could see failing
+
+The overall-score test averaged a hardcoded list of four categories. Four more
+(`developmental`, `typography`, `accessibility`, `commercial`) had checkers
+registered afterwards, so the assertion went stale and started failing —
+unnoticed, because the suite was already red. It now derives the analysed set
+from the report itself, so it cannot go stale again as checkers are added, with
+a separate assertion pinning the four long-standing categories.
+
+### Verified
+`npm test` — 408 passing, 0 failing, exit 0. `npm run build` clean.
+`npm run lint` exits 0 with 49 warnings before and after.
+
+### Worth doing next
+Phase J's CI pipeline. This suite was broken across multiple phases without
+anyone noticing; a GitHub Actions workflow running build/lint/test on every
+push would have caught it on the commit that introduced it.

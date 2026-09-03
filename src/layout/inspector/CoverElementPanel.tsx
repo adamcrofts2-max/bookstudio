@@ -37,7 +37,9 @@ const FONT_CHOICE_OPTIONS: { id: CoverFontChoice; label: string }[] = [
   { id: 'serif', label: 'Serif' },
   { id: 'sans', label: 'Sans-serif' },
   { id: 'anton', label: 'Anton' },
-  { id: 'bebas-neue', label: 'Bebas Neue' },
+  // Bebas Neue was removed from this list (Phase 125): it cannot be embedded
+  // in an exported PDF — see `pdf/fonts.ts`'s `'bebas-neue'` entry. The id
+  // itself is retained so existing projects still load, rendering in Anton.
   { id: 'oswald', label: 'Oswald' },
   { id: 'playfair-display', label: 'Playfair Display' },
   { id: 'dm-serif-display', label: 'DM Serif Display' },

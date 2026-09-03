@@ -114,12 +114,30 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const originalFetch = globalThis.fetch
-// @ts-expect-error -- test shim: serve /fonts/*.woff2 from the local public/ dir
+/**
+ * Serves anything under `public/` straight from disk, the way the dev server
+ * and the deployed site both do.
+ *
+ * Covers absolute same-origin URLs as well as root-relative ones: production
+ * code resolves asset paths against `document.baseURI` (so the app keeps
+ * working when served from a sub-path), which means requests arrive here as
+ * `http://localhost/...` rather than `/...`.
+ *
+ * Deliberately broader than the fonts-only shim it replaces. The spell-check
+ * dictionaries live under `public/dictionaries/`, and without them every
+ * spelling-dependent checker silently reported "not analysed" — which is how
+ * a genuine assertion about category scores came to fail without anyone
+ * noticing the dictionary had never loaded.
+ */
+// @ts-expect-error -- test shim
 globalThis.fetch = async (url: string) => {
-  if (typeof url === 'string' && url.startsWith('/fonts/')) {
-    const filePath = path.join(__dirname, '..', 'public', url)
-    const buf = fs.readFileSync(filePath)
-    return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+  const requestPath = typeof url === 'string' ? url.replace(/^https?:\/\/[^/]+/, '') : ''
+  if (requestPath.startsWith('/')) {
+    const filePath = path.join(__dirname, '..', 'public', requestPath)
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const buf = fs.readFileSync(filePath)
+      return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+    }
   }
   return originalFetch(url)
 }
@@ -541,14 +559,27 @@ check(
   'VE pipeline: copyEditing now scores a real 100 (registered checker, zero findings with no styleGuide passed) instead of null',
   dirtyReport.categoryScores.copyEditing !== null && dirtyReport.categoryScores.copyEditing?.score === 100,
 )
-const analysedDirtyScores = [
-  dirtyReport.categoryScores.proofreading,
-  dirtyReport.categoryScores.consistency,
-  dirtyReport.categoryScores.readability,
-  dirtyReport.categoryScores.copyEditing,
-].filter((c): c is NonNullable<typeof c> => c !== null)
+// Derived from the report itself rather than a hardcoded category list.
+// The previous version named the four categories that had checkers when it
+// was written; four more (developmental, typography, accessibility,
+// commercial) were registered afterwards, so the assertion quietly went stale
+// and started failing — unnoticed, because the suite was already red further
+// down. Reading whatever the pipeline actually analysed keeps this honest as
+// new checkers are added, which is the whole point of the assertion.
+const analysedDirtyScores = Object.values(dirtyReport.categoryScores).filter(
+  (c): c is NonNullable<typeof c> => c !== null,
+)
 check(
-  'VE pipeline: overall score equals the mean of every analysed category (proofreading + consistency + readability + copyEditing), not just proofreading alone',
+  'VE pipeline: at least the four long-standing categories are analysed',
+  [
+    dirtyReport.categoryScores.proofreading,
+    dirtyReport.categoryScores.consistency,
+    dirtyReport.categoryScores.readability,
+    dirtyReport.categoryScores.copyEditing,
+  ].every((c) => c !== null),
+)
+check(
+  'VE pipeline: overall score equals the mean of every analysed category, not just proofreading alone',
   dirtyReport.overallScore === Math.round(analysedDirtyScores.reduce((sum, c) => sum + c.score, 0) / analysedDirtyScores.length),
 )
 
@@ -586,12 +617,24 @@ function makeFixAllTestManuscript(): Manuscript {
   }
 }
 
+/**
+ * `virtualEditorStore.runReview` defers `runPipeline` by one tick
+ * (`window.setTimeout(…, 0)`) so the "Reviewing…" state paints before the
+ * synchronous pipeline blocks the main thread. These tests therefore have to
+ * let that tick run before asserting on the report — reading it synchronously
+ * finds no report at all, which is what silently broke this suite: the
+ * assertions below failed, and a later line dereferenced the missing report
+ * and killed the whole run before anything after it could execute.
+ */
+const flushReview = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 // fixCategory: scoped correctly (a category with no matching findings is a
 // no-op; the matching category applies every fixable 'new' finding in it
 // and leaves the unfixable one alone).
 const fixCategoryProjectId = 've-fixcategory-test-project'
 useContentStoreForFixAll.getState().setManuscript(fixCategoryProjectId, makeFixAllTestManuscript())
 useVirtualEditorStore.getState().runReview(fixCategoryProjectId, useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!)
+await flushReview()
 
 useVirtualEditorStore.getState().fixCategory(fixCategoryProjectId, 'readability')
 const afterWrongCategoryFix = useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!
@@ -630,6 +673,7 @@ check('fixCategory: unfixable finding stays new (never touched)', (fixCategorySt
 const fixAllProjectId = 've-fixall-test-project'
 useContentStoreForFixAll.getState().setManuscript(fixAllProjectId, makeFixAllTestManuscript())
 useVirtualEditorStore.getState().runReview(fixAllProjectId, useContentStoreForFixAll.getState().getManuscript(fixAllProjectId)!)
+await flushReview()
 
 const fixAllReportBefore = useVirtualEditorStore.getState().reportsByProject[fixAllProjectId]!
 const repeatedWordFindingForFixAll = fixAllReportBefore.findings.find((f) => f.issueType === 'repeated-word')!
@@ -669,6 +713,7 @@ useVirtualEditorStore.getState().runReview(
   styleGuideReviewManuscript,
   { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'title-case' },
 )
+await flushReview()
 const styleGuideReport = useVirtualEditorStore.getState().reportsByProject[styleGuideReviewProjectId]!
 check(
   'runReview: a styleGuide passed through runReview reaches headingCapitalisationChecker via runPipeline',
@@ -678,6 +723,7 @@ check(
 const noStyleGuideReviewProjectId = 've-no-styleguide-review-project'
 useContentStoreForFixAll.getState().setManuscript(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
 useVirtualEditorStore.getState().runReview(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
+await flushReview()
 const noStyleGuideReport = useVirtualEditorStore.getState().reportsByProject[noStyleGuideReviewProjectId]!
 check(
   'runReview: with no styleGuide argument, headingCapitalisationChecker stays silent (no false-positive plumbing bug)',
@@ -1023,12 +1069,14 @@ check(
 const veReviewPagesProjectId = 've-pages-review-project'
 useContentStoreForFixAll.getState().setManuscript(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT)
 useVirtualEditorStore.getState().runReview(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT, undefined, sparsePages)
+await flushReview()
 const veReviewPagesReport = useVirtualEditorStore.getState().reportsByProject[veReviewPagesProjectId]!
 check('runReview: an optional pages argument reaches the pipeline and produces a real publishingStandards score', veReviewPagesReport.categoryScores.publishingStandards !== null)
 
 const veNoPagesReviewProjectId = 've-no-pages-review-project'
 useContentStoreForFixAll.getState().setManuscript(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
 useVirtualEditorStore.getState().runReview(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
+await flushReview()
 const veNoPagesReviewReport = useVirtualEditorStore.getState().reportsByProject[veNoPagesReviewProjectId]!
 check('runReview: without a pages argument, publishingStandards stays null (genuinely optional, no silent default)', veNoPagesReviewReport.categoryScores.publishingStandards === null)
 

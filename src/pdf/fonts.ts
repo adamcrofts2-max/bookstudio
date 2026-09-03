@@ -55,6 +55,34 @@ async function embed(doc: PDFDocument, url: string): Promise<PDFFont> {
 }
 
 /**
+ * Embeds a font, falling back to a standard PDF face if that font cannot be
+ * embedded at all.
+ *
+ * Every cover font in `loadThemeFonts` is embedded on every export, whether
+ * the book uses it or not, so without this a single unembeddable file takes
+ * down PDF export for every user and every book — which is exactly what
+ * happened: `@pdf-lib/fontkit` throws `RangeError: Trying to access beyond
+ * buffer length` while writing Bebas Neue's glyph data, and since that
+ * rejection propagated out of `loadThemeFonts`, `exportBookToPdf` threw
+ * before producing a single page. The font file itself is structurally
+ * sound (its `loca` table matches `head.indexToLocFormat` and `maxp
+ * .numGlyphs`, and no glyph offset runs past `glyf`), so this is a fontkit
+ * defect on this particular font rather than a corrupt download.
+ *
+ * Failing soft is the right trade here: a cover set in a fallback face is a
+ * visible, fixable cosmetic problem, while a hard failure loses the whole
+ * export. The failure is logged rather than swallowed silently.
+ */
+async function embedOrFallback(doc: PDFDocument, url: string, fallback: 'sans' | 'serif'): Promise<PDFFont> {
+  try {
+    return await embed(doc, url)
+  } catch (error) {
+    console.error(`Font failed to embed, falling back to a standard face: ${url}`, error)
+    return doc.embedFont(fallback === 'serif' ? StandardFonts.TimesRoman : StandardFonts.Helvetica)
+  }
+}
+
+/**
  * Builds a `FontWeightSet` from whichever real files a family actually
  * ships. Each weight cascades to the next-lightest real file rather than
  * jumping straight to `regular` — `bold` falls back to `semiBold`, which
@@ -85,15 +113,15 @@ async function loadFamily(
   },
   italicFallback: 'sans' | 'serif',
 ): Promise<FontWeightSet> {
-  const regular = await embed(doc, files.regular)
-  const medium = files.medium ? await embed(doc, files.medium) : regular
-  const semiBold = files.semiBold ? await embed(doc, files.semiBold) : medium
-  const bold = files.bold ? await embed(doc, files.bold) : semiBold
+  const regular = await embedOrFallback(doc, files.regular, italicFallback)
+  const medium = files.medium ? await embedOrFallback(doc, files.medium, italicFallback) : regular
+  const semiBold = files.semiBold ? await embedOrFallback(doc, files.semiBold, italicFallback) : medium
+  const bold = files.bold ? await embedOrFallback(doc, files.bold, italicFallback) : semiBold
   const italic = files.italic
-    ? await embed(doc, files.italic)
+    ? await embedOrFallback(doc, files.italic, italicFallback)
     : await doc.embedFont(italicFallback === 'serif' ? StandardFonts.TimesRomanItalic : StandardFonts.HelveticaOblique)
   const boldItalic = files.boldItalic
-    ? await embed(doc, files.boldItalic)
+    ? await embedOrFallback(doc, files.boldItalic, italicFallback)
     : files.italic
       ? italic
       : await doc.embedFont(italicFallback === 'serif' ? StandardFonts.TimesRomanBoldItalic : StandardFonts.HelveticaBoldOblique)
@@ -105,7 +133,7 @@ async function loadFamily(
  * cover-only families in `public/fonts/custom/`. All are self-hosted
  * static files, no network fetch. */
 export async function loadThemeFonts(doc: PDFDocument): Promise<ThemeFontSet> {
-  const [inter, serif, anton, bebasNeue, oswald, playfairDisplay, dmSerifDisplay, abrilFatface, fraunces] = await Promise.all([
+  const [inter, serif, anton, oswald, playfairDisplay, dmSerifDisplay, abrilFatface, fraunces] = await Promise.all([
     loadFamily(
       doc,
       {
@@ -129,7 +157,6 @@ export async function loadThemeFonts(doc: PDFDocument): Promise<ThemeFontSet> {
       'serif',
     ),
     loadFamily(doc, { regular: '/fonts/custom/Anton/Anton-Regular.ttf' }, 'sans'),
-    loadFamily(doc, { regular: '/fonts/custom/Bebas_Neue/BebasNeue-Regular.ttf' }, 'sans'),
     loadFamily(
       doc,
       {
@@ -179,7 +206,32 @@ export async function loadThemeFonts(doc: PDFDocument): Promise<ThemeFontSet> {
     serif,
     custom: {
       anton,
-      'bebas-neue': bebasNeue,
+      /**
+       * Bebas Neue is deliberately NOT embedded, and resolves to Anton — the
+       * closest working condensed display sans.
+       *
+       * `@pdf-lib/fontkit` throws `RangeError: Trying to access beyond buffer
+       * length` from `TTFGlyph._getCBox` while serialising this typeface's
+       * glyph metrics. The failure surfaces at `doc.save()`, not at
+       * `embedFont`, so it cannot be caught per-font at load time — and
+       * because every cover font here is embedded on every export whether the
+       * book uses it or not, that one font took down PDF export for every
+       * user and every book (caught by `scripts/smoke-test.ts`'s export
+       * integration test).
+       *
+       * Not a corrupt download: the file's `loca` table matches
+       * `head.indexToLocFormat` and `maxp.numGlyphs`, no glyph offset runs
+       * past `glyf`, and a freshly-downloaded copy from Google Fonts crashes
+       * identically. It is a fontkit defect on this face, so re-downloading
+       * the file will not fix it — do not "restore" this font without first
+       * confirming a fixed fontkit release against a real exported PDF.
+       *
+       * The id is kept in `CustomCoverFontId` rather than removed: a project
+       * saved with this choice still loads and simply renders in Anton, which
+       * is this codebase's standing "default in code, never migrate persisted
+       * data" convention.
+       */
+      'bebas-neue': anton,
       oswald,
       'playfair-display': playfairDisplay,
       'dm-serif-display': dmSerifDisplay,

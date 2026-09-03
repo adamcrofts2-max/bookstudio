@@ -1419,6 +1419,11 @@ Book Studio today and an actual multi-device Canva-style product.)*
 
 ## Phase J — Platform Hardening & Technical Debt
 
+- [x] Repair the test suite — shipped 2026-09-03 (Phase 125). `npm test` had been
+      crashing partway through, so only 94 of 408 assertions ever ran. Four
+      independent root causes, one of them a live production bug: PDF export was
+      broken for every user because Bebas Neue cannot be embedded by
+      `@pdf-lib/fontkit`. 408 passing, exit 0
 - [ ] CI pipeline (GitHub Actions running build/lint/test on every push)
 - [ ] Real browser end-to-end tests (today's `smoke-test.ts` is jsdom-only)
 - [ ] Production error monitoring / crash reporting
