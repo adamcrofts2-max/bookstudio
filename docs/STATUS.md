@@ -8142,3 +8142,79 @@ click a word while already editing and confirm the selection now survives
 and the toolbar appears, confirm the "+" button no longer eats clicks
 meant for the toolbar, and confirm the new sidebar spelling chips render
 and correctly apply a chosen suggestion.
+
+## Phase 123 (2026-09-03) — Book templates: save a book's design, reuse it across a series
+
+Requested for a publishing imprint producing a series where every volume
+should share the same page structure and design (the imprint's front matter,
+copyright wording, ISBN/barcode pages, back-cover structure and cover
+treatment) while each title keeps its own manuscript and artwork.
+
+### What shipped
+- `src/types/bookTemplate.ts` — `BookTemplate`: project settings (trim,
+  margins, bleed, unit, language, colour profile, `themeId`), category/book
+  form, a bundled `CustomTheme`, and the full structural-page set.
+- `src/store/templateStore.ts` — global and persisted, modelled directly on
+  `customThemeStore`: a template a user builds is meant to be reused across
+  every project, exactly like a custom theme is. Exports a shared
+  `EMPTY_TEMPLATES` constant so no selector ever returns a fresh `[]`
+  literal (the infinite-re-render bug documented under "Post-deploy
+  incident" above).
+- `src/templates/buildTemplate.ts` — pure project → template shaping, and
+  `applyTemplate.ts` — page preparation at apply time.
+- `SaveAsTemplateDialog.tsx` + a "Save as template" item in the Toolbar's
+  More menu; a "Start from a template" picker in `NewProjectDialog` that
+  only appears once at least one template exists.
+
+### Three deliberate decisions
+- **A template never carries the manuscript.** It is presentation and
+  structure only, which keeps the existing content/presentation separation
+  intact and is exactly what distinguishes it from a `.bookstudio` project
+  file (which bundles a whole project, chapters included).
+- **The custom theme is bundled by value, not referenced by id.** A template
+  that merely pointed at a theme id would silently lose its typography the
+  day that theme was deleted — and a template's whole job is to still work
+  months later.
+- **Image references are stripped at save time.** Assets are per-project
+  IndexedDB blobs (`store/assetDb.ts`), so an `imageAssetId` captured in one
+  project resolves to nothing in another; keeping it would produce a template
+  that applies cleanly and then renders missing images. Cover artwork is
+  per-title anyway — layout, typography and colour are what a series shares.
+  Carrying template-scoped assets (a publisher mark or series device) is
+  tracked as a new `docs/ROADMAP.md` item rather than half-done here.
+
+A keep-text/clear-text toggle at save time decides whether authored words
+travel. The text keys are enumerated explicitly (`TEXT_CONTENT_KEYS`) rather
+than inferred by value type, because several genuinely-layout fields are also
+strings (`layout`, `fontChoice`, `overlayStyle`) and clearing those would
+destroy the very design the template exists to carry — covered by two tests
+asserting layout survives in *both* modes.
+
+Page ids are regenerated at apply time. Structural pages are keyed by project
+so reuse would not collide in `structuralPageStore`, but `selectionStore` and
+the Inspector address pages by bare id, and two projects sharing one is the
+sort of coincidence that produces an unreproducible bug. Fresh ids cost
+nothing.
+
+### Verified
+`npm run build` clean. `npm run lint` exits 0 with **49 warnings before and
+49 after** — no new warnings introduced. 15 new assertions added to
+`scripts/smoke-test.ts` covering both save modes, layout survival, asset
+stripping, manuscript exclusion, id regeneration and template immutability;
+all 15 pass when run in isolation.
+
+### Pre-existing breakage found, NOT introduced here, NOT fixed here
+`npm test` already fails on `main` before any of this work: 4 FAILs and a
+hard crash at `scripts/smoke-test.ts:621`
+(`Cannot read properties of undefined (reading 'findings')`). Root cause is
+upstream of that line — `virtualEditor/spellcheckDictionary.ts:69` calls
+`fetch('/dictionaries/en-gb/index.aff')` with a root-relative URL, which
+Node rejects with `ERR_INVALID_URL` in the jsdom harness (there is no origin
+to resolve it against), so the pipeline throws and leaves
+`fixCategoryReport` undefined. Confirmed pre-existing by stashing all Phase
+123 changes and re-running: identical crash, identical 4 failures. The new
+template assertions sit after that crash point and therefore do not execute
+under `npm test` until it is fixed. Left alone deliberately — it is
+unrelated to this feature and outside what was authorised. Worth fixing next
+(likely: give the dictionary loader an absolute base URL, or skip it when
+there is no real origin).

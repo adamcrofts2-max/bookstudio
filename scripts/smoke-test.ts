@@ -2341,5 +2341,87 @@ check(
   (useContentStore.getState().getManuscript(rbProjectId)!.chapters[0].blocks[0] as ContentBlock & { attribution?: string }).attribution === undefined,
 )
 
+// --- Book templates (Phase E: series consistency) ---
+{
+  const { buildTemplate } = await import('../src/templates/buildTemplate')
+  const { pagesForNewProject } = await import('../src/templates/applyTemplate')
+  const { DEFAULT_PROJECT_SETTINGS } = await import('../src/types/project')
+  type AnyPage = import('../src/types/structuralPage').StructuralPage
+
+  const coverPage = {
+    id: 'page-cover',
+    type: 'cover',
+    category: 'front-matter',
+    order: 0,
+    enabled: true,
+    content: { title: 'The Book of Enoch', subtitle: 'A subtitle', imageAssetId: 'asset-123', layout: 'centered' },
+    elements: [
+      { id: 'el-1', kind: 'text', text: 'THE HIDDEN LIBRARY', x: 0.5, y: 0.9, width: 0.5, height: 0.05 },
+      { id: 'el-2', kind: 'rect', x: 0.1, y: 0.1, width: 0.8, height: 0.02 },
+    ],
+  } as unknown as AnyPage
+
+  const copyrightPage = {
+    id: 'page-copyright',
+    type: 'copyright',
+    category: 'front-matter',
+    order: 1,
+    enabled: true,
+    content: { text: 'Published by The Hidden Library.' },
+  } as unknown as AnyPage
+
+  const base = {
+    name: 'Series template',
+    description: '',
+    settings: { ...DEFAULT_PROJECT_SETTINGS, trimSize: '5.5x8.5' as const },
+    category: 'nonfiction' as const,
+    customTheme: null,
+    structuralPages: [coverPage, copyrightPage],
+  }
+
+  const withContent = buildTemplate({ ...base, includeContent: true })
+  const withoutContent = buildTemplate({ ...base, includeContent: false })
+
+  const wcCover = withContent.structuralPages[0] as unknown as { content: Record<string, unknown>; elements: { kind: string; text?: string; assetId?: string }[] }
+  const wocCover = withoutContent.structuralPages[0] as unknown as { content: Record<string, unknown>; elements: { kind: string; text?: string }[] }
+
+  check('buildTemplate: keeps page text when includeContent is true', wcCover.content.title === 'The Book of Enoch')
+  check(
+    'buildTemplate: keeps imprint boilerplate on other pages too',
+    (withContent.structuralPages[1] as unknown as { content: { text?: string } }).content.text === 'Published by The Hidden Library.',
+  )
+  check('buildTemplate: clears page text when includeContent is false', wocCover.content.title === undefined)
+  check(
+    'buildTemplate: clears cover element text when includeContent is false',
+    wocCover.elements.find((e) => e.kind === 'text')?.text === '',
+  )
+
+  // Layout must survive BOTH modes — clearing text must never clear design.
+  check('buildTemplate: keeps layout when text is kept', wcCover.content.layout === 'centered')
+  check('buildTemplate: keeps layout even when text is cleared', wocCover.content.layout === 'centered')
+  check(
+    'buildTemplate: keeps non-text cover elements when text is cleared',
+    wocCover.elements.some((e) => e.kind === 'rect'),
+  )
+
+  // Assets are per-project IndexedDB blobs; a retained id would resolve to a
+  // missing image in whatever project the template is applied to.
+  check('buildTemplate: strips image asset references in both modes', wcCover.content.imageAssetId === undefined && wocCover.content.imageAssetId === undefined)
+
+  // A template is presentation and structure — never a manuscript.
+  check('buildTemplate: carries no manuscript', !('manuscript' in withContent) && !('chapters' in withContent))
+  check('buildTemplate: records which mode it was saved in', withContent.includesContent === true && withoutContent.includesContent === false)
+  check('buildTemplate: carries page setup', withContent.settings.trimSize === '5.5x8.5')
+
+  const applied = pagesForNewProject({ ...withContent, id: 'tpl-1', schemaVersion: 1, createdAt: '' })
+  check('applyTemplate: regenerates page ids', applied[0].id !== 'page-cover' && applied[1].id !== 'page-copyright')
+  check('applyTemplate: gives every page a distinct id', applied[0].id !== applied[1].id)
+  check('applyTemplate: preserves page count and order', applied.length === 2 && applied[0].type === 'cover' && applied[1].type === 'copyright')
+  check(
+    'applyTemplate: does not mutate the stored template',
+    (withContent.structuralPages[0] as unknown as { id: string }).id === 'page-cover',
+  )
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

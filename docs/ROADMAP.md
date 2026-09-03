@@ -791,6 +791,20 @@ daily use of everything built so far.)*
       real image-generation API (and a decision on hosted-backend vs.
       bring-your-own-key, same open question already deferred for
       `AiReviewer` in Phase C)
+- [x] Book templates — save a project's page setup, theme and full structural-page
+      set as a reusable series template, and start a new project from it — shipped
+      2026-09-03 (Phase 123): `types/bookTemplate.ts`, `store/templateStore.ts`
+      (global, mirroring `customThemeStore`), `templates/buildTemplate.ts` +
+      `applyTemplate.ts`, `SaveAsTemplateDialog.tsx`, a "Save as template" Toolbar
+      action and a "Start from a template" picker in `NewProjectDialog`. A
+      keep-text/clear-text toggle at save time decides whether imprint boilerplate
+      travels with the template. Never carries the manuscript.
+- [ ] Book templates: carry image assets (publisher mark, series device) with a
+      template — deferred: template image references are stripped today because
+      assets are per-project IndexedDB blobs, so an id captured in one project
+      resolves to nothing in another. Needs template-scoped asset storage
+- [ ] Book templates: manage saved templates (rename/delete) from a gallery — today
+      they can only be created and picked, not curated
 - [ ] Community/shareable template gallery — deferred: needs a real backend
       service to host/browse shared templates, which this client-only app
       doesn't have
