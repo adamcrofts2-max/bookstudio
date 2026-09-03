@@ -581,6 +581,21 @@ daily use of everything built so far.)*
 
 ## Phase D — Publishing Output Expansion
 
+- [x] EPUB manuscript import — shipped 2026-09-03 (Phase 124): Book Studio could
+      already export EPUB but not read one, so a book couldn't be reopened from
+      its own output. `src/parser/epub.ts` reuses `epub/zipReader.ts` (a generic
+      ZIP reader) and `parser/html.ts`'s `parseHtmlDocument`, adding no new
+      dependency; images are extracted into the asset library like the DOCX
+      importer does. Verified against a real 268KB Project Gutenberg EPUB
+- [ ] EPUB import: preserve verse as a distinct block type — verse lines are
+      currently imported as one paragraph each, which keeps the line structure
+      but loses the semantic distinction (the Content layer has no verse block)
+- [ ] EPUB import: reattach footnotes to the document that references them —
+      some EPUB toolchains gather a book's footnotes at the end of a later
+      file, so they currently import as trailing text on the wrong chapter
+- [ ] PDF manuscript import — deliberately not attempted: PDFs carry no
+      reliable structure, so chapter detection is guesswork
+
 - [x] EPUB export — see STATUS.md Phase 40
 - Kindle / MOBI export — **decided 2026-08-01: not building.** Confirmed with
       the user: Amazon's KDP pipeline now primarily ingests EPUB and converts
@@ -791,6 +806,20 @@ daily use of everything built so far.)*
       real image-generation API (and a decision on hosted-backend vs.
       bring-your-own-key, same open question already deferred for
       `AiReviewer` in Phase C)
+- [x] Book templates — save a project's page setup, theme and full structural-page
+      set as a reusable series template, and start a new project from it — shipped
+      2026-09-03 (Phase 123): `types/bookTemplate.ts`, `store/templateStore.ts`
+      (global, mirroring `customThemeStore`), `templates/buildTemplate.ts` +
+      `applyTemplate.ts`, `SaveAsTemplateDialog.tsx`, a "Save as template" Toolbar
+      action and a "Start from a template" picker in `NewProjectDialog`. A
+      keep-text/clear-text toggle at save time decides whether imprint boilerplate
+      travels with the template. Never carries the manuscript.
+- [ ] Book templates: carry image assets (publisher mark, series device) with a
+      template — deferred: template image references are stripped today because
+      assets are per-project IndexedDB blobs, so an id captured in one project
+      resolves to nothing in another. Needs template-scoped asset storage
+- [ ] Book templates: manage saved templates (rename/delete) from a gallery — today
+      they can only be created and picked, not curated
 - [ ] Community/shareable template gallery — deferred: needs a real backend
       service to host/browse shared templates, which this client-only app
       doesn't have

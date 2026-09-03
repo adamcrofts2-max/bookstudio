@@ -22,6 +22,10 @@ import {
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useProjectStore } from '@/store/projectStore'
+import { useStructuralPageStore } from '@/store/structuralPageStore'
+import { useCustomThemeStore } from '@/store/customThemeStore'
+import { useTemplateStore } from '@/store/templateStore'
+import { pagesForNewProject } from '@/templates/applyTemplate'
 import { CATEGORY_TEMPLATES, seedProjectTemplate } from '@/data/projectTemplates'
 import { addIdeaWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
@@ -60,6 +64,9 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const navigate = useNavigate()
   const createProject = useProjectStore((s) => s.createProject)
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
+  const replaceAllPages = useStructuralPageStore((s) => s.replaceAllPages)
+  const importCustomTheme = useCustomThemeStore((s) => s.importCustomTheme)
+  const templates = useTemplateStore((s) => s.templates)
   const [idea, setIdea] = useState('')
   // Also genuinely three-valued — `undefined` is "Not sure yet", a real
   // choice, not "hasn't answered yet". See `BOOK_FORM_OPTIONS` above.
@@ -70,18 +77,25 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   // author actually picked something, rather than silently applying
   // whatever category happened to be selected first.
   const [category, setCategory] = useState<ProjectCategory | undefined>(undefined)
+  // `undefined` means "start fresh" — the pre-existing behaviour. Picking a
+  // template supersedes the category-driven trim size below, since the
+  // template carries a deliberate page setup of its own.
+  const [templateId, setTemplateId] = useState<string | undefined>(undefined)
 
   // Narrows the category list to whichever form was picked, "Other" always
   // included since it's ambiguous by design. Picking a form after already
   // choosing a category that no longer fits (e.g. "Novel" then switching to
   // Non-fiction) clears it rather than leaving a mismatched selection sitting
   // in the dropdown silently.
+  const selectedTemplate = templateId ? templates.find((t) => t.id === templateId) : undefined
+
   const visibleCategories = CATEGORIES.filter((c) => !bookForm || c.form === bookForm || c.form === 'either')
 
   const reset = () => {
     setIdea('')
     setBookForm(undefined)
     setCategory(undefined)
+    setTemplateId(undefined)
   }
 
   const handlePickBookForm = (next: BookForm | undefined) => {
@@ -93,8 +107,18 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   }
 
   const handleCreate = () => {
-    const project = createProject(idea, category ?? 'other', bookForm)
-    if (category) {
+    const template = templateId ? templates.find((t) => t.id === templateId) : undefined
+    const project = createProject(idea, template?.category ?? category ?? 'other', template?.bookForm ?? bookForm)
+
+    if (template) {
+      // A template carries a deliberate page setup, theme and structural-page
+      // set — that's the whole point of having saved it, so it wins over the
+      // category-driven trim-size default below. Its custom theme is restored
+      // under its own id first, so `settings.themeId` still resolves.
+      if (template.customTheme) importCustomTheme(template.customTheme)
+      updateProjectSettings(project.id, template.settings)
+      replaceAllPages(project.id, pagesForNewProject(template))
+    } else if (category) {
       // Category-driven starting template — trim size default plus a few
       // clearly-marked example Develop entries, per `docs/ROADMAP.md`'s
       // "decides which Layer 0 entity subset a new project starts with."
@@ -169,6 +193,30 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
               Decides how Develop labels things and which templates it offers — never a data change, and always editable later from Project Settings.
             </p>
           </div>
+
+          {templates.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <Label>Start from a template (optional)</Label>
+              <Select value={templateId} onValueChange={setTemplateId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Start fresh" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-text-secondary">
+                {selectedTemplate
+                  ? `${selectedTemplate.structuralPages.length} page${selectedTemplate.structuralPages.length === 1 ? '' : 's'}, page setup and theme` +
+                    `${selectedTemplate.includesContent ? ', with their text' : ', without text'}. Cover artwork isn't included.`
+                  : 'Reuse a saved series template so every volume shares the same page structure and design.'}
+              </p>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1.5">
             <Label>Category (optional)</Label>

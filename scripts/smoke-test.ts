@@ -2341,5 +2341,168 @@ check(
   (useContentStore.getState().getManuscript(rbProjectId)!.chapters[0].blocks[0] as ContentBlock & { attribution?: string }).attribution === undefined,
 )
 
+// --- Book templates (Phase E: series consistency) ---
+{
+  const { buildTemplate } = await import('../src/templates/buildTemplate')
+  const { pagesForNewProject } = await import('../src/templates/applyTemplate')
+  const { DEFAULT_PROJECT_SETTINGS } = await import('../src/types/project')
+  type AnyPage = import('../src/types/structuralPage').StructuralPage
+
+  const coverPage = {
+    id: 'page-cover',
+    type: 'cover',
+    category: 'front-matter',
+    order: 0,
+    enabled: true,
+    content: { title: 'The Book of Enoch', subtitle: 'A subtitle', imageAssetId: 'asset-123', layout: 'centered' },
+    elements: [
+      { id: 'el-1', kind: 'text', text: 'THE HIDDEN LIBRARY', x: 0.5, y: 0.9, width: 0.5, height: 0.05 },
+      { id: 'el-2', kind: 'rect', x: 0.1, y: 0.1, width: 0.8, height: 0.02 },
+    ],
+  } as unknown as AnyPage
+
+  const copyrightPage = {
+    id: 'page-copyright',
+    type: 'copyright',
+    category: 'front-matter',
+    order: 1,
+    enabled: true,
+    content: { text: 'Published by The Hidden Library.' },
+  } as unknown as AnyPage
+
+  const base = {
+    name: 'Series template',
+    description: '',
+    settings: { ...DEFAULT_PROJECT_SETTINGS, trimSize: '5.5x8.5' as const },
+    category: 'nonfiction' as const,
+    customTheme: null,
+    structuralPages: [coverPage, copyrightPage],
+  }
+
+  const withContent = buildTemplate({ ...base, includeContent: true })
+  const withoutContent = buildTemplate({ ...base, includeContent: false })
+
+  const wcCover = withContent.structuralPages[0] as unknown as { content: Record<string, unknown>; elements: { kind: string; text?: string; assetId?: string }[] }
+  const wocCover = withoutContent.structuralPages[0] as unknown as { content: Record<string, unknown>; elements: { kind: string; text?: string }[] }
+
+  check('buildTemplate: keeps page text when includeContent is true', wcCover.content.title === 'The Book of Enoch')
+  check(
+    'buildTemplate: keeps imprint boilerplate on other pages too',
+    (withContent.structuralPages[1] as unknown as { content: { text?: string } }).content.text === 'Published by The Hidden Library.',
+  )
+  check('buildTemplate: clears page text when includeContent is false', wocCover.content.title === undefined)
+  check(
+    'buildTemplate: clears cover element text when includeContent is false',
+    wocCover.elements.find((e) => e.kind === 'text')?.text === '',
+  )
+
+  // Layout must survive BOTH modes — clearing text must never clear design.
+  check('buildTemplate: keeps layout when text is kept', wcCover.content.layout === 'centered')
+  check('buildTemplate: keeps layout even when text is cleared', wocCover.content.layout === 'centered')
+  check(
+    'buildTemplate: keeps non-text cover elements when text is cleared',
+    wocCover.elements.some((e) => e.kind === 'rect'),
+  )
+
+  // Assets are per-project IndexedDB blobs; a retained id would resolve to a
+  // missing image in whatever project the template is applied to.
+  check('buildTemplate: strips image asset references in both modes', wcCover.content.imageAssetId === undefined && wocCover.content.imageAssetId === undefined)
+
+  // A template is presentation and structure — never a manuscript.
+  check('buildTemplate: carries no manuscript', !('manuscript' in withContent) && !('chapters' in withContent))
+  check('buildTemplate: records which mode it was saved in', withContent.includesContent === true && withoutContent.includesContent === false)
+  check('buildTemplate: carries page setup', withContent.settings.trimSize === '5.5x8.5')
+
+  const applied = pagesForNewProject({ ...withContent, id: 'tpl-1', schemaVersion: 1, createdAt: '' })
+  check('applyTemplate: regenerates page ids', applied[0].id !== 'page-cover' && applied[1].id !== 'page-copyright')
+  check('applyTemplate: gives every page a distinct id', applied[0].id !== applied[1].id)
+  check('applyTemplate: preserves page count and order', applied.length === 2 && applied[0].type === 'cover' && applied[1].type === 'copyright')
+  check(
+    'applyTemplate: does not mutate the stored template',
+    (withContent.structuralPages[0] as unknown as { id: string }).id === 'page-cover',
+  )
+}
+
+// --- EPUB import (Phase 124) ---
+{
+  const { buildZip } = await import('../src/epub/zipWriter')
+  const { parseEpub } = await import('../src/parser/epub')
+  const enc = (t: string) => new TextEncoder().encode(t)
+
+  const container = `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+<rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`
+
+  const opf = `<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>The Book of Enoch</dc:title></metadata>
+<manifest>
+  <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+  <item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>
+  <item id="c2" href="c2.xhtml" media-type="application/xhtml+xml"/>
+  <item id="empty" href="empty.xhtml" media-type="application/xhtml+xml"/>
+</manifest>
+<spine><itemref idref="nav"/><itemref idref="c1"/><itemref idref="c2"/><itemref idref="empty"/></spine>
+</package>`
+
+  // Deeply nested, exactly like real EPUBs: content wrapped in containers,
+  // with verse marked up as bare <div class="line"> elements.
+  const c1 = `<html><body>
+  <div class="chapter"><h2>Book of the Watchers</h2></div>
+  <p>The words of the blessing of Enoch.</p>
+  <div class="lg-container"><div class="linegroup"><div class="group">
+    <div class="line">And the eternal God will tread upon the earth,</div>
+    <div class="line">[And appear from His camp]</div>
+    <div class="line">And appear from the heaven &#x231C;of heavens&#x231D;.</div>
+  </div></div></div>
+  </body></html>`
+
+  const c2 = `<html><body><section><h2>The Parables</h2><p>The second vision.</p>
+  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul></section></body></html>`
+
+  const epubBytes = await buildZip([
+    { name: 'mimetype', data: enc('application/epub+zip') },
+    { name: 'META-INF/container.xml', data: enc(container) },
+    { name: 'OEBPS/content.opf', data: enc(opf) },
+    { name: 'OEBPS/nav.xhtml', data: enc('<html><body><nav><ol><li>Contents</li></ol></nav></body></html>') },
+    { name: 'OEBPS/c1.xhtml', data: enc(c1) },
+    { name: 'OEBPS/c2.xhtml', data: enc(c2) },
+    { name: 'OEBPS/empty.xhtml', data: enc('<html><body><div></div></body></html>') },
+  ])
+  const epubFile = new File([epubBytes as unknown as BlobPart], 'book.epub', { type: 'application/epub+zip' })
+  const epubChapters = await parseEpub(epubFile, 'Fallback', 'proj-epub')
+
+  check('epub: skips the nav document and empty spine entries', epubChapters.length === 2)
+  check(
+    'epub: takes each chapter title from its own first heading',
+    epubChapters[0]?.title === 'Book of the Watchers' && epubChapters[1]?.title === 'The Parables',
+  )
+  check('epub: keeps spine reading order', epubChapters[0].order === 0 && epubChapters[1].order === 1)
+
+  const c1Text = epubChapters[0].blocks.map((b) => (b.type === 'paragraph' ? b.html : '')).join('\n')
+  check('epub: flattens nested containers instead of dropping their text', c1Text.includes('words of the blessing'))
+  // Regression: verse lives in bare <div class="line"> elements, which are not
+  // block tags. An importer that only walks known block tags drops every line
+  // of poetry in the book while appearing to work.
+  check('epub: preserves verse lines held in non-block containers', c1Text.includes('the eternal God will tread'))
+  check(
+    'epub: keeps each verse line as its own block rather than merging them',
+    epubChapters[0].blocks.filter((b) => b.type === 'paragraph' && /eternal God|His camp|of heavens/.test(b.html)).length === 3,
+  )
+  check('epub: preserves textual-critical brackets verbatim', c1Text.includes('⌜of heavens⌝') && c1Text.includes('[And appear from His camp]'))
+
+  const c2Types = epubChapters[1].blocks.map((b) => b.type)
+  check('epub: converts blockquote and list blocks', c2Types.includes('quote') && c2Types.includes('list'))
+
+  // A non-EPUB file must fail with a message safe to show the user, not a
+  // stack trace from the ZIP reader.
+  const { ManuscriptImportError } = await import('../src/parser/errors')
+  let epubError: unknown
+  try {
+    await parseEpub(new File([enc('not a zip at all') as unknown as BlobPart], 'x.epub'), 'F', 'p')
+  } catch (err) { epubError = err }
+  check('epub: a non-EPUB file raises a user-safe ManuscriptImportError', epubError instanceof ManuscriptImportError)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

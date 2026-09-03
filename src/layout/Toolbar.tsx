@@ -8,6 +8,7 @@ import {
   FolderOpen,
   History,
   Keyboard,
+  LayoutTemplate,
   Loader2,
   Moon,
   MoreHorizontal,
@@ -41,6 +42,7 @@ import { useExportEpub } from '@/epub/useExportEpub'
 import { useExportHtmlBook } from '@/epub/useExportHtmlBook'
 import { useExportProjectFile } from '@/projectFile/useExportProjectFile'
 import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
+import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { useManuscriptWordCount } from '@/hooks/useManuscriptWordCount'
@@ -82,6 +84,7 @@ function IconButton({
 export function Toolbar({ project }: ToolbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
   const [writingGoalOpen, setWritingGoalOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
@@ -349,6 +352,10 @@ export function Toolbar({ project }: ToolbarProps) {
               {loadingProject ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
               {loadingProject ? 'Loading…' : (loadProjectError ?? 'Load project file')}
             </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setSaveTemplateOpen(true)}>
+              <LayoutTemplate className="size-3.5" />
+              Save as template
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2" onSelect={() => setSettingsOpen(true)}>
               <Settings className="size-3.5" />
@@ -371,6 +378,7 @@ export function Toolbar({ project }: ToolbarProps) {
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <VersionHistoryDialog projectId={project.id} open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen} />
+      <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
       <WritingGoalDialog projectId={project.id} open={writingGoalOpen} onOpenChange={setWritingGoalOpen} />
       <ExportReadinessDialog
         open={readinessOpen}

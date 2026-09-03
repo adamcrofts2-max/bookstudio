@@ -2,7 +2,8 @@ import { useRef, useState } from 'react'
 import { Loader2, Upload } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { importManuscript, ManuscriptImportError } from '@/parser'
+import { importManuscript } from '@/parser'
+import { ManuscriptImportError } from '@/parser/errors'
 import { useContentStore } from '@/store/contentStore'
 import { useAssetStore } from '@/store/assetStore'
 
@@ -29,7 +30,15 @@ export function ImportManuscriptButton({ projectId, label = 'Import Manuscript',
       setManuscript(projectId, manuscript)
       await loadAssets(projectId)
     } catch (err) {
-      setError(err instanceof ManuscriptImportError ? err.message : 'Could not read that file. Try a .docx, .md, .txt or .html manuscript.')
+      // Every parser's own error extends `ManuscriptImportError` and carries a
+      // specific, actionable reason (unsupported format; an EPUB with no
+      // container, no spine, or no readable text). Falling back to the generic
+      // message would throw that away.
+      setError(
+        err instanceof ManuscriptImportError
+          ? err.message
+          : 'Could not read that file. Try an .epub, .docx, .md, .txt or .html manuscript.',
+      )
     } finally {
       setBusy(false)
     }
@@ -40,7 +49,7 @@ export function ImportManuscriptButton({ projectId, label = 'Import Manuscript',
       <input
         ref={inputRef}
         type="file"
-        accept=".docx,.md,.markdown,.txt,.html,.htm"
+        accept=".epub,.docx,.md,.markdown,.txt,.html,.htm"
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]
