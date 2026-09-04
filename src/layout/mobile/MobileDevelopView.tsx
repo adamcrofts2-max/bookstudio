@@ -11,6 +11,7 @@ import { IdeaInboxPanel } from '@/layout/planning/IdeaInboxPanel'
 import { OutlineTemplatesPanel } from '@/layout/planning/OutlineTemplatesPanel'
 import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
 import { BookGraphView } from '@/layout/planning/BookGraphView'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import type { Project } from '@/types'
 
 interface MobileDevelopViewProps {
@@ -68,6 +69,27 @@ export function MobileDevelopView({ project }: MobileDevelopViewProps) {
           {section === 'outline' && <OutlineTemplatesPanel projectId={project.id} bookForm={project.bookForm} />}
           {section === 'prompt' && <PromptGeneratorPanel projectId={project.id} />}
           {section === 'graph' && (
+            <ErrorBoundary
+              area="Book Graph"
+              fallback={(error, reset) => (
+                <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+                  <p className="text-[15px] font-semibold text-text-primary">Book Graph couldn't be drawn</p>
+                  <p className="max-w-xs text-sm text-text-secondary">
+                    The rest of Develop still works — use the back arrow to pick another category.
+                  </p>
+                  <pre className="max-h-24 w-full overflow-auto whitespace-pre-wrap break-words rounded-[var(--radius-button)] bg-background-secondary p-2 text-[11px] text-text-secondary">
+                    {error.name}: {error.message}
+                  </pre>
+                  <button
+                    type="button"
+                    onClick={reset}
+                    className="rounded-[var(--radius-button)] bg-[var(--color-accent)] px-3 py-2 text-sm font-medium text-white"
+                  >
+                    Try again
+                  </button>
+                </div>
+              )}
+            >
             <BookGraphView
               projectId={project.id}
               bookForm={project.bookForm}
@@ -77,6 +99,7 @@ export function MobileDevelopView({ project }: MobileDevelopViewProps) {
               // navigation desktop's graph performs against `PlanningShell`.
               onFocusKind={(kind) => setSection(kind)}
             />
+            </ErrorBoundary>
           )}
           {/* Anything not one of the tool sections above is an entity kind. */}
           {section !== 'ideas' && section !== 'outline' && section !== 'prompt' && section !== 'graph' && (

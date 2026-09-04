@@ -1426,6 +1426,12 @@ Book Studio today and an actual multi-device Canva-style product.)*
       `@pdf-lib/fontkit`. 408 passing, exit 0
 - [ ] CI pipeline (GitHub Actions running build/lint/test on every push)
 - [ ] Real browser end-to-end tests (today's `smoke-test.ts` is jsdom-only)
+- [x] Error boundaries — shipped 2026-09-03 (Phase 133). The app previously had
+      **none**, so any render error unmounted the whole tree to a blank page
+      with no message and no way back. Now a root boundary, a per-route
+      boundary around the editor, and a targeted one around Book Graph that
+      degrades just that panel. Each shows the real error text and offers Try
+      again / Reload / Copy details
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

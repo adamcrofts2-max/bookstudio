@@ -8805,3 +8805,58 @@ still shown.
 ### Verified
 `npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
 after; full suite ALL PASS.
+
+## Phase 133 (2026-09-03) — Error boundaries, so a crash is never a white screen
+
+Reported: the mobile Book Graph "still crashes to white screen" after Phase
+132. A white screen is a *render* error — a different failure from Phase 132's
+tab-jump, which threw nothing at all.
+
+### Not reproduced, and said plainly
+The crash could not be reproduced at 412×600 in headless Chromium against this
+build. Attempts, all clean with zero errors: single tap on empty canvas,
+background drag/pan, two-finger pinch, tap on a node, **double-tap on every
+node type** (book hub, chapter, idea), eight rapid taps, Connect mode with two
+node taps, and toggling kind filters off and on. Full screen enter/exit and
+drag inside full screen are also clean.
+
+So this phase does not claim to have fixed the reported crash. It makes the
+crash **visible and recoverable**, which is what turns an unreproducible report
+into a fixable one.
+
+### The real gap: Book Studio had no error boundary anywhere
+Verified by search: no `componentDidCatch`, no `getDerivedStateFromError`, no
+boundary component existed. Any error thrown during render therefore unmounted
+the entire React tree, leaving a blank page — no message, no recovery, and
+nothing for a user to report beyond "it went white". `docs/STATUS.md` already
+records one such incident (the Zustand selector infinite-loop crash), which had
+to be diagnosed from the deployed bundle's minified React error code.
+
+For an app whose whole promise is that a manuscript is safe, a silent blank
+page is the worst possible failure mode.
+
+### What shipped
+`src/components/common/ErrorBoundary.tsx`, used in three places:
+- **Root**, wrapping the whole app.
+- **Per-route** around the editor, so a crash there leaves the router mounted
+  and browser navigation still works.
+- **Targeted around Book Graph**, with its own compact fallback — the graph is
+  the most complex view on mobile (force layout, a Web Worker, SVG pointer
+  handling), so a failure there costs the graph, not all of Develop.
+
+Each panel shows the **real error name and message**, not "Something went
+wrong", plus Try again / Reload / Copy details. A user who can read and copy
+`TypeError: Cannot read properties of null` gets a fix in one round trip; a
+generic apology costs several.
+
+React only routes *render* errors to a boundary — an error inside an event
+handler still escapes to `window.onerror` — but a blank screen is always a
+render error, so this covers exactly the reported case.
+
+### Verified
+The boundary was proved by injecting a deliberate render crash into the graph
+section and confirming the panel appears with the real message and working
+recovery actions, then removing the injection. Re-verified afterwards: five
+touch interactions clean, full-screen suite 7/7, desktop unchanged.
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
