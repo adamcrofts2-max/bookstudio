@@ -1556,6 +1556,11 @@ a gap to close later.)*
       height (55dvh) instead of relying on `flex-1`, and a "Full screen" button
       hands it the whole viewport, hiding the heading, legend, filters and
       selection panel. Escape or "Exit full screen" returns
+- [x] Fix: touching the mobile Book Graph jumped the user to another tab —
+      fixed 2026-09-03 (Phase 132). The canvas carried `flex-1`, which grew it
+      past its declared height (782px inside a 600px viewport) so it was drawn
+      under the bottom tab bar; a tap on the lower part of the graph hit a nav
+      button. Reported as the graph "crashing" on touch
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.

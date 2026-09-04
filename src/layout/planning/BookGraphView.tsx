@@ -1097,7 +1097,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
     <div
       className={cn(
         'flex flex-col gap-3',
-        fullscreen ? 'fixed inset-0 z-50 gap-2 bg-background p-3' : compact ? 'h-full p-3' : 'p-6',
+        fullscreen ? 'fixed inset-0 z-50 gap-2 bg-background p-3' : compact ? 'p-3' : 'p-6',
       )}
     >
       {fullscreen && (
@@ -1114,7 +1114,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
         </div>
       )}
 
-      <div className={cn(fullscreen && 'hidden')}>
+      <div className={cn((fullscreen || compact) && 'hidden')}>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
         <p className="text-sm text-text-secondary">
           Click a node to see its connections. Drag to rearrange. Turn on Connect to link two nodes with a label.
@@ -1208,12 +1208,28 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
         </div>
       </div>
 
-      <div className={cn('flex gap-3', compact && 'min-h-0 flex-1 flex-col')}>
+      {/* In full screen this row must be the flex child that absorbs the
+          remaining height, or the canvas's own `flex-1` has nothing bounded
+          to grow inside and overflows the viewport. */}
+      <div className={cn('flex gap-3', fullscreen && 'min-h-0 flex-1', compact && 'flex-col')}>
         <div
           ref={containerRef}
           className={cn(
-            'relative min-w-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary',
-            fullscreen ? 'min-h-0' : compact ? 'min-h-[55dvh]' : 'h-[560px]',
+            'relative min-w-0 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary',
+            // `shrink-0` and no `flex-1` on mobile, and a fixed pixel height
+            // rather than a viewport unit. Both matter:
+            //
+            // `flex-1` is `flex: 1 1 0%`, so inside the stacked flex column it
+            // GROWS past whatever height is set — the declared height computed
+            // to 782px in a 600px-tall viewport, pushing the canvas down under
+            // the bottom tab bar. A tap near the bottom of the graph then hit
+            // a nav button and jumped the user to another tab, which is what
+            // was reported as the graph "crashing" on touch.
+            //
+            // `dvh` was no better: `50dvh` also resolved to ~780px here. A
+            // fixed height cannot out-grow the pane it sits in, and full
+            // screen is the answer for wanting more room.
+            fullscreen ? 'min-h-0 flex-1' : compact ? 'h-[320px] shrink-0' : 'h-[560px] flex-1',
           )}
         >
           <svg

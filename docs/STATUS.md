@@ -8750,3 +8750,58 @@ normal view; zero console or page errors.
 ### Verified
 `npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
 after; full suite ALL PASS.
+
+## Phase 132 (2026-09-03) — Fix: touching the mobile Book Graph jumped to another tab
+
+Reported as "crashes when I touch the book graph screen". Reproduced at a
+realistic 412×600 phone viewport, and it is not a crash — there is no JavaScript
+error at all. Touching the graph silently navigated away from Develop to the
+Write tab, which is indistinguishable from a crash from the user's side.
+
+### Root cause: `flex-1` beat the declared height
+The canvas carried `flex-1` (`flex: 1 1 0%`) in its base class list. Inside the
+stacked flex column that means `flex-grow: 1`, which **overrides whatever height
+is set** and stretches the element. Measured: a declared `320px` computed to
+`781.78px` inside a 600px-tall viewport, so the canvas ran from y=191 to y=972
+— roughly 370px of it drawn underneath the bottom tab bar.
+
+`document.elementFromPoint` at a spot that looks like the middle of the graph
+returned `BUTTON.flex.flex-1.flex-col` inside `NAV` — the **Write tab**. So a
+tap on the lower part of the graph pressed a nav button and switched tabs.
+
+This is also the true root cause of Phase 131's original report. That phase
+treated the symptom by adding `min-h-[55dvh]`, which made it worse: `flex-1`
+grew from that larger floor.
+
+Two units were tried and both were wrong for this:
+- **`dvh` is unreliable here.** `50dvh` resolved to ~780px against a 600px
+  visible viewport, so viewport units gave no protection either.
+- **`flex-1` cannot be combined with a fixed height** in a column that is
+  taller than its container.
+
+### Fix
+- The canvas is `h-[320px] shrink-0` on mobile — a fixed pixel height with no
+  grow. A fixed height cannot out-grow the pane it sits in; full screen is the
+  answer for wanting more room.
+- Full screen keeps `flex-1 min-h-0`, and its row wrapper regained
+  `min-h-0 flex-1` — without a bounded parent the canvas's own `flex-1` had
+  nothing to grow inside and overflowed the viewport (538px correct vs 782px
+  overflowing).
+- The Develop pane scrolls again instead of `overflow-hidden`, which had been
+  hiding the overflow rather than preventing it.
+- The heading, two-line description and edge legend are hidden on mobile. They
+  are explanatory, not operational, and they pushed the canvas below the fold.
+
+### Verified on the production build at 412×600
+Canvas is exactly 320px (y=191→511, entirely above the tab bar). **Five touch
+interactions all stay on Book Graph with zero errors**: single tap on empty
+background, background drag/pan, two-finger pinch, tap directly on a node, and
+a tap after entering full screen. Full screen: 538px canvas (~90% of viewport),
+chrome hidden, touch drag works (186,507 → 263,499), exit returns correctly.
+
+Desktop re-checked and unchanged: 560px canvas, side panel present, description
+still shown.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.

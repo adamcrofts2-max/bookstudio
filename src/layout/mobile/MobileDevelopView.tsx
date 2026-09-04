@@ -63,7 +63,7 @@ export function MobileDevelopView({ project }: MobileDevelopViewProps) {
               name here just said it twice. */}
           <span className="text-[15px] font-medium text-text-secondary">Develop</span>
         </button>
-        <div className={cn('min-h-0 flex-1', section === 'graph' ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')}>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {section === 'ideas' && <IdeaInboxPanel projectId={project.id} />}
           {section === 'outline' && <OutlineTemplatesPanel projectId={project.id} bookForm={project.bookForm} />}
           {section === 'prompt' && <PromptGeneratorPanel projectId={project.id} />}
