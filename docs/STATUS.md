@@ -9105,3 +9105,88 @@ hint gone, label flips, Remove appears, image stored, corrupt file explains
 itself, no unhandled rejection, Remove clears). Phases 134-136 suites all
 still green. Build clean, lint exit 0 at the 49-warning baseline, `npm test`
 ALL PASS.
+
+## Phase 138 — mobile parity pass
+
+User report, 2026-09-04: no way to capture a thought on mobile, no editing
+tab, "review what else mobile mode is missing." So this began with an actual
+audit of every desktop surface against the mobile shell.
+
+### What the audit found missing
+| Desktop surface | Mobile before | Now |
+| --- | --- | --- |
+| Capture a thought (Write) | absent | **shipped** |
+| Virtual Editor | absent | **shipped** (Review tab) |
+| Search / find and replace | absent | **shipped** (More) |
+| Image library (browse, delete) | add only | **shipped** (More) |
+| Chapter reorder | add/rename/delete only | **shipped** |
+| Export readiness warning | skipped silently | **shipped** |
+| Notes on a block | absent | deferred — needs block selection |
+| Typography panel | absent | deferred — needs block selection |
+| Image panel | absent | deferred — needs block selection |
+| Focus mode | absent | deliberately not ported |
+| Keyboard shortcuts dialog | absent | not applicable |
+
+### Capture a thought
+`IdeaCaptureAffordance` is now touch-aware rather than duplicated. Two things
+had to change for it to be honest on a phone:
+
+- **A real Capture button.** The desktop footer reads "Enter to save ·
+  Shift+Enter for a line break" — a phone has no Shift key and its Return key
+  inserts a newline. It also can't keep `onBlur`-to-collapse on touch, because
+  the software keyboard blurs the field whenever it dismisses and the Capture
+  button is itself the blur target.
+- **It docks bottom-left on mobile**, because mobile Write already has its
+  "add block" FAB bottom-right.
+
+The subtler fix: **mobile never published its open chapter**. It tracked the
+active chapter in local state only, so `selectionStore.selectedChapterId`
+stayed `null` and a captured thought would have saved with no
+`linkedChapterId` — silently losing the "which chapter was I in" link desktop
+has always set. `MobileWriteView` now publishes the selection, and
+`selectionStore.select`'s `blockId` parameter was widened to `string | null`:
+"this chapter is open, no particular block" is a real state, and
+`selectedBlockId` was *already* `string | null` — only the action's signature
+was narrower than the field it writes.
+
+### Review tab
+`VirtualEditorWorkspace` takes only a `project`, so `MobileReviewView` is a
+thin host, not a mobile reimplementation. That matters beyond effort: a review
+on a phone now runs exactly the same checkers and scoring as on desktop. A
+cut-down mobile review that scored differently would be worse than none.
+
+Promoted to a fifth tab rather than buried in More, since it's where editing
+work happens. The five near-identical tab buttons became one data-driven list
+in the same change — a fifth copy of the same twelve lines is where a list
+earns its keep. Verified the bar holds at 320 / 360 / 390 / 412px: no page
+overflow, no bar overflow, no clipped label (64px per tab at the narrowest).
+
+### Image library
+Not a copy of the desktop grid — that one is built around dragging an asset
+onto a page, which has no touch equivalent. Placing an image stays in Write;
+this screen is for seeing and removing what the project holds. Delete is
+two-tap (tap → "Delete?" → confirm), because one mistap on a phone would
+otherwise destroy an illustration with no undo affordance in reach.
+
+### Export readiness
+Desktop warns before exporting a book with blocking print-readiness issues;
+mobile went straight past. The same manuscript produced a silently worse file
+depending on which device you pressed Export on. Now gated identically, and
+still never a hard block.
+
+### Two desktop-isms fixed on the way
+The Virtual Editor's score cards were `grid-cols-2` at every width, so two
+cards at 412px wrapped their titles across three lines — now one column below
+480px, with the existing ladder above it unchanged. And its empty-state hint
+said "open the Chapters view", which is the desktop sidebar tab; on mobile the
+same place is the Write tab. It now names the thing both have ("open your
+manuscript") rather than either one's chrome. Same class of leak as Phase
+137's cover hint — worth watching for whenever a desktop panel is reused on
+mobile.
+
+### Verified
+21/21 on a 412x600 touch viewport, 12/12 across four phone widths for the tab
+bar. Includes the two assertions that matter most: the captured thought is
+saved **and** carries `linkedChapterId`, and deleting an image asks first.
+Phases 134-137 suites all still green. Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS.

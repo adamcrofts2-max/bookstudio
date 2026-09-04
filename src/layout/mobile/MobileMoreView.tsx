@@ -7,10 +7,12 @@ import {
   FileText,
   FolderOpen,
   Globe,
+  Images,
   Layers,
   Loader2,
   Palette,
   Save,
+  Search,
   Settings,
   Upload,
 } from 'lucide-react'
@@ -20,8 +22,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { ThemeGallery } from '@/components/settings/ThemeGallery'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
+import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
+import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { ImportManuscriptButton } from '@/editor/ImportManuscriptButton'
 import { MobilePagesView } from '@/layout/mobile/MobilePagesView'
+import { MobileAssetsView } from '@/layout/mobile/MobileAssetsView'
+import { MobileSearchView } from '@/layout/mobile/MobileSearchView'
 import { useProjectStore } from '@/store/projectStore'
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { useExportEpub } from '@/epub/useExportEpub'
@@ -113,11 +119,40 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [pagesOpen, setPagesOpen] = useState(false)
+  const [assetsOpen, setAssetsOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [readinessOpen, setReadinessOpen] = useState(false)
+  const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
 
-  // A pushed screen rather than a sheet: front/back matter has its own
-  // drill-down into a full page editor, and stacking that inside a sheet
-  // leaves the cover canvas a few hundred pixels tall.
+  // Desktop warns before exporting a book with blocking print-readiness
+  // problems; mobile exported straight past them, so the same manuscript
+  // produced a silently worse file depending on which device you happened to
+  // press Export on. Never a hard block — "Export anyway" always proceeds.
+  const { findings: readinessFindings, hasBlockingIssues } = useExportReadiness(project)
+
+  const runFormat = (format: 'pdf' | 'epub' | 'html') => {
+    if (format === 'pdf') void pdf.runExport()
+    else if (format === 'epub') void epub.runExport()
+    else void html.runExport()
+  }
+
+  const handleExportClick = (format: 'pdf' | 'epub' | 'html') => {
+    if (hasBlockingIssues) {
+      setPendingExportFormat(format)
+      setReadinessOpen(true)
+      return
+    }
+    runFormat(format)
+  }
+
+  const formatLabel = pendingExportFormat === 'pdf' ? 'PDF' : pendingExportFormat === 'epub' ? 'EPUB' : 'HTML'
+
+  // Pushed screens rather than sheets: each of these is a full working
+  // surface (a page editor with a cover canvas, an image grid, a find-and-
+  // replace list), and a sheet would leave them a few hundred pixels tall.
   if (pagesOpen) return <MobilePagesView projectId={project.id} onBack={() => setPagesOpen(false)} />
+  if (assetsOpen) return <MobileAssetsView projectId={project.id} onBack={() => setAssetsOpen(false)} />
+  if (searchOpen) return <MobileSearchView project={project} onBack={() => setSearchOpen(false)} />
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain bg-background pb-6">
@@ -131,7 +166,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           // PDF export renders exactly what was paginated, so saying why is
           // more useful than an unexplained disabled row.
           detail={pdf.canExport ? 'Print-ready, with bleed and crop marks' : 'Open Preview once to lay the book out first'}
-          onClick={() => void pdf.runExport()}
+          onClick={() => handleExportClick('pdf')}
           disabled={!pdf.canExport}
           busy={pdf.busy}
         />
@@ -139,7 +174,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           icon={BookText}
           label="Export EPUB"
           detail={epub.error ?? 'For e-readers and Kindle'}
-          onClick={() => void epub.runExport()}
+          onClick={() => handleExportClick('epub')}
           disabled={!epub.canExport}
           busy={epub.busy}
         />
@@ -147,7 +182,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           icon={Globe}
           label="Export web page"
           detail={html.error ?? 'A single self-contained HTML file'}
-          onClick={() => void html.runExport()}
+          onClick={() => handleExportClick('html')}
           disabled={!html.canExport}
           busy={html.busy}
         />
@@ -179,6 +214,18 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           detail="Cover, title page, copyright, back cover and the rest"
           onClick={() => setPagesOpen(true)}
         />
+        <Row
+          icon={Images}
+          label="Images"
+          detail="Browse and delete this book's illustrations"
+          onClick={() => setAssetsOpen(true)}
+        />
+        <Row
+          icon={Search}
+          label="Find and replace"
+          detail="Search the whole manuscript"
+          onClick={() => setSearchOpen(true)}
+        />
       </Group>
 
       <Group title="Design">
@@ -190,6 +237,17 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           floating panel, and `ui/sheet.tsx` is already the mobile-shaped
           primitive (drag handle, max-height, internal scrolling) — it needs
           no size or overflow overrides here. */}
+      <ExportReadinessDialog
+        open={readinessOpen}
+        onOpenChange={setReadinessOpen}
+        findings={readinessFindings}
+        formatLabel={formatLabel}
+        onExportAnyway={() => {
+          if (pendingExportFormat) runFormat(pendingExportFormat)
+          setPendingExportFormat(null)
+        }}
+      />
+
       <Sheet open={themeOpen} onOpenChange={setThemeOpen}>
         <SheetContent className="max-h-[85dvh]">
           <SheetHeader>

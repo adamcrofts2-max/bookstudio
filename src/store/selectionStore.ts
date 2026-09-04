@@ -80,7 +80,12 @@ interface SelectionState {
     target: { type: 'chapter'; chapterId: string } | { type: 'page'; pageId: string } | { type: 'block'; chapterId: string; blockId: string }
     requestId: string
   } | null
-  select: (chapterId: string, blockId: string) => void
+  /** `blockId` is nullable because "this chapter is open, no particular
+   * block" is a real state: mobile Write has no block-level selection, and
+   * `selectedBlockId` has always been `string | null` in the state above —
+   * only this signature was narrower than the field it writes. Desktop
+   * callers passing a real id are unaffected. */
+  select: (chapterId: string, blockId: string | null) => void
   /** Same as `select`, but also flags the selection for immediate editing.
    * `caretPosition` defaults to `'end'` — pass `'start'` for a block whose
    * content is brand new from the caret's perspective (e.g. the second half

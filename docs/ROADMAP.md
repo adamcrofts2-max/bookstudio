@@ -1465,6 +1465,18 @@ Book Studio today and an actual multi-device Canva-style product.)*
       (Phase 137). Replaces the desktop-only hint text ("drag one from the
       Assets tab") with a real control that works on both platforms, for
       Cover and Back Cover
+- [x] Mobile parity pass — shipped 2026-09-04 (Phase 138). Capture a thought
+      while writing (linked to the open chapter, as on desktop); a Review tab
+      running the real Virtual Editor; find and replace; the image library
+      (browse + delete, not just add); chapter reorder; and the export
+      readiness warning mobile used to skip straight past
+- [ ] Mobile: block-level Inspector surfaces — Notes on a block, the
+      Typography panel and the Image panel. All three depend on a block
+      selection model mobile Write doesn't have yet (it now publishes the
+      chapter, not the block), so this is a design pass, not a port
+- [ ] Mobile: no equivalent of desktop Focus mode. Probably correct to leave
+      out — a phone is already single-column — but recorded so it's a
+      decision rather than an oversight
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

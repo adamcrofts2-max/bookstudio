@@ -207,13 +207,13 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             {!layout && (
               <p className="max-w-[36ch] text-right text-xs text-text-secondary">
                 Layout and Publishing Quality checks need the manuscript view to have rendered at least once this
-                session — open the Chapters view, then come back and re-run the review.
+                session — open your manuscript, then come back and re-run the review.
               </p>
             )}
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <section className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {SCORE_TILES.map((tile) => {
             const categoryEntry = tile.key === 'overall' ? undefined : report?.categoryScores[tile.key]
             const score = tile.key === 'overall' ? (report?.overallScore ?? null) : (categoryEntry?.score ?? null)

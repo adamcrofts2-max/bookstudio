@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, BookOpen, Compass, MoreHorizontal, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, Compass, MoreHorizontal, Moon, PenLine, Sparkles, Sun, Undo2 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
@@ -10,13 +11,26 @@ import { MobileWriteView } from '@/layout/mobile/MobileWriteView'
 import { MobilePreviewView } from '@/layout/mobile/MobilePreviewView'
 import { MobileDevelopView } from '@/layout/mobile/MobileDevelopView'
 import { MobileMoreView } from '@/layout/mobile/MobileMoreView'
+import { MobileReviewView } from '@/layout/mobile/MobileReviewView'
 import type { Project } from '@/types'
 
 interface MobileWorkspaceProps {
   project: Project
 }
 
-type MobileTab = 'write' | 'preview' | 'develop' | 'more'
+type MobileTab = 'write' | 'preview' | 'review' | 'develop' | 'more'
+
+/** The tab bar as data. Five near-identical buttons were previously spelled
+ * out one by one; adding Review made that a fifth copy of the same twelve
+ * lines, which is where a list earns its keep. Order follows the working
+ * loop: write it, see it, check it, plan around it, everything else. */
+const TABS: { id: MobileTab; label: string; icon: LucideIcon }[] = [
+  { id: 'write', label: 'Write', icon: PenLine },
+  { id: 'preview', label: 'Preview', icon: BookOpen },
+  { id: 'review', label: 'Review', icon: Sparkles },
+  { id: 'develop', label: 'Develop', icon: Compass },
+  { id: 'more', label: 'More', icon: MoreHorizontal },
+]
 
 /**
  * Top-level shell for the mobile "on the go" mode (Phase 95,
@@ -104,55 +118,29 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
       <div className="min-h-0 flex-1">
         {tab === 'write' && <MobileWriteView projectId={project.id} />}
         {tab === 'preview' && <MobilePreviewView project={project} />}
+        {tab === 'review' && <MobileReviewView project={project} />}
         {tab === 'develop' && <MobileDevelopView project={project} />}
         {tab === 'more' && <MobileMoreView project={project} />}
       </div>
 
       <nav className="flex shrink-0 items-center border-t border-border bg-panel pb-[env(safe-area-inset-bottom)]">
-        <button
-          type="button"
-          onClick={() => setTab('write')}
-          className={cn(
-            'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
-            tab === 'write' ? 'text-[var(--color-accent)]' : 'text-text-muted',
-          )}
-        >
-          <PenLine className="size-5" />
-          Write
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('preview')}
-          className={cn(
-            'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
-            tab === 'preview' ? 'text-[var(--color-accent)]' : 'text-text-muted',
-          )}
-        >
-          <BookOpen className="size-5" />
-          Preview
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('develop')}
-          className={cn(
-            'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
-            tab === 'develop' ? 'text-[var(--color-accent)]' : 'text-text-muted',
-          )}
-        >
-          <Compass className="size-5" />
-          Develop
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab('more')}
-          className={cn(
-            'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
-            tab === 'more' ? 'text-[var(--color-accent)]' : 'text-text-muted',
-          )}
-        >
-          <MoreHorizontal className="size-5" />
-          More
-        </button>
+        {TABS.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            aria-current={tab === id ? 'page' : undefined}
+            className={cn(
+              // `min-w-0` so five labels shrink rather than forcing the bar
+              // wider than the screen on a narrow phone.
+              'flex min-w-0 flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors duration-150',
+              tab === id ? 'text-[var(--color-accent)]' : 'text-text-muted',
+            )}
+          >
+            <Icon className="size-5 shrink-0" />
+            <span className="max-w-full truncate">{label}</span>
+          </button>
+        ))}
       </nav>
     </div>
   )

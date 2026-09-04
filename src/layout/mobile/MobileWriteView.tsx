@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookText, Check, ChevronDown, ImageIcon, Images, ListPlus, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BookText, Check, ChevronDown, ChevronUp, ImageIcon, Images, ListPlus, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useEditableField } from '@/blocks/shared'
 import { useContentStore } from '@/store/contentStore'
 import { useAssetStore } from '@/store/assetStore'
+import { useSelectionStore } from '@/store/selectionStore'
+import { IdeaCaptureAffordance } from '@/layout/IdeaCaptureAffordance'
 import {
   addChapterWithHistory,
   deleteBlockWithHistory,
   deleteChapterWithHistory,
+  moveChapterWithHistory,
   editBlock,
   insertBlockWithHistory,
   moveBlockWithHistory,
@@ -302,6 +305,18 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
 
   const activeChapter = chapters.find((c) => c.id === activeChapterId) ?? null
 
+  // Mobile tracked the open chapter only in local state, so `selectionStore`
+  // stayed null and anything reading "which chapter is the user in" got
+  // nothing. Idea capture is the first thing to need it — a thought captured
+  // while writing should link to the chapter it was had in, exactly as it
+  // does on desktop — but the selection is genuinely app-wide state, not
+  // capture's private business, so it is published here rather than passed
+  // down as a prop.
+  const selectChapter = useSelectionStore((s) => s.select)
+  useEffect(() => {
+    if (activeChapterId) selectChapter(activeChapterId, null)
+  }, [activeChapterId, selectChapter])
+
   const handleAddBlock = (type: 'paragraph' | 'heading') => {
     if (!activeChapter) return
     const block = createDefaultBlock(type)
@@ -437,6 +452,26 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                     </span>
                     {chapter.id === activeChapterId && <Check className="size-4 shrink-0" />}
                   </button>
+                  {/* Reordering existed on desktop only, so a chapter added
+                      out of order on a phone could never be moved. */}
+                  <button
+                    type="button"
+                    onClick={() => moveChapterWithHistory(projectId, chapter.id, 'up')}
+                    disabled={i === 0}
+                    aria-label={`Move ${chapter.title} up`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-hover hover:text-text-primary disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronUp className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveChapterWithHistory(projectId, chapter.id, 'down')}
+                    disabled={i === chapters.length - 1}
+                    aria-label={`Move ${chapter.title} down`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-hover hover:text-text-primary disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => startRenameChapter(chapter.id, chapter.title)}
@@ -485,7 +520,11 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
         </div>
       )}
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+      {/* `relative` so the capture affordance can dock to this region's
+          bottom-right rather than the viewport's — it must sit above the
+          scrolling text but below the tab bar. */}
+      <div className="relative min-h-0 flex-1">
+      <div className="h-full overflow-y-auto px-4 py-5">
         {activeChapter && activeChapter.blocks.length === 0 ? (
           <EmptyState
             icon={ListPlus}
@@ -533,6 +572,8 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
             ))}
           </div>
         )}
+      </div>
+        <IdeaCaptureAffordance projectId={projectId} />
       </div>
 
       {activeChapter && (
