@@ -34,6 +34,19 @@ interface BookGraphViewProps {
    * "find and edit it properly" is one click away in the place that already
    * has the full form. */
   onFocusKind: (kind: Layer0EntityKind) => void
+  /**
+   * Mobile layout (Phase 130). Desktop puts the canvas and the selection
+   * panel side by side at a fixed 560px tall; on a 390px-wide phone the
+   * 288px panel would leave roughly 100px of graph, which is not a graph.
+   * `compact` stacks them and lets the canvas fill the height it is given.
+   *
+   * Deliberately a layout flag rather than a mobile fork of this component.
+   * The interaction already worked under touch — this view was built on
+   * pointer events with `touch-none` and `setPointerCapture` throughout — so
+   * there was never a second implementation to write, only a container to
+   * loosen.
+   */
+  compact?: boolean
 }
 
 interface GraphNode {
@@ -272,7 +285,7 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  *   `docs/ROADMAP.md` rather than pre-optimised against a problem not yet
  *   confirmed to exist.
  */
-export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: BookGraphViewProps) {
+export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, compact }: BookGraphViewProps) {
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
   const chapters = manuscript?.chapters ?? []
   const bible = useLayer0Store((s) => s.getBible(projectId))
@@ -1062,7 +1075,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) : undefined
 
   return (
-    <div className="flex flex-col gap-3 p-6">
+    <div className={cn('flex flex-col gap-3', compact ? 'h-full p-3' : 'p-6')}>
       <div>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
         <p className="text-sm text-text-secondary">
@@ -1147,10 +1160,13 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         </div>
       </div>
 
-      <div className="flex gap-3">
+      <div className={cn('flex gap-3', compact && 'min-h-0 flex-1 flex-col')}>
         <div
           ref={containerRef}
-          className="relative h-[560px] min-w-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary"
+          className={cn(
+            'relative min-w-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary',
+            compact ? 'min-h-0' : 'h-[560px]',
+          )}
         >
           <svg
             ref={svgRef}
@@ -1370,7 +1386,12 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
           </div>
         </div>
 
-        <div className="flex h-[560px] w-72 shrink-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-panel">
+        <div
+          className={cn(
+            'flex shrink-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-panel',
+            compact ? 'max-h-52 w-full' : 'h-[560px] w-72',
+          )}
+        >
           <div className="border-b border-border p-3">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />

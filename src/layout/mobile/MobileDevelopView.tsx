@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Lightbulb, ListChecks, Sparkles } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Lightbulb, ListChecks, Sparkles, Waypoints } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_TO_COLLECTION, getLayer0KindLabel, type Layer0EntityKind } from '@/types/layer0'
@@ -10,6 +10,7 @@ import { EntityListPanel } from '@/layout/planning/EntityListPanel'
 import { IdeaInboxPanel } from '@/layout/planning/IdeaInboxPanel'
 import { OutlineTemplatesPanel } from '@/layout/planning/OutlineTemplatesPanel'
 import { PromptGeneratorPanel } from '@/layout/planning/PromptGeneratorPanel'
+import { BookGraphView } from '@/layout/planning/BookGraphView'
 import type { Project } from '@/types'
 
 interface MobileDevelopViewProps {
@@ -18,7 +19,7 @@ interface MobileDevelopViewProps {
 
 /** Everything Develop can show on a phone. The eight Layer 0 entity kinds
  * plus the three tools that aren't entity kinds. */
-type DevelopSection = Layer0EntityKind | 'ideas' | 'outline' | 'prompt'
+type DevelopSection = Layer0EntityKind | 'ideas' | 'outline' | 'prompt' | 'graph'
 
 /**
  * Develop mode on mobile (Phase 129).
@@ -36,13 +37,12 @@ type DevelopSection = Layer0EntityKind | 'ideas' | 'outline' | 'prompt'
  * behaviour — add, edit, delete, relationships, the Layer 0 bible — is
  * identical on both, with no second implementation to keep in sync.
  *
- * **Book Graph is deliberately excluded.** It is a force-directed canvas
- * driven by dragging nodes and pinch-zooming a large surface, and it is the
- * one part of Develop that is genuinely an interaction rather than a
- * document — the same reason the page canvas and cover designer stay
- * desktop-only (Phase 128). It also has a documented main-thread cost
- * (`docs/STATUS.md` Phase 108) that a phone would feel hardest. Listing it as
- * a row that opens something unusable would be worse than not listing it.
+ * Book Graph is included too (Phase 130). It was left out of Phase 129 on the
+ * assumption that a drag-and-zoom canvas needed a pointer — which turned out
+ * to be wrong about this canvas: it was built on pointer events with
+ * `touch-none` and `setPointerCapture` throughout, so dragging a node already
+ * worked under touch, and its force layout already runs in a Web Worker. Only
+ * the container needed loosening, via `BookGraphView`'s `compact` prop.
  */
 export function MobileDevelopView({ project }: MobileDevelopViewProps) {
   const [section, setSection] = useState<DevelopSection | null>(null)
@@ -63,11 +63,23 @@ export function MobileDevelopView({ project }: MobileDevelopViewProps) {
               name here just said it twice. */}
           <span className="text-[15px] font-medium text-text-secondary">Develop</span>
         </button>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className={cn('min-h-0 flex-1', section === 'graph' ? 'overflow-hidden' : 'overflow-y-auto overscroll-contain')}>
           {section === 'ideas' && <IdeaInboxPanel projectId={project.id} />}
           {section === 'outline' && <OutlineTemplatesPanel projectId={project.id} bookForm={project.bookForm} />}
           {section === 'prompt' && <PromptGeneratorPanel projectId={project.id} />}
-          {section !== 'ideas' && section !== 'outline' && section !== 'prompt' && (
+          {section === 'graph' && (
+            <BookGraphView
+              projectId={project.id}
+              bookForm={project.bookForm}
+              bookTitle={project.name}
+              compact
+              // Tapping an entity node drills into that kind's list, the same
+              // navigation desktop's graph performs against `PlanningShell`.
+              onFocusKind={(kind) => setSection(kind)}
+            />
+          )}
+          {/* Anything not one of the tool sections above is an entity kind. */}
+          {section !== 'ideas' && section !== 'outline' && section !== 'prompt' && section !== 'graph' && (
             <EntityListPanel projectId={project.id} kind={section} bookForm={project.bookForm} />
           )}
         </div>
@@ -87,6 +99,7 @@ export function MobileDevelopView({ project }: MobileDevelopViewProps) {
         icon: GRAPH_NODE_ICONS[kind],
       }
     }),
+    { key: 'graph', label: 'Book Graph', detail: 'Everything in the book, connected — drag to arrange', icon: Waypoints },
     { key: 'outline', label: 'Outline Templates', detail: 'Start from a proven structure', icon: ListChecks },
     { key: 'prompt', label: 'AI Prompt', detail: 'Build a prompt from this book’s context', icon: Sparkles },
   ]
@@ -117,10 +130,6 @@ export function MobileDevelopView({ project }: MobileDevelopViewProps) {
           </button>
         ))}
       </div>
-      <p className="px-4 pt-4 text-xs leading-relaxed text-text-muted">
-        Book Graph is desktop-only — it is a drag-and-zoom canvas rather than a list, and needs a pointer and a larger
-        screen to be worth using.
-      </p>
     </div>
   )
 }

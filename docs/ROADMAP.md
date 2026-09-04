@@ -1536,6 +1536,20 @@ a gap to close later.)*
 - [ ] Mobile manuscript search — the desktop Sidebar's Search tab has no mobile
       equivalent
 - [ ] Mobile Virtual Editor access — the editorial dashboard is desktop-only
+- [x] Book Graph on mobile, with touch node dragging — shipped 2026-09-03
+      (Phase 130). Phase 129 had excluded it on the assumption a drag-and-zoom
+      canvas needed a pointer; that was wrong about this canvas, which was
+      already built on pointer events with `touch-none` and
+      `setPointerCapture`. Only the container needed loosening, via a new
+      `compact` prop. Touch drag verified to move a node by the same
+      displacement as mouse
+- [ ] Book Graph renders no nodes under the Vite **dev server** (`npm run dev`)
+      — the layout Web Worker loads and the request is posted, but no response
+      ever arrives, so `layout.positions` stays empty and every node is
+      skipped. NOT a production defect: the same code in a production build
+      renders and drags correctly, and the layout engine itself returns
+      correct positions in 3ms when called directly. A Vite dev module-worker
+      quirk; it makes the graph impossible to develop locally, so worth fixing
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
@@ -1545,9 +1559,7 @@ a gap to close later.)*
       Templates + AI Prompt, with counts) that pushes the real desktop panel.
       Panels are reused unmodified. The Ideas tab was folded into Develop,
       mirroring desktop where Ideas is a category inside Planning, keeping the
-      tab bar at four. Book Graph is deliberately excluded (a drag-and-zoom
-      canvas, not a document) and the exclusion is stated in the UI rather than
-      left as a missing row.
+      tab bar at four.
 - [ ] Mobile image/gallery block insertion (asset picker UI) — desktop-only
       today, same underlying gap `defaultContent.ts` already documents for
       the desktop "+" inserter.

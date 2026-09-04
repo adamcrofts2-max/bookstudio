@@ -8647,3 +8647,61 @@ name, so "Characters" appeared twice on screen. It now names the destination
 ### Verified
 `npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
 after; full suite ALL PASS.
+
+## Phase 130 (2026-09-03) — Book Graph on mobile, with touch dragging
+
+Requested: "we also need the book graph. the mobile user should be able to drag
+the nodes etc."
+
+### Phase 129's exclusion was wrong, and this corrects it
+Phase 129 left Book Graph off mobile on the reasoning that a drag-and-zoom
+canvas is an interaction needing a pointer. That reasoning did not survive
+reading the code: `BookGraphView` was built on **pointer events** (which unify
+mouse, touch and pen) with `touch-none` and `setPointerCapture` throughout, and
+its force layout already runs in a Web Worker. Touch dragging was effectively
+already implemented — the assumption, not the code, was the problem.
+
+Only the container needed changing. Desktop places the canvas and the selection
+panel side by side at a fixed 560px tall; on a 390px phone the 288px panel
+would have left roughly 100px of graph. A new `compact` prop stacks them and
+lets the canvas fill the height it is given — a layout flag, deliberately not a
+mobile fork, since there was no second behaviour to write.
+
+Book Graph is now a row in mobile Develop, and tapping an entity node drills
+into that kind's list — the same navigation desktop's graph performs against
+`PlanningShell`.
+
+### Verified on the production build, at 390×844
+Graph lists in Develop; nodes render; **dragging a node with touch moves it by
+the same displacement as a mouse drag** (185,512 → 268,499 for both); no
+horizontal overflow; zero console or page errors.
+
+Two false alarms during verification, both mine, both recorded so the next
+person does not repeat them:
+- The first drag test targeted `document.querySelector('svg circle')`, which
+  selects the central **Book hub node — deliberately non-draggable** by design
+  (`isBook ? {} : dragHandlers`). Draggable nodes carry `cursor-grab`.
+- A fresh project's graph contains only that hub, so a drag test must seed a
+  chapter first or there is genuinely nothing to drag.
+
+### A real finding: the graph is empty under the Vite dev server
+While investigating, the graph rendered **no nodes at all** — and did so on
+desktop too, and on `main` with the file reverted, so it was neither mobile nor
+mine. Instrumenting the worker round trip showed the request posted twice
+(React StrictMode) and **no response ever arriving**, leaving
+`layout.positions` empty so every node hit `if (!p) return null`.
+
+It is **not a production defect**. The same code in a production build
+(`npm run build`, served statically) renders 4 node groups with the exact
+bounds the layout engine produces when called directly in Node
+(`-143.57 -237.12 233.57 471.86`, computed in 3ms). The worker script loads
+with HTTP 200 and raises no `error` or `messageerror`. So this is a Vite
+dev-server module-worker quirk, not broken application code — but it makes the
+graph impossible to develop locally, and is now tracked in `docs/ROADMAP.md`.
+
+**Consequence for future verification: Book Graph must be tested against a
+production build, not `npm run dev`.**
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
