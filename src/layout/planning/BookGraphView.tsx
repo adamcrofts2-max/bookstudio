@@ -698,11 +698,20 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onBackgroundPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!panState.current) return
-    const dx = e.clientX - panState.current.startX
-    const dy = e.clientY - panState.current.startY
-    if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) panState.current.moved = true
-    setTransform((t) => ({ ...t, x: panState.current!.origX + dx, y: panState.current!.origY + dy }))
+    const pan = panState.current
+    if (!pan) return
+    const dx = e.clientX - pan.startX
+    const dy = e.clientY - pan.startY
+    if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) pan.moved = true
+    // Read the pan origin HERE, not inside the updater. A state updater runs
+    // when React renders, not when setState is called; pointermove is a
+    // continuous-priority event, so its render can be deferred past the
+    // discrete pointerup that clears `panState`. Dereferencing the ref inside
+    // the updater therefore crashed on real touch devices, where a finger's
+    // jitter emits moves too densely for React to flush between them.
+    const nextX = pan.origX + dx
+    const nextY = pan.origY + dy
+    setTransform((t) => ({ ...t, x: nextX, y: nextY }))
   }
   const onBackgroundPointerUp = () => {
     const state = panState.current

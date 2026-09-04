@@ -8860,3 +8860,71 @@ recovery actions, then removing the injection. Re-verified afterwards: five
 touch interactions clean, full-screen suite 7/7, desktop unchanged.
 `npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
 after; full suite ALL PASS.
+
+## Phase 134 — the mobile Book Graph crash, found and fixed
+
+Phase 133's error boundary paid for itself immediately. Instead of a white
+screen the device showed:
+
+> `TypeError: Cannot read properties of null (reading 'origX')`
+
+That named the bug precisely — one line, `BookGraphView.tsx`:
+
+```ts
+const onBackgroundPointerMove = (e) => {
+  if (!panState.current) return           // guard passes here...
+  ...
+  setTransform((t) => ({ ...t, x: panState.current!.origX + dx, ... }))
+}                                          // ...but this runs LATER
+```
+
+### Root cause
+A state updater is **not** run when `setState` is called; React runs it when it
+renders. `pointermove` is a *continuous*-priority event, so its render can be
+deferred — while `pointerup` is *discrete* and flushes immediately, and it sets
+`panState.current = null`. When React finally runs the deferred updater the ref
+is already null, and the `!` non-null assertion turns a real possibility into a
+crash. The early-return guard reads like protection but guards the wrong
+moment in time.
+
+### Why it never reproduced in testing
+A real fingertip jitters, so even a "tap" emits a dense burst of `pointermove`
+between down and up, with no gap for React to flush. Every synthetic test
+either dispatched touchStart → touchEnd with *no* moves, or awaited 50–70ms
+between moves — both of which let React flush each update while `panState` was
+still live. The race simply could not occur.
+
+The reproduction is to fire pointerdown, ~12 jitter moves and pointerup
+**without awaiting between them**, so they queue back-to-back the way a
+touchscreen digitiser delivers them. Against the unfixed build that reproduces
+the user's exact error string on the first attempt.
+
+### The fix
+Read the pan origin in the handler, where the ref is known live, and close over
+plain numbers:
+
+```ts
+const pan = panState.current
+if (!pan) return
+const nextX = pan.origX + dx
+const nextY = pan.origY + dy
+setTransform((t) => ({ ...t, x: nextX, y: nextY }))
+```
+
+The `!` assertion is gone. A grep confirmed this was the only place in the
+codebase dereferencing a ref inside a state updater.
+
+### Verified
+Causation proved both ways against production builds: the unfixed build
+reproduces `TypeError: ... (reading 'origX')`, the fixed build is clean under
+the same input. Then 7/7 — 20 jittery taps, background pan still pans, node
+touch drag still works, 10 jittery taps in full screen, full-screen enter/exit
+— with zero page errors. Desktop 5/5: 560px canvas, side panel, mouse pan,
+mouse node drag, no fallback. `npm run build` clean; `npm run lint` exits 0 at
+the 49-warning baseline; `npm test` ALL PASS.
+
+One testing lesson worth keeping: a first pass of the pan assertion read
+`svg g[transform]`, which matched a *node's* position group rather than the
+`<svg>` whose inline CSS transform panning actually changes — a false FAIL.
+Same class of wrong-element measurement seen in Phase 131; when an assertion
+fails, confirm it is looking at the right element before believing it.

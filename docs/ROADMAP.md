@@ -1432,6 +1432,14 @@ Book Studio today and an actual multi-device Canva-style product.)*
       boundary around the editor, and a targeted one around Book Graph that
       degrades just that panel. Each shows the real error text and offers Try
       again / Reload / Copy details
+- [x] Fix the mobile Book Graph white-screen crash — shipped 2026-09-04 (Phase
+      134). Root cause: `onBackgroundPointerMove` read `panState.current`
+      inside the `setTransform` updater, which React runs at render time, not
+      at call time. `pointermove` is continuous-priority so its render can be
+      deferred past the discrete `pointerup` that nulls the ref, giving
+      `TypeError: Cannot read properties of null (reading 'origX')`. Only
+      reproducible with real touch, where finger jitter emits moves too
+      densely for React to flush between them
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
