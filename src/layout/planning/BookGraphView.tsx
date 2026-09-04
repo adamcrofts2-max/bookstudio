@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link2, Maximize2, Minus, Plus, RotateCcw, Search, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Expand, Link2, Maximize2, Minimize2, Minus, Plus, RotateCcw, Search, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useContentStore } from '@/store/contentStore'
@@ -303,6 +303,18 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
   const setNodeSizeAction = useGraphLayoutStore((s) => s.setNodeSize)
 
   const [hiddenKinds, setHiddenKinds] = useState<Set<GraphNodeKind>>(new Set())
+  /**
+   * Full-screen canvas (Phase 131). On a phone the heading, description,
+   * legend, kind filters and selection panel between them leave the canvas a
+   * strip barely taller than its own zoom controls — reported from a real
+   * device, where browser chrome takes height an emulator does not. This
+   * hands the whole viewport to the graph and hides everything else, which is
+   * what makes dragging nodes on a phone actually workable.
+   *
+   * Offered on desktop too: a large graph benefits from the whole window
+   * there as well, and one behaviour is simpler than a mobile-only one.
+   */
+  const [fullscreen, setFullscreen] = useState(false)
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -519,6 +531,13 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
   // most recently sent request is applied; an earlier one arriving late is
   // silently dropped rather than flashing the graph back to a superseded
   // arrangement.
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
   const layoutRequestIdRef = useRef(0)
   useEffect(() => {
     const requestId = ++layoutRequestIdRef.current
@@ -1075,8 +1094,27 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
   const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) : undefined
 
   return (
-    <div className={cn('flex flex-col gap-3', compact ? 'h-full p-3' : 'p-6')}>
-      <div>
+    <div
+      className={cn(
+        'flex flex-col gap-3',
+        fullscreen ? 'fixed inset-0 z-50 gap-2 bg-background p-3' : compact ? 'h-full p-3' : 'p-6',
+      )}
+    >
+      {fullscreen && (
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <span className="text-[15px] font-semibold text-text-primary">Book Graph</span>
+          <button
+            type="button"
+            onClick={() => setFullscreen(false)}
+            className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
+          >
+            <Minimize2 className="size-3.5" />
+            Exit full screen
+          </button>
+        </div>
+      )}
+
+      <div className={cn(fullscreen && 'hidden')}>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
         <p className="text-sm text-text-secondary">
           Click a node to see its connections. Drag to rearrange. Turn on Connect to link two nodes with a label.
@@ -1101,7 +1139,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className={cn('flex flex-wrap items-center gap-1.5', fullscreen && 'hidden')}>
         {GRAPH_KIND_ORDER.filter((kind) => (countByKind[kind] ?? 0) > 0).map((kind) => {
           const Icon = GRAPH_NODE_ICONS[kind]
           const hidden = hiddenKinds.has(kind)
@@ -1122,6 +1160,16 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
         })}
 
         <div className="ml-auto flex items-center gap-2">
+          {!fullscreen && (
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
+            >
+              <Expand className="size-3.5" />
+              Full screen
+            </button>
+          )}
           <div className="flex items-center gap-0.5 rounded-full border border-border px-1 py-1" title="Node size">
             <button
               type="button"
@@ -1165,7 +1213,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
           ref={containerRef}
           className={cn(
             'relative min-w-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary',
-            compact ? 'min-h-0' : 'h-[560px]',
+            fullscreen ? 'min-h-0' : compact ? 'min-h-[55dvh]' : 'h-[560px]',
           )}
         >
           <svg
@@ -1389,7 +1437,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
         <div
           className={cn(
             'flex shrink-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-panel',
-            compact ? 'max-h-52 w-full' : 'h-[560px] w-72',
+            fullscreen ? 'hidden' : compact ? 'max-h-52 w-full' : 'h-[560px] w-72',
           )}
         >
           <div className="border-b border-border p-3">

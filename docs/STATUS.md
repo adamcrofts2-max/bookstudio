@@ -8705,3 +8705,48 @@ production build, not `npm run dev`.**
 ### Verified
 `npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
 after; full suite ALL PASS.
+
+## Phase 131 (2026-09-03) — Book Graph: usable canvas height, and a full-screen mode
+
+Reported from a real phone with a screenshot: the Book Graph canvas was
+collapsed to a strip barely taller than its own floating zoom controls, with no
+node visible at all. "There should be an option to make it the full page so
+users can use it easily."
+
+### Why Phase 130's verification missed it
+Phase 130 was verified at a bare 390×844 emulated viewport. A real phone
+browser spends a large share of that height on its own chrome — address bar,
+tab bar, system bars — so the real content viewport is far shorter (roughly
+412×600 on the reported device). The canvas was sized with `flex-1` and no
+minimum, so with less height to divide it collapsed to almost nothing while the
+heading, description, legend, kind filters and selection panel kept their
+natural size.
+
+**Testing lesson, recorded so it is not repeated: mobile layout must be checked
+at a realistic content viewport (~412×600), not at a device's full pixel
+height.** A layout that depends on `flex-1` will always look fine in an
+emulator that hands it the whole screen.
+
+### Two fixes
+- **A real minimum height.** The canvas is now `min-h-[55dvh]` in compact mode
+  rather than relying on `flex-1` alone, so it stays usable at any height. At
+  412×600 it measures 330px instead of a sliver.
+- **Full-screen mode.** A "Full screen" button hands the entire viewport to the
+  graph (`fixed inset-0`), hiding the heading, description, legend, kind
+  filters and the selection panel, leaving a slim bar with "Exit full screen".
+  At 412×600 the canvas measures 538px — about 90% of the viewport. Escape also
+  exits, for desktop.
+
+Offered on desktop as well as mobile: a large graph benefits from the whole
+window there too, and one behaviour is simpler to reason about than a
+mobile-only one.
+
+### Verified on the production build at 412×600
+Canvas height 330px normally and 538px in full screen; the "Full screen" button
+appears; surrounding chrome is hidden while full screen; **touch drag still
+works in full screen** (186,507 → 263,499); "Exit full screen" restores the
+normal view; zero console or page errors.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.

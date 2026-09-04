@@ -1550,6 +1550,12 @@ a gap to close later.)*
       renders and drags correctly, and the layout engine itself returns
       correct positions in 3ms when called directly. A Vite dev module-worker
       quirk; it makes the graph impossible to develop locally, so worth fixing
+- [x] Book Graph full-screen mode — shipped 2026-09-03 (Phase 131). Reported
+      from a real phone: the canvas was collapsed to a strip barely taller than
+      its own zoom controls. Two fixes — the canvas now has a real minimum
+      height (55dvh) instead of relying on `flex-1`, and a "Full screen" button
+      hands it the whole viewport, hiding the heading, legend, filters and
+      selection panel. Escape or "Exit full screen" returns
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
