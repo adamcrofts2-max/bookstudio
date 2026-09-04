@@ -1440,6 +1440,13 @@ Book Studio today and an actual multi-device Canva-style product.)*
       `TypeError: Cannot read properties of null (reading 'origX')`. Only
       reproducible with real touch, where finger jitter emits moves too
       densely for React to flush between them
+- [x] Add nodes from the Book Graph canvas — shipped 2026-09-04 (Phase 135).
+      An "Add" button on the canvas creates any of the eight Layer 0 kinds or
+      an Idea, places it clear of existing nodes and pins it there, and
+      optionally links it to the selected node in the same step. Chapters are
+      deliberately excluded — Layer 2 data, added in Write mode
+- [ ] Let the graph create a chapter too, if the Layer 0 -> Layer 2 boundary
+      is ever deliberately opened (needs a decision, not a patch)
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

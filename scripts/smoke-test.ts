@@ -2618,5 +2618,49 @@ check(
   check('preview scale: a larger trim scales down further', computePreviewScale(390, 900) < computePreviewScale(390, 680))
 }
 
+// --- Book Graph node placement (Phase 135) ---
+{
+  const { findFreeGraphPosition, MIN_NODE_SEPARATION } = await import('../src/layout/planning/graphPlacement')
+
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y)
+
+  // Empty canvas: the candidate is already free, so it is used unchanged.
+  const empty = findFreeGraphPosition({ x: 10, y: 20 }, [])
+  check('graph placement: an unobstructed candidate is used as-is', empty.x === 10 && empty.y === 20)
+
+  // A node far away is not an obstacle.
+  const clear = findFreeGraphPosition({ x: 0, y: 0 }, [{ x: 900, y: 900 }])
+  check('graph placement: a distant node does not displace the candidate', clear.x === 0 && clear.y === 0)
+
+  // The real bug this exists for: "centre of the view" on a fresh graph is
+  // exactly where the Book hub sits, which drew the new node underneath it.
+  const hub = { x: 0, y: 0 }
+  const nudged = findFreeGraphPosition({ x: 0, y: 0 }, [hub])
+  check('graph placement: a candidate on top of an existing node is moved off it', near(nudged, hub) >= MIN_NODE_SEPARATION)
+
+  // Deterministic — the same inputs must not wander between calls.
+  const again = findFreeGraphPosition({ x: 0, y: 0 }, [hub])
+  check('graph placement: placement is deterministic', again.x === nudged.x && again.y === nudged.y)
+
+  // Clears every obstacle, not just the first one it collided with.
+  const crowd = [
+    { x: 0, y: 0 },
+    { x: 0, y: -MIN_NODE_SEPARATION },
+    { x: MIN_NODE_SEPARATION, y: 0 },
+    { x: 0, y: MIN_NODE_SEPARATION },
+    { x: -MIN_NODE_SEPARATION, y: 0 },
+  ]
+  const free = findFreeGraphPosition({ x: 0, y: 0 }, crowd)
+  check(
+    'graph placement: the result clears every existing node, not just the first',
+    crowd.every((c) => near(free, c) >= MIN_NODE_SEPARATION),
+  )
+
+  // A second add from the same spot must not stack on the first.
+  const first = findFreeGraphPosition({ x: 50, y: 50 }, [hub])
+  const second = findFreeGraphPosition({ x: 50, y: 50 }, [hub, first])
+  check('graph placement: a second node added from the same spot does not stack', near(second, first) >= MIN_NODE_SEPARATION)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

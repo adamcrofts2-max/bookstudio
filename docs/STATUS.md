@@ -8928,3 +8928,68 @@ One testing lesson worth keeping: a first pass of the pan assertion read
 `<svg>` whose inline CSS transform panning actually changes — a false FAIL.
 Same class of wrong-element measurement seen in Phase 131; when an assertion
 fails, confirm it is looking at the right element before believing it.
+
+## Phase 135 — adding nodes from the Book Graph
+
+The graph could create *edges* but not *nodes*: Connect mode already called
+`addLayer0EntityWithHistory` to write a relationship, while adding the thing
+being related meant leaving the graph, finding the right category, adding it
+and navigating back — five taps on mobile, and the graph re-lays out in the
+meantime, so you lose your place. The graph is also the one screen where you
+*see* the gap ("this character connects to nothing"), which makes it the worst
+place to have no way to fill it.
+
+### What ships
+An **Add** button on the canvas (top-left, clear of the zoom cluster) opening
+`src/layout/planning/AddGraphNodeDialog.tsx`: pick a kind, type one field,
+done.
+
+- **Addable:** the eight `Layer0EntityKind`s and `Idea`.
+- **Not addable — deliberately:** `chapter` is Layer 2 (Content) data.
+  `types/layer0.ts`'s own doc comment states the one-way boundary and
+  `CLAUDE.md` forbids one layer mutating another's, so the graph reads
+  chapters and never writes them; the dialog says where chapters are added
+  instead. `book` is the synthetic hub — there is nothing to create.
+- **One field, honestly.** Every kind is valid from its `primaryKey` alone
+  except `GlossaryTerm`, whose `definition` is non-optional in the type — that
+  one kind shows a second field. `timelineEvent` gets `order: entities.length`,
+  matching `EntityListPanel.save()`, the canonical add path.
+- **Add-and-link.** With a node selected, the dialog offers
+  `Relationship to "<node>"`. Typing one creates the same
+  `Layer0Relationship` Connect mode creates; leaving it blank creates none —
+  no unlabelled edges, since `label` is required on the type.
+- The new node is **selected** after creation, so a second add chains off it.
+
+### Placement — the part that was almost a bug
+First cut placed an unanchored node at the centre of the view. On a fresh
+graph that is *exactly* where the Book hub sits, so the new node rendered
+completely underneath it: you add a character and appear to get nothing. Only
+caught by looking at the screenshot, not by any assertion.
+
+`src/layout/planning/graphPlacement.ts` now holds a pure
+`findFreeGraphPosition(candidate, taken, minSeparation)` that searches outward
+in rings until it finds clear space, deterministically (no jitter — adding the
+same thing twice should be predictable). The result is pinned via
+`graphLayoutStore.setPosition`, exactly as a manual drag is, so the force
+layout can't fling a brand-new node off-screen where the user can't find it.
+
+Pulled out as a pure function specifically so it is unit-testable: the
+component around it needs a browser, a Web Worker and a settled force layout
+before it renders a single node.
+
+### Verified
+Six new unit tests in `scripts/smoke-test.ts` (unobstructed candidate used
+as-is, distant node ignored, on-top candidate moved off, deterministic, clears
+*every* obstacle not just the first, second add doesn't stack). Browser 14/14
+on both mobile (412x600, touch) and desktop (1440x900): button present, picker
+offers Character/Idea and *not* Chapter/Book, node created and labelled,
+placed inside the visible canvas, link offered against the selected node,
+relationship drawn as an edge caption, and no two nodes stacked (closest pair
+89px mobile / 156px desktop). Phase 134's crash suite still 7/7 and desktop
+5/5. Build clean, lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
+
+One testing note, again: the edge-caption assertion first read
+`svg.textContent`, which does not traverse into `<foreignObject>` HTML
+children, and reported a false FAIL on working code. The relationship was
+correct in `localStorage` all along. Query `svg foreignObject div` for any
+text the graph draws.

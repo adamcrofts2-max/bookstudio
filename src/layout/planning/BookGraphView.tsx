@@ -13,6 +13,8 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
+import { AddGraphNodeDialog } from '@/layout/planning/AddGraphNodeDialog'
+import { findFreeGraphPosition } from '@/layout/planning/graphPlacement'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
 import type { Layout } from '@/layout/planning/graphLayoutEngine'
 import LayoutWorker from '@/layout/planning/graphLayout.worker?worker'
@@ -619,6 +621,55 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
   const nodeDragState = useRef<{ nodeId: string; offsetX: number; offsetY: number; startClientX: number; startClientY: number; moved: boolean } | null>(
     null,
   )
+
+  const [addOpen, setAddOpen] = useState(false)
+
+  /** Places a just-created node and, when asked, links it to the selected
+   * node. Both steps live here rather than in the dialog because both need
+   * graph state the dialog doesn't own: the live layout positions and the
+   * on-screen viewport.
+   *
+   * Pinning the position matters. Without it the force layout drops a brand
+   * new node wherever its physics settle — frequently off-screen — so the
+   * user adds something and cannot find it. Pinning is exactly what a manual
+   * drag already does, so a placed node behaves like a dragged one. */
+  function handleNodeCreated(nodeId: string, relationshipLabel: string) {
+    const anchorPos = selectedNodeId ? layout.positions.get(selectedNodeId) : undefined
+    let candidate: { x: number; y: number }
+    if (anchorPos) {
+      // Just far enough from its anchor to read as a separate node rather
+      // than an overlap, at the node spacing the layout itself uses.
+      candidate = { x: anchorPos.x + 130, y: anchorPos.y + 90 }
+    } else {
+      const svg = svgRef.current
+      const box = containerRef.current?.getBoundingClientRect()
+      candidate =
+        svg && box
+          ? screenToSvgPoint(svg, box.x + box.width / 2, box.y + box.height / 2)
+          : { x: 0, y: 0 }
+    }
+    // Every existing node except the one just created (which has no position
+    // yet) is an obstacle — see `findFreeGraphPosition`'s doc comment for why
+    // an un-nudged centre-of-view lands underneath the Book hub.
+    const taken = [...layout.positions.entries()].filter(([id]) => id !== nodeId).map(([, p]) => p)
+    const position = findFreeGraphPosition(candidate, taken)
+    setSavedPosition(projectId, nodeId, position)
+
+    if (relationshipLabel && selectedNodeId) {
+      const now = new Date().toISOString()
+      addLayer0EntityWithHistory(
+        projectId,
+        'relationships',
+        { id: generateId('rel'), aId: selectedNodeId, bId: nodeId, label: relationshipLabel, createdAt: now, updatedAt: now } as never,
+        'Add relationship',
+      )
+    }
+
+    // Select what was just added, so the side panel immediately describes it
+    // and a second add chains off it — the same "keep going" behaviour
+    // `submitPendingConnection` deliberately keeps for connections.
+    setSelectedNodeId(nodeId)
+  }
 
   useEffect(() => {
     const el = containerRef.current
@@ -1407,6 +1458,22 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
             })}
           </svg>
 
+          <div className="absolute left-2 top-2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              title={
+                selectedNode && selectedNode.id !== BOOK_NODE_ID
+                  ? `Add something new, optionally linked to "${selectedNode.label}"`
+                  : 'Add a character, location, idea and so on straight to the graph'
+              }
+              className="flex h-7 items-center gap-1 rounded-[var(--radius-button)] border border-border bg-panel px-2 text-[11px] font-medium text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
+            >
+              <Plus className="size-3.5" />
+              Add
+            </button>
+          </div>
+
           <div className="absolute right-2 top-2 flex items-center gap-1">
             <button
               type="button"
@@ -1507,6 +1574,18 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
       {selectedIdeaId && (
         <IdeaDetailDialog projectId={projectId} ideaId={selectedIdeaId} open onOpenChange={(open) => !open && setSelectedIdeaId(null)} />
       )}
+
+      <AddGraphNodeDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        projectId={projectId}
+        bookForm={bookForm}
+        timelineEventCount={bible.timelineEvents.length}
+        // The Book hub is a synthetic node with no Layer 0 id, so it can't be
+        // one end of a relationship — offer the link only for real nodes.
+        connectTo={selectedNode && selectedNode.id !== BOOK_NODE_ID ? { id: selectedNode.id, label: selectedNode.label } : null}
+        onCreate={handleNodeCreated}
+      />
     </div>
   )
 }
