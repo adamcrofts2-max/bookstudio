@@ -282,6 +282,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
   const [titleDraft, setTitleDraft] = useState('')
   const importFiles = useAssetStore((s) => s.importFiles)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -317,8 +318,15 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
 
   const handleImageSelected = async (file: File) => {
     if (!activeChapter) return
-    const [asset] = await importFiles(projectId, [file])
-    if (!asset) return
+    setImageError(null)
+    const { imported, failed } = await importFiles(projectId, [file])
+    const asset = imported[0]
+    if (!asset) {
+      // Silence here meant the user picked a photo and watched nothing
+      // happen — a corrupt or mislabelled file used to reject unhandled.
+      setImageError(failed[0]?.reason ?? 'That file could not be added.')
+      return
+    }
     const block: ImageBlock = { id: generateId('block'), type: 'image', assetId: asset.id, caption: undefined, rotation: 0, widthPercent: 100 }
     const lastBlockId = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
     insertBlockWithHistory(projectId, activeChapter.id, lastBlockId, block)
@@ -467,6 +475,15 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
           e.target.value = ''
         }}
       />
+
+      {imageError && (
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-background-secondary px-4 py-2.5">
+          <p className="text-[13px] text-danger">{imageError}</p>
+          <button type="button" onClick={() => setImageError(null)} className="shrink-0 text-[13px] text-text-secondary active:text-text-primary">
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
         {activeChapter && activeChapter.blocks.length === 0 ? (

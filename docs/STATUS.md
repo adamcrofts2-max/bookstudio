@@ -9049,3 +9049,59 @@ Two pre-existing issues found while testing and logged rather than fixed here:
 `assetStore.importFiles` rejects unhandled when a picked file can't be decoded,
 and `StructuralPagePanel`'s cover hint text describes desktop affordances that
 don't exist on mobile.
+
+## Phase 137 — image import that doesn't lose your files
+
+Phase 136 logged an unhandled rejection when a picked image couldn't be
+decoded. Investigating it found something worse underneath.
+
+### What was actually wrong
+`assetStore.importFiles` looped over the picked files with a bare `await
+readImageDimensions(...)`. One undecodable file therefore threw out of the
+*whole loop*, which meant:
+
+1. **Every file picked alongside it was discarded.** Pick three photos, one
+   corrupt, and you got none.
+2. **Already-imported files were orphaned.** `putAsset` had already written
+   the earlier files to IndexedDB, but the `set` that registers them in
+   `byProject` came *after* the loop and never ran — so those rows existed in
+   the database while being invisible to the app and impossible to delete.
+   Measured directly against the old build: 2 good files + 1 corrupt gave 0
+   thumbnails, 1 row in IndexedDB, **1 permanently orphaned**.
+3. **The user was told nothing.** The rejection surfaced as an unhandled
+   `Event` — `img.onerror` hands back an Event, not an Error, so even the
+   console said nothing useful.
+
+### The fix
+Each file is now isolated in its own `try`/`catch`. A failure revokes that
+file's object URL (previously leaked for the page's lifetime) and records
+`{ name, reason }`; everything that succeeded is still registered. The return
+type is now `{ imported, failed }` rather than a bare array — TypeScript
+found both destructuring call sites immediately. `readImageDimensions` rejects
+with a real `Error` carrying a sentence a user can read.
+
+`useImageUpload` exposes `error`, and all seven picker call sites now show it
+through one shared `src/components/common/UploadError.tsx` rather than seven
+bespoke error styles. The multi-file Assets picker names the file
+("corrupt.png: The file could not be decoded as an image.") or, for several,
+counts them.
+
+### Cover image, one control, both platforms
+`StructuralPagePanel`'s hint said *Click "Add cover image" in the preview (or
+drag one from the Assets tab)* — describing two affordances that don't exist
+on a phone, on a panel that renders on phones. Rather than reword it, the
+panel now carries the actual control, in the block already shared by Cover and
+Back Cover. Desktop gains it too: the setting now lives with the page's other
+settings instead of only on a button drawn over the artwork. The canvas button
+stays — it's the faster path when you're already working on the cover — and
+Phase 136's mobile-only duplicate was deleted, since this supersedes it.
+
+### Verified
+Causally, both directions, against production builds. Old build: 0 of 3 files
+imported, 1 orphaned IndexedDB row, unhandled `Event`, no message. New build:
+2 of 3 imported, 0 orphans, the failure named on screen, no page errors. Panel
+cover control 8/8 on mobile and 8/8 on desktop (offers the control, misleading
+hint gone, label flips, Remove appears, image stored, corrupt file explains
+itself, no unhandled rejection, Remove clears). Phases 134-136 suites all
+still green. Build clean, lint exit 0 at the 49-warning baseline, `npm test`
+ALL PASS.

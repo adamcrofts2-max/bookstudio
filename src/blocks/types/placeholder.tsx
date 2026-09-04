@@ -6,6 +6,7 @@ import type { BlockRenderProps, BlockTypeDefinition } from '@/blocks/registry'
 import type { DrawCtx } from '@/pdf/exportPdf'
 import { useEditableField, outlineClass } from '@/blocks/shared'
 import { useImageUpload } from '@/hooks/useImageUpload'
+import { UploadError } from '@/components/common/UploadError'
 import { pickFont } from '@/pdf/fonts'
 import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
@@ -34,7 +35,7 @@ function PlaceholderRender(props: BlockRenderProps) {
   // `HeightMeasurer.tsx`'s off-screen instances, where `editable` is also
   // false, so the upload button below never renders there and this stays
   // inert. See `BlockContentProps.onReplace` (Phase 51).
-  const { openPicker, inputProps } = useImageUpload(projectId ?? '', (assetId) => {
+  const { openPicker, error: uploadError, inputProps } = useImageUpload(projectId ?? '', (assetId) => {
     if (block.type !== 'placeholder') return
     const replacement: ImageBlock = {
       id: block.id,
@@ -140,6 +141,7 @@ function PlaceholderRender(props: BlockRenderProps) {
             Upload photo
           </button>
           <input {...inputProps} />
+          <UploadError message={uploadError} />
         </>
       )}
     </div>

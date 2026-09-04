@@ -1452,13 +1452,19 @@ Book Studio today and an actual multi-device Canva-style product.)*
       structural page type, including setting a cover image from the camera
       roll. Mobile could previously render structural pages in Preview but
       never create one, so a book started on a phone could not get a cover
-- [ ] `assetStore.importFiles` rejects unhandled when a picked file can't be
-      decoded (`readImageDimensions`'s `img.onerror`) — surfaces as an
-      unhandled rejection, not a message. Found while testing Phase 136 with a
-      deliberately corrupt PNG
-- [ ] `StructuralPagePanel`'s cover hint text ("Click \"Add cover image\" in
-      the preview, or drag one from the Assets tab") describes desktop only —
-      it is shown on mobile too, where neither affordance exists
+- [x] `assetStore.importFiles` no longer loses good files to one bad one —
+      shipped 2026-09-04 (Phase 137). It was worse than the unhandled
+      rejection first logged: one undecodable file threw out of the whole
+      loop, discarding every file picked alongside it AND orphaning the ones
+      already written by `putAsset` (stored in IndexedDB, never registered in
+      `byProject`, so unreachable and undeletable forever — measured at 1
+      orphan per failed batch). Now per-file isolated, object URL released on
+      failure, and it returns `{ imported, failed }` so the UI can name the
+      file that failed
+- [x] Cover image can be set from the page panel — shipped 2026-09-04
+      (Phase 137). Replaces the desktop-only hint text ("drag one from the
+      Assets tab") with a real control that works on both platforms, for
+      Cover and Back Cover
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

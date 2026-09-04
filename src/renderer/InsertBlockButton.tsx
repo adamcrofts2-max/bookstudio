@@ -4,6 +4,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { INSERTABLE_BLOCK_TYPES, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useImageUpload } from '@/hooks/useImageUpload'
+import { UploadError } from '@/components/common/UploadError'
 
 interface InsertBlockButtonProps {
   projectId: string
@@ -50,7 +51,7 @@ interface InsertBlockButtonProps {
  * image conversion also use.
  */
 export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
-  const { openPicker, inputProps } = useImageUpload(projectId, onInsertImage)
+  const { openPicker, error: uploadError, inputProps } = useImageUpload(projectId, onInsertImage)
 
   const menu = (
     <DropdownMenuContent align="center">
@@ -93,6 +94,7 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
           {menu}
         </DropdownMenu>
         <input {...inputProps} />
+        <UploadError message={uploadError} />
       </div>
     )
   }
@@ -127,6 +129,7 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
         {menu}
       </DropdownMenu>
       <input {...inputProps} />
+      <UploadError message={uploadError} />
     </div>
   )
 }

@@ -407,7 +407,7 @@ interface CoverImageUploadButtonProps {
  * conversion also use. See `docs/STATUS.md` Phase 46.
  */
 export function CoverImageUploadButton({ projectId, onUploaded, label, className }: CoverImageUploadButtonProps) {
-  const { openPicker, inputProps } = useImageUpload(projectId, onUploaded)
+  const { openPicker, error, inputProps } = useImageUpload(projectId, onUploaded)
 
   return (
     <>
@@ -425,6 +425,14 @@ export function CoverImageUploadButton({ projectId, onUploaded, label, className
         <ImagePlus className="size-3.5" />
         {label}
       </button>
+      {/* A picked file that can't be decoded used to do nothing at all. The
+          message sits under the button in both places this renders — over the
+          cover canvas on desktop, and in the mobile page editor. */}
+      {error && (
+        <p className="pointer-events-none mt-1.5 max-w-[220px] rounded-[var(--radius-button)] border border-border bg-panel px-2 py-1 text-center text-[11px] text-danger">
+          {error}
+        </p>
+      )}
       <input {...inputProps} />
     </>
   )

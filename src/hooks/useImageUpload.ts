@@ -1,4 +1,4 @@
-import { useRef, type ChangeEvent, type MouseEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type MouseEvent } from 'react'
 
 import { useAssetStore } from '@/store/assetStore'
 
@@ -16,10 +16,17 @@ import { useAssetStore } from '@/store/assetStore'
  * Returns `inputProps` to spread directly onto a real `<input type="file">`
  * — kept as a real hidden input (not a synthetic click on a detached one)
  * so the browser's own file-picker security model stays happy.
+ *
+ * Also returns `error`: a picked file that can't be decoded (a corrupt or
+ * mislabelled image) used to reject out of `importFiles` and surface as an
+ * unhandled rejection — the user tapped "Add cover image", chose a photo,
+ * and nothing whatsoever happened. Callers should render this somewhere
+ * near their control; it clears as soon as the next pick starts.
  */
 export function useImageUpload(projectId: string, onUploaded: (assetId: string) => void) {
   const importFiles = useAssetStore((s) => s.importFiles)
   const inputRef = useRef<HTMLInputElement>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const openPicker = () => inputRef.current?.click()
 
@@ -27,14 +34,18 @@ export function useImageUpload(projectId: string, onUploaded: (assetId: string) 
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
-    const [created] = await importFiles(projectId, [file])
+    setError(null)
+    const { imported, failed } = await importFiles(projectId, [file])
+    const created = imported[0]
     if (created) onUploaded(created.id)
+    else setError(failed[0]?.reason ?? 'That file could not be imported.')
   }
 
   const stopPropagation = (e: MouseEvent) => e.stopPropagation()
 
   return {
     openPicker,
+    error,
     inputProps: {
       ref: inputRef,
       type: 'file' as const,

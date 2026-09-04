@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Layer0FieldsForm } from '@/layout/planning/Layer0FieldsForm'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
+import { UploadError } from '@/components/common/UploadError'
 import { useIdeaStore, EMPTY_IDEAS } from '@/store/ideaStore'
 import { useContentStore } from '@/store/contentStore'
 import { useUiStore } from '@/store/uiStore'
@@ -75,7 +76,7 @@ export function IdeaDetailDialog({ projectId, ideaId, open, onOpenChange }: Idea
     loadAssets(projectId)
   }, [projectId, loadAssets])
 
-  const { openPicker: openImagePicker, inputProps: imageInputProps } = useImageUpload(projectId, (assetId) => {
+  const { openPicker: openImagePicker, error: uploadError, inputProps: imageInputProps } = useImageUpload(projectId, (assetId) => {
     if (!idea) return
     updateIdeaWithHistory(projectId, ideaId, { imageAssetIds: [...(idea.imageAssetIds ?? []), assetId] }, 'Add reference image')
   })
@@ -234,6 +235,7 @@ export function IdeaDetailDialog({ projectId, ideaId, open, onOpenChange }: Idea
               Add reference image
             </Button>
             <input {...imageInputProps} />
+            <UploadError message={uploadError} />
           </div>
 
           {linkedChapter && (

@@ -27,6 +27,7 @@ import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibil
 import { CoverElementPanel } from '@/layout/inspector/CoverElementPanel'
 import { CoverLayersPanel } from '@/layout/inspector/CoverLayersPanel'
 import { WrapCoverPreviewButton } from '@/structuralPages/WrapCoverPreview'
+import { CoverImageUploadButton } from '@/structuralPages/shared'
 import type {
   StructuralPage,
   CoverTextLayout,
@@ -460,6 +461,32 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
            * it into each type-specific block below. Silently renders
            * nothing (see `WrapCoverPreviewButton`) until both pages exist. */}
           <WrapCoverPreviewButton projectId={projectId} />
+
+          {/* The background photo used to be settable only from a button drawn
+           * on the artwork in the preview canvas. That works with a mouse on a
+           * big canvas, but mobile has no such canvas — a phone could add a
+           * Cover and never put a picture on it — and even on desktop it meant
+           * hunting for a control on top of the image rather than finding it
+           * with the page's other settings. One control here serves Cover and
+           * Back Cover on both. The canvas button stays: it's the faster path
+           * when you're already working on the artwork. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <CoverImageUploadButton
+              projectId={projectId}
+              label={page.content.imageAssetId ? 'Change image' : 'Add cover image'}
+              onUploaded={(assetId) => patch({ imageAssetId: assetId })}
+              className="border-solid border-border bg-panel text-text-primary hover:bg-hover"
+            />
+            {page.content.imageAssetId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => patch({ imageAssetId: undefined, imageFocalPoint: undefined, imageZoom: undefined })}
+              >
+                Remove image
+              </Button>
+            )}
+          </div>
           <Separator />
         </>
       )}
@@ -552,9 +579,6 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
           </div>
           {page.type === 'cover' && (
             <>
-              <p className="text-xs text-text-secondary">
-                Click "Add cover image" in the preview (or drag one from the Assets tab) to set a background photo.
-              </p>
               <Separator />
               <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
               <Separator />

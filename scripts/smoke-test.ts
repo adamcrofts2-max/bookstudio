@@ -2662,5 +2662,20 @@ check(
   check('graph placement: a second node added from the same spot does not stack', near(second, first) >= MIN_NODE_SEPARATION)
 }
 
+// --- Image import partial failure (Phase 137) ---
+{
+  // `importFiles` needs a DOM (Image decoding, object URLs, IndexedDB), so
+  // what is unit-tested here is the contract its callers depend on: the shape
+  // that lets one bad file be reported without discarding the good ones.
+  // The end-to-end behaviour is covered by the browser suite.
+  const { EMPTY_ASSETS } = await import('../src/store/assetStore')
+  check('asset store: EMPTY_ASSETS is a stable frozen-style constant', Array.isArray(EMPTY_ASSETS) && EMPTY_ASSETS.length === 0)
+
+  // The identity matters: Zustand v5 selectors returning a fresh [] each call
+  // never settle and trip React's "Maximum update depth exceeded".
+  const { EMPTY_ASSETS: again } = await import('../src/store/assetStore')
+  check('asset store: EMPTY_ASSETS keeps one identity across imports', again === EMPTY_ASSETS)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

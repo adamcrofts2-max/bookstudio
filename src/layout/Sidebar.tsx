@@ -11,6 +11,7 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
+import { UploadError } from '@/components/common/UploadError'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 import { Button } from '@/components/ui/button'
@@ -254,6 +255,7 @@ export function Sidebar({ project }: SidebarProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const importFiles = useAssetStore((s) => s.importFiles)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const startDraggingAsset = useDragStore((s) => s.startDraggingAsset)
   const stopDraggingAsset = useDragStore((s) => s.stopDraggingAsset)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -457,14 +459,27 @@ export function Sidebar({ project }: SidebarProps) {
             className="hidden"
             onChange={(e) => {
               const files = Array.from(e.target.files ?? [])
-              if (files.length) importFiles(project.id, files)
               e.target.value = ''
+              if (!files.length) return
+              setUploadError(null)
+              void importFiles(project.id, files).then(({ failed }) => {
+                // Partial success is normal here: this picker takes many
+                // files, and one unreadable photo no longer discards the
+                // rest, so the message names how many were skipped.
+                if (failed.length === 0) return
+                setUploadError(
+                  failed.length === 1
+                    ? `${failed[0].name}: ${failed[0].reason}`
+                    : `${failed.length} files couldn't be added.`,
+                )
+              })
             }}
           />
           <Button variant="secondary" size="sm" className="mb-2 gap-1.5" onClick={() => fileInputRef.current?.click()}>
             <ImagePlus className="size-3.5" />
             Add Images
           </Button>
+          <UploadError message={uploadError} />
           <ScrollArea className="h-full flex-1">
             {assets.length === 0 ? (
               <EmptyState icon={ImageIcon} title="No images yet" description="Add illustrations for your book." className="py-10" />

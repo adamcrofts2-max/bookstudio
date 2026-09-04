@@ -24,6 +24,7 @@ import type { CoverElement, CoverFontChoice, CoverIconId } from '@/types/structu
 import { updateElement, removeElement, bringToFront, sendToBack, bringForward, sendBackward, duplicateElement } from '@/structuralPages/coverElements'
 import { COVER_ICON_COMPONENTS, COVER_ICON_LABELS } from '@/structuralPages/coverIcons'
 import { useImageUpload } from '@/hooks/useImageUpload'
+import { UploadError } from '@/components/common/UploadError'
 
 const ICON_OPTIONS = Object.keys(COVER_ICON_LABELS) as CoverIconId[]
 
@@ -91,7 +92,7 @@ export function CoverElementPanel({ element, elements, projectId, onChange, onDe
   // Always called (hooks can't be conditional) — only rendered for the
   // 'image' kind below, same "cheap to call, only used sometimes" tradeoff
   // as every other kind-specific branch in this panel already accepts.
-  const { openPicker, inputProps } = useImageUpload(projectId, (assetId) => patch({ imageAssetId: assetId }))
+  const { openPicker, error: uploadError, inputProps } = useImageUpload(projectId, (assetId) => patch({ imageAssetId: assetId }))
 
   return (
     <div className="flex flex-col gap-3 rounded-[var(--radius-card)] border border-border bg-panel p-3">
@@ -442,6 +443,7 @@ export function CoverElementPanel({ element, elements, projectId, onChange, onDe
             )}
           </div>
           <input {...inputProps} />
+          <UploadError message={uploadError} />
           <p className="text-xs text-text-secondary">Cropped to fill this box — drag a corner handle in the preview to change its shape.</p>
 
           {element.imageAssetId && (

@@ -6,13 +6,11 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 import { StructuralPagePanel } from '@/layout/inspector/StructuralPagePanel'
-import { CoverImageUploadButton } from '@/structuralPages/shared'
 import {
   deletePageWithHistory,
   duplicatePageWithHistory,
   insertPageWithHistory,
   movePageWithHistory,
-  updatePageContentWithHistory,
 } from '@/store/editorActions'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { useSelectionStore } from '@/store/selectionStore'
@@ -206,31 +204,6 @@ export function MobilePagesView({ projectId, onBack }: MobilePagesViewProps) {
           <span className="text-[15px] font-medium text-text-secondary">Book pages</span>
         </button>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-          {/* The cover image is normally set from a button drawn *on* the
-              cover in the preview canvas, which mobile Preview doesn't offer
-              — without this, a phone could add a Cover and never put a
-              picture on it, which is most of what a cover is. Same
-              `useImageUpload` picker the canvas button uses, so on a phone it
-              opens the camera roll or camera directly. */}
-          {(editingPage.type === 'cover' || editingPage.type === 'back-cover') && (
-            <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-              <CoverImageUploadButton
-                projectId={projectId}
-                label={editingPage.content.imageAssetId ? 'Change image' : 'Add cover image'}
-                onUploaded={(assetId) => updatePageContentWithHistory(projectId, editingPage.id, { imageAssetId: assetId })}
-                className="border-solid border-border bg-panel text-[13px] text-text-primary hover:bg-hover"
-              />
-              {editingPage.content.imageAssetId && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => updatePageContentWithHistory(projectId, editingPage.id, { imageAssetId: undefined })}
-                >
-                  Remove image
-                </Button>
-              )}
-            </div>
-          )}
           <ErrorBoundary
             key={editingPage.id}
             fallback={(error, reset) => (
