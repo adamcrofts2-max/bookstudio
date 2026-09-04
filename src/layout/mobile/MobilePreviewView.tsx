@@ -10,28 +10,10 @@ import { paginate, type LaidOutPage } from '@/renderer/paginate'
 import { composeBookPages } from '@/renderer/composePages'
 import { HeightMeasurer } from '@/renderer/HeightMeasurer'
 import { LazySpread } from '@/renderer/LazySpread'
+import { computePreviewScale } from '@/layout/mobile/previewScale'
 
 interface MobilePreviewViewProps {
   project: Project
-}
-
-/** Breathing room either side of the scaled page, in CSS px. */
-const HORIZONTAL_PADDING_PX = 32
-
-/**
- * How far down a real page must be scaled to fit the phone.
- *
- * Exported and pure so `scripts/smoke-test.ts` can pin the two rules that
- * matter without mounting the view: a page always fits the container, and it
- * is never scaled *up* past its true size on a wide viewport. Returns 0 when
- * the container has not been measured yet, which the view renders as its
- * loading state rather than as a zero-sized page.
- */
-export function computePreviewScale(containerWidthPx: number, pageWidthPx: number): number {
-  if (containerWidthPx <= 0 || pageWidthPx <= 0) return 0
-  const available = containerWidthPx - HORIZONTAL_PADDING_PX
-  if (available <= 0) return 0
-  return Math.min(available / pageWidthPx, 1)
 }
 
 /**

@@ -2592,7 +2592,7 @@ check(
 
 // --- Mobile book preview scaling (Phase 127) ---
 {
-  const { computePreviewScale } = await import('../src/layout/mobile/MobilePreviewView')
+  const { computePreviewScale } = await import('../src/layout/mobile/previewScale')
 
   // A 6x9in trim is ~680px wide at this app's scale — far wider than a phone,
   // so the real page is rendered full-size and CSS-scaled rather than
