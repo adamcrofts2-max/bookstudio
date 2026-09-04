@@ -8993,3 +8993,59 @@ One testing note, again: the edge-caption assertion first read
 children, and reported a false FAIL on working code. The relationship was
 correct in `localStorage` all along. Query `svg foreignObject div` for any
 text the graph draws.
+
+## Phase 136 — front and back matter on mobile
+
+Mobile could *render* structural pages in Preview but had no way to create
+one (`MobilePreviewView` read `structuralPageStore`; nothing wrote to it). A
+book started on a phone could therefore never get a cover, title page or
+copyright page at all — user report, 2026-09-04.
+
+### What ships
+**More → Book pages** (`src/layout/mobile/MobilePagesView.tsx`), a pushed
+screen rather than a sheet, listing Front matter and Back matter with the same
+addable type lists the desktop Structure column offers. Each row adds,
+reorders, duplicates and deletes; tapping one opens the page editor.
+
+Controls are full 44px tap targets rather than the desktop row's 14px
+hover-revealed icons — those exist because a mouse can hit them precisely and
+because hovering the row is what reveals them, neither of which is true on a
+phone.
+
+### Editing reuses the desktop panel verbatim
+`StructuralPagePanel` already takes only a `projectId` and reads *which* page
+to edit from `selectionStore`, so selecting the page and rendering the panel
+is the entire integration — no reimplementation of ~890 lines of per-type
+forms, and any future page type gains a mobile editor the day it gains a
+desktop one, with no second place to remember. It is wrapped in an
+`ErrorBoundary` keyed by page id, so a bad page degrades to a message with a
+working back arrow instead of taking the screen.
+
+Adding a page drops you straight into its editor: a page added here is almost
+always added because it needs filling in, and "now go and find it" is a real
+cost on a phone. `insertPageWithHistory` already returned the new id.
+
+### The cover image — the part that would have made this half a feature
+"Add cover image" is normally a button drawn *on* the cover inside the preview
+canvas, which mobile Preview doesn't offer. Without something here, a phone
+could add a Cover and never put a picture on it, which is most of what a cover
+is. The mobile editor now shows the same `CoverImageUploadButton` (restyled
+via `cn`, no component change) for `cover` and `back-cover`, plus a Remove
+image action. It uses the same `useImageUpload` picker, so on a phone it opens
+the camera roll or camera directly.
+
+### Verified
+16/16 on a 412x600 touch viewport: the row exists, both sections render, the
+picker offers Cover/Title Page/Back Cover, adding opens the editor, the editor
+renders real fields, pages appear in the right section, move-up reorders,
+duplicate adds, delete removes, and Preview still paginates with the new pages
+present. Cover image proved end-to-end separately, 6/6: picker present, asset
+stored on the page, label flips to "Change image", Remove appears, the image
+actually renders in mobile Preview, and Remove clears it. Phases 134/135
+suites all still green (14 + 14 + 7 + 5, zero FAILs). Build clean, lint exit 0
+at the 49-warning baseline, `npm test` ALL PASS.
+
+Two pre-existing issues found while testing and logged rather than fixed here:
+`assetStore.importFiles` rejects unhandled when a picked file can't be decoded,
+and `StructuralPagePanel`'s cover hint text describes desktop affordances that
+don't exist on mobile.

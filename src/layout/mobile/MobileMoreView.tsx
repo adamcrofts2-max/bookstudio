@@ -7,6 +7,7 @@ import {
   FileText,
   FolderOpen,
   Globe,
+  Layers,
   Loader2,
   Palette,
   Save,
@@ -20,6 +21,7 @@ import { ThemeGallery } from '@/components/settings/ThemeGallery'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import { ImportManuscriptButton } from '@/editor/ImportManuscriptButton'
+import { MobilePagesView } from '@/layout/mobile/MobilePagesView'
 import { useProjectStore } from '@/store/projectStore'
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { useExportEpub } from '@/epub/useExportEpub'
@@ -110,6 +112,12 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [pagesOpen, setPagesOpen] = useState(false)
+
+  // A pushed screen rather than a sheet: front/back matter has its own
+  // drill-down into a full page editor, and stacking that inside a sheet
+  // leaves the cover canvas a few hundred pixels tall.
+  if (pagesOpen) return <MobilePagesView projectId={project.id} onBack={() => setPagesOpen(false)} />
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain bg-background pb-6">
@@ -162,6 +170,15 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           busy={loadingProject}
         />
         <Row icon={Clock} label="Version history" detail="Restore an earlier autosave" onClick={() => setHistoryOpen(true)} />
+      </Group>
+
+      <Group title="Book structure">
+        <Row
+          icon={Layers}
+          label="Book pages"
+          detail="Cover, title page, copyright, back cover and the rest"
+          onClick={() => setPagesOpen(true)}
+        />
       </Group>
 
       <Group title="Design">

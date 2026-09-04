@@ -1447,6 +1447,18 @@ Book Studio today and an actual multi-device Canva-style product.)*
       deliberately excluded — Layer 2 data, added in Write mode
 - [ ] Let the graph create a chapter too, if the Layer 0 -> Layer 2 boundary
       is ever deliberately opened (needs a decision, not a patch)
+- [x] Front/back matter on mobile — shipped 2026-09-04 (Phase 136). More ->
+      Book pages adds, reorders, duplicates, deletes and edits every
+      structural page type, including setting a cover image from the camera
+      roll. Mobile could previously render structural pages in Preview but
+      never create one, so a book started on a phone could not get a cover
+- [ ] `assetStore.importFiles` rejects unhandled when a picked file can't be
+      decoded (`readImageDimensions`'s `img.onerror`) — surfaces as an
+      unhandled rejection, not a message. Found while testing Phase 136 with a
+      deliberately corrupt PNG
+- [ ] `StructuralPagePanel`'s cover hint text ("Click \"Add cover image\" in
+      the preview, or drag one from the Assets tab") describes desktop only —
+      it is shown on mobile too, where neither affordance exists
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
