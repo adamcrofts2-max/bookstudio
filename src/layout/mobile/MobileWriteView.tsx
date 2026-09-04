@@ -12,6 +12,9 @@ import {
   deleteBlockWithHistory,
   deleteChapterWithHistory,
   moveChapterWithHistory,
+  splitParagraphWithHistory,
+  splitHeadingIntoParagraphWithHistory,
+  mergeParagraphWithPreviousHistory,
   editBlock,
   insertBlockWithHistory,
   moveBlockWithHistory,
@@ -61,6 +64,9 @@ function MobileTextField({
   mode,
   value,
   onCommit,
+  onSplit,
+  onMergeWithPrevious,
+  blockId,
   placeholder,
   className,
   as: Tag = 'div',
@@ -68,12 +74,38 @@ function MobileTextField({
   mode: 'text' | 'html'
   value: string
   onCommit: (value: string) => void
+  /** Paragraphs only — Enter splits here instead of ending the paragraph. */
+  onSplit?: (before: string, after: string) => void
+  onMergeWithPrevious?: () => void
+  /** Used to claim a pending edit request aimed at this exact block. */
+  blockId?: string
   placeholder: string
   className?: string
   as?: 'div' | 'h2' | 'h3'
 }) {
-  const field = useEditableField({ mode, initialValue: value, onCommit })
+  const field = useEditableField({ mode, initialValue: value, onCommit, onSplit, onMergeWithPrevious })
   const isEmpty = value.trim().length === 0
+
+  // Mobile has no paginated canvas and no Inspector, but it shares the
+  // selection store, so the "put the caret in the block that was just
+  // created" handshake is the same one the desktop page uses: whoever
+  // splits calls `selectForEdit`, and the new block's field claims it on
+  // mount. Without this the split worked but the caret was left nowhere,
+  // and everything typed next went into the void.
+  const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
+  const editRequestId = useSelectionStore((s) => s.editRequestId)
+  const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
+  const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
+  const wantsEdit = !!blockId && editRequestId !== null && selectedBlockId === blockId
+
+  useEffect(() => {
+    if (!wantsEdit) return
+    const el = field.ref.current
+    if (el) el.contentEditable = 'true'
+    field.startEditing(editRequestCaretPosition)
+    consumeEditRequest()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsEdit])
 
   const handleTap = () => {
     if (field.isEditing) return
@@ -177,8 +209,22 @@ function MobileReadOnlyCard({ block }: { block: ContentBlock }) {
 
 /** One block in the mobile flow — branches to an editable field for the six
  * plain-text block types, or a read-only card for everything else. */
-function MobileBlockCard({ projectId, chapterId, block }: { projectId: string; chapterId: string; block: ContentBlock }) {
+function MobileBlockCard({
+  projectId,
+  chapterId,
+  block,
+  previousBlock,
+}: {
+  projectId: string
+  chapterId: string
+  block: ContentBlock
+  /** Backspace-at-start only joins paragraph into paragraph, mirroring the
+   * desktop canvas's identical scope check. */
+  previousBlock?: ContentBlock
+}) {
   const commit = (updates: Partial<ContentBlock>) => editBlock(projectId, chapterId, block.id, updates)
+  const selectForEdit = useSelectionStore((s) => s.selectForEdit)
+  const canMergeWithPrevious = block.type === 'paragraph' && previousBlock?.type === 'paragraph'
 
   switch (block.type) {
     case 'heading':
@@ -186,20 +232,38 @@ function MobileBlockCard({ projectId, chapterId, block }: { projectId: string; c
         <MobileTextField
           as={block.level === 2 ? 'h2' : 'h3'}
           mode="text"
+          blockId={block.id}
           value={block.text}
           placeholder="Heading"
           className={cn('font-semibold text-text-primary', block.level === 2 ? 'text-xl' : 'text-lg')}
           onCommit={(text) => commit({ text })}
+          onSplit={(before, after) => {
+            const newBlockId = splitHeadingIntoParagraphWithHistory(projectId, chapterId, block.id, before, after)
+            if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+          }}
         />
       )
     case 'paragraph':
       return (
         <MobileTextField
           mode="html"
+          blockId={block.id}
           value={block.html}
           placeholder="Start writing…"
           className="text-[15px] leading-relaxed text-text-primary"
           onCommit={(html) => commit({ html })}
+          onSplit={(before, after) => {
+            const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
+            if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+          }}
+          onMergeWithPrevious={
+            canMergeWithPrevious
+              ? () => {
+                  const result = mergeParagraphWithPreviousHistory(projectId, chapterId, block.id)
+                  if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset)
+                }
+              : undefined
+          }
         />
       )
     case 'quote':
@@ -567,7 +631,12 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <MobileBlockCard projectId={projectId} chapterId={activeChapter.id} block={block} />
+                <MobileBlockCard
+                  projectId={projectId}
+                  chapterId={activeChapter.id}
+                  block={block}
+                  previousBlock={i > 0 ? activeChapter.blocks[i - 1] : undefined}
+                />
               </div>
             ))}
           </div>

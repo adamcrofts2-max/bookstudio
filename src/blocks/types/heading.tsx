@@ -12,7 +12,7 @@ import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
 
 function HeadingRender(props: BlockRenderProps) {
-  const { block, theme, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled } = props
+  const { block, theme, selected, onSelect, editable, onCommit, onSplit, autoEdit, onAutoEditHandled } = props
 
   const primary = useEditableField({
     mode: 'text',
@@ -20,6 +20,9 @@ function HeadingRender(props: BlockRenderProps) {
     onCommit: (value) => {
       if (block.type === 'heading') onCommit?.({ text: value })
     },
+    // Enter at the end of a heading starts the paragraph beneath it rather
+    // than dropping the caret — see `splitHeadingIntoParagraphWithHistory`.
+    onSplit: onSplit && block.type === 'heading' ? onSplit : undefined,
   })
 
   useEffect(() => {

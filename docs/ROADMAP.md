@@ -1477,6 +1477,19 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] Mobile: no equivalent of desktop Focus mode. Probably correct to leave
       out — a phone is already single-column — but recorded so it's a
       decision rather than an oversight
+- [x] Fix the writing experience — shipped 2026-09-04 (Phase 139). Enter
+      genuinely continues writing now, on both desktop and mobile: it splits
+      the paragraph at the caret and the caret follows into the new one.
+      Three root causes, all fixed: `paginate` handed React a fresh random
+      `page.id` every run so every repagination rebuilt the page DOM and
+      destroyed the focused element; the Inspector's Typography box grabbed
+      the caret off the page whenever the selection changed; and mobile never
+      wired `onSplit` at all. Enter at the end of a heading now starts the
+      paragraph beneath it, and Backspace at the start of a paragraph joins
+      it upward, on mobile too
+- [ ] PDF export could not be exercised end-to-end in the headless harness
+      (no download event fires, identically before and after Phase 139) —
+      needs either a harness fix or a manual check
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

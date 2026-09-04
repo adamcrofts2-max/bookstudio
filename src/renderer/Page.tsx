@@ -32,6 +32,7 @@ import {
   deletePageBlocksWithHistory,
   deleteChapterWithHistory,
   splitParagraphWithHistory,
+  splitHeadingIntoParagraphWithHistory,
   mergeParagraphWithPreviousHistory,
   splitListItemWithHistory,
   mergeListItemWithPreviousWithHistory,
@@ -133,6 +134,10 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const clearSelection = useSelectionStore((s) => s.clear)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const editRequestId = useSelectionStore((s) => s.editRequestId)
+  // Ignore requests aimed at the Inspector's Typography box — otherwise the
+  // two editors fight over the same block and the caret lands wherever the
+  // race happened to end.
+  const editRequestSource = useSelectionStore((s) => s.editRequestSource)
   const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
   const editRequestItemIndex = useSelectionStore((s) => s.editRequestItemIndex)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
@@ -217,7 +222,13 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               ? undefined
               : (before, after) => {
                   if (!chapterId) return
-                  const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
+                  // A heading's Enter creates a paragraph beneath it; a
+                  // paragraph's splits in two. Both land the caret in the
+                  // new block so writing simply continues.
+                  const newBlockId =
+                    block.type === 'heading'
+                      ? splitHeadingIntoParagraphWithHistory(projectId, chapterId, block.id, before, after)
+                      : splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
                   if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
                 }
           }
@@ -248,7 +259,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
                   if (caretOffset !== undefined) selectForEdit(chapterId, block.id, caretOffset, itemIndex - 1)
                 }
           }
-          autoEdit={isSelected && editRequestId !== null}
+          autoEdit={isSelected && editRequestId !== null && editRequestSource === 'canvas'}
           autoEditCaretPosition={editRequestCaretPosition}
           autoEditItemIndex={editRequestItemIndex}
           onAutoEditHandled={consumeEditRequest}

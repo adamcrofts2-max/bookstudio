@@ -183,6 +183,7 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
   const selectForEdit = useSelectionStore((s) => s.selectForEdit)
   const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
+  const editRequestSource = useSelectionStore((s) => s.editRequestSource)
 
   const indexInChapter = chapterBlocks.findIndex((b) => b.id === block.id)
   const previousBlock = indexInChapter > 0 ? chapterBlocks[indexInChapter - 1] : undefined
@@ -194,17 +195,24 @@ function ParagraphTextEditor({ projectId, chapterId, block, chapterBlocks }: Par
     onCommit: (value) => editBlock(projectId, chapterId, block.id, { html: value }),
     onSplit: (before, after) => {
       const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
-      if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+      if (newBlockId) selectForEdit(chapterId, newBlockId, 'start', undefined, 'panel')
     },
     onMergeWithPrevious: canMergeWithPrevious
       ? () => {
           const result = mergeParagraphWithPreviousHistory(projectId, chapterId, block.id)
-          if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset)
+          if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset, undefined, 'panel')
         }
       : undefined,
   })
 
   useEffect(() => {
+    // Only when this panel is the request's intended surface. It used to
+    // focus on every mount — and it remounts whenever `selectedBlockId`
+    // changes — so merely clicking a paragraph on the page, or pressing
+    // Enter in it, pulled the caret off the page and into this box. The
+    // page is where writing happens; this box only claims the caret when a
+    // split or merge started here.
+    if (editRequestSource !== 'panel') return
     field.startEditing(editRequestCaretPosition)
     // Only on mount — see the `key={block.id}` note above. Deliberately
     // capturing whatever `editRequestCaretPosition` was at mount time (the

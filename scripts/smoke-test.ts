@@ -76,6 +76,32 @@ check('paginate: all chapter starts on odd (recto) page numbers', chapterStarts.
 const allBlockIds = pages.flatMap((p) => p.blocks.map((b) => b.id))
 const expectedBlockIds = bigChapters.flatMap((c) => c.blocks.map((b) => b.id))
 check('paginate: no blocks lost or duplicated', allBlockIds.length === expectedBlockIds.length && new Set(allBlockIds).size === allBlockIds.length)
+
+// --- Page identity is stable across runs (Phase 139) ---
+// The whole writing experience rested on this: `LazySpread` keys its pages
+// by `page.id`, so a fresh random id per run made React tear down and
+// rebuild every page — destroying the focused element and the caret in it.
+{
+  const runA = paginate(bigChapters, () => 60, contentHeight, 100)
+  const runB = paginate(bigChapters, () => 60, contentHeight, 100)
+  check(
+    'paginate: identical input produces identical page ids',
+    runA.pages.length === runB.pages.length && runA.pages.every((page, i) => page.id === runB.pages[i].id),
+  )
+  check('paginate: page ids are unique within a run', new Set(runA.pages.map((x) => x.id)).size === runA.pages.length)
+
+  // Editing a chapter must not renumber the pages before the edit — that is
+  // what lets the page holding the caret keep its React identity while its
+  // contents reflow.
+  const edited = bigChapters.map((c, i) =>
+    i === bigChapters.length - 1 ? { ...c, blocks: [...c.blocks, { id: 'extra-block', type: 'paragraph' as const, html: 'More.' }] } : c,
+  )
+  const runC = paginate(edited, () => 60, contentHeight, 100)
+  const sharedPrefix = Math.min(runA.pages.length, runC.pages.length)
+  let stable = 0
+  for (let i = 0; i < sharedPrefix; i++) if (runA.pages[i].id === runC.pages[i].id) stable++
+  check('paginate: adding a block keeps earlier page ids stable', stable === sharedPrefix)
+}
 check('paginate: block order preserved within manuscript', JSON.stringify(allBlockIds) === JSON.stringify(expectedBlockIds))
 // verify no page overflows content height
 const overflow = pages.some((p) => {

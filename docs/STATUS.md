@@ -9190,3 +9190,73 @@ bar. Includes the two assertions that matter most: the captured thought is
 saved **and** carries `linkedChapterId`, and deleting an image asks first.
 Phases 134-137 suites all still green. Build clean, lint exit 0 at the
 49-warning baseline, `npm test` ALL PASS.
+
+## Phase 139 — the writing experience
+
+User, 2026-09-04: "the most important thing we need to fix is the writing
+experience. at the moment after a user presses enter it finishes the paragraph
+instead of starting a new sentence."
+
+Reproduced immediately, and it was worse than reported. On both platforms,
+pressing Enter mid-paragraph left `document.activeElement` as `BODY` — so
+**everything typed afterwards went nowhere**. The same scripted keystrokes
+captured 19 words before this phase and 114 after.
+
+### Three separate causes
+**1. Every repagination rebuilt the page DOM.** `paginate.ts` called
+`generateId('page')` for each page on every run, and `LazySpread` keys its
+pages by `page.id`. A fresh random id per run meant a brand-new React key for
+every page, so React unmounted and remounted the whole page subtree — taking
+the focused element and its caret with it. A `MutationObserver` trace of one
+Enter press showed the new paragraph focused at 27ms and remounted out of
+existence at 36ms, after three unmount/mount cycles in 15ms.
+
+Page ids are now derived: `flow-<pageNumber>`. "Page 7" stays page 7 across
+runs while its contents reflow, which is the identity a paginated document
+actually has. Nothing persists these ids — React keys, scroll-to-page DOM
+anchors and thumbnail keys, all session-scoped — so deriving them is safe, and
+it keeps a pending scroll target valid across a repagination too.
+
+**2. Two editors fought over the same block.** The Inspector's Typography box
+called `field.startEditing()` unconditionally on mount, and it remounts
+whenever `selectedBlockId` changes. So it reliably won the race and pulled the
+caret off the page into a side panel — not only after Enter but on any click
+that selected a paragraph. `selectionStore` now records
+`editRequestSource: 'canvas' | 'panel'`, defaulting to `'canvas'` (the page is
+the primary writing surface), and each editor ignores requests that aren't
+its own.
+
+**3. Mobile never opted in.** `MobileTextField` called `useEditableField`
+without `onSplit`, so Enter fell through to the plain commit-and-blur branch —
+it genuinely did "finish the paragraph". It now passes `onSplit` and
+`onMergeWithPrevious` for paragraphs and claims a pending edit request for its
+own block on mount, the same handshake the desktop canvas uses.
+
+### Also fixed, same complaint
+Enter at the end of a **heading** now starts the paragraph beneath it
+(`splitHeadingIntoParagraphWithHistory`, one undo step) instead of dropping
+the caret. And **Backspace at the start** of a paragraph joins it to the one
+above — desktop had this since Phase 112; mobile never did.
+
+The Inspector fix cured a second symptom nobody had reported: before it,
+merely *clicking* a paragraph on the page moved keyboard focus into the side
+panel. Deliberate editing in that panel still works exactly as Phase 113 built
+it — verified separately, 4/4, including Enter splitting there and keeping the
+caret there.
+
+### Verified
+9/9 on a realistic writing session, on desktop *and* mobile: three consecutive
+Enters produce three separate paragraphs with the right text in each; Enter
+mid-sentence splits at the caret ("Paragraph " / "one."); Backspace at the
+start rejoins. 4/4 for heading→paragraph on both. A long run wrote 14
+paragraphs and 380 words continuously across 5 pages with nothing lost —
+including across page boundaries. Three new `paginate` unit tests cover id
+stability (identical input → identical ids, ids unique within a run, adding a
+block leaves earlier page ids untouched). Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS, Phases 134-138 suites all green.
+
+### One thing not verified
+PDF export never fires a download in the headless harness, so it could not be
+exercised end-to-end. Confirmed identical on the pre-change build, so it is
+not a regression from this work — but it does mean export is unverified here
+and wants a manual check. Logged in ROADMAP.md.
