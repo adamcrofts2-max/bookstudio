@@ -1,14 +1,14 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, BookOpen, Lightbulb, MoreHorizontal, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, Compass, MoreHorizontal, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
 import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
 import { MobileWriteView } from '@/layout/mobile/MobileWriteView'
-import { MobileIdeasView } from '@/layout/mobile/MobileIdeasView'
 import { MobilePreviewView } from '@/layout/mobile/MobilePreviewView'
+import { MobileDevelopView } from '@/layout/mobile/MobileDevelopView'
 import { MobileMoreView } from '@/layout/mobile/MobileMoreView'
 import type { Project } from '@/types'
 
@@ -16,7 +16,7 @@ interface MobileWorkspaceProps {
   project: Project
 }
 
-type MobileTab = 'write' | 'preview' | 'ideas' | 'more'
+type MobileTab = 'write' | 'preview' | 'develop' | 'more'
 
 /**
  * Top-level shell for the mobile "on the go" mode (Phase 95,
@@ -41,6 +41,12 @@ type MobileTab = 'write' | 'preview' | 'ideas' | 'more'
  * stays desktop-only is now an *interaction* boundary rather than a feature
  * one: the fixed-size, bleed/trim-precise page canvas and the drag-to-position
  * cover tooling need a pointer and a large screen.
+ *
+ * Phase 129 replaced the Ideas tab with Develop, which contains Ideas plus the
+ * eight Layer 0 entity kinds and the planning tools. That mirrors desktop,
+ * where Ideas has always been one category *inside* Planning rather than a
+ * peer of it — and it keeps the tab bar at four, which is as many as fits a
+ * phone comfortably.
  *
  * Mirrors `AppShell`'s own `useAutosaveSnapshots(project.id)` mount — this
  * shell is a full alternative to `AppShell`, not a child of it, so it needs
@@ -98,7 +104,7 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
       <div className="min-h-0 flex-1">
         {tab === 'write' && <MobileWriteView projectId={project.id} />}
         {tab === 'preview' && <MobilePreviewView project={project} />}
-        {tab === 'ideas' && <MobileIdeasView projectId={project.id} />}
+        {tab === 'develop' && <MobileDevelopView project={project} />}
         {tab === 'more' && <MobileMoreView project={project} />}
       </div>
 
@@ -127,14 +133,14 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
         </button>
         <button
           type="button"
-          onClick={() => setTab('ideas')}
+          onClick={() => setTab('develop')}
           className={cn(
             'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
-            tab === 'ideas' ? 'text-[var(--color-accent)]' : 'text-text-muted',
+            tab === 'develop' ? 'text-[var(--color-accent)]' : 'text-text-muted',
           )}
         >
-          <Lightbulb className="size-5" />
-          Ideas
+          <Compass className="size-5" />
+          Develop
         </button>
         <button
           type="button"

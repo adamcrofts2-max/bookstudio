@@ -1539,16 +1539,21 @@ a gap to close later.)*
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
-- [ ] Mobile access to Develop mode beyond Ideas (Characters, Locations, Book
-      Graph, etc.) — today's "Open Book Graph" button drops out to the
-      desktop-shaped `PlanningShell`, which isn't mobile-optimised; a real
-      mobile Develop experience is unscoped future work, not started.
+- [x] Mobile Develop mode — shipped 2026-09-03 (Phase 129): `MobileDevelopView`
+      renders desktop's `PlanningShell` information architecture as a
+      drill-down — a category list (Ideas + all eight Layer 0 kinds + Outline
+      Templates + AI Prompt, with counts) that pushes the real desktop panel.
+      Panels are reused unmodified. The Ideas tab was folded into Develop,
+      mirroring desktop where Ideas is a category inside Planning, keeping the
+      tab bar at four. Book Graph is deliberately excluded (a drag-and-zoom
+      canvas, not a document) and the exclusion is stated in the UI rather than
+      left as a missing row.
 - [ ] Mobile image/gallery block insertion (asset picker UI) — desktop-only
       today, same underlying gap `defaultContent.ts` already documents for
       the desktop "+" inserter.
-- [ ] Decide whether Develop's non-Idea categories (Characters, Locations,
-      Timeline, etc.) ever belong on mobile, or stay a deliberate desktop-
-      only scope boundary — not decided yet, out of scope for this milestone.
+- [x] Decided 2026-09-03 (Phase 129): Develop's non-Idea categories DO belong on
+      mobile — the user asked for them directly. Book Graph is the one part that
+      stays desktop-only, on interaction grounds rather than scope.
 
 ---
 

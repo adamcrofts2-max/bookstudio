@@ -8584,3 +8584,66 @@ The verification that mattered here was the browser run — every row is a
 binding to a hook already covered by the existing suite, and a jsdom assertion
 that a list renders nine labels would have added confidence in nothing. Noted
 rather than papered over with a hollow test.
+
+## Phase 129 (2026-09-03) — Develop mode on mobile
+
+Requested directly: "can we also add develop mode to mobile?" This settles the
+open question Phase K left ("decide whether Develop's non-Idea categories ever
+belong on mobile") — they do.
+
+### Desktop's architecture, in the shape a phone can hold
+`PlanningShell` is a two-column shell: a nav rail of categories beside the
+selected category's panel. A phone has room for one column, so
+`MobileDevelopView` renders the same information architecture as a **drill-
+down** — the category list *is* the screen, and choosing one pushes its panel
+behind a back row. That is the platform-native master/detail shape, and it lets
+the list carry the same counts the desktop rail shows.
+
+Eleven rows: Ideas, the eight Layer 0 entity kinds (Characters, Locations,
+Timeline, Glossary, References, Illustration Briefs, Style Rules, Research
+Notes), Outline Templates and AI Prompt — each with its real icon, its
+`getLayer0KindLabel` label (so non-fiction projects get non-fiction wording),
+its description and a count badge.
+
+### The panels are desktop's, unmodified
+`IdeaInboxPanel`, `EntityListPanel`, `OutlineTemplatesPanel` and
+`PromptGeneratorPanel` each take a project id and render their own content, so
+Develop's real behaviour — add, edit, delete, relationships, the whole Layer 0
+bible — is identical on both platforms with no second implementation to drift.
+
+### Ideas folded into Develop
+The Ideas tab was replaced by Develop, with Ideas as its first category. That
+mirrors desktop, where Ideas has always been a category *inside* Planning
+rather than a peer of it, and it keeps the tab bar at four
+(Write · Preview · Develop · More) — as many as fits a phone comfortably.
+`MobileIdeasView` was deleted; it was a wrapper with nothing left to wrap.
+
+### Book Graph is excluded, and says so
+Book Graph is a force-directed canvas driven by dragging nodes and zooming a
+large surface — the one part of Develop that is an *interaction* rather than a
+document, the same test that keeps the page canvas and cover designer desktop-
+only (Phase 128). It also carries a documented main-thread cost (Phase 108) a
+phone would feel hardest. Rather than list a row that opens something unusable,
+the view states plainly why it isn't there.
+
+That required one small change to a shared component: `IdeaInboxPanel`'s
+`onOpenBookGraph` is now optional, and the button is not rendered when it is
+absent. Previously mobile passed a handler that dropped the phone into the
+desktop-shaped `PlanningShell` — a button leading somewhere unusable is worse
+than no button. Desktop still passes it, so desktop is unchanged.
+
+### Verified in Chromium at 390×844
+Twelve checks, all passing: the Develop tab replaced Ideas; all eleven
+categories list; the Book Graph exclusion is explained rather than silent;
+drilling into Characters shows the real panel; the add-entity dialog opens;
+the back row returns to the list; the Ideas panel still works inside Develop;
+no dead "Open Book Graph" button; no horizontal overflow; zero console or page
+errors.
+
+One iteration during verification: the back row first repeated the section
+name, so "Characters" appeared twice on screen. It now names the destination
+("‹ Develop") as platform back rows do.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
