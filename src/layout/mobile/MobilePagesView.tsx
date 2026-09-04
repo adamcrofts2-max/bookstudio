@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronUp, Copy, Plus, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -15,6 +15,12 @@ import {
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
+import { Page } from '@/renderer/Page'
+import { computePageBox } from '@/renderer/pageGeometry'
+import { computePreviewScale } from '@/layout/mobile/previewScale'
+import { resolveTheme } from '@/theme'
+import type { Project } from '@/types'
+import type { LaidOutPage } from '@/renderer/paginate'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 
 /** Kept in step with `Sidebar.tsx`'s lists of the same name — the desktop
@@ -137,7 +143,7 @@ function Section({ title, category, pages, addableTypes, projectId, onEdit, onAd
 }
 
 interface MobilePagesViewProps {
-  projectId: string
+  project: Project
   /** Returns to whatever pushed this screen — `MobileMoreView`'s list. */
   onBack: () => void
 }
@@ -158,7 +164,8 @@ interface MobilePagesViewProps {
  * gains a mobile editor the day it gains a desktop one, with no second place
  * to remember to update.
  */
-export function MobilePagesView({ projectId, onBack }: MobilePagesViewProps) {
+export function MobilePagesView({ project, onBack }: MobilePagesViewProps) {
+  const projectId = project.id
   const pages = useStructuralPageStore((s) => s.byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES)
   const selectStructuralPage = useSelectionStore((s) => s.selectStructuralPage)
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
@@ -204,6 +211,7 @@ export function MobilePagesView({ projectId, onBack }: MobilePagesViewProps) {
           <span className="text-[15px] font-medium text-text-secondary">Book pages</span>
         </button>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <StructuralPagePreview project={project} page={editingPage} />
           <ErrorBoundary
             key={editingPage.id}
             fallback={(error, reset) => (
@@ -286,3 +294,86 @@ export function MobilePagesView({ projectId, onBack }: MobilePagesViewProps) {
     </div>
   )
 }
+
+/**
+ * The page itself, live, above its own form.
+ *
+ * Editing a cover on a phone used to be a blind form — you set a title,
+ * toggled what showed, picked a layout, and never saw the cover (user,
+ * 2026-09-04: "should there be a separate cover/back cover editor in mobile
+ * mode"). A cover is the most visual thing in a book and the most likely
+ * thing anyone wants to fiddle with on a phone, so seeing it is most of what
+ * a dedicated editor would have given — without a second editing surface to
+ * keep in sync with the desktop one.
+ *
+ * Renders the real `Page` component, CSS-scaled to fit, exactly as mobile
+ * Preview does: what you see here is what prints. `decorative` keeps it
+ * non-interactive and, more importantly, stops it emitting duplicate DOM ids
+ * for a page the real preview may also be rendering.
+ *
+ * Positioning cover elements by touch (drag, resize, focal point) is
+ * deliberately still desktop-only — that is a canvas-interaction design
+ * pass, not a port, and half of it would be worse than none.
+ */
+function StructuralPagePreview({ project, page }: { project: Project; page: StructuralPage }) {
+  const [width, setWidth] = useState(0)
+  const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight))
+  const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
+  const theme = useMemo(() => resolveTheme(project.settings.themeId), [project.settings.themeId])
+
+  useEffect(() => {
+    const onResize = () => setViewportHeight(window.innerHeight)
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
+
+  // Fitting on width alone made a 6x9 page 570px tall on a 700px phone: the
+  // preview filled the screen and pushed the fields you were editing out of
+  // sight, which defeats the point of showing it at all. Bounded by height
+  // too, so the page and the form it belongs to are visible together.
+  const widthScale = computePreviewScale(width, pageBox.widthPx)
+  const heightScale = viewportHeight > 0 ? (viewportHeight * 0.34) / pageBox.heightPx : widthScale
+  const scale = widthScale === 0 ? 0 : Math.min(widthScale, heightScale)
+
+  const laidOut: LaidOutPage = {
+    id: page.id,
+    number: 0,
+    side: 'right',
+    kind: 'structural',
+    structuralPageId: page.id,
+    blocks: [],
+  }
+
+  return (
+    <div
+      ref={(el) => {
+        const w = el?.clientWidth ?? 0
+        if (w && Math.abs(w - width) > 1) setWidth(w)
+      }}
+      className="flex justify-center border-b border-border bg-background-secondary px-4 py-5"
+    >
+      {scale > 0 && (
+        // Wrapped in a box of the *scaled* size: a CSS transform alone
+        // doesn't affect layout, so without this the form would overlap it.
+        <div style={{ width: pageBox.widthPx * scale, height: pageBox.heightPx * scale }} className="overflow-hidden shadow-[var(--shadow-md)]">
+          <div style={{ width: pageBox.widthPx, height: pageBox.heightPx, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
+            <Page
+              projectId={project.id}
+              page={laidOut}
+              pageBox={pageBox}
+              theme={theme}
+              dropCapBlockIds={EMPTY_DROP_CAPS}
+              bookTitle={project.name}
+              language={project.settings.language}
+              decorative
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Stable empty set — a fresh `new Set()` each render would defeat memoisation
+ * downstream, the same reason `EMPTY_ASSETS` exists in `assetStore`. */
+const EMPTY_DROP_CAPS: Set<string> = new Set()

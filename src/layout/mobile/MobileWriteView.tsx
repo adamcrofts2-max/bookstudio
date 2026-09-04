@@ -24,7 +24,13 @@ import {
 import { createDefaultBlock } from '@/blocks/defaultContent'
 import { generateId } from '@/utils'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/common/EmptyState'
 import type { ContentBlock, ImageBlock } from '@/types/content'
@@ -461,14 +467,17 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
       {/* The way into the book itself. Deliberately quiet and next to the
           chapter name rather than buried in More: it's a writing control, so
           it belongs where the writing is. */}
+      {/* Labelled, not a bare glyph. An unlabelled ⤢ sitting next to the
+          switcher chevron read as two mysteries in a row, and nobody found
+          it (user, 2026-09-04: "its not so obvious how to access it"). */}
       <button
         type="button"
         onClick={() => setFocusMode('write')}
         aria-label="Distraction-free writing"
-        title="Distraction-free writing"
-        className="flex size-11 shrink-0 items-center justify-center text-text-muted active:text-text-primary"
+        className="mr-2 flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-secondary active:bg-hover"
       >
-        <Maximize2 className="size-4" />
+        <Maximize2 className="size-3.5" />
+        Focus
       </button>
       </div>
 
@@ -503,6 +512,12 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
             icon={ListPlus}
             title="This chapter is empty"
             description="Add a paragraph to start writing."
+            action={
+              <Button type="button" size="sm" className="gap-1.5" onClick={() => handleAddBlock('paragraph')}>
+                <Plus className="size-3.5" />
+                Add a paragraph
+              </Button>
+            }
             className="mt-6"
           />
         ) : (
@@ -570,6 +585,12 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
             <DropdownMenuItem onSelect={() => handleAddBlock('paragraph')}>Add paragraph</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => handleAddBlock('heading')}>Add heading</DropdownMenuItem>
             <DropdownMenuItem onSelect={handleAddImage}>Add photo</DropdownMenuItem>
+            {/* The prominent "+" used to add blocks only, so the single most
+                obvious control on the screen couldn't do the most structural
+                thing a writer needs — chapters were three taps deep inside
+                the switcher sheet. */}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={handleAddChapter}>New chapter</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}

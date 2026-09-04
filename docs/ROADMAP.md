@@ -1510,6 +1510,31 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] PDF export could not be exercised end-to-end in the headless harness
       (no download event fires, identically before and after Phase 139) —
       needs either a harness fix or a manual check
+- [x] Spell-check actually works — fixed 2026-09-04 (Phase 141). It had been
+      dead for every user since Phase 125: that phase resolved the dictionary
+      URL against `document.baseURI`, but the editor always lives on
+      `/project/:projectId`, so the fetch asked for
+      `/project/dictionaries/en-gb/index.aff` and 404'd. nspell threw
+      "Missing `aff` in dictionary", the console message scrolled past, and
+      every caller fell back to "not yet analysed" — with native spellcheck
+      deliberately off, users got nothing at all. Now resolved against Vite's
+      `BASE_URL`, which is what Phase 125 actually wanted
+- [x] Spell-check on/off control — shipped 2026-09-04 (Phase 141), in the
+      desktop More menu and mobile More. Scoped to the live underlining; the
+      Virtual Editor's spelling review is a deliberate action and stays
+- [x] Clicking a flagged word selects it — shipped 2026-09-04 (Phase 141), so
+      the red underline leads somewhere: a single-word selection is what the
+      existing Fix-spelling list already keys off
+- [x] Mobile: the structural page editor shows the page — shipped 2026-09-04
+      (Phase 141). Editing a cover was a blind form; it now renders the real
+      `Page`, scaled and height-bounded so the cover and the fields are
+      visible together
+- [ ] Mobile: position cover elements by touch (drag, resize, focal point) —
+      still desktop-only. A canvas-interaction design pass, not a port
+- [x] "Drop an image here" no longer shows on touch — fixed 2026-09-04
+      (Phase 141). There is no drag source on a phone and the label is
+      pointer-events-none, so mobile Preview was showing an instruction the
+      user physically could not follow
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

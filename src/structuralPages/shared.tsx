@@ -280,6 +280,13 @@ interface StructuralImageDropZoneProps {
  */
 export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop an image here' }: StructuralImageDropZoneProps) {
   const [isOver, setIsOver] = useState(false)
+  // There is no drag source on a touch device — no Assets sidebar to drag
+  // from — and this label is `pointer-events-none`, so on a phone it was an
+  // instruction the user physically could not follow, sitting across the
+  // cover in Preview ("Drop a cover image here"). The working path there is
+  // the Add cover image control in the page editor (Phase 137), so say
+  // nothing here rather than something impossible.
+  const canDrag = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches !== false
 
   return (
     <div
@@ -297,7 +304,7 @@ export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop a
         if (assetId) onDropAsset(assetId)
       }}
     >
-      {(isOver || !hasImage) && (
+      {canDrag && (isOver || !hasImage) && (
         <div className="pointer-events-none flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 px-4 py-2 text-xs text-white">
           <ImagePlus className="size-3.5" />
           {label}

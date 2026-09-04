@@ -27,6 +27,7 @@
 import { useEffect, useRef } from 'react'
 
 import { useProjectStore } from '@/store/projectStore'
+import { useUiStore } from '@/store/uiStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
 import type { NSpell } from 'nspell'
@@ -113,10 +114,11 @@ function wrapMisspelledWords(el: HTMLElement, speller: NSpell, ignoreWords: Set<
  */
 export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, active: boolean, projectId: string | undefined) {
   const timerRef = useRef<number | undefined>(undefined)
+  const enabled = useUiStore((s) => s.spellcheckWhileWriting)
 
   useEffect(() => {
     const el = elRef.current
-    if (!active || !el || !projectId) return
+    if (!active || !enabled || !el || !projectId) return
 
     const variant = useProjectStore.getState().getProject(projectId)?.settings.styleGuide?.englishVariant ?? 'british'
 
@@ -151,11 +153,30 @@ export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, ac
       })
     }
 
+    // Clicking (or tapping) a flagged word selects exactly that word, which
+    // is what makes the underline actionable: a single-word selection is
+    // already what `FloatingFormatToolbar` shows its Fix-spelling list for.
+    // Without this the red line was information with no next step — you had
+    // to select the word by hand to do anything about it.
+    const selectFlaggedWord = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof HTMLElement)) return
+      const span = target.closest(SPELL_ERROR_SELECTOR)
+      if (!span) return
+      const range = document.createRange()
+      range.selectNodeContents(span)
+      const selection = window.getSelection()
+      selection?.removeAllRanges()
+      selection?.addRange(range)
+    }
+
     el.addEventListener('input', scheduleRescan)
+    el.addEventListener('click', selectFlaggedWord)
     return () => {
       cancelled = true
       window.clearTimeout(timerRef.current)
       el.removeEventListener('input', scheduleRescan)
+      el.removeEventListener('click', selectFlaggedWord)
       // Clear any underlines left over from this editing session — the
       // field is either about to blur (commit reverts to plain
       // `dangerouslySetInnerHTML`, so stale spans would never be seen
@@ -164,5 +185,5 @@ export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, ac
       // editing session.
       if (el.isConnected) unwrapMisspelledWords(el)
     }
-  }, [active, elRef, projectId])
+  }, [active, enabled, elRef, projectId])
 }

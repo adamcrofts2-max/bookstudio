@@ -19,6 +19,7 @@ import {
   Save,
   Settings,
   Sparkles,
+  SpellCheck2,
   Sun,
   Undo2,
 } from 'lucide-react'
@@ -97,6 +98,8 @@ export function Toolbar({ project }: ToolbarProps) {
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setAppMode = useUiStore((s) => s.setAppMode)
   const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const spellcheckWhileWriting = useUiStore((s) => s.spellcheckWhileWriting)
+  const toggleSpellcheckWhileWriting = useUiStore((s) => s.toggleSpellcheckWhileWriting)
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
   // Lifted to uiStore (not local state) so the Inspector's Theme tab can
   // open this same dialog — see uiStore.ts's `projectSettingsOpen` comment.
@@ -331,6 +334,24 @@ export function Toolbar({ project }: ToolbarProps) {
             <TooltipContent>More</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end">
+            {/* Spell-check is a writing preference, so it sits with the other
+                writing controls rather than in Project Settings — and it
+                needs to be visible, because until 2026-09-04 it was silently
+                broken and nobody could tell whether it was on. */}
+            <DropdownMenuItem
+              className="gap-2"
+              onSelect={(e) => {
+                // Keep the menu open: toggling a setting and having the menu
+                // vanish makes it hard to confirm what you just changed.
+                e.preventDefault()
+                toggleSpellcheckWhileWriting()
+              }}
+            >
+              <SpellCheck2 className="size-3.5" />
+              Spell-check while writing
+              <span className="ml-auto text-xs text-text-muted">{spellcheckWhileWriting ? 'On' : 'Off'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2" disabled={!manuscript} onSelect={() => setFocusMode('write')}>
               <PenLine className="size-3.5" />
               Distraction-free writing

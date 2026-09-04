@@ -11,8 +11,10 @@ import {
   Layers,
   Loader2,
   Palette,
+  Maximize2,
   Save,
   Search,
+  SpellCheck2,
   Settings,
   Upload,
 } from 'lucide-react'
@@ -29,6 +31,7 @@ import { MobilePagesView } from '@/layout/mobile/MobilePagesView'
 import { MobileAssetsView } from '@/layout/mobile/MobileAssetsView'
 import { MobileSearchView } from '@/layout/mobile/MobileSearchView'
 import { useProjectStore } from '@/store/projectStore'
+import { useUiStore } from '@/store/uiStore'
 import { useExportPdf } from '@/pdf/useExportPdf'
 import { useExportEpub } from '@/epub/useExportEpub'
 import { useExportHtmlBook } from '@/epub/useExportHtmlBook'
@@ -106,6 +109,9 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 
 export function MobileMoreView({ project }: MobileMoreViewProps) {
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
+  const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const spellcheckWhileWriting = useUiStore((s) => s.spellcheckWhileWriting)
+  const toggleSpellcheckWhileWriting = useUiStore((s) => s.toggleSpellcheckWhileWriting)
 
   const pdf = useExportPdf(project)
   const epub = useExportEpub(project)
@@ -150,7 +156,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   // Pushed screens rather than sheets: each of these is a full working
   // surface (a page editor with a cover canvas, an image grid, a find-and-
   // replace list), and a sheet would leave them a few hundred pixels tall.
-  if (pagesOpen) return <MobilePagesView projectId={project.id} onBack={() => setPagesOpen(false)} />
+  if (pagesOpen) return <MobilePagesView project={project} onBack={() => setPagesOpen(false)} />
   if (assetsOpen) return <MobileAssetsView projectId={project.id} onBack={() => setAssetsOpen(false)} />
   if (searchOpen) return <MobileSearchView project={project} onBack={() => setSearchOpen(false)} />
 
@@ -205,6 +211,21 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           busy={loadingProject}
         />
         <Row icon={Clock} label="Version history" detail="Restore an earlier autosave" onClick={() => setHistoryOpen(true)} />
+      </Group>
+
+      <Group title="Writing">
+        <Row
+          icon={Maximize2}
+          label="Distraction-free writing"
+          detail="Full screen, in the book's own typography"
+          onClick={() => setFocusMode('write')}
+        />
+        <Row
+          icon={SpellCheck2}
+          label="Spell-check while writing"
+          detail={spellcheckWhileWriting ? 'On — misspellings are underlined as you type' : 'Off'}
+          onClick={toggleSpellcheckWhileWriting}
+        />
       </Group>
 
       <Group title="Book structure">

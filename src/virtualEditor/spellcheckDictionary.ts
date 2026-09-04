@@ -73,17 +73,26 @@ function load(variant: Variant): Promise<void> {
     // `ERR_INVALID_URL`, which is what made this loader throw under the test
     // harness.
     const url = (file: string): string => {
-      // `window.document` as well as bare `document`: a jsdom-style harness
-      // may expose one without the other, and a resolvable base is what
-      // decides whether this fetch can work at all.
-      const base =
-        (typeof document !== 'undefined' ? document.baseURI : undefined) ??
-        (typeof window !== 'undefined' ? window.document?.baseURI ?? window.location?.href : undefined)
-      try {
-        return base ? new URL(`.${basePath}/${file}`, base).toString() : `${basePath}/${file}`
-      } catch {
-        return `${basePath}/${file}`
-      }
+      // `import.meta.env.BASE_URL`, NOT `document.baseURI`.
+      //
+      // Phase 125 switched this to resolve relatively against
+      // `document.baseURI` so a sub-path deployment would work. That broke
+      // spell-check completely, everywhere, and it stayed broken because
+      // nothing failed loudly: the editor always lives on a client-side
+      // route (`/project/:projectId`), so `document.baseURI` is the *route*,
+      // not the app root, and `new URL('./dictionaries/…', '/project/abc')`
+      // asks the server for `/project/dictionaries/en-gb/index.aff`. That
+      // 404s, nspell throws "Missing `aff` in dictionary", the console
+      // message scrolls past, and every caller silently falls back to "not
+      // yet analysed". Confirmed live 2026-09-04.
+      //
+      // Vite's `BASE_URL` is the deployed app root as a build-time constant
+      // — `/` normally, and the configured prefix under a sub-path deploy.
+      // It solves what Phase 125 was aiming at without depending on which
+      // route the user happens to be on.
+      const base = typeof import.meta.env?.BASE_URL === 'string' ? import.meta.env.BASE_URL : '/'
+      const root = base.endsWith('/') ? base : `${base}/`
+      return `${root}${basePath.replace(/^\//, '')}/${file}`
     }
     entry.loadPromise = Promise.all([
       fetch(url('index.aff')).then((response) => response.arrayBuffer()),

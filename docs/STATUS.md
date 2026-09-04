@@ -9338,3 +9338,82 @@ UI font), justification is suppressed at a narrow measure, the drop cap
 applies, Enter keeps the caret live, and exiting restores the shell with the
 writing intact. E2E 16/16. Phases 134-139 suites all still green. Build clean,
 lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
+
+## Phase 141 — spell-check was dead, and four mobile affordances
+
+### Spell-check has never worked in production
+The headline finding. User: "we need to properly implement spellcheck… also in
+desktop as it doesn't work so well." It didn't work *at all*, on either
+platform, and hadn't since Phase 125.
+
+Phase 125 changed the dictionary URL to resolve relatively against
+`document.baseURI`, so a sub-path deployment would work. But the editor always
+lives on a client-side route — `/project/:projectId` — so `document.baseURI`
+is the *route*, not the app root, and
+`new URL('./dictionaries/…', '/project/abc')` asks the server for
+`/project/dictionaries/en-gb/index.aff`. Observed live: **404**. nspell then
+throws "Missing `aff` in dictionary", the console line scrolls past, and every
+caller falls back to its honest "not yet analysed" state. Because the editor
+also sets `spellCheck={false}` to suppress the browser's own checker (so two
+sets of squiggles never disagree), the user was left with **no spell-check of
+any kind** — in the page editor *and* in the Virtual Editor's review, which
+shares the dictionary.
+
+Nothing failed loudly, which is why it survived a phase that was specifically
+about this loader.
+
+Fixed by resolving against Vite's `BASE_URL` — the deployed app root as a
+build-time constant, `/` normally and the configured prefix under a sub-path.
+That is what Phase 125 was reaching for, without depending on which route the
+user happens to be on.
+
+Verified live: `200` for both files; "sentance"/"mispelled" flagged and
+"colour"/"realise" correctly accepted by the British dictionary.
+
+### The rest of spell-check
+- **An on/off control**, as asked: desktop More menu and mobile More, defaulting
+  to on. Scoped to the live underlining — the Virtual Editor's spelling review
+  is a deliberate action and stays available either way.
+- **Clicking a flagged word now selects it**, which is what makes the underline
+  actionable: a single-word selection is exactly what `FloatingFormatToolbar`
+  already keys its Fix-spelling list off. Verified the whole flow — click the
+  squiggle, "Fix spelling" appears, it offers "sentence", picking it rewrites
+  the text.
+
+A testing note worth keeping: the first assertion for that flow searched the
+page for /spelling/i and **passed against the word "spellings" in the test
+sentence itself**. A false pass. Re-tested by enumerating the toolbar's real
+`aria-label`s and applying a suggestion end to end. An assertion that can pass
+for the wrong reason is worse than no assertion.
+
+### Four mobile affordances
+- **"Drop a cover image here" is gone on touch.** There is no drag source on a
+  phone, and the label is `pointer-events-none`, so mobile Preview was showing
+  an instruction the user physically could not follow. Hidden on coarse
+  pointers; the working path (Add cover image, Phase 137) is unaffected.
+- **Focus mode is labelled.** An unlabelled ⤢ next to the switcher chevron read
+  as two mysteries in a row and nobody found it. Now a labelled "Focus" pill,
+  plus a row in More for anyone who browses rather than scans.
+- **Chapters come from the "+".** The one prominent control on the writing
+  screen added blocks only, so the most structural thing a writer needs was
+  three taps deep in the switcher sheet. "New chapter" now sits in that menu,
+  and the empty-chapter state has a real button instead of only prose.
+- **The structural page editor shows the page.** Editing a cover was a blind
+  form — title, toggles, layout, and no sight of the cover. It now renders the
+  real `Page` component, CSS-scaled, so what you see is what prints. Fitting on
+  width alone made it 570px tall on a 700px phone and pushed the fields
+  off-screen, so it is bounded by height too (34vh): the cover and the field
+  you are changing are visible together. Positioning cover *elements* by touch
+  stays desktop-only — a canvas-interaction design pass, not a port.
+
+The fix reaches the Virtual Editor too, since it shares the dictionary: a
+review now returns real findings ("\"mispelled\" isn't in the dictionary — did
+you mean \"misspelled\"?") where it previously reported Proofreading as not yet
+analysed.
+
+### Verified
+Spell-check 10/10 plus a separate 3/3 for the fix-and-apply flow and 2/2 for
+the Virtual Editor review; the four
+mobile changes 10/10 at 412x700 touch, including that typing a title updates
+the preview live. Phases 134-140 suites all still green, E2E 16/16. Build
+clean, lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
