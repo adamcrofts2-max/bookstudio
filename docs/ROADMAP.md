@@ -518,7 +518,12 @@ daily use of everything built so far.)*
       click a word while already editing to confirm it now stays selected,
       confirm the "+" button no longer blocks toolbar clicks, and confirm
       the new sidebar spelling chips appear and apply corrections.
-- [ ] Enter-split focus bug persisted after Phase 118's fix — needs deeper
+- [x] Enter-split focus bug — FIXED 2026-09-04 (Phase 139), after Phase 118's
+      partial fix. Three causes, not one: random `page.id` per pagination run
+      remounted the whole page DOM; the Inspector's Typography box stole the
+      caret on every selection change; and mobile never wired `onSplit`.
+      Original note kept below for the record.
+- [x] (superseded) Enter-split focus bug persisted after Phase 118's fix — needs deeper
       investigation (found 2026-08-03, still open). Live-re-testing the
       exact same Enter-at-end-of-paragraph flow against the Phase 118
       bundle (confirmed genuinely deployed via bundle marker check) showed
@@ -1595,11 +1600,15 @@ a gap to close later.)*
 - [ ] Mobile PDF export currently requires opening the Preview tab once first,
       so the book gets paginated — pagination only runs while Preview is
       mounted. Acceptable (and explained in the row itself) but worth removing
-- [ ] Mobile front/back-matter management (add/reorder title page, copyright,
+- [x] Mobile front/back-matter management — shipped 2026-09-04 (Phase 136),
+      More -> Book pages. Add/reorder/duplicate/delete/edit every structural
+      page type, cover image included. (add/reorder title page, copyright,
       dedication...) — Structure is still desktop-only
-- [ ] Mobile manuscript search — the desktop Sidebar's Search tab has no mobile
-      equivalent
-- [ ] Mobile Virtual Editor access — the editorial dashboard is desktop-only
+- [x] Mobile manuscript search — shipped 2026-09-04 (Phase 138), More -> Find
+      and replace, hosting the desktop `SearchPanel` directly
+- [x] Mobile Virtual Editor access — shipped 2026-09-04 (Phase 138) as its own
+      Review tab, running the real `VirtualEditorWorkspace` so a review on a
+      phone applies the same checkers and scoring as on desktop
 - [x] Book Graph on mobile, with touch node dragging — shipped 2026-09-03
       (Phase 130). Phase 129 had excluded it on the assumption a drag-and-zoom
       canvas needed a pointer; that was wrong about this canvas, which was
