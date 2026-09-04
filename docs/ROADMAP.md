@@ -1429,8 +1429,20 @@ Book Studio today and an actual multi-device Canva-style product.)*
       independent root causes, one of them a live production bug: PDF export was
       broken for every user because Bebas Neue cannot be embedded by
       `@pdf-lib/fontkit`. 408 passing, exit 0
-- [ ] CI pipeline (GitHub Actions running build/lint/test on every push)
-- [ ] Real browser end-to-end tests (today's `smoke-test.ts` is jsdom-only)
+- [x] CI pipeline — shipped 2026-09-04 (Phase 140). `.github/workflows/ci.yml`
+      runs `npm ci`, build, lint and tests on every push and pull request,
+      with in-progress runs cancelled when a branch is pushed again. This is
+      what actually enforces CLAUDE.md's "every commit compiles and lints
+      clean" instead of relying on remembering
+- [x] Real browser end-to-end tests — shipped 2026-09-04 (Phase 140).
+      `scripts/e2e/` holds a Playwright suite covering the writing experience
+      on both shells (`npm run test:e2e`), proven to fail when Phase 139's
+      fix is reverted. Playwright stays out of `package.json` on purpose —
+      it pulls a browser download — so the runner resolves it from wherever
+      it is installed and says so plainly when it isn't
+- [ ] Add Playwright as a devDependency and run `test:e2e` in CI too — needs
+      a decision on the install-time cost, since every other check runs
+      without a browser
 - [x] Error boundaries — shipped 2026-09-03 (Phase 133). The app previously had
       **none**, so any render error unmounted the whole tree to a blank page
       with no message and no way back. Now a root boundary, a per-route
@@ -1479,9 +1491,12 @@ Book Studio today and an actual multi-device Canva-style product.)*
       Typography panel and the Image panel. All three depend on a block
       selection model mobile Write doesn't have yet (it now publishes the
       chapter, not the block), so this is a design pass, not a port
-- [ ] Mobile: no equivalent of desktop Focus mode. Probably correct to leave
-      out — a phone is already single-column — but recorded so it's a
-      decision rather than an oversight
+- [x] Mobile distraction-free writing — shipped 2026-09-04 (Phase 140), and
+      the earlier "probably correct to leave out" call was wrong: a phone
+      being single-column is not the same as being distraction-free. Takes
+      the book's typographic identity (theme fonts, size, leading, drop cap,
+      paper and ink) rather than its page geometry, because a 6x9in page
+      scaled to a 390px phone is unwritable
 - [x] Fix the writing experience — shipped 2026-09-04 (Phase 139). Enter
       genuinely continues writing now, on both desktop and mobile: it splits
       the paragraph at the caret and the caret follows into the new one.

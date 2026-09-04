@@ -9260,3 +9260,81 @@ PDF export never fires a download in the headless harness, so it could not be
 exercised end-to-end. Confirmed identical on the pre-change build, so it is
 not a regression from this work — but it does mean export is unverified here
 and wants a manual check. Logged in ROADMAP.md.
+
+## Phase 140 — distraction-free writing on mobile, CI, and browser tests
+
+### Distraction-free writing on a phone
+User, 2026-09-04: "a distraction free writing mode that feels like you are
+writing straight into the book/full page experience, similar to desktop."
+
+**Why this does not render the real paginated page.** Desktop's
+`FocusModeLayout` puts `BookRenderer`'s actual laid-out pages full-screen,
+which works because a 6x9in page is ~680px wide and a desktop viewport is
+wider still. A phone is ~390px. Showing the same page means either scaling it
+to ~0.55 — body text lands around 8px, legible to look at and impossible to
+write in — or letting it overflow and asking the writer to pan sideways
+mid-sentence. Neither is "writing straight into the book"; both are squinting
+at a picture of the book.
+
+So `MobileFocusWriteView` takes the book's **typographic identity** instead of
+its page geometry: the theme's real body and heading fonts, its exact body
+size, leading, justification setting, drop cap, paper colour and ink — all
+read from the same `resolveTheme` the printed page uses, so changing the theme
+changes this screen too. The measure is set to the phone. What you type looks
+like the book because it *is* the book's typography, at a size a thumb can
+write at.
+
+Everything else is stripped: no app header, no tab bar, no block cards, no
+outlines until a field is being edited. The chrome itself fades on scroll and
+returns on tap — distraction-free has to mean the controls get out of the way
+too. A centred chapter title, a drop cap, and a quiet word count are the only
+furniture.
+
+Two things the first cut got wrong, both caught by looking at a screenshot
+rather than by an assertion:
+- The chapter title rendered **twice** — once in the chrome, once as the page
+  title. The chrome one is now an unlabelled chapter-switcher chevron.
+- **Justification at a 364px measure produced rivers.** Print justifies at
+  60-70 characters; a phone gives about 40, where the same setting stretches
+  word spaces visibly — worse than ragged-right, and the opposite of "looks
+  like the book". The theme's justification is now honoured only where the
+  measure can carry it (>= 34em), which in practice means tablets and
+  landscape.
+
+Typewriter mode carries over and matters *more* here than on desktop: the
+software keyboard covers the bottom half of a phone, so without a centred
+caret the line being typed spends its life hidden behind the keyboard.
+
+`MobileTextField` was extracted to its own module and is now shared by
+ordinary mobile Write and this view, so Enter-splits and Backspace-joins
+behave identically in both. Two editors for one manuscript drifting apart is
+exactly the bug class Phase 139 had to untangle; not repeating it.
+
+### CI
+`.github/workflows/ci.yml` runs `npm ci`, build, lint and tests on every push
+and pull request. Until now the only thing standing between a broken build and
+the branch was remembering to run three commands by hand.
+
+### Browser end-to-end tests
+`scripts/e2e/` (`npm run test:e2e`) covers the writing experience on both
+shells in a real browser — the class of failure `smoke-test.ts` structurally
+cannot catch, since Phase 139's bug was about real focus, real layout and real
+React reconciliation.
+
+**Proven to work by breaking it on purpose:** reintroducing the random page id
+fails 5 desktop assertions and correctly leaves mobile passing, since mobile
+doesn't paginate. A regression test that has never been seen to fail is a
+guess.
+
+Playwright is deliberately not in `package.json` — it pulls a browser download
+and every other check here runs without one — so the runner resolves it from
+wherever it's installed and says so plainly when it isn't. Wiring it into CI
+needs that dependency decision; logged in ROADMAP.md.
+
+### Verified
+Focus mode 14/14 on a 412x700 touch viewport, including that the surface is
+painted with the book's paper colour, the body uses the theme serif (not the
+UI font), justification is suppressed at a narrow measure, the drop cap
+applies, Enter keeps the caret live, and exiting restores the shell with the
+writing intact. E2E 16/16. Phases 134-139 suites all still green. Build clean,
+lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.

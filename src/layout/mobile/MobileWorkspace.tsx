@@ -7,11 +7,13 @@ import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
 import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
+import { useUiStore } from '@/store/uiStore'
 import { MobileWriteView } from '@/layout/mobile/MobileWriteView'
 import { MobilePreviewView } from '@/layout/mobile/MobilePreviewView'
 import { MobileDevelopView } from '@/layout/mobile/MobileDevelopView'
 import { MobileMoreView } from '@/layout/mobile/MobileMoreView'
 import { MobileReviewView } from '@/layout/mobile/MobileReviewView'
+import { MobileFocusWriteView } from '@/layout/mobile/MobileFocusWriteView'
 import type { Project } from '@/types'
 
 interface MobileWorkspaceProps {
@@ -74,10 +76,19 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
   const navigate = useNavigate()
   const { resolved, setAppearance } = useTheme()
   const [tab, setTab] = useState<MobileTab>('write')
+  // Shares desktop's `focusMode` rather than inventing a mobile-only flag, so
+  // there is one notion of "the writer is in the book" across both shells and
+  // one way out of it.
+  const focusMode = useUiStore((s) => s.focusMode)
   const canUndo = useHistoryStore((s) => s.canUndo(project.id))
   const undo = useHistoryStore((s) => s.undo)
 
   useAutosaveSnapshots(project.id)
+
+  // Takes over the whole shell — header and tab bar included. Read mode has
+  // no mobile equivalent yet; Preview already covers "see the book" on a
+  // phone, so only 'write' is honoured here.
+  if (focusMode === 'write') return <MobileFocusWriteView project={project} />
 
   return (
     <div className="flex h-dvh w-full flex-col bg-background">
