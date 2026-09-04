@@ -43,3 +43,9 @@ jobs:
 
       - name: Tests
         run: npm test
+
+      # Copy that describes dragging, hovering or a sidebar, in a component
+      # that can render on a phone. Static, needs no browser, and catches the
+      # defect that shipped three times before anyone noticed.
+      - name: Audit user-facing copy
+        run: npm run audit:copy

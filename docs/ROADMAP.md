@@ -1535,6 +1535,22 @@ Book Studio today and an actual multi-device Canva-style product.)*
       (Phase 141). There is no drag source on a phone and the label is
       pointer-events-none, so mobile Preview was showing an instruction the
       user physically could not follow
+- [x] Whole-app runtime audit — shipped 2026-09-04 (Phase 142).
+      `npm run test:audit` walks ~25 surfaces across both shells and fails on
+      any uncaught error, unhandled rejection, console error or failed
+      request. Built specifically for the spell-check bug class: a feature
+      that fails at runtime while the UI still looks correct. Currently CLEAN
+- [x] User-facing copy audit — shipped 2026-09-04 (Phase 142).
+      `npm run audit:copy` (in CI) flags copy describing a pointer-only
+      interaction in a component that can render on a phone. Found three real
+      instances on its first run, including the back-cover twin of the hint
+      fixed in Phase 137
+- [x] About the Author: set the photo without dragging — shipped 2026-09-04
+      (Phase 142). There was no upload control at all, so a phone could never
+      set an author photo; the panel only described dragging one from the
+      Assets tab
+- [ ] Add Playwright to CI so `test:audit` and `test:e2e` run there too —
+      same dependency decision as Phase 140
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

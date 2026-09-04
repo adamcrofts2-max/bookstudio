@@ -9417,3 +9417,85 @@ the Virtual Editor review; the four
 mobile changes 10/10 at 412x700 touch, including that typing a title updates
 the preview live. Phases 134-140 suites all still green, E2E 16/16. Build
 clean, lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
+
+## Phase 142 — auditing for the bug class, not the bugs
+
+User, 2026-09-04: "this is exactly the kind of things we need to audit across
+the whole program before we can call it completed."
+
+The right response wasn't to re-inspect every screen by hand. The last few
+phases exposed a *signature*, and it is worth naming precisely:
+
+> Something fails at runtime, or describes an interaction the device cannot
+> perform, and the app carries on looking correct.
+
+Spell-check is the pure case. It was dead for every user across many phases:
+the dictionary 404'd, nspell threw, the console line scrolled past, and every
+caller fell back to an honest-looking "not yet analysed". No unit test could
+catch it — the failure is a URL resolved against the wrong base at runtime —
+and no screenshot showed it, because the UI was fine. So this phase builds two
+audits that hunt the signature, and fixes what they found.
+
+### `npm run test:audit` — whole-app runtime health
+Walks ~25 surfaces across both shells (projects, editor, all four sidebar
+tabs, all five Inspector tabs, Develop and its sections, the Book Graph, the
+Virtual Editor including a full review, focus mode, and every mobile tab and
+More row) recording per surface: uncaught errors, unhandled promise
+rejections, console errors, and failed requests. It does not assert that
+features work — the other suites do that — it asserts the app is not quietly
+failing while it looks fine.
+
+Result: **clean**. No errors, no 404s, no unhandled rejections anywhere.
+
+Its first run was *not* clean, and the finding was in the audit itself: two
+desktop surfaces were unreachable because Develop replaces the toolbar and the
+script never navigated back, so it had silently stopped covering them. Fixed
+before trusting the result — an audit that skips surfaces and reports "clean"
+is worse than none.
+
+### `npm run audit:copy` — copy that lies about the device
+Static, no browser, wired into CI. Flags user-facing copy describing a
+pointer-only interaction (drag, hover, right-click, Ctrl+, "the sidebar",
+"Assets tab") in a component that can render on a phone.
+
+Three real findings on the first run, all in `StructuralPagePanel` — the
+Inspector panel mobile reuses wholesale since Phase 136:
+- The **back-cover** image hint: the exact twin of the cover hint fixed in
+  Phase 137, which I had assumed settled the class. It hadn't.
+- The **author photo** hint — worse than stale copy: About the Author had **no
+  upload control at all**, so a phone could never set an author photo. It now
+  has one, matching the cover's.
+- The **layout nudge** hint, describing a drag handle that only exists on the
+  interactive canvas; mobile's page preview is deliberately `decorative`. Now
+  rendered only where a fine pointer exists.
+
+Two audit defects fixed on the way, both of which had made it untrustworthy:
+- It stripped block comments with a plain replace, **collapsing lines and
+  shifting every reported line number** after the first comment in a file.
+- It missed prose on its own line — the way prettier wraps a long JSX text
+  node — which is exactly how the layout-nudge hint was formatted. The audit
+  was blind to the finding that prompted it.
+
+Findings that are genuinely fine are silenced with an explicit
+`audit-copy-ok: <reason>` comment rather than by inference, so every exception
+is visible in the diff. Deliberately not clever: an audit that guesses will
+guess wrong in both directions, and one that reports known-good lines gets
+ignored — which is the failure mode that matters.
+
+`canDragOnThisDevice()` moved to `src/lib/pointer.ts`: it is a device fact,
+not a structural-page concern, and a non-component export in a component
+module trips `only-export-components`.
+
+### Verified
+Runtime audit clean across both shells; copy audit 0 reachable-on-mobile
+findings (exit 0, now enforced in CI); About the Author photo 7/7 on mobile.
+Phases 134-141 suites all green, E2E 16/16. Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS.
+
+### What this does and doesn't tell us
+It says no surface throws, 404s, or leaks an unhandled rejection, and no
+mobile-reachable copy describes an impossible gesture. It does **not** say
+every feature is correct — that is what the behavioural suites are for, and
+they cover the writing experience, the graph, structural pages, covers and
+image import, not everything. The honest summary is that the *silent-failure*
+class is now covered by a repeatable check rather than by noticing.

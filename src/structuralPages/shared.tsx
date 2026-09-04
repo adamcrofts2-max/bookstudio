@@ -8,6 +8,7 @@ import { useImageUpload } from '@/hooks/useImageUpload'
 import { PX_PER_MM, type PageBox } from '@/renderer/pageGeometry'
 import type { CoverImageFocalPoint, CoverFieldPosition } from '@/types/structuralPage'
 import { cn } from '@/lib/utils'
+import { canDragOnThisDevice } from '@/lib/pointer'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -286,7 +287,7 @@ export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop a
   // cover in Preview ("Drop a cover image here"). The working path there is
   // the Add cover image control in the page editor (Phase 137), so say
   // nothing here rather than something impossible.
-  const canDrag = typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches !== false
+  const canDrag = canDragOnThisDevice()
 
   return (
     <div
@@ -393,6 +394,8 @@ export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal, horizonta
       )}
     >
       <GripVertical className="size-3" />
+      {/* audit-copy-ok: only on a selected, non-decorative page; and the
+          handle is pointer-event driven, so dragging does work on touch */}
       Drag to reposition
     </button>
   )

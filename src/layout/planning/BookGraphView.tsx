@@ -1176,6 +1176,8 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
 
       <div className={cn((fullscreen || compact) && 'hidden')}>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
+        {/* audit-copy-ok: this header is hidden on mobile via `compact`, and
+            touch drag genuinely works on the nodes anyway (Phase 129) */}
         <p className="text-sm text-text-secondary">
           Click a node to see its connections. Drag to rearrange. Turn on Connect to link two nodes with a label.
         </p>

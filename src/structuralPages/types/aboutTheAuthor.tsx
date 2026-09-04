@@ -39,6 +39,7 @@ function AboutTheAuthorRender({ page, theme, selected, onSelect, onCommit }: Str
       {!imageUrl && (
         <StructuralImageDropZone
           hasImage={false}
+          // audit-copy-ok: StructuralImageDropZone hides this label on touch
           label="Drop an author photo here"
           onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
         />

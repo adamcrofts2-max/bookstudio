@@ -28,6 +28,7 @@ import { CoverElementPanel } from '@/layout/inspector/CoverElementPanel'
 import { CoverLayersPanel } from '@/layout/inspector/CoverLayersPanel'
 import { WrapCoverPreviewButton } from '@/structuralPages/WrapCoverPreview'
 import { CoverImageUploadButton } from '@/structuralPages/shared'
+import { canDragOnThisDevice } from '@/lib/pointer'
 import type {
   StructuralPage,
   CoverTextLayout,
@@ -67,9 +68,16 @@ function LayoutPicker({ value, onChange }: { value: CoverTextLayout | undefined;
           </Button>
         ))}
       </div>
-      <p className="text-xs text-text-secondary">
-        Select the page in the preview, then drag the small handle above its text to fine-tune position.
-      </p>
+      {/* The nudge handle lives on the interactive canvas; mobile's page
+          preview is deliberately `decorative`, so on a phone this sentence
+          described a control that isn't there. Same defect as the cover and
+          back-cover hints — found by `npm run audit:copy`. */}
+      {/* audit-copy-ok: rendered only where a fine pointer exists */}
+      {canDragOnThisDevice() && (
+        <p className="text-xs text-text-secondary">
+          Select the page in the preview, then drag the small handle above its text to fine-tune position.
+        </p>
+      )}
     </div>
   )
 }
@@ -640,9 +648,6 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               onChange={(hiddenFields) => patch({ hiddenFields })}
             />
           </div>
-          <p className="text-xs text-text-secondary">
-            Click "Add back-cover image" in the preview (or drag one from the Assets tab) to set a background photo.
-          </p>
           <Separator />
           <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
           <Separator />
@@ -806,9 +811,19 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             value={page.content.text ?? ''}
             onChange={(e) => patch({ text: e.target.value })}
           />
-          <p className="text-xs text-text-secondary">
-            Drag an image from the Assets tab onto the author photo circle in the preview to set (or replace) it.
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <CoverImageUploadButton
+              projectId={projectId}
+              label={page.content.imageAssetId ? 'Change author photo' : 'Add author photo'}
+              onUploaded={(assetId) => patch({ imageAssetId: assetId })}
+              className="border-solid border-border bg-panel text-text-primary hover:bg-hover"
+            />
+            {page.content.imageAssetId && (
+              <Button variant="ghost" size="sm" onClick={() => patch({ imageAssetId: undefined })}>
+                Remove photo
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
