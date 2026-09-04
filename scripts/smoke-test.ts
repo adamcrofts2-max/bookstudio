@@ -2590,5 +2590,33 @@ check(
   check('mobile detection: a normal desktop keeps the desktop shell', !matches(MOBILE_QUERY, desktop))
 }
 
+// --- Mobile book preview scaling (Phase 127) ---
+{
+  const { computePreviewScale } = await import('../src/layout/mobile/MobilePreviewView')
+
+  // A 6x9in trim is ~680px wide at this app's scale — far wider than a phone,
+  // so the real page is rendered full-size and CSS-scaled rather than
+  // reflowed. Reflowing would change where pages break and show a different
+  // book from the one that prints.
+  const PAGE_W = 680
+
+  const phone = computePreviewScale(390, PAGE_W)
+  check('preview scale: a page is scaled down to fit a phone', phone > 0 && phone < 1)
+  check('preview scale: the scaled page fits inside the container', phone * PAGE_W <= 390)
+
+  // Never scale up: on a wide viewport the page sits at true size.
+  check('preview scale: never magnifies past 100% on a wide viewport', computePreviewScale(1400, PAGE_W) === 1)
+  check('preview scale: exactly 1 when the page just fits', computePreviewScale(PAGE_W + 32, PAGE_W) === 1)
+
+  // Before the container has been measured there is no meaningful scale; the
+  // view shows its loading state rather than a zero-sized page.
+  check('preview scale: unmeasured container yields 0', computePreviewScale(0, PAGE_W) === 0)
+  check('preview scale: a container narrower than the padding yields 0', computePreviewScale(20, PAGE_W) === 0)
+  check('preview scale: guards a zero page width', computePreviewScale(390, 0) === 0)
+
+  // Larger trims scale down further — the rule is proportional, not a constant.
+  check('preview scale: a larger trim scales down further', computePreviewScale(390, 900) < computePreviewScale(390, 680))
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

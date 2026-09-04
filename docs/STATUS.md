@@ -8443,3 +8443,65 @@ read-only cards on mobile; Develop beyond Ideas is desktop-only; there is no
 mobile preview or export. These are the scope boundary the user chose when
 Phase K was defined ("Writing + Idea capture only"), not gaps this phase left
 behind.
+
+## Phase 127 (2026-09-03) — Mobile book preview
+
+Mobile could write into a book but never look at it. That was the gap that made
+"on the go" mode feel like a notes app rather than Book Studio, and it is now
+closed: a third bottom-tab surface, **Preview**, showing the real paginated
+book read-only.
+
+### What it shows
+The actual book — chapter flow, front- and back-matter structural pages, the
+generated Contents page with its dot leaders, running heads, folios, drop caps
+and justified type. Verified in Chromium at 390×844 against a real typed
+chapter: Contents page listing the chapter at its true page number, then
+"CHAPTER ONE / Untitled Chapter" with a drop cap and justified, hyphenated
+prose, each page captioned with its number, and a "3 pages · preview only"
+footer.
+
+### It is a view, not a second layout engine
+The entire pipeline is reused unchanged: `HeightMeasurer` measures real block
+heights off-screen, `paginate` flows them, `composeBookPages` splices the
+structural pages around the result, and `Page` draws them via `LazySpread`.
+Reimplementing any of that for a small screen would create a second source of
+truth that could disagree with the printed book — exactly what this app's
+WYSIWYG non-negotiable exists to prevent.
+
+`LazySpread` is reused with a single-page array, which brings its
+IntersectionObserver lazy-mounting along for free: a long book renders
+placeholder boxes until each page scrolls near the viewport. No new
+virtualisation code.
+
+### Two mobile-specific concerns, and nothing else
+- **Scale.** A page is a fixed physical size (a 6×9in trim is ~680px wide here,
+  far wider than a phone). The page is rendered at full size and CSS-scaled to
+  fit rather than reflowed — reflowing would change where pages break and show
+  the author a different book from the one that prints. The scaled page is
+  wrapped in a box of the *scaled* size, because a CSS transform alone does not
+  affect layout and every page would otherwise overlap the next.
+- **Read-only.** Pages render with `decorative`, the same flag `ThumbnailPage`
+  uses: no editing affordances, and no duplicate DOM ids. Editing stays in the
+  Write tab.
+
+The measure key folds in `contentStore`'s revision counter, exactly as
+`BookRenderer` does, so a paragraph edited in the Write tab repaginates here
+rather than reusing a stale cached height.
+
+### Scope note
+This does not widen Phase K's "no precision layout tools on mobile" boundary —
+nothing in Preview is editable. It adds the ability to *see* the book, which is
+what makes writing on a phone feel connected to the object being made.
+
+### Tests
+Eight assertions covering `computePreviewScale`, extracted as a pure function
+for the purpose: a page always fits its container, is never magnified past 100%
+on a wide viewport, yields 0 before the container is measured (rendered as the
+loading state, not a zero-sized page), guards a zero page width, and scales a
+larger trim down further.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and after;
+full suite ALL PASS. Live-verified in Chromium at 390×844 — empty state, real
+pagination, prose rendering after lazy mount, no horizontal overflow, zero
+console or page errors.

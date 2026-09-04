@@ -1514,6 +1514,12 @@ a gap to close later.)*
       from mobile edits, and Ideas List/Board on a narrow viewport. See
       STATUS.md Phase 95/100's verification caveats — Phase 100 additionally
       hasn't even had a local `tsc` pass yet due to a sandbox VM outage.
+- [x] Mobile book preview — shipped 2026-09-03 (Phase 127): a third bottom-tab
+      surface showing the real paginated book read-only (chapter flow, front/back
+      matter, running heads, folios, drop caps, generated Contents). Reuses
+      `HeightMeasurer` → `paginate` → `composeBookPages` → `Page` unchanged
+      rather than adding a second layout engine; the page is rendered at true
+      size and CSS-scaled to fit, so page breaks match what prints
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.

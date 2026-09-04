@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Lightbulb, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, Lightbulb, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
@@ -8,13 +8,14 @@ import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
 import { MobileWriteView } from '@/layout/mobile/MobileWriteView'
 import { MobileIdeasView } from '@/layout/mobile/MobileIdeasView'
+import { MobilePreviewView } from '@/layout/mobile/MobilePreviewView'
 import type { Project } from '@/types'
 
 interface MobileWorkspaceProps {
   project: Project
 }
 
-type MobileTab = 'write' | 'ideas'
+type MobileTab = 'write' | 'preview' | 'ideas'
 
 /**
  * Top-level shell for the mobile "on the go" mode (Phase 95,
@@ -25,7 +26,13 @@ type MobileTab = 'write' | 'ideas'
  * canvas, cover designer, or precision layout tools — those stay desktop-
  * only, unlike `AppShell`'s 3-column shell this deliberately has no Sidebar/
  * Inspector/Toolbar: a bottom tab bar (the standard mobile-navigation
- * pattern, thumb-reachable) switches between the two surfaces instead.
+ * pattern, thumb-reachable) switches between the surfaces instead.
+ *
+ * Phase 127 added a third tab, Preview — a read-only rendering of the real
+ * paginated book. That does not widen the "no precision layout tools on
+ * mobile" boundary: nothing there is editable, and it exists because being
+ * able to write into a book you can never look at was the gap that made this
+ * mode feel like a notes app rather than Book Studio.
  *
  * Mirrors `AppShell`'s own `useAutosaveSnapshots(project.id)` mount — this
  * shell is a full alternative to `AppShell`, not a child of it, so it needs
@@ -81,7 +88,9 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
       </header>
 
       <div className="min-h-0 flex-1">
-        {tab === 'write' ? <MobileWriteView projectId={project.id} /> : <MobileIdeasView projectId={project.id} />}
+        {tab === 'write' && <MobileWriteView projectId={project.id} />}
+        {tab === 'preview' && <MobilePreviewView project={project} />}
+        {tab === 'ideas' && <MobileIdeasView projectId={project.id} />}
       </div>
 
       <nav className="flex shrink-0 items-center border-t border-border bg-panel pb-[env(safe-area-inset-bottom)]">
@@ -95,6 +104,17 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
         >
           <PenLine className="size-5" />
           Write
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('preview')}
+          className={cn(
+            'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
+            tab === 'preview' ? 'text-[var(--color-accent)]' : 'text-text-muted',
+          )}
+        >
+          <BookOpen className="size-5" />
+          Preview
         </button>
         <button
           type="button"
