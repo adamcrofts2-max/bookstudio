@@ -64,7 +64,7 @@ function ParagraphRender(props: BlockRenderProps) {
   // while this specific paragraph is being edited — see
   // `useLiveSpellcheck.ts`'s own doc comment for the full design (why it's
   // scoped to just the active field, how it avoids disturbing the caret).
-  useLiveSpellcheck(primary.ref, primary.isEditing, projectId)
+  useLiveSpellcheck(primary.ref, !!editable, projectId, block.type === 'paragraph' ? block.html : '')
 
   if (block.type !== 'paragraph') return null
 

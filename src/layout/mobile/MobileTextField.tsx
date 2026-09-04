@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useEditableField } from '@/blocks/shared'
+import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
 import { useSelectionStore } from '@/store/selectionStore'
 
 /**
@@ -42,6 +43,7 @@ export function MobileTextField({
   placeholder,
   className,
   style,
+  projectId,
   as: Tag = 'div',
 }: {
   mode: 'text' | 'html'
@@ -50,8 +52,12 @@ export function MobileTextField({
   /** Paragraphs only — Enter splits here instead of ending the paragraph. */
   onSplit?: (before: string, after: string) => void
   onMergeWithPrevious?: () => void
-  /** Used to claim a pending edit request aimed at this exact block. */
+  /** Used to claim a pending edit request aimed at this exact block, and to
+   * scope spell-check to this field's project. */
   blockId?: string
+  /** Enables spell-check underlining for this field. Prose only — a heading
+   * or a quote attribution is not worth decorating. */
+  projectId?: string
   placeholder: string
   className?: string
   /** Inline typography/colour, so Focus mode can paint this field with the
@@ -61,6 +67,12 @@ export function MobileTextField({
 }) {
   const field = useEditableField({ mode, initialValue: value, onCommit, onSplit, onMergeWithPrevious })
   const isEmpty = value.trim().length === 0
+
+  // Mobile had NO spell-check at all: this component never called the hook,
+  // so the on/off control added for it in Phase 141 governed nothing on a
+  // phone. Same hook, same dictionary and same exclusion rules as the
+  // desktop canvas — one behaviour, not a second implementation.
+  useLiveSpellcheck(field.ref, !!projectId, projectId, value)
 
   // Mobile has no paginated canvas and no Inspector, but it shares the
   // selection store, so the "put the caret in the block that was just

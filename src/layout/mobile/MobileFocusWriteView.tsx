@@ -278,6 +278,7 @@ function FocusBlock({
       <MobileTextField
         mode="html"
         blockId={block.id}
+        projectId={projectId}
         value={block.html}
         placeholder="Start writing…"
         style={bookText}

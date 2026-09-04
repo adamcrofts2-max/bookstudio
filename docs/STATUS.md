@@ -9499,3 +9499,76 @@ every feature is correct — that is what the behavioural suites are for, and
 they cover the writing experience, the graph, structural pages, covers and
 image import, not everything. The honest summary is that the *silent-failure*
 class is now covered by a repeatable check rather than by noticing.
+
+## Phase 143 — spell-check you can actually see
+
+User: "incorrect spelling/spellcheck still doesn't show properly whilst its
+turned on?" Correct, in two ways Phase 141 didn't reach. Measured before
+touching anything:
+
+| | while editing | after moving on | after finishing |
+| --- | --- | --- | --- |
+| desktop | 1 underline | 1 | **0** |
+| mobile | **0** | **0** | **0** |
+
+### Mobile had no spell-check at all
+`MobileTextField` never called `useLiveSpellcheck`. So the on/off control
+added to mobile More in Phase 141 governed a feature that did not exist on
+that platform — my error, shipped in the same phase that was meant to fix
+spell-check. Now wired, using the same hook, dictionary and exclusion rules
+as the desktop canvas.
+
+### Underlines were scoped to the focused paragraph — and then wiped
+Two separate causes, and fixing only the first wasn't enough:
+
+**Scope.** The hook ran with `active = isEditing`, a deliberate Phase 116
+choice ("deliberately smaller, safer"). The result is that only the paragraph
+under the cursor is ever checked, so you can see at most one mistake at a
+time and none once you stop writing. A spell-checker you can only see one
+word of is not one. Every *editable* paragraph now decorates itself —
+`editable` is false for thumbnails and the off-screen height measurer, so
+neither does needless work.
+
+**Erasure.** Widening the scope alone still measured 0 after blur. The
+underlines are DOM React knows nothing about, and a paragraph that isn't
+being edited renders through `dangerouslySetInnerHTML`, so React's next
+render replaces the contents and strips every span. Re-scanning only when the
+hook's dependencies changed missed every other render.
+
+A `MutationObserver` on the field makes the decoration self-healing: it comes
+back whenever anything replaces the content, whoever did it, and it covers
+typing too, so the separate `input` listener is gone. Our own wrap/unwrap is
+guarded by a flag cleared in a microtask, so the observer never loops on it.
+
+Decoration can never reach stored content: every commit path goes through
+`parser/html.ts`'s `sanitiseInline`, which keeps an allow-list of inline tags
+and unwraps everything else — a `book-spell-error` span cannot be written
+into the manuscript even if a commit fired while one was present. Checked
+before widening the scope, not assumed.
+
+After: desktop 1 → 2 → **2**; mobile 1 → 1 → **2**. Mistakes stay visible.
+
+### A committed regression suite
+Spell-check has now shipped broken twice, in two unrelated ways, and neither
+was catchable without a real browser. `scripts/e2e/spellcheck.e2e.mjs` (part
+of `npm run test:e2e`) asserts what a user cares about: after writing, are my
+mistakes visible?
+
+Proven against both historical bugs by reintroducing them:
+- Phase 141's URL bug → fails on "correct British spellings are not flagged"
+  (12 words flagged instead of 2).
+- Phase 143's scope bug → fails on "real misspellings are flagged" and
+  "mistakes stay visible after writing has finished (0 shown)".
+
+That first result is worth recording: with the wrong URL the dev server's SPA
+fallback returns `index.html` with a **200**, so nspell parses HTML as a
+dictionary and flags *everything* rather than failing cleanly. Vercel behaves
+the same way. There is no 404 to notice — which is exactly why the bug
+survived so long, and why the canary is "words that must NOT be flagged"
+rather than "the request succeeded".
+
+### Verified
+Spell-check suite 8/8 on both shells, and demonstrated failing against both
+historical regressions. Runtime audit clean, copy audit 0 findings, Phases
+134-142 suites green, writing E2E 16/16. Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS.

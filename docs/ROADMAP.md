@@ -1551,6 +1551,19 @@ Book Studio today and an actual multi-device Canva-style product.)*
       Assets tab
 - [ ] Add Playwright to CI so `test:audit` and `test:e2e` run there too —
       same dependency decision as Phase 140
+- [x] Spell-check is actually visible — fixed 2026-09-04 (Phase 143). Phase
+      141 made the dictionary load; the underlining was still wrong in two
+      ways. It was scoped to the focused paragraph, so exactly ONE
+      misspelling was ever visible and none at all once you stopped typing;
+      and the underlines are DOM React knows nothing about, so its next
+      render wiped them. Every editable paragraph now decorates itself and a
+      MutationObserver re-applies it whenever anything replaces the content
+- [x] Mobile spell-check — shipped 2026-09-04 (Phase 143). `MobileTextField`
+      never called `useLiveSpellcheck`, so mobile had none at all and the
+      on/off control added for it in Phase 141 governed nothing there
+- [x] Spell-check regression suite — shipped 2026-09-04 (Phase 143),
+      `scripts/e2e/spellcheck.e2e.mjs`, proven to fail against both
+      historical bugs
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

@@ -148,6 +148,7 @@ function MobileBlockCard({
         <MobileTextField
           mode="html"
           blockId={block.id}
+          projectId={projectId}
           value={block.html}
           placeholder="Start writing…"
           className="text-[15px] leading-relaxed text-text-primary"
