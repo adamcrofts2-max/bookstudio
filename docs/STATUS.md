@@ -8505,3 +8505,82 @@ larger trim down further.
 full suite ALL PASS. Live-verified in Chromium at 390×844 — empty state, real
 pagination, prose rendering after lazy mount, no horizontal overflow, zero
 console or page errors.
+
+## Phase 128 (2026-09-03) — Mobile "More": most of Book Studio, on a phone
+
+**A deliberate reversal of Phase K's scope, at the user's explicit request:**
+mobile "should also include most of the other desktop features but be very
+usable and user friendly on the mobile". Phase K (2026-08-02) recorded the
+user's choice of "Writing + Idea capture only"; that boundary is now replaced.
+
+The boundary that remains is an **interaction** one rather than a feature one:
+the fixed-size, bleed/trim-precise page canvas and the drag-to-position cover
+tooling need a pointer and a large screen, so they stay desktop-only.
+Everything that is a choice, a command or a document is now reachable from a
+phone.
+
+### The fourth tab
+`MobileMoreView` — a grouped, thumb-reachable list (the platform-native
+settings shape) with three sections:
+
+- **Export** — PDF, EPUB, single-file HTML
+- **Manuscript** — import a manuscript, save a `.bookstudio` project file,
+  open one, version history
+- **Design** — theme gallery, project settings
+
+### Almost none of this is new code
+Every row drives the same hook or component the desktop Toolbar and Inspector
+already use: `useExportPdf`, `useExportEpub`, `useExportHtmlBook`,
+`useExportProjectFile`, `useImportProjectFile`, `ImportManuscriptButton`,
+`ThemeGallery`, `ProjectSettingsDialog`, `VersionHistoryDialog`. Rebuilding any
+of them for mobile would have created a second implementation to keep in sync.
+The mobile-specific work is presentation only: a list instead of a menu bar,
+and `ui/sheet.tsx` bottom sheets instead of centred dialogs.
+
+### Enabling PDF export on mobile
+`useExportPdf` renders `exportStore`'s layout rather than re-deriving one —
+that is what guarantees the PDF matches the screen — and only `BookRenderer`
+ever populated it. `MobilePreviewView` now publishes its layout with the same
+effect `BookRenderer` uses, so a phone can export a print-ready PDF from the
+exact pagination it just displayed.
+
+Consequence, surfaced honestly in the UI rather than hidden: the Export PDF row
+is disabled until Preview has been opened once, and says "Open Preview once to
+lay the book out first". Pagination only runs while Preview is mounted, and
+measuring every block off-screen is real work to do unprompted on a phone
+battery. Tracked in `docs/ROADMAP.md` as worth removing later.
+
+### Verified in Chromium at 390x844
+All nine rows render; the disabled PDF row explains itself; the Theme sheet
+opens with real resolved theme mock-ups; PDF becomes enabled after visiting
+Preview; no horizontal overflow; zero console or page errors.
+
+**All four exports were run for real and produced genuine files from the phone
+viewport:**
+
+| Export | File | Size |
+|---|---|---|
+| PDF | `The Book of Enoch.pdf` | 1,363 KB |
+| EPUB | `The Book of Enoch.epub` | 3 KB |
+| HTML | `The Book of Enoch.html` | 5 KB |
+| Project file | `The Book of Enoch.bookstudio` | 2 KB |
+
+One test-harness note, not a product defect: `saveBlob` prefers the File System
+Access API, and headless Chromium's `showSaveFilePicker` does not complete
+without a real user gesture, so the download event never fired on the first
+run. Deleting `window.showSaveFilePicker` to force the anchor-download fallback
+produced all four files above. Real mobile browsers (Safari included) take that
+same fallback path anyway.
+
+### A build-only type error worth recording
+`npx tsc --noEmit` passed while `npm run build` (`tsc -b`) failed: the first
+version passed `side="bottom"` to `SheetContent`, which has no such prop —
+`ui/sheet.tsx` is already a bottom sheet with its own max-height, drag handle
+and internal scrolling. Caught only because `CLAUDE.md` requires a real build
+before committing; `--noEmit` alone would have shipped it.
+
+### No new tests
+The verification that mattered here was the browser run — every row is a
+binding to a hook already covered by the existing suite, and a jsdom assertion
+that a list renders nine labels would have added confidence in nothing. Noted
+rather than papered over with a hollow test.

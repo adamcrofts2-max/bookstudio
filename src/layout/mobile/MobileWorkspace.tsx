@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, BookOpen, Lightbulb, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
+import { ArrowLeft, BookOpen, Lightbulb, MoreHorizontal, Moon, PenLine, Sun, Undo2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
@@ -9,13 +9,14 @@ import { useHistoryStore } from '@/store/historyStore'
 import { MobileWriteView } from '@/layout/mobile/MobileWriteView'
 import { MobileIdeasView } from '@/layout/mobile/MobileIdeasView'
 import { MobilePreviewView } from '@/layout/mobile/MobilePreviewView'
+import { MobileMoreView } from '@/layout/mobile/MobileMoreView'
 import type { Project } from '@/types'
 
 interface MobileWorkspaceProps {
   project: Project
 }
 
-type MobileTab = 'write' | 'preview' | 'ideas'
+type MobileTab = 'write' | 'preview' | 'ideas' | 'more'
 
 /**
  * Top-level shell for the mobile "on the go" mode (Phase 95,
@@ -28,11 +29,18 @@ type MobileTab = 'write' | 'preview' | 'ideas'
  * Inspector/Toolbar: a bottom tab bar (the standard mobile-navigation
  * pattern, thumb-reachable) switches between the surfaces instead.
  *
- * Phase 127 added a third tab, Preview — a read-only rendering of the real
- * paginated book. That does not widen the "no precision layout tools on
- * mobile" boundary: nothing there is editable, and it exists because being
- * able to write into a book you can never look at was the gap that made this
- * mode feel like a notes app rather than Book Studio.
+ * Phase 127 added Preview — a read-only rendering of the real paginated book,
+ * because being able to write into a book you can never look at was the gap
+ * that made this mode feel like a notes app rather than Book Studio.
+ *
+ * Phase 128 then deliberately reversed the original scope decision, at the
+ * user's explicit request: mobile "should also include most of the other
+ * desktop features but be very usable and user friendly on the mobile". The
+ * More tab carries export, import, theming, project settings and version
+ * history — the same hooks and components the desktop Toolbar drives. What
+ * stays desktop-only is now an *interaction* boundary rather than a feature
+ * one: the fixed-size, bleed/trim-precise page canvas and the drag-to-position
+ * cover tooling need a pointer and a large screen.
  *
  * Mirrors `AppShell`'s own `useAutosaveSnapshots(project.id)` mount — this
  * shell is a full alternative to `AppShell`, not a child of it, so it needs
@@ -91,6 +99,7 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
         {tab === 'write' && <MobileWriteView projectId={project.id} />}
         {tab === 'preview' && <MobilePreviewView project={project} />}
         {tab === 'ideas' && <MobileIdeasView projectId={project.id} />}
+        {tab === 'more' && <MobileMoreView project={project} />}
       </div>
 
       <nav className="flex shrink-0 items-center border-t border-border bg-panel pb-[env(safe-area-inset-bottom)]">
@@ -126,6 +135,17 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
         >
           <Lightbulb className="size-5" />
           Ideas
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab('more')}
+          className={cn(
+            'flex flex-1 flex-col items-center gap-1 py-2.5 text-xs font-medium transition-colors duration-150',
+            tab === 'more' ? 'text-[var(--color-accent)]' : 'text-text-muted',
+          )}
+        >
+          <MoreHorizontal className="size-5" />
+          More
         </button>
       </nav>
     </div>

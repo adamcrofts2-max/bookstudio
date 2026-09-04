@@ -3,6 +3,7 @@ import { BookOpen, Loader2 } from 'lucide-react'
 
 import type { Project } from '@/types'
 import { useContentStore } from '@/store/contentStore'
+import { useExportStore } from '@/store/exportStore'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { computePageBox } from '@/renderer/pageGeometry'
 import { resolveTheme } from '@/theme/presets'
@@ -94,6 +95,17 @@ export function MobilePreviewView({ project }: MobilePreviewViewProps) {
     () => composeBookPages(frontMatter, paginatedPages, backMatter),
     [frontMatter, paginatedPages, backMatter],
   )
+
+  // Publishes exactly what is on screen, mirroring `BookRenderer`'s own
+  // effect. PDF export renders `exportStore`'s layout rather than
+  // re-deriving one, so without this mobile could lay a book out but never
+  // export it — and populating it from the same pagination is what keeps the
+  // exported PDF identical to the preview, the same WYSIWYG guarantee the
+  // desktop canvas provides.
+  const setExportLayout = useExportStore((s) => s.setLayout)
+  useEffect(() => {
+    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
+  }, [pages, toc, pageBox, theme, project.id, setExportLayout])
 
   // Scale is measured from the real container rather than `window.innerWidth`
   // so it stays correct through rotation and any future chrome around this

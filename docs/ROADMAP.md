@@ -1520,6 +1520,22 @@ a gap to close later.)*
       `HeightMeasurer` → `paginate` → `composeBookPages` → `Page` unchanged
       rather than adding a second layout engine; the page is rendered at true
       size and CSS-scaled to fit, so page breaks match what prints
+- [x] Mobile "More" tab — export (PDF/EPUB/HTML), import a manuscript, save/open
+      a .bookstudio project file, version history, theme gallery and project
+      settings, all on a phone — shipped 2026-09-03 (Phase 128). Reuses the same
+      hooks and components the desktop Toolbar and Inspector drive. **This
+      deliberately reverses Phase K's original "Writing + Idea capture only"
+      scope at the user's explicit request**; what stays desktop-only is now an
+      interaction boundary (the bleed/trim-precise page canvas and drag-to-
+      position cover tooling) rather than a feature one
+- [ ] Mobile PDF export currently requires opening the Preview tab once first,
+      so the book gets paginated — pagination only runs while Preview is
+      mounted. Acceptable (and explained in the row itself) but worth removing
+- [ ] Mobile front/back-matter management (add/reorder title page, copyright,
+      dedication...) — Structure is still desktop-only
+- [ ] Mobile manuscript search — the desktop Sidebar's Search tab has no mobile
+      equivalent
+- [ ] Mobile Virtual Editor access — the editorial dashboard is desktop-only
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
       checklist) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
