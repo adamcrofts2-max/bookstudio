@@ -1492,7 +1492,21 @@ a gap to close later.)*
       book").
 - [x] Mobile Undo button in `MobileWorkspace`'s header (Phase 100) — needed
       once mobile gained real destructive actions (delete block/chapter).
-- [ ] Not yet live-verified in Chrome (this sandbox can't push) — owed:
+- [x] Live-verified in Chromium — shipped 2026-09-03 (Phase 126). Verified at real
+      device viewports: mobile shell renders and switches, Add Chapter, the "+"
+      FAB menu (Add paragraph/heading/photo), tap-to-edit inline with the text
+      persisting to `contentStore`, the per-block "⋮" menu (Move up/down,
+      Delete), header Undo, and the Ideas tab. Zero console or page errors.
+      Two defects found and fixed in the same phase — see the two entries below
+- [x] Phone in landscape no longer drops out to the desktop shell — fixed
+      2026-09-03 (Phase 126). `useIsMobile` keyed on width alone, so a rotated
+      phone (~844×390) cleared the 640px test and got the three-column desktop
+      shell inside 390px of height: toolbar clipped mid-word, page canvas an
+      unusable sliver. Now also matches a short viewport with a coarse pointer,
+      which leaves tablets and short desktop windows exactly as they were
+- [x] Mobile "+" FAB had no accessible name (icon-only button) — fixed 2026-09-03
+      (Phase 126)
+- [ ] Remaining live-verification owed:
       resize-triggered shell switch, chapter-switcher sheet (including the
       new add/rename/delete), inline edit of each of the six text-bearing
       block types, the new per-block "⋮" menu, "Add photo" actually

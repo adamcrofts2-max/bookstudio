@@ -8388,3 +8388,58 @@ a separate assertion pinning the four long-standing categories.
 Phase J's CI pipeline. This suite was broken across multiple phases without
 anyone noticing; a GitHub Actions workflow running build/lint/test on every
 push would have caught it on the commit that introduced it.
+
+## Phase 126 (2026-09-03) — Mobile: live-verified at last, and two defects fixed
+
+Phase K's mobile mode had never been verified in a real browser — Phase 95/100
+shipped with that caveat recorded, and Phase 100 never even had a local `tsc`
+pass. Driven properly in Chromium at real device viewports for the first time.
+
+### What was verified working
+Mobile shell renders and switches at the breakpoint; Add Chapter; the "+" FAB
+menu (Add paragraph / Add heading / Add photo); tap-to-edit inline with typed
+text persisting to `contentStore` through the same history-wrapped actions
+desktop uses; the per-block "⋮" menu (Move up/down, Delete); the header Undo
+button; and the Ideas tab. **Zero console or page errors throughout.**
+
+Two earlier readings in this session were wrong and are corrected here: the
+per-block menu *does* carry `aria-label="Block actions"`, and a newly-added
+chapter genuinely has no blocks, so "no editable field" was the empty state
+behaving correctly, not a defect.
+
+### Defect 1 — a rotated phone fell out of the mobile app
+`useIsMobile` matched on width alone. A phone in landscape is roughly 844×390,
+which clears the 640px test, so it was handed the full three-column desktop
+shell — Sidebar, page canvas and Inspector — inside 390px of height.
+
+Confirmed visually at 844×390: the toolbar clips mid-word ("Virtual Edito…"),
+the centre column is squeezed to a sliver, and the page preview is unusable.
+Rotating the phone silently dropped the author out of the mobile app into a
+layout they cannot work in.
+
+Fixed by adding a second clause: `(max-height: 500px) and (pointer: coarse)`.
+The pointer test is what makes this safe — a short *desktop* window is short
+because the user chose it and still has a mouse (`pointer: fine`), so it keeps
+the desktop shell exactly as before. Tablets are likewise unaffected.
+
+Verified across five viewports in Chromium, all as intended: phone portrait →
+mobile, phone landscape → mobile (was desktop), tablet portrait → desktop,
+short desktop window → desktop, normal desktop → desktop.
+
+### Defect 2 — the "+" FAB had no accessible name
+An icon-only `Button` with no `aria-label`, so screen readers announced it as
+an unlabelled button — and it was the only way to add content on mobile. Now
+`aria-label="Add block"`.
+
+### Tests
+Five assertions added to `scripts/smoke-test.ts`. They evaluate the **real**
+exported `MOBILE_QUERY` against known device viewports rather than restating
+the rule, so the shipped query is what gets asserted — including an explicit
+regression test for the landscape-phone case.
+
+### Still open (deliberate scope, not defects)
+Structured blocks (list/table/timeline/faq/statistics/checklist) remain
+read-only cards on mobile; Develop beyond Ideas is desktop-only; there is no
+mobile preview or export. These are the scope boundary the user chose when
+Phase K was defined ("Writing + Idea capture only"), not gaps this phase left
+behind.

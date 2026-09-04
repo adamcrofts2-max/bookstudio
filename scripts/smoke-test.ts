@@ -2552,5 +2552,43 @@ check(
   check('epub: a non-EPUB file raises a user-safe ManuscriptImportError', epubError instanceof ManuscriptImportError)
 }
 
+// --- Mobile shell detection (Phase 126) ---
+{
+  const { MOBILE_QUERY } = await import('../src/hooks/useIsMobile')
+
+  /** Evaluates the real media query against a device, so this asserts the
+   * shipped rule rather than restating it. Supports only the three features
+   * the query actually uses. */
+  const matches = (query: string, device: { width: number; height: number; coarsePointer: boolean }): boolean =>
+    query.split(',').some((clause) =>
+      clause.split(' and ').every((term) => {
+        const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(term)
+        if (maxWidth) return device.width <= Number(maxWidth[1])
+        const maxHeight = /\(max-height:\s*(\d+)px\)/.exec(term)
+        if (maxHeight) return device.height <= Number(maxHeight[1])
+        const pointer = /\(pointer:\s*(\w+)\)/.exec(term)
+        if (pointer) return pointer[1] === (device.coarsePointer ? 'coarse' : 'fine')
+        return false
+      }),
+    )
+
+  const phonePortrait = { width: 390, height: 844, coarsePointer: true }
+  const phoneLandscape = { width: 844, height: 390, coarsePointer: true }
+  const tabletPortrait = { width: 820, height: 1180, coarsePointer: true }
+  const shortDesktopWindow = { width: 1280, height: 420, coarsePointer: false }
+  const desktop = { width: 1440, height: 900, coarsePointer: false }
+
+  check('mobile detection: phone in portrait gets the mobile shell', matches(MOBILE_QUERY, phonePortrait))
+  // Regression: a phone rotated to landscape is ~844x390, which clears the
+  // 640px width test. Before this rule it was handed the three-column desktop
+  // shell inside 390px of height — toolbar clipped, page canvas a sliver.
+  check('mobile detection: phone in LANDSCAPE gets the mobile shell', matches(MOBILE_QUERY, phoneLandscape))
+  check('mobile detection: tablet in portrait keeps the desktop shell', !matches(MOBILE_QUERY, tabletPortrait))
+  // A short desktop window is short because the user made it so, and still
+  // has a mouse — `pointer: coarse` is what keeps it on the desktop shell.
+  check('mobile detection: a short desktop window keeps the desktop shell', !matches(MOBILE_QUERY, shortDesktopWindow))
+  check('mobile detection: a normal desktop keeps the desktop shell', !matches(MOBILE_QUERY, desktop))
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

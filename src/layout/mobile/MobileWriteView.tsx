@@ -524,6 +524,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
             <Button
               type="button"
               size="icon"
+              aria-label="Add block"
               className="fixed bottom-20 right-4 z-30 size-12 rounded-full shadow-[var(--shadow-md)]"
             >
               <Plus className="size-5" />
