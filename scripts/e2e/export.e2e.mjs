@@ -282,6 +282,50 @@ async function main() {
     check('the project file is a zip (PK header)', projectBytes.subarray(0, 2).toString('latin1') === 'PK')
     check(`the project file uses the .bookstudio extension (${projectFile?.name})`, /\.bookstudio$/i.test(projectFile?.name ?? ''))
 
+    // ---- the round trip ----
+    // `parser/epub.ts` exists because "Book Studio already exported EPUB but
+    // could not read one, so a book could not be reopened from its own
+    // output". That claim was never tested in the direction that matters:
+    // importing this app's OWN export. Both halves passing separately does
+    // not mean they agree with each other.
+    await page.goto(server.url)
+    await page.waitForTimeout(900)
+    await page.getByRole('button', { name: /new project/i }).first().click()
+    await page.waitForTimeout(300)
+    await page.locator('#new-project-idea').fill('Round trip')
+    await page.getByRole('button', { name: /^create/i }).last().click()
+    await page.waitForTimeout(2500)
+    const backToEditor2 = page.getByRole('button', { name: /back to editor/i }).first()
+    if (await backToEditor2.count()) {
+      await backToEditor2.click()
+      await page.waitForTimeout(1500)
+    }
+    const roundTripInput = page.locator('input[type="file"][accept*=".epub"]').first()
+    await roundTripInput.waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    if ((await roundTripInput.count()) && epubBytes.length > 0) {
+      await roundTripInput.setInputFiles({
+        name: 'exported.epub',
+        mimeType: 'application/epub+zip',
+        buffer: epubBytes,
+      })
+      await page.waitForTimeout(3500)
+      const reimported = await page.evaluate(() => {
+        const id = location.pathname.split('/project/')[1]?.split('/')[0]
+        const raw = localStorage.getItem('book-studio.content')
+        if (!raw || !id) return []
+        const manuscript = JSON.parse(raw).state.byProject[id]
+        return (manuscript?.chapters ?? []).map((c) => ({
+          title: c.title,
+          html: c.blocks.map((b) => b.html ?? b.text ?? '').join(' '),
+        }))
+      })
+      check(`the app can reopen its own EPUB (${reimported.length} chapter(s))`, reimported.length > 0)
+      check(
+        `the manuscript survives the round trip (${JSON.stringify(reimported[0]?.html ?? '').slice(0, 70)})`,
+        reimported.some((c) => c.html.includes('kept its own hours')),
+      )
+    }
+
     check(`no page errors during any export (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
   } finally {
     await browser.close()

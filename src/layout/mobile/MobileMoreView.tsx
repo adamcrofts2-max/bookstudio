@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from 'react'
 import {
+  AlertTriangle,
   BookText,
   ChevronRight,
   Clock,
@@ -28,6 +29,8 @@ import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
 import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
 import { useTemplateStore } from '@/store/templateStore'
+import { DiagnosticsDialog } from '@/components/common/DiagnosticsDialog'
+import { useErrorLogStore } from '@/store/errorLogStore'
 import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { ImportManuscriptButton } from '@/editor/ImportManuscriptButton'
@@ -129,6 +132,8 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const templateCount = useTemplateStore((s) => s.templates.length)
+  const errorCount = useErrorLogStore((s) => s.errors.length)
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false)
   const [pagesOpen, setPagesOpen] = useState(false)
@@ -275,6 +280,18 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           }
           onClick={() => setManageTemplatesOpen(true)}
         />
+        {/* On a phone this is the only route a crash report has off the
+            device — see `store/errorLogStore.ts`. */}
+        <Row
+          icon={AlertTriangle}
+          label="Report a problem"
+          detail={
+            errorCount === 0
+              ? 'Nothing has gone wrong on this device'
+              : `${errorCount} error${errorCount === 1 ? '' : 's'} recorded — copy or save the details`
+          }
+          onClick={() => setDiagnosticsOpen(true)}
+        />
       </Group>
 
       {/* Bottom sheets rather than centred dialogs: a phone has no room for a
@@ -331,6 +348,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
       <VersionHistoryDialog projectId={project.id} open={historyOpen} onOpenChange={setHistoryOpen} />
       <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
       <ManageTemplatesDialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen} />
+      <DiagnosticsDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
     </div>
   )
 }

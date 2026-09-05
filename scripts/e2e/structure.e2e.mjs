@@ -236,6 +236,57 @@ async function main() {
       check('no imported chapter is empty', imported.length > 0 && imported.every((c) => c.html.trim().length > 0))
     }
 
+    // ---- manuscript import (.epub) ----
+    // The last import path with no coverage. The fixture is a real OCF
+    // package — uncompressed `mimetype` first, a container pointing at a
+    // package document, a spine of two XHTML files — and its chapters are
+    // deliberately wrapped in `<section><div>` and titled with `<h2>`,
+    // because that is what real EPUBs look like and those two shapes are
+    // exactly what `parser/epub.ts`'s flattening and heading promotion
+    // exist to handle. A fixture of flat `<h1>`/`<p>` would have tested
+    // nothing.
+    const epub = await readFile('scripts/fixtures/manuscript.epub')
+    await page.goto(server.url)
+    await page.waitForTimeout(900)
+    await page.getByRole('button', { name: /new project/i }).first().click()
+    await page.waitForTimeout(300)
+    await page.locator('#new-project-idea').fill('Imported EPUB')
+    await page.getByRole('button', { name: /^create/i }).last().click()
+    await page.waitForTimeout(2500)
+    const backAgain = page.getByRole('button', { name: /back to editor/i }).first()
+    if (await backAgain.count()) {
+      await backAgain.click()
+      await page.waitForTimeout(1500)
+    }
+    const epubInput = page.locator('input[type="file"][accept*=".epub"]').first()
+    await epubInput.waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    check('the manuscript importer accepts .epub', (await epubInput.count()) > 0)
+    if (await epubInput.count()) {
+      await epubInput.setInputFiles({ name: 'manuscript.epub', mimeType: 'application/epub+zip', buffer: epub })
+      await page.waitForTimeout(3500)
+      const imported = await chapters(page)
+      check(`.epub import produces one chapter per spine document (${imported.length})`, imported.length === 2)
+      check(`an <h2> chapter title is promoted (${imported[0]?.title})`, imported[0]?.title === 'The Keeper of Hours')
+      check(`the second chapter title (${imported[1]?.title})`, imported[1]?.title === 'A Second Door')
+      // Nested in <section><div>: without flattening, every one of these is
+      // silently dropped, which is the failure this fixture is shaped to
+      // expose.
+      check('text nested in section/div survives', (imported[0]?.html ?? '').includes('kept their own counsel'))
+      check('bold survives as <strong>', (imported[0]?.html ?? '').includes('<strong>'))
+      check('italic survives as <em>', (imported[0]?.html ?? '').includes('<em>'))
+      const kinds = await page.evaluate(() => {
+        const id = location.pathname.split('/project/')[1]?.split('/')[0]
+        const raw = localStorage.getItem('book-studio.content')
+        if (!raw || !id) return []
+        const m = JSON.parse(raw).state.byProject[id]
+        return (m?.chapters ?? []).flatMap((c) => c.blocks.map((b) => b.type))
+      })
+      check(`a blockquote becomes a quote block (${kinds.join(',')})`, kinds.includes('quote'))
+      check('a list becomes a list block', kinds.includes('list'))
+      check('the embedded image becomes an image block', kinds.includes('image'))
+      check('the second chapter is not empty', (imported[1]?.html ?? '').includes('longer than the building'))
+    }
+
     check(`no page errors throughout (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
   } finally {
     await browser.close()

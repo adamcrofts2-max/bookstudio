@@ -592,6 +592,13 @@ daily use of everything built so far.)*
       ZIP reader) and `parser/html.ts`'s `parseHtmlDocument`, adding no new
       dependency; images are extracted into the asset library like the DOCX
       importer does. Verified against a real 268KB Project Gutenberg EPUB
+- [x] EPUB import covered end-to-end — added 2026-09-05 (Phase 151) against
+      a real OCF package whose chapters are nested in `<section><div>` and
+      titled with `<h2>`, because that is what real EPUBs look like and those
+      two shapes are exactly what the parser's flattening and heading
+      promotion exist to handle. Also asserts the **round trip**: importing
+      this app's own EPUB export, which is the reason `parser/epub.ts` was
+      written and had never been tested in that direction. Both clean
 - [ ] EPUB import: preserve verse as a distinct block type — verse lines are
       currently imported as one paragraph each, which keeps the line structure
       but loses the semantic distinction (the Content layer has no verse block)
@@ -1641,7 +1648,20 @@ Book Studio today and an actual multi-device Canva-style product.)*
       invisible, so on the home screen there was no discoverable way to
       delete a book at all. A `can-hover:` custom variant now gates the
       hiding half
-- [ ] Production error monitoring / crash reporting
+- [x] Error capture and a report a user can hand over — shipped 2026-09-05
+      (Phase 151). Not a crash-reporting *service*: there is no backend to
+      send to and there will not be one before Phase G. What was actually
+      missing is smaller and more useful — the Phase 134 mobile crash reached
+      this project as a **photograph of a phone screen**, because there was
+      no route off the device. Now: `errorLogStore` keeps a bounded,
+      persisted log; `installErrorCapture` catches the two kinds a React
+      boundary never sees (an uncaught error in a task, and a rejected
+      promise nobody awaited); and "Report a problem" in both shells copies
+      or saves a full report with stacks, screen, pointer type and browser.
+      Covered by `scripts/e2e/diagnostics.e2e.mjs`
+- [ ] Send crash reports somewhere automatically — needs Phase G's backend
+      decision. The local log above is the offline half of this and is what
+      makes the online half a small change when it arrives
 - [x] npm audit clean — 2026-09-05 (Phase 148). The `react-router`
       advisories this item named are long gone; two others had taken their
       place (`nanoid` high, via vite/postcss; `@xmldom/xmldom` moderate, via

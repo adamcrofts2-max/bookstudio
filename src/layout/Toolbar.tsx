@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  AlertTriangle,
   BookOpenText,
   ChevronDown,
   ChevronsRight,
@@ -45,6 +46,7 @@ import { useExportProjectFile } from '@/projectFile/useExportProjectFile'
 import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
 import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
 import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
+import { DiagnosticsDialog } from '@/components/common/DiagnosticsDialog'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { useManuscriptWordCount } from '@/hooks/useManuscriptWordCount'
@@ -88,6 +90,7 @@ export function Toolbar({ project }: ToolbarProps) {
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false)
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
   const [writingGoalOpen, setWritingGoalOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
@@ -392,6 +395,10 @@ export function Toolbar({ project }: ToolbarProps) {
               <Keyboard className="size-3.5" />
               Keyboard shortcuts
             </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setDiagnosticsOpen(true)}>
+              <AlertTriangle className="size-3.5" />
+              Report a problem
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -407,6 +414,7 @@ export function Toolbar({ project }: ToolbarProps) {
       <VersionHistoryDialog projectId={project.id} open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen} />
       <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
       <ManageTemplatesDialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen} />
+      <DiagnosticsDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
       <WritingGoalDialog projectId={project.id} open={writingGoalOpen} onOpenChange={setWritingGoalOpen} />
       <ExportReadinessDialog
         open={readinessOpen}

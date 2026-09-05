@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { useErrorLogStore } from '@/store/errorLogStore'
 
 interface ErrorBoundaryProps {
   children: ReactNode
@@ -40,6 +41,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo) {
+    // Also recorded, so the details survive the "Try again" that clears this
+    // panel — and so a report written afterwards still has the stack. See
+    // `store/errorLogStore.ts` for why a local log is the useful thing here.
+    useErrorLogStore.getState().record({
+      source: 'render',
+      area: this.props.area,
+      name: error.name,
+      message: error.message,
+      stack: `${error.stack ?? ''}${info.componentStack ?? ''}`,
+      path: typeof window === 'undefined' ? undefined : window.location.pathname,
+    })
     // Kept as a real console error so it still reaches remote logging or a
     // device console even though the UI has recovered.
     console.error('Book Studio crashed while rendering', this.props.area ?? '', error, info.componentStack)

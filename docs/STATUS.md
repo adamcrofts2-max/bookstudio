@@ -10184,3 +10184,81 @@ because there was never an error to catch.
 Export 29/29, writing 20/20, spell-check 8/8, structure 21/21, project-delete
 10/10, runtime audit clean, copy audit 4 desktop-only findings, `npm test` ALL
 PASS, build clean, lint exit 0 at the 49-warning baseline.
+
+---
+
+## Phase 151 — a crash report that isn't a photograph of a screen
+
+Two things, both closing gaps the previous phases named.
+
+### EPUB import, and the round trip nobody had tried
+
+`.epub` was the last import path with no coverage. The fixture is a real OCF
+package — uncompressed `mimetype` first, a container pointing at a package
+document, a two-document spine — and its chapters are deliberately wrapped in
+`<section><div>` and titled with `<h2>`. That shaping is the point: real EPUBs
+look like that, and flattening plus heading promotion are exactly what
+`parser/epub.ts` exists to do. A fixture of flat `<h1>`/`<p>` would have
+asserted nothing.
+
+Twelve assertions, all passing: chapter-per-spine-document, `<h2>` promotion,
+text nested two containers deep surviving, `<strong>`/`<em>`, and blockquote,
+list and image each becoming the right block type.
+
+More interesting is the round trip. `parser/epub.ts`'s own doc comment says it
+exists because "Book Studio already exported EPUB but could not read one, so a
+book could not be reopened from its own output" — and that claim had never
+been tested in the direction that matters. Both halves passing separately does
+not mean they agree with each other. `export.e2e.mjs` now exports an EPUB and
+imports the exported bytes straight back. It works.
+
+### Errors that a boundary never sees
+
+Phase 133 added error boundaries, which was the right fix for white screens.
+But React routes only *render* errors to a boundary. An exception thrown
+inside a `pointerup` handler, or a rejected promise nobody awaited, unwinds to
+the window — and on a phone that means a console nobody can open. Those are
+exactly the faults reported as "it just stopped working", with no detail
+attached, because there is no detail to attach.
+
+`errorLogStore` is a bounded, persisted log of what has gone wrong on this
+device. `installErrorCapture` feeds it from `window.onerror` and
+`unhandledrejection` (making a copy, never swallowing — the console must still
+get them). The boundary records into it too, so details survive the "Try
+again" that clears the panel. "Report a problem" in both shells copies or
+saves a report with stacks, screen size, pointer type, route and browser.
+
+This is not a crash-reporting service and does not pretend to be. There is no
+backend to send anything to and there will not be one before Phase G. But the
+thing that was actually missing was smaller than a service: the Phase 134
+mobile Book Graph crash reached this project as a **photograph of a phone
+screen**, because that was the only route off the device. One button is now
+that route, and when Phase G arrives, sending the same report somewhere is a
+small change rather than a new subsystem.
+
+Design notes worth keeping:
+
+- **Consecutive identical faults collapse.** A broken render loops and a bad
+  handler fires on every tap; without this the real first occurrence is pushed
+  out of a 25-entry buffer within seconds.
+- **Persisted.** The useful report is written after the app has recovered, and
+  a reload used to destroy the only evidence.
+- **Save-as-a-file as well as copy.** On a phone with a keyboard in the way, a
+  long clipboard paste is not a realistic way to file a bug.
+- **No version string.** This app has no release pipeline stamping one in, and
+  a hardcoded version that drifts is worse than none.
+
+### One more of my own test bugs
+
+The first pass at verifying capture appended a `<button>` to `document.body`
+and clicked it — behind the app's full-screen layout, so Playwright timed out
+and the handler never ran. The suite reported "an event-handler error is
+captured — FAIL" about code that was fine. It now throws from a `setTimeout`
+instead, which is what an exception from a pointer handler actually becomes
+once it escapes.
+
+### Verified
+Diagnostics 14/14, structure 33/33 (21 + 12 EPUB), export 31/31 (29 + the
+round trip), writing 20/20, spell-check 8/8, project-delete 10/10, runtime
+audit clean, copy audit 4 desktop-only findings, `npm test` ALL PASS, build
+clean, lint exit 0 at the 49-warning baseline.
