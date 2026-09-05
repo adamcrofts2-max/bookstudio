@@ -11,6 +11,37 @@ import type { ContentBlock, ContentBlockType } from '@/types/content'
  */
 export type InsertableBlockType = Exclude<ContentBlockType, 'image' | 'gallery'>
 
+/**
+ * Block types that open with a text field the writer should be typing into
+ * the moment the block appears.
+ *
+ * Inserting one of these and *not* landing the caret is not a missing
+ * nicety — it silently loses work. Measured on both shells before this
+ * existed: "+ → Add paragraph", then type, and the manuscript stored an
+ * empty string, because every keystroke went to `document.body`. Same
+ * failure Phase 139 fixed for Enter and Phase 144 fixed for "Start
+ * writing…", found a third time by auditing for the signature.
+ *
+ * Deliberately not every insertable type: an image or a placeholder has
+ * nothing to type into, and grabbing focus for those would move the caret
+ * somewhere the user did not ask for.
+ */
+export const TEXT_FIRST_BLOCK_TYPES = new Set<string>([
+  'paragraph',
+  'heading',
+  'quote',
+  'pull-quote',
+  'callout',
+  'case-study',
+  'list',
+])
+
+/** Where the caret goes for a freshly inserted block — `list` starts on its
+ * first item, everything else at the start of its single field. */
+export function isTextFirstBlock(type: string): boolean {
+  return TEXT_FIRST_BLOCK_TYPES.has(type)
+}
+
 export const INSERTABLE_BLOCK_TYPES: InsertableBlockType[] = [
   'paragraph',
   'heading',

@@ -21,7 +21,7 @@ import {
   moveBlockWithHistory,
   renameChapterWithHistory,
 } from '@/store/editorActions'
-import { createDefaultBlock } from '@/blocks/defaultContent'
+import { createDefaultBlock, isTextFirstBlock } from '@/blocks/defaultContent'
 import { generateId } from '@/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -252,6 +252,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const selectBlockForEdit = useSelectionStore((s) => s.selectForEdit)
   const [titleDraft, setTitleDraft] = useState('')
   const importFiles = useAssetStore((s) => s.importFiles)
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -283,11 +284,32 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
     if (activeChapterId) selectChapter(activeChapterId, null)
   }, [activeChapterId, selectChapter])
 
+  /**
+   * Where the caret should go once the "+" menu has finished closing.
+   *
+   * Landing it inside `onSelect` does not work: Radix is still tearing down
+   * the menu's focus scope at that point and takes focus back afterwards, so
+   * the new block was focused and then quietly abandoned — every keystroke
+   * after "+ → Add paragraph" went to the document body and was lost.
+   * Neither `onCloseAutoFocus`-preventDefault nor a synchronous `focus()`
+   * settled it, because the steal happens after both. Requesting the caret
+   * from the close handler instead removes the race rather than competing
+   * with it.
+   */
+  const pendingCaretRef = useRef<string | null>(null)
+
   const handleAddBlock = (type: 'paragraph' | 'heading') => {
     if (!activeChapter) return
     const block = createDefaultBlock(type)
     const lastBlockId = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
     insertBlockWithHistory(projectId, activeChapter.id, lastBlockId, block)
+    if (isTextFirstBlock(type)) pendingCaretRef.current = block.id
+  }
+
+  const landPendingCaret = () => {
+    const blockId = pendingCaretRef.current
+    pendingCaretRef.current = null
+    if (blockId && activeChapter) selectBlockForEdit(activeChapter.id, blockId, 'start')
   }
 
   /** Opens the device's native photo picker (camera roll + camera, on
@@ -582,7 +604,19 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
               <Plus className="size-5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent
+            align="end"
+            // Radix returns focus to the trigger when the menu closes, which
+            // landed on the "+" button *after* the newly inserted block had
+            // taken the caret — so the block was focused for a few
+            // milliseconds and then quietly handed back, and typing went
+            // nowhere. Traced with a focusin/focusout log: IN <field>, OUT
+            // <field>, IN <button "Add block">.
+            onCloseAutoFocus={(e) => {
+              e.preventDefault()
+              landPendingCaret()
+            }}
+          >
             <DropdownMenuItem onSelect={() => handleAddBlock('paragraph')}>Add paragraph</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => handleAddBlock('heading')}>Add heading</DropdownMenuItem>
             <DropdownMenuItem onSelect={handleAddImage}>Add photo</DropdownMenuItem>

@@ -9636,3 +9636,62 @@ intact, the "+" route works too, and neither drops you out of focus mode.
 Runtime audit clean, copy audit 0 findings, spell-check 8/8, writing E2E
 16/16, Phases 134-143 suites green. Build clean, lint exit 0 at the 49-warning
 baseline, `npm test` ALL PASS.
+
+## Phase 145 — auditing for "creates content, drops the caret"
+
+Phase 144's bug had a precise, searchable signature: something creates
+editable content and never puts the caret in it, so the next keystrokes go to
+`document.body` and are lost. Rather than wait for the next report, I swept
+the codebase for it — every call to `insertBlockWithHistory`,
+`addChapterWithHistory`, the split/merge actions — and checked whether the
+surrounding handler lands a caret.
+
+Two candidates survived triage (`editorActions.ts` hits were the function
+definitions; `handleDropAsset` inserts an image, which has nothing to type
+into). Both were real, and both silently destroyed work:
+
+- **`MobileWriteView.handleAddBlock`** — the "+" menu, the ordinary way to
+  start a paragraph on a phone.
+- **`Page.handleInsertBlock`** — the desktop inter-block insert. It called
+  `select`, which highlights a block but does not make it editable, so you
+  had to double-click before you could type.
+
+Measured before the fix, both shells: caret live after inserting = `false`,
+and the manuscript stored `""` after typing a full sentence.
+
+### The interesting half: fixing it needed three attempts
+Adding `selectForEdit` fixed desktop's empty-chapter path and did nothing for
+the menus. A focusin/focusout trace showed why:
+
+```
+IN  DIV rounded-…      ← the new field takes the caret
+OUT DIV rounded-…      ← and loses it
+IN  BUTTON Add block   ← Radix restores focus to the trigger on close
+```
+
+`onCloseAutoFocus` + `preventDefault()` was not enough on its own, and nor was
+focusing the element synchronously: the steal happens after both. A bounded
+`requestAnimationFrame` retry fixed the simple case and still lost the crowded
+one — at which point the right move was to stop racing and remove the race.
+The caret is now requested **from the close handler**, once the menu has
+finished with focus. That retry was then deleted rather than left in as
+insurance; speculative complexity that no longer earns its place is its own
+kind of debt.
+
+`isTextFirstBlock` (in `blocks/defaultContent.ts`) is the single rule for
+which types open with a field worth focusing — paragraph, heading, quote,
+pull-quote, callout, case-study, list — so the two shells cannot drift. An
+image or placeholder is deliberately excluded: there is nothing to type, and
+grabbing focus would move the caret somewhere the user did not ask for.
+
+### Now covered by the committed suite
+`writing.e2e.mjs` gained "inserting a paragraph leaves a live caret" and "text
+typed right after inserting is not lost", on both shells — 20 assertions
+total. This is the app's most repeated defect (Enter in Phase 139, "Start
+writing…" in Phase 144, both insert menus here), so it is now asserted rather
+than remembered.
+
+### Verified
+Writing E2E 20/20 both shells, spell-check 8/8, runtime audit clean, copy
+audit 0 findings, `npm test` ALL PASS, build clean, lint exit 0 at the
+49-warning baseline.

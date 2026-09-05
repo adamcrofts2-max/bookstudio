@@ -119,6 +119,39 @@ async function run(mobile) {
     merged[0] === 'Paragraph one.' && merged.length === split.length - 1,
   )
 
+  // Inserting a block must leave a live caret. Three separate controls have
+  // shipped that created content and then dropped the cursor, silently
+  // discarding everything typed next: Enter (Phase 139), "Start writing…"
+  // (Phase 144), and "+ → Add paragraph" on both shells (Phase 145). It is
+  // the app's most repeated defect, so it gets an assertion.
+  if (mobile) {
+    await page.getByRole('button', { name: 'Add block' }).tap()
+    await page.waitForTimeout(500)
+    await page.getByText('Add paragraph', { exact: true }).tap()
+  } else {
+    // The desktop insert affordance sits between blocks and is revealed on
+    // hover, so hover the last block first and force past the paragraph that
+    // overlaps it.
+    await page.locator('[data-block-id]').last().hover()
+    await page.waitForTimeout(300)
+    const insert = page.getByRole('button', { name: /insert block/i }).last()
+    if (await insert.count()) {
+      await insert.click({ force: true })
+      await page.waitForTimeout(400)
+      const item = page.getByRole('menuitem', { name: /^Paragraph$/i }).first()
+      if (await item.count()) await item.click()
+    }
+  }
+  await page.waitForTimeout(1300)
+  check(`${label}: inserting a paragraph leaves a live caret`, await isEditingSomething(page))
+  await page.keyboard.type('Typed straight after inserting.')
+  await commitEdit(page)
+  const afterInsert = await paragraphTexts(page)
+  check(
+    `${label}: text typed right after inserting is not lost`,
+    afterInsert.some((t) => t.includes('Typed straight after inserting.')),
+  )
+
   check(`${label}: no uncaught page errors`, pageErrors.length === 0)
   if (pageErrors.length) pageErrors.forEach((e) => console.log('        ' + e))
 

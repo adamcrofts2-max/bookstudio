@@ -1574,6 +1574,16 @@ Book Studio today and an actual multi-device Canva-style product.)*
       fixed 2026-09-05 (Phase 144). It inserted a block without a caret, so
       everything typed next went nowhere. Present since Phase 140 and masked
       by a test with fallback selectors
+- [x] Inserting a block lands the caret — fixed 2026-09-05 (Phase 145),
+      found by auditing for the Phase 144 signature rather than by report.
+      "+ → Add paragraph" created the block and left the cursor nowhere, so
+      everything typed next was silently discarded, on BOTH shells. Two
+      causes: the insert handlers never asked for the caret, and the menus'
+      focus scopes took it back during close. The request is now made from
+      `onCloseAutoFocus`, after the menu is done with focus
+- [x] `isTextFirstBlock` — one shared rule for which block types open with a
+      field the writer should be typing into, so desktop and mobile cannot
+      diverge on it
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

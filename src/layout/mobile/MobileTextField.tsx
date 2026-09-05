@@ -89,9 +89,16 @@ export function MobileTextField({
   useEffect(() => {
     if (!wantsEdit) return
     const el = field.ref.current
-    if (el) el.contentEditable = 'true'
+    if (el) {
+      el.contentEditable = 'true'
+      // Focus directly as well as letting `useEditableField`'s layout effect
+      // do it — same reasoning as `handleTap` below (mobile browsers only
+      // summon the keyboard for a focus call inside the originating task).
+      el.focus()
+    }
     field.startEditing(editRequestCaretPosition)
     consumeEditRequest()
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wantsEdit])
 

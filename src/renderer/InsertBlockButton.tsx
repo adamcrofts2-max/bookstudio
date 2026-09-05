@@ -3,6 +3,7 @@ import { Plus, ImagePlus, Sparkles } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { INSERTABLE_BLOCK_TYPES, type InsertableBlockType } from '@/blocks/defaultContent'
+import { useRef } from 'react'
 import { useImageUpload } from '@/hooks/useImageUpload'
 import { UploadError } from '@/components/common/UploadError'
 
@@ -53,8 +54,29 @@ interface InsertBlockButtonProps {
 export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
   const { openPicker, error: uploadError, inputProps } = useImageUpload(projectId, onInsertImage)
 
+  /**
+   * The chosen type, inserted once the menu has finished closing.
+   *
+   * Inserting inside `onClick` put the caret in the new block and Radix then
+   * took it back while tearing down the menu's focus scope — so a paragraph
+   * inserted mid-document was created, focused for a moment, and abandoned,
+   * and everything typed next went to the document body. Deferring to
+   * `onCloseAutoFocus` removes the race instead of competing with it. Same
+   * fix as the mobile "+" menu.
+   */
+  const pendingInsertRef = useRef<InsertableBlockType | null>(null)
+
   const menu = (
-    <DropdownMenuContent align="center">
+    <DropdownMenuContent
+      align="center"
+      onCloseAutoFocus={(e) => {
+        const type = pendingInsertRef.current
+        pendingInsertRef.current = null
+        if (!type) return
+        e.preventDefault()
+        onInsert(type)
+      }}
+    >
       <DropdownMenuItem onClick={openPicker} className="gap-2">
         <ImagePlus className="size-3.5" />
         Image
@@ -69,7 +91,13 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
         if (!def) return null
         const Icon = def.icon
         return (
-          <DropdownMenuItem key={type} onClick={() => onInsert(type)} className="gap-2">
+          <DropdownMenuItem
+            key={type}
+            onClick={() => {
+              pendingInsertRef.current = type
+            }}
+            className="gap-2"
+          >
             {Icon && <Icon className="size-3.5" />}
             {def.label ?? type}
           </DropdownMenuItem>

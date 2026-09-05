@@ -13,7 +13,7 @@ import { IdeaIndicatorBadge } from '@/renderer/IdeaIndicatorBadge'
 import { SelectionDevelopMenu } from '@/renderer/SelectionDevelopMenu'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
 import { AiDraftInsertDialog } from '@/renderer/AiDraftInsertDialog'
-import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
+import { createDefaultBlock, isTextFirstBlock, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
@@ -340,6 +340,10 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const newBlock = createDefaultBlock(type)
     insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
     handleSelect(chapterId, newBlock)
+    // Selecting is not the same as being able to type: this used to leave
+    // the new block highlighted but not editable, so anything typed next
+    // went to the document body and was lost. See `isTextFirstBlock`.
+    if (isTextFirstBlock(type)) selectForEdit(chapterId, newBlock.id, 'start', type === 'list' ? 0 : undefined)
   }
 
   /** Interleaves a drop zone + "insert block" button before the first block,
