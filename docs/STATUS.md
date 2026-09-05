@@ -9971,3 +9971,117 @@ Both found while writing the import section, both the same shape as Phase 147's:
 Structure suite 21/21 (was 14/14, plus 7 import assertions), everything else as
 Phase 147, `npm audit` 0 vulnerabilities, build clean, lint exit 0 at the
 49-warning baseline.
+
+---
+
+## Phase 149 — the freeze was never about structural pages
+
+Open since Phase 21 (2026-07-31), flagged in five separate status entries,
+never once profiled: "15-30s main-thread freezes on structural-page mutations
+in a 17-chapter project." Every previous note guessed at the same cause — a
+full-book re-pagination running synchronously on every structural-page
+mutation. That guess was wrong, and it is why the item survived a year.
+
+### Reproducing it first
+
+`scripts/e2e/perf.e2e.mjs` seeds a real book straight into `localStorage` (17
+chapters, 100 blocks each) and times the reported interactions with a
+`longtask` observer, so time is attributed to actual main-thread blocking
+rather than to waiting.
+
+The first run showed nothing: 245ms at worst. The freeze only appeared after
+adding a step that scrolls the whole book first — because `LazySpread` mounts
+a spread when it scrolls near the viewport and, by explicit design, never
+unmounted it again. A book that has been read through is a completely
+different React tree from one just opened, and that is the state a real user
+is in by the time they go and add a dedication.
+
+With that step, the same interaction that took 140ms took 4,340ms.
+
+### The control that settled it
+
+Same book, same insert, one variable — whether the book had been scrolled:
+
+```
+  6,667 DOM nodes (opened, not scrolled)  ->    140ms longest task
+ 76,911 DOM nodes (scrolled end to end)   ->  4,340ms longest task
+```
+
+Structural pages were incidental. Any interaction would have been slow;
+inserting a page was simply the one people did after enough scrolling.
+
+### What the profile actually said
+
+A CDP CPU profile, source-mapped back to real names, put the time in:
+
+- `@floating-ui/utils/dom` — 1,369ms. Radix's offset-parent walk, which calls
+  `getComputedStyle` up the ancestor chain.
+- `focus` — 1,266ms. A forced layout recalculation.
+- `src/blocks/caretOffset.ts` — 1,117ms, via live spell-check.
+
+React's own render work was ~330ms of a 15s window. Two of the three are
+O(DOM) browser work, not application logic — which is exactly the signature of
+"the tree is too big", not "this handler is too slow".
+
+Two hypotheses died here, and both are worth recording because both were
+plausible enough to have been shipped as "the fix":
+
+- **Memoising `HeightMeasurer`** (it renders every block off-screen and was
+  re-rendering on any parent render). Tried first: 4,340ms -> 3,986ms. Kept,
+  because re-rendering a thousand subtrees that cannot have changed is still
+  waste, but its doc comment now says plainly that it fixed nothing.
+- **Live spell-check.** Disabling it entirely: 3,986ms -> 3,449ms. Real, and
+  about 15% — not the cause.
+
+### The fix
+
+`LazySpread` now unmounts. Two margins, 1200px to mount and 4000px to
+release, with the gap as deliberate hysteresis — a single threshold would
+make a spread parked on the boundary thrash on every few pixels of scroll.
+
+Two things make it safe. The placeholder is exactly the size of the pages it
+replaces, so the scroll position never moves. And a spread containing
+`document.activeElement` is never unmounted, so scrolling during an edit
+cannot discard the field being typed into.
+
+Fixing it also exposed the same bug wearing a different hat:
+`forcedSpreadIndices` (which pins a spread so a chapter jump has something to
+scroll to) only ever grew. Every chapter or page ever jumped to stayed pinned
+for the rest of the session, which would have quietly undone this fix for
+anyone who navigates by clicking chapters. The pin is now released once the
+scroll has landed — by then the spread is on screen and its own observer is
+holding it.
+
+### Result
+
+Same 1,700-block book, scrolled end to end:
+
+| | before | after |
+|---|---:|---:|
+| DOM nodes after scrolling | 76,911 | 6,773 |
+| insert a structural page | 4,340ms | 177ms |
+| select a structural page | 1,578ms | 0ms |
+| edit a structural page | 858ms | 0ms |
+| delete a structural page | 2,324ms | 52ms |
+
+The DOM now holds at roughly its opened size however far the book is
+scrolled.
+
+### The suite is not in `npm run test:e2e`
+
+Deliberately. Timings on shared CI hardware are too noisy to gate a build on,
+and a performance suite that cries wolf gets ignored. Its thresholds are loose
+by design — they catch the return of a multi-second freeze, not a few hundred
+ms of drift. Run it by hand: `node scripts/e2e/perf.e2e.mjs`, with
+`PERF_BLOCKS`, `PERF_CHAPTERS`, `PERF_SCROLL=0` and `PERF_NO_SPELLCHECK=1` to
+re-run any of the experiments above.
+
+It also asserts one correctness property the fix depends on: jumping to a
+chapter near the start, from the end of a scrolled-through book, still mounts
+and reaches it.
+
+### Verified
+Perf suite passing at 1,700 blocks, writing 20/20, spell-check 8/8, structure
+21/21, export 24/24, project-delete 10/10, runtime audit clean, copy audit 4
+desktop-only findings, `npm test` ALL PASS, build clean, lint exit 0 at the
+49-warning baseline.

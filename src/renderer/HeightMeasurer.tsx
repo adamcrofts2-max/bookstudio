@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { memo, useLayoutEffect, useRef } from 'react'
 
 import type { Chapter } from '@/types/content'
 import type { ResolvedBookTheme } from '@/theme/presets'
@@ -27,7 +27,7 @@ interface HeightMeasurerProps {
  * instead of guessing — the same `BlockContent` component used for real
  * pages is used here, so measurement and final render can never disagree.
  */
-export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockIds, measureKey, onMeasured }: HeightMeasurerProps) {
+function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, measureKey, onMeasured }: HeightMeasurerProps) {
   const refs = useRef(new Map<string, HTMLDivElement>())
 
   useLayoutEffect(() => {
@@ -112,3 +112,23 @@ export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockId
     </div>
   )
 }
+
+/**
+ * Memoised, because this renders every block in the book off-screen and
+ * nothing above it should be able to make it do that again for free.
+ *
+ * Honest scope: this was tried first as a fix for the structural-page freeze
+ * and it barely moved the number (4,340ms -> 3,986ms on a 1,700-block book).
+ * The freeze was an unbounded DOM, not React render work — see
+ * `LazySpread.tsx` for the measurements that settled it. This stays because
+ * re-rendering a thousand `BlockContent` subtrees on a parent render that
+ * cannot change a single measured height is still waste, not because it is
+ * what fixed anything.
+ *
+ * Every prop here is already reference-stable between real changes —
+ * `manuscript.chapters`, a memoised `pageBox`, `resolveTheme`'s cached
+ * object, a memoised Set, a string, and `setHeights` — so the default
+ * shallow comparison is exactly right, and measurement still reruns whenever
+ * `measureKey` or the content width genuinely change.
+ */
+export const HeightMeasurer = memo(HeightMeasurerImpl)

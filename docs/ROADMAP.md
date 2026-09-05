@@ -1655,13 +1655,31 @@ Book Studio today and an actual multi-device Canva-style product.)*
       (`npm ci`) is written up in `docs/TERMINAL_SETUP.md` for the user to
       run from their own terminal. Leave unchecked until confirmed fixed.
 - [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
-- [ ] Full virtualisation of `LazySpread` (currently mount-only, never unmounts)
-- [ ] Profile and fix the structural-page mutation freeze (15–30s on a
-      17-chapter project) — Phase 53 (2026-07-31) added a "Reviewing…"
-      loading state to the Virtual Editor's "Review Entire Book" button so
-      the freeze is at least visible/honest instead of looking hung, but
-      the underlying synchronous main-thread block is unfixed; this item
-      stays open
+- [x] `LazySpread` unmounts spreads that scroll far away — shipped
+      2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew
+      monotonically for as long as the app stayed open. Two margins now
+      (1200px to mount, 4000px to release) with the gap as hysteresis; the
+      placeholder is the same size as the pages it replaces so scroll never
+      jumps, and a spread holding the caret is never unmounted. Not the full
+      virtualised-list rewrite this item imagined — unmounting turned out to
+      be the whole of it
+- [x] The structural-page mutation freeze — profiled and fixed 2026-09-05
+      (Phase 149), open since Phase 21 (2026-07-31). **It had nothing to do
+      with structural pages.** The control that settled it: same 1,700-block
+      book, same insert — 140ms when the book had only been opened, 4,340ms
+      once it had been scrolled end to end (6,667 vs 76,911 DOM nodes). A CPU
+      profile put the time in `focus()` and Floating UI's offset-parent walk,
+      both O(DOM), both forced to recompute layout over a tree that never
+      stopped growing because `LazySpread` never unmounted. Fixed above.
+      After: insert 177ms, select 0ms, edit 0ms, delete 52ms, and the DOM
+      holds at ~6.8k nodes however far you scroll. Guarded by
+      `scripts/e2e/perf.e2e.mjs`
+- [x] Force-mounted spreads are released again — 2026-09-05 (Phase 149).
+      `forcedSpreadIndices` only ever grew, so every chapter or page ever
+      jumped to stayed pinned in the DOM for the rest of the session: the
+      same unbounded-DOM problem arriving by a different door, and it would
+      have quietly undone the fix above for anyone who navigates by clicking
+      chapters
 - [ ] Automated accessibility (WCAG) audit beyond Radix's built-in semantics
 - [ ] UI internationalisation / localisation
 

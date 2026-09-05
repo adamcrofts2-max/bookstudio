@@ -249,6 +249,7 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
     // Wait a couple of paints so the forced spread's real <Page> (and the
     // DOM node we're about to look up) actually exists before we scroll.
     let raf2 = 0
+    let releaseTimer = 0
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
         const el =
@@ -260,11 +261,27 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
         el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' ? 'start' : 'center' })
         // Only clear the request if nothing newer has come in while we waited.
         if (scrollRequestRef.current?.requestId === scrollRequest.requestId) consumeScrollRequest()
+        // Release the pin once the smooth scroll has had time to land. This
+        // set used to only ever grow, so every chapter or page ever jumped to
+        // stayed force-mounted for the rest of the session — the same
+        // unbounded-DOM problem `LazySpread` itself had, arriving by a
+        // different door. By now the spread is on screen, so its own
+        // IntersectionObserver is holding it mounted; when it later scrolls
+        // far away it becomes free to unmount like any other.
+        releaseTimer = window.setTimeout(() => {
+          setForcedSpreadIndices((prev) => {
+            if (!prev.has(spreadIndex)) return prev
+            const next = new Set(prev)
+            next.delete(spreadIndex)
+            return next
+          })
+        }, 1200)
       })
     })
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
+      window.clearTimeout(releaseTimer)
     }
   }, [scrollRequest, spreads, heights, consumeScrollRequest])
 
