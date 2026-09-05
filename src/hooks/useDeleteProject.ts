@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 
 import { useProjectStore } from '@/store/projectStore'
+import { stopBackingUp } from '@/projectFile/backupService'
 import { useContentStore } from '@/store/contentStore'
 import { useStructuralPageStore } from '@/store/structuralPageStore'
 import { useNotesStore } from '@/store/notesStore'
@@ -60,6 +61,12 @@ export function useDeleteProject() {
       // that id unfindable. Reversing this order strands the blobs.
       await clearAssets(projectId)
       await clearVersions(projectId)
+      // A third IndexedDB-backed store since Phase 158. Deleting the
+      // project must drop its backup *target* — the handle to a file on
+      // this computer — but never the file: that copy is the user's, and
+      // it may be the only one left. Dropping the handle simply means the
+      // app stops writing to it.
+      await stopBackingUp(projectId)
 
       clearContent(projectId)
       clearStructuralPages(projectId)

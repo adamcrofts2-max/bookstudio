@@ -12,6 +12,7 @@ import {
   LayoutTemplate,
   Loader2,
   Moon,
+  HardDrive,
   MoreHorizontal,
   NotebookPen,
   PanelLeft,
@@ -47,6 +48,9 @@ import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
 import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
 import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
 import { DiagnosticsDialog } from '@/components/common/DiagnosticsDialog'
+import { BackupDialog } from '@/components/common/BackupDialog'
+import { useBackupStore } from '@/store/backupStore'
+import { useStorageWarning } from '@/hooks/useStorageWarning'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { useManuscriptWordCount } from '@/hooks/useManuscriptWordCount'
@@ -91,6 +95,11 @@ export function Toolbar({ project }: ToolbarProps) {
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false)
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [backupsOpen, setBackupsOpen] = useState(false)
+  // Shown on the menu row itself: whether this book has a copy on disk is
+  // worth knowing without opening anything (Phase 158).
+  const backupStatus = useBackupStore((s) => s.byProject[project.id])
+  const { tight: storageTight } = useStorageWarning()
   const [writingGoalOpen, setWritingGoalOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
@@ -331,8 +340,13 @@ export function Toolbar({ project }: ToolbarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="More">
+                <Button variant="ghost" size="icon" aria-label="More" className="relative">
                   <MoreHorizontal className="size-4" />
+                  {/* Storage running out is the one thing in this menu that
+                     can't wait to be discovered — see `useStorageWarning`. */}
+                  {storageTight && (
+                    <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--color-warning)]" aria-hidden />
+                  )}
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
@@ -373,6 +387,17 @@ export function Toolbar({ project }: ToolbarProps) {
             <DropdownMenuItem className="gap-2" disabled={savingProject} onSelect={() => void runSaveProject()}>
               {savingProject ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
               {savingProject ? 'Saving…' : (saveProjectError ?? 'Save project file')}
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setBackupsOpen(true)}>
+              <HardDrive className="size-3.5" />
+              Backups
+              {storageTight
+                ? ' — storage nearly full'
+                : backupStatus?.needsPermission
+                  ? ' — needs permission'
+                  : backupStatus
+                    ? ' — on'
+                    : ''}
             </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" disabled={loadingProject} onSelect={openProjectFilePicker}>
               {loadingProject ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
@@ -415,6 +440,7 @@ export function Toolbar({ project }: ToolbarProps) {
       <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
       <ManageTemplatesDialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen} />
       <DiagnosticsDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
+      <BackupDialog project={project} open={backupsOpen} onOpenChange={setBackupsOpen} />
       <WritingGoalDialog projectId={project.id} open={writingGoalOpen} onOpenChange={setWritingGoalOpen} />
       <ExportReadinessDialog
         open={readinessOpen}

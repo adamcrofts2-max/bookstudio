@@ -19,6 +19,7 @@ import {
   SpellCheck2,
   Settings,
   Upload,
+  HardDrive,
 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
@@ -29,6 +30,9 @@ import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
 import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
 import { useTemplateStore } from '@/store/templateStore'
+import { useBackupStore } from '@/store/backupStore'
+import { useStorageWarning } from '@/hooks/useStorageWarning'
+import { BackupDialog } from '@/components/common/BackupDialog'
 import { useBookLayout } from '@/renderer/useBookLayout'
 import { DiagnosticsDialog } from '@/components/common/DiagnosticsDialog'
 import { useErrorLogStore } from '@/store/errorLogStore'
@@ -150,6 +154,9 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   const templateCount = useTemplateStore((s) => s.templates.length)
   const errorCount = useErrorLogStore((s) => s.errors.length)
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [backupsOpen, setBackupsOpen] = useState(false)
+  const backupStatus = useBackupStore((s) => s.byProject[project.id])
+  const { tight: storageTight } = useStorageWarning()
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
   const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false)
   const [pagesOpen, setPagesOpen] = useState(false)
@@ -240,6 +247,20 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
           detail={saveFile.error ?? 'A portable .bookstudio backup'}
           onClick={() => void saveFile.runExport()}
           busy={saveFile.busy}
+        />
+        <Row
+          icon={HardDrive}
+          label="Backups"
+          detail={
+            storageTight
+              ? 'Storage nearly full — save a copy now'
+              : backupStatus?.needsPermission
+                ? 'Needs permission to write its file'
+                : backupStatus
+                  ? `Saving to ${backupStatus.fileName || 'a file you chose'}`
+                  : 'This book lives only in this browser'
+          }
+          onClick={() => setBackupsOpen(true)}
         />
         <Row
           icon={FolderOpen}
@@ -375,6 +396,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
       <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
       <ManageTemplatesDialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen} />
       <DiagnosticsDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
+      <BackupDialog project={project} open={backupsOpen} onOpenChange={setBackupsOpen} />
     </div>
   )
 }

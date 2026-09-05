@@ -5,6 +5,7 @@ import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
+import { useAutoBackup } from '@/hooks/useAutoBackup'
 import { useTheme } from '@/hooks/useTheme'
 import { useHistoryStore } from '@/store/historyStore'
 import { useUiStore } from '@/store/uiStore'
@@ -84,6 +85,9 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
   const undo = useHistoryStore((s) => s.undo)
 
   useAutosaveSnapshots(project.id)
+  // Same mount point, same rhythm, different destination: a snapshot goes
+  // to IndexedDB, a backup goes to a real file outside the browser.
+  useAutoBackup(project)
 
   // Takes over the whole shell — header and tab bar included. Read mode has
   // no mobile equivalent yet; Preview already covers "see the book" on a

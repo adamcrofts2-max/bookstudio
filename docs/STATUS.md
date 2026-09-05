@@ -10814,3 +10814,125 @@ parked on the cover, and that the Virtual Editor scores an almost-empty book
 99/100 because checkers only fire on content that exists. The first two are
 small and separate; the third is a design question about whether absence
 should be a finding, and deserves its own decision rather than a quick patch.
+
+## Phase 158 — a copy that survives the laptop
+
+Every previous phase made the app better at editing a book. This one is
+about not losing it.
+
+Until now everything Book Studio holds — projects, manuscript, image assets,
+**and the version snapshots that exist to protect all three** — lived in a
+single browser profile's `localStorage` and IndexedDB. The safety net was
+stored inside the thing it protects against. Clear site data, switch browser,
+or lose the machine, and the book goes with it. `.bookstudio` export has
+existed since Phase 51 and is a real answer, with one flaw: you have to
+remember it, every time, forever.
+
+Three changes, smallest first.
+
+### The app now says where the book lives
+
+A browser-only app that never mentions it leaves every author to find out the
+hard way. The Backups dialog opens with the plain version — stored in this
+browser, on this device, version history included, and what each of the three
+ways of losing it costs. Mobile's More list says the same thing in its row
+subtitle before you ever open anything: *"This book lives only in this
+browser."*
+
+### It asks the browser not to throw the data away
+
+`navigator.storage.persist()` asks the origin to be exempt from automatic
+eviction — silent in Chromium, a prompt in Firefox, absent in Safari. Asked
+once per install (the flag is persisted precisely so Firefox users aren't
+prompted at every launch), and the dialog reports the answer honestly rather
+than implying a guarantee nobody made.
+
+`navigator.storage.estimate()` supplies the other half: the app warns at 80%
+of quota, while there is still room to save a copy and delete something,
+instead of after a write has already failed half-way. The warning is
+deliberately not confined to the dialog — a person in trouble has no reason
+to open it — so it also puts a dot on the toolbar's overflow button and
+rewrites the Backups row's subtitle on both shells.
+
+### And it keeps a real copy on real disk, without being asked twice
+
+The File System Access API can hold a `FileSystemFileHandle` across reloads,
+which turns "save a copy" from a chore into a decision made once: choose a
+file, and the app writes to it whenever the manuscript has actually changed.
+
+- **`useAutoBackup`** is deliberately shaped like `useAutosaveSnapshots` —
+  mounted once per project in each shell, driven by a real interval (2
+  minutes) rather than re-renders, and skipped entirely when
+  `contentStore`'s revision hasn't moved. The difference is the destination:
+  a snapshot goes to IndexedDB, this goes outside the browser.
+- It also writes on `visibilitychange` → hidden, the closest a web app gets
+  to "on close". Best effort by nature, and a backstop for the interval
+  rather than the only path — but it is the one that matters when someone
+  shuts a laptop.
+- **Permission is not the same as the handle.** A handle restored from a
+  previous session usually comes back in `'prompt'` state, and permission
+  can only be requested from a user gesture. Hence `needsPermission` in the
+  status and a "Resume backups" button: a timer must never be able to raise
+  a permission dialog, and a button must be able to.
+- **One list of what goes in the file.** `readProjectFileSource` is now the
+  single place that gathers a project's contents, shared by "Save project
+  file" and the automatic backup. A backup that quietly bundles less than a
+  manual save is worse than no backup, and that happens when someone adds a
+  store to one list and not the other six months later.
+- **Deleting a project drops the handle, never the file.** That copy is the
+  author's and may be the only one left; the app simply stops writing to it.
+  (`useDeleteProject` gained a third IndexedDB-backed store to clear, which
+  is exactly the leak Phase 149 was about.)
+- **Safari and most phone browsers can't do any of this.** The dialog says so
+  and offers the manual save instead of pretending — an automatic backup that
+  silently never runs would be worse than none.
+
+### A real case the test harness exposed
+
+A stub file handle written in JavaScript is not structured-cloneable, so
+IndexedDB refuses it — which is also what happens in private browsing with
+storage blocked, or when a quota runs out mid-write. Failing to *remember*
+the file for next time is no reason to stop backing up for the next hour of
+writing, so `backupDb` keeps the target in memory as well and reads that
+first. The consequence stays honest by construction: after a reload nothing
+is stored, `loadBackupStatus` finds no target, and the app goes back to
+saying the book lives only in the browser rather than claiming an
+arrangement it no longer has.
+
+### Verification
+
+New suite, `scripts/e2e/backup.e2e.mjs`, registered in `test:e2e` (eleven
+suites now). It stubs the File System Access API the same way `export.e2e.mjs`
+already stubs `showSaveFilePicker` — the only honest way to test this
+headlessly — and checks the whole path:
+
+| Assertion | What it would catch |
+| --- | --- |
+| the app says where the book actually lives | the disclosure quietly disappearing |
+| choosing a file writes the book straight away | "backup on" and "a backup exists" drifting apart |
+| what it wrote is a zip, named for the book, over 500 bytes | a truncated or empty write |
+| leaving the tab backs up the new writing | the `visibilitychange` path silently detaching |
+| the newer backup is bigger than the first | a rewrite that doesn't include the new writing |
+| an unchanged book is not rewritten | rezipping a book of images on every tick |
+| deleting the project leaves no backup target behind | the Phase 149 leak, in a third database |
+| and never touches the file it had been writing | deletion reaching a file that isn't the app's |
+| a nearly-full device is flagged before anything fails | the warning arriving after the failure |
+
+The visibility-write assertion was proved by removing the listener and
+watching it fail (`2 write(s)` → `1 write(s)`, and the size comparison going
+flat at `1613 -> 1613`). The nearly-full path stubs
+`navigator.storage.estimate` at 95%, because filling a real browser profile
+inside a suite is neither quick nor kind to the machine running it.
+
+One harness correction worth recording: the post-deletion check originally
+compared write counts across a `page.goto`, which resets the in-page counter,
+so it could only ever fail. It now asserts that no write happens *during the
+deletion* — which is the actual claim.
+
+### What this does not do
+
+It is one file on one computer, written by one browser. It is not sync, not
+off-site, and not versioned — restoring means opening the project file, which
+loads as a new project. That is Phase G's territory and this deliberately
+doesn't pretend otherwise. What it removes is the case where there is nothing
+to restore *from*.

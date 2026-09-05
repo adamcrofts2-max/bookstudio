@@ -1760,6 +1760,15 @@ Book Studio today and an actual multi-device Canva-style product.)*
       collapsed caret, so selecting a misspelled word and pausing for the
       debounce silently threw the selection away, taking the toolbar with it.
       `getSelectionTextRange`/`selectTextRange` restore a range
+- [x] Automatic backup to a file on disk — shipped 2026-09-05 (Phase 158).
+      Everything (manuscript, assets, and the version snapshots meant to
+      protect them) lived in one browser profile, so the safety net was
+      stored inside the thing it protects against. A file chosen once is now
+      rewritten whenever the manuscript changes, plus on the way out of the
+      tab; the app asks for non-evictable storage, warns at 80% of quota
+      before a save can fail, and says plainly where the book lives. Safari
+      and phone browsers can't do it and are told so rather than left
+      guessing.
 - [ ] Send crash reports somewhere automatically — needs Phase G's backend
       decision. The local log above is the offline half of this and is what
       makes the online half a small change when it arrives
