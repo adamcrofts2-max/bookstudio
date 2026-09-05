@@ -1659,6 +1659,24 @@ Book Studio today and an actual multi-device Canva-style product.)*
       promise nobody awaited); and "Report a problem" in both shells copies
       or saves a full report with stacks, screen, pointer type and browser.
       Covered by `scripts/e2e/diagnostics.e2e.mjs`
+- [x] Spelling suggestions are reachable from the red line — fixed
+      2026-09-05 (Phase 152), reported by the user: "there still doesn't
+      seem to be any spelling suggestions / corrections when red lines
+      appear". Three causes. `FloatingFormatToolbar` is mounted with
+      `active={isEditing}`, but Phase 143 gave *every* paragraph underlines,
+      so on any paragraph the reader had not already clicked into the red
+      line led nowhere. Entering edit mode reassigns `innerHTML`, which
+      destroyed the selection the click had just made. And mobile mounted no
+      toolbar at all, so on a phone the underline had never been actionable
+      in any circumstance. One click/tap now selects the word, opens the
+      block for editing, and offers real corrections — a dropdown on desktop,
+      a sheet on mobile. `scripts/e2e/spellFix.e2e.mjs` drives the whole
+      path on both shells, through to the corrected manuscript
+- [x] A rescan no longer destroys the selection — 2026-09-05 (Phase 152).
+      The underline pass rebuilds the field's nodes and only ever restored a
+      collapsed caret, so selecting a misspelled word and pausing for the
+      debounce silently threw the selection away, taking the toolbar with it.
+      `getSelectionTextRange`/`selectTextRange` restore a range
 - [ ] Send crash reports somewhere automatically — needs Phase G's backend
       decision. The local log above is the offline half of this and is what
       makes the online half a small change when it arrives

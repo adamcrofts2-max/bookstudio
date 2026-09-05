@@ -1,9 +1,14 @@
-import { useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import { cn } from '@/lib/utils'
 import { useEditableField } from '@/blocks/shared'
 import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
 import { useSelectionStore } from '@/store/selectionStore'
+import { useProjectStore } from '@/store/projectStore'
+import { getSpeller, isSpellDictionaryReady, ensureSpellDictionaryLoading } from '@/virtualEditor/spellcheckDictionary'
+import { replaceTextRange, selectTextRange } from '@/blocks/caretOffset'
+import { sanitiseInline } from '@/parser/html'
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 
 /**
  * A single editable text field, shared by every block type with one plain
@@ -68,11 +73,75 @@ export function MobileTextField({
   const field = useEditableField({ mode, initialValue: value, onCommit, onSplit, onMergeWithPrevious })
   const isEmpty = value.trim().length === 0
 
-  // Mobile had NO spell-check at all: this component never called the hook,
-  // so the on/off control added for it in Phase 141 governed nothing on a
-  // phone. Same hook, same dictionary and same exclusion rules as the
-  // desktop canvas — one behaviour, not a second implementation.
-  useLiveSpellcheck(field.ref, !!projectId, projectId, value)
+  /**
+   * The misspelled word the reader tapped, waiting to be corrected.
+   *
+   * Mobile had underlines and nothing else: `FloatingFormatToolbar` is a
+   * desktop, mouse-positioned affordance and was never mounted here, so on a
+   * phone every red line was a dead end (reported 2026-09-05). A floating
+   * toolbar is the wrong answer on touch anyway — it lands under the thumb
+   * that summoned it, and the on-screen keyboard owns the bottom half of the
+   * screen. A sheet is what the rest of this shell already uses for
+   * "here are your options", so that is what this is.
+   */
+  const [tappedWord, setTappedWord] = useState<{ word: string; start: number; end: number } | null>(null)
+
+  // Mobile had NO spell-check at all until Phase 141: this component never
+  // called the hook, so the on/off control governed nothing on a phone. Same
+  // hook, same dictionary and same exclusion rules as the desktop canvas —
+  // one behaviour, not a second implementation.
+  useLiveSpellcheck(field.ref, !!projectId, projectId, value, (start, end) => {
+    const el = field.ref.current
+    if (!el) return
+    const word = el.textContent?.slice(start, end)?.trim()
+    if (!word) return
+    setTappedWord({ word, start, end })
+  })
+
+  const variant =
+    projectId ? (useProjectStore.getState().getProject(projectId)?.settings.styleGuide?.englishVariant ?? 'british') : 'british'
+  const [spellReady, setSpellReady] = useState(isSpellDictionaryReady(variant))
+  useEffect(() => {
+    if (!tappedWord || spellReady) return
+    let cancelled = false
+    void ensureSpellDictionaryLoading(variant).then(() => {
+      if (!cancelled) setSpellReady(isSpellDictionaryReady(variant))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [tappedWord, spellReady, variant])
+
+  // `suggest()` is a real edit-distance search against a full dictionary, so
+  // it runs only once a word has actually been tapped — the same gating
+  // `FloatingFormatToolbar` needs for the same reason.
+  const suggestions = useMemo(() => {
+    if (!tappedWord || !spellReady) return []
+    return getSpeller(variant)?.suggest(tappedWord.word)?.slice(0, 6) ?? []
+  }, [tappedWord, spellReady, variant])
+
+  /**
+   * Swaps the tapped word for the chosen suggestion and commits.
+   *
+   * Not `execCommand`: the field may not be in edit mode at all when the
+   * sheet is used, so the change is made in the DOM and committed directly.
+   * And not `el.textContent = corrected` either — that is the obvious
+   * version and it flattens every `<strong>`, `<em>` and link in the
+   * paragraph, so fixing one typo would strip the formatting from the
+   * sentence around it. `replaceTextRange` touches only the text nodes the
+   * word actually covers, and `sanitiseInline` is the same commit path
+   * `useEditableField` uses, which drops the spell-check decoration spans
+   * on the way out.
+   */
+  const applySuggestion = (replacement: string) => {
+    const el = field.ref.current
+    if (!tappedWord || !el) return
+    const { start, end } = tappedWord
+    setTappedWord(null)
+    if (!replaceTextRange(el, start, end, replacement)) return
+    selectTextRange(el, start + replacement.length, start + replacement.length)
+    onCommit(mode === 'html' ? sanitiseInline(el) : (el.textContent ?? ''))
+  }
 
   // Mobile has no paginated canvas and no Inspector, but it shares the
   // selection store, so the "put the caret in the block that was just
@@ -113,7 +182,8 @@ export function MobileTextField({
   }
 
   return (
-    <Tag
+    <>
+      <Tag
       ref={(el: HTMLElement | null) => {
         field.ref.current = el
       }}
@@ -133,6 +203,35 @@ export function MobileTextField({
     >
       {mode === 'text' && !field.isEditing ? value.trim() || placeholder : null}
     </Tag>
+
+      <Sheet open={tappedWord !== null} onOpenChange={(open) => !open && setTappedWord(null)}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>{tappedWord ? `Correct “${tappedWord.word}”` : 'Correct spelling'}</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col gap-1 px-4 pb-6">
+            {!spellReady ? (
+              <p className="py-4 text-[13px] text-text-secondary">Loading the dictionary…</p>
+            ) : suggestions.length === 0 ? (
+              <p className="py-4 text-[13px] text-text-secondary">
+                No suggestions for this word. Tap it again to edit it by hand.
+              </p>
+            ) : (
+              suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => applySuggestion(suggestion)}
+                  className="rounded-[var(--radius-card)] px-3 py-3 text-left text-[15px] text-text-primary active:bg-hover"
+                >
+                  {suggestion}
+                </button>
+              ))
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
   )
 }
 

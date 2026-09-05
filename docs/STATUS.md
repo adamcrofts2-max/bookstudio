@@ -10262,3 +10262,108 @@ Diagnostics 14/14, structure 33/33 (21 + 12 EPUB), export 31/31 (29 + the
 round trip), writing 20/20, spell-check 8/8, project-delete 10/10, runtime
 audit clean, copy audit 4 desktop-only findings, `npm test` ALL PASS, build
 clean, lint exit 0 at the 49-warning baseline.
+
+---
+
+## Phase 152 — the red line led nowhere
+
+Reported: *"there still doesn't seem to be any spelling suggestions /
+corrections when red lines appear"*. Correct, and there were three separate
+reasons, one of which Phase 143 introduced while fixing something else.
+
+### 1. The toolbar was gated on editing; the underlines were not
+
+`FloatingFormatToolbar` is mounted as:
+
+```tsx
+<FloatingFormatToolbar containerRef={primary.ref} active={primary.isEditing} … />
+```
+
+Phase 143's whole point was that mistakes should stay visible on paragraphs
+the writer is *not* editing — before it, exactly one misspelling was ever
+underlined. It succeeded. But it never touched this line, so the underlines
+spread across the whole book while the thing that acts on them stayed
+confined to the one paragraph with a caret in it. Red lines everywhere,
+suggestions almost nowhere. Phase 143 verified that the underlines appeared
+and stopped there; it never asked what happens when you click one.
+
+Clicking a flagged word now opens that paragraph for editing, which is what
+the toolbar needs to exist.
+
+### 2. Opening it for editing destroyed the selection
+
+`startEditing`'s layout effect reassigns `innerHTML` and places a caret —
+a fresh set of DOM nodes, so any selection made before it is gone. Measured:
+the first click on a red word left the selection empty; a *second* click
+(with the paragraph already editing) selected it correctly. That two-click
+behaviour is exactly what "the suggestions don't work" feels like from the
+outside.
+
+The word's position is recorded as plain-text offsets, which survive the
+rewrite, and the selection is re-applied once the field is actually editable.
+The same shape as every other "act after the DOM has settled" fix here.
+
+### 3. A rescan threw the selection away too
+
+The underline pass rebuilds the field's nodes on every rescan and restored
+only a *collapsed caret* afterwards. So selecting a misspelled word and
+pausing for the 350ms debounce silently discarded the selection — and the
+toolbar with it. `getSelectionTextRange`/`selectTextRange` now save and
+restore a range, which covers the caret case as `start === end`.
+
+### 4. Mobile had no toolbar at all
+
+`MobileTextField` called `useLiveSpellcheck` (Phase 141) but nothing was ever
+mounted to act on the result, so on a phone the underline had never been
+actionable in any circumstance. Given the user has been testing on mobile
+throughout, this is probably the version of the bug actually being seen.
+
+A floating toolbar is the wrong answer on touch anyway: it lands under the
+thumb that summoned it, and the on-screen keyboard owns the bottom half of
+the screen. Tapping a red word opens a **sheet** of suggestions — the idiom
+the rest of the mobile shell already uses for "here are your options".
+Choosing one rewrites the stored value directly rather than going through
+`execCommand`, because the field may not be in edit mode at all when the
+sheet is used.
+
+### A bug I nearly shipped inside the fix
+
+The first version of the mobile correction did the obvious thing:
+
+```ts
+el.textContent = text.slice(0, start) + replacement + text.slice(end)
+```
+
+That reads correct and is quietly destructive: `textContent` flattens every
+`<strong>`, `<em>` and link in the paragraph, so fixing one typo would strip
+the formatting from the sentence around it. The manuscript is not something a
+spelling fix gets to rewrite wholesale, and this is exactly the kind of damage
+that would have been noticed weeks later with no idea what caused it.
+
+`replaceTextRange` touches only the text nodes the word actually covers, and
+the commit goes through `sanitiseInline` — the same path `useEditableField`
+already uses, which also drops the decoration spans on the way out. The suite
+now writes a paragraph with bold in it and asserts the `<strong>` survives.
+
+(One incidental discovery from that assertion: `contenteditable` inserts a
+non-breaking space where you type a normal one, so `includes(' after.')`
+fails on text that looks identical. Not a bug — worth knowing.)
+
+### Now asserted
+
+`scripts/e2e/spellFix.e2e.mjs` drives the path a reader actually takes, on
+both shells: write a misspelling, blur so the paragraph is one nobody is
+editing, click/tap the red line **once**, pick a suggestion, and check the
+saved manuscript says "sentence" — and that the rest of the sentence was left
+alone.
+
+The lesson worth keeping: Phase 143's suite asserted that underlines appear
+and stay visible, and passed throughout. Every assertion in it was true the
+whole time. It just never asked the next question, which was the only one the
+writer cares about — *and then what?*
+
+### Verified
+Spell-fix 15/15 across both shells, spell-check 8/8, writing 20/20, structure
+33/33, export 31/31, diagnostics 14/14, project-delete 10/10, runtime audit
+clean, `npm test` ALL PASS, build clean, lint exit 0 at the 49-warning
+baseline.

@@ -44,7 +44,7 @@ import { useLayer0Store } from '@/store/layer0Store'
 import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
 import type { NSpell } from 'nspell'
 import { WORD_PATTERN, looksLikeAcronym, collectLayer0Names } from '@/virtualEditor/spellcheckWords'
-import { getCaretTextOffset, placeCaretAtTextOffset } from '@/blocks/caretOffset'
+import { getSelectionTextRange, selectTextRange, textOffsetOfNode } from '@/blocks/caretOffset'
 
 const SPELL_ERROR_CLASS = 'book-spell-error'
 const SPELL_ERROR_SELECTOR = `span.${SPELL_ERROR_CLASS}`
@@ -132,8 +132,16 @@ export function useLiveSpellcheck(
    * from outside this field — which is what a paragraph the user is *not*
    * editing needs, since it has no `input` events of its own to react to. */
   contentKey?: string,
+  /** Called when the reader clicks a flagged word, with its plain-text
+   * offsets in this field. The owning block uses it to start editing and
+   * restore the selection — see `selectFlaggedWord` below. */
+  onFlaggedWordClick?: (start: number, end: number) => void,
 ) {
   const timerRef = useRef<number | undefined>(undefined)
+  // Held in a ref so callers can pass an inline arrow without re-running the
+  // effect (and re-decorating the whole field) on every render.
+  const onFlaggedWordClickRef = useRef(onFlaggedWordClick)
+  onFlaggedWordClickRef.current = onFlaggedWordClick
   const decoratingRef = useRef(false)
   const enabled = useUiStore((s) => s.spellcheckWhileWriting)
 
@@ -150,7 +158,11 @@ export function useLiveSpellcheck(
       const speller = getSpeller(variant)
       if (!speller) return
       const ignoreWords = collectLayer0Names(useLayer0Store.getState().getBible(projectId))
-      const caretOffset = getCaretTextOffset(el)
+      // The whole selection, not just a caret. A rescan rebuilds this
+      // element's nodes, and restoring only a caret meant that selecting a
+      // misspelled word and pausing for the debounce silently threw the
+      // selection away — taking the toolbar that offers to fix it with it.
+      const selectionRange = getSelectionTextRange(el)
       decoratingRef.current = true
       try {
         unwrapMisspelledWords(el)
@@ -162,7 +174,7 @@ export function useLiveSpellcheck(
           decoratingRef.current = false
         })
       }
-      if (caretOffset !== null) placeCaretAtTextOffset(el, caretOffset)
+      if (selectionRange) selectTextRange(el, selectionRange.start, selectionRange.end)
     }
 
     const scheduleRescan = () => {
@@ -193,11 +205,18 @@ export function useLiveSpellcheck(
       if (!(target instanceof HTMLElement)) return
       const span = target.closest(SPELL_ERROR_SELECTOR)
       if (!span) return
-      const range = document.createRange()
-      range.selectNodeContents(span)
-      const selection = window.getSelection()
-      selection?.removeAllRanges()
-      selection?.addRange(range)
+      const start = textOffsetOfNode(el, span)
+      const end = start + (span.textContent?.length ?? 0)
+      selectTextRange(el, start, end)
+      // Selecting the word is only half of it. `FloatingFormatToolbar` is
+      // mounted with `active={isEditing}`, and underlines appear on every
+      // paragraph rather than only the one being edited — so on a paragraph
+      // the user has not clicked into, the word would be selected and the
+      // suggestions still unreachable. The owning block is told, so it can
+      // enter edit mode and re-apply this exact selection once the field is
+      // editable (the switch reassigns `innerHTML`, which destroys any
+      // selection made before it).
+      onFlaggedWordClickRef.current?.(start, end)
     }
 
     // A MutationObserver rather than just an `input` listener.
