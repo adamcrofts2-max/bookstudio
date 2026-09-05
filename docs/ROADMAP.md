@@ -1564,6 +1564,16 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [x] Spell-check regression suite — shipped 2026-09-04 (Phase 143),
       `scripts/e2e/spellcheck.e2e.mjs`, proven to fail against both
       historical bugs
+- [x] Add a chapter from mobile distraction-free writing — shipped
+      2026-09-05 (Phase 144). Two routes, no permanent chrome: a "+" in the
+      controls that already reveal on tap (the mobile equivalent of
+      appear-on-hover), and a quiet "Start the next chapter" line at the end
+      of the last chapter, set in the book's own type. Both create the
+      chapter, give it a first paragraph and land the caret in it
+- [x] Focus mode: "Start writing…" now focuses the paragraph it creates —
+      fixed 2026-09-05 (Phase 144). It inserted a block without a caret, so
+      everything typed next went nowhere. Present since Phase 140 and masked
+      by a test with fallback selectors
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —

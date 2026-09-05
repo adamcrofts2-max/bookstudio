@@ -9572,3 +9572,67 @@ Spell-check suite 8/8 on both shells, and demonstrated failing against both
 historical regressions. Runtime audit clean, copy audit 0 findings, Phases
 134-142 suites green, writing E2E 16/16. Build clean, lint exit 0 at the
 49-warning baseline, `npm test` ALL PASS.
+
+## Phase 144 — adding a chapter without leaving the page
+
+User: "distraction free mode on mobile does need a way of adding a new chapter
+etc. but still needs to be completely distraction free. a circular plus that
+only appears on hover or something? have a good think how this could work on
+mobile."
+
+### There is no hover — but this mode already had the right equivalent
+The instinct is exactly right and the mechanism already existed: the chrome in
+focus mode fades away while you work and returns when you touch the page.
+That *is* appear-on-hover, translated to touch. So the answer wasn't a new
+gesture; it was to put the control into the mechanism already there, and make
+that mechanism better.
+
+Options considered and rejected:
+- **A permanent floating "+".** The standard mobile answer, and wrong here: a
+  button that is always on screen is the distraction the mode exists to
+  remove.
+- **Long-press, or a swipe.** Invisible. Nobody would find it, and swipe
+  fights the scroll.
+
+What shipped is two routes, because they serve different moments:
+
+**1. A "+" in the revealed chrome.** Tap the page, the controls fade in, the
+"+" is among them: New chapter / Heading / Paragraph. Deliberate,
+discoverable, and it costs zero permanent pixels.
+
+**2. "Start the next chapter", at the end of the last chapter.** The
+contextual route, and the one you actually reach for. A hairline rule and a
+line of text in the book's own type, in the flow of the manuscript rather than
+floating over it — invisible while you write, exactly where you look when a
+chapter is finished.
+
+Both go through one action that creates the chapter, gives it a first
+paragraph, and puts the caret in it. Adding a chapter has to leave you
+*writing*, not looking at a fresh empty screen — that is the whole point of
+the mode.
+
+The chrome also now hides when you **type**, not only when you scroll.
+Revealing it with a tap and leaving it up for the rest of the session defeats
+the purpose.
+
+### A real bug the test found
+The first run failed on "the first chapter is untouched" — chapter one was
+empty. Tracing it: `focused while typing: BODY`. The empty-state "Start
+writing…" button inserted a paragraph and never focused it, so every keystroke
+after it went nowhere and was silently lost.
+
+That is the same failure Phase 139 fixed for Enter, reintroduced by a button
+that inserts without focusing — present since focus mode shipped in Phase 140,
+and masked by that phase's test, which had fallback selectors that tapped the
+field directly when focus was missing. A test that works around the bug it
+should be catching is worse than no test; this one now asserts the caret is
+live and that the text lands in the right chapter.
+
+### Verified
+12/12 at 412x800 touch: the "+" exists in the revealed chrome, chrome fades on
+typing and returns on tap, the end-of-chapter route creates a chapter and
+leaves you writing in it, text lands in the new chapter with the previous one
+intact, the "+" route works too, and neither drops you out of focus mode.
+Runtime audit clean, copy audit 0 findings, spell-check 8/8, writing E2E
+16/16, Phases 134-143 suites green. Build clean, lint exit 0 at the 49-warning
+baseline, `npm test` ALL PASS.

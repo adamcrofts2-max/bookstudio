@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, X } from 'lucide-react'
+import { BookOpen, ChevronDown, Heading2, Pilcrow, Plus, X } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -10,6 +10,7 @@ import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useTypewriterMode } from '@/hooks/useTypewriterMode'
 import {
+  addChapterWithHistory,
   editBlock,
   insertBlockWithHistory,
   mergeParagraphWithPreviousHistory,
@@ -63,14 +64,17 @@ export function MobileFocusWriteView({ project }: MobileFocusWriteViewProps) {
   const toggleTypewriterMode = useUiStore((s) => s.toggleTypewriterMode)
   const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
   const selectChapter = useSelectionStore((s) => s.select)
+  const selectForEdit = useSelectionStore((s) => s.selectForEdit)
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
 
   const chapters = useMemo(() => manuscript?.chapters ?? [], [manuscript])
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [chrome, setChrome] = useState(true)
 
   // Follow whatever chapter the writer was already in; fall back to the first.
   const activeChapter = chapters.find((c) => c.id === selectedChapterId) ?? chapters[0] ?? null
+  const isLastChapter = !!activeChapter && chapters[chapters.length - 1]?.id === activeChapter.id
 
   useEffect(() => {
     if (activeChapter && activeChapter.id !== selectedChapterId) selectChapter(activeChapter.id, null)
@@ -110,7 +114,38 @@ export function MobileFocusWriteView({ project }: MobileFocusWriteViewProps) {
   const addParagraph = () => {
     if (!activeChapter) return
     const last = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
-    insertBlockWithHistory(project.id, activeChapter.id, last, createDefaultBlock('paragraph'))
+    const paragraph = createDefaultBlock('paragraph')
+    insertBlockWithHistory(project.id, activeChapter.id, last, paragraph)
+    // Land the caret in it. Adding a paragraph and leaving the user with no
+    // cursor meant "Start writing…" created an empty block and silently
+    // dropped everything typed next — the exact failure mode Phase 139 fixed
+    // for Enter, reintroduced here by a button that inserts without focusing.
+    selectForEdit(activeChapter.id, paragraph.id, 'start')
+  }
+
+  const addHeading = () => {
+    if (!activeChapter) return
+    const last = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
+    const heading = createDefaultBlock('heading')
+    insertBlockWithHistory(project.id, activeChapter.id, last, heading)
+    selectForEdit(activeChapter.id, heading.id, 'start')
+  }
+
+  /**
+   * Starting the next chapter has to leave you *writing*, not looking at a
+   * new empty screen — that is the whole point of this mode. So it creates
+   * the chapter, gives it a first paragraph, and puts the caret in it. The
+   * view follows `selectedChapterId`, and `selectForEdit` sets that as well
+   * as the block, so one call switches chapter and lands the cursor.
+   */
+  const startNewChapter = () => {
+    const lastChapterId = chapters.length > 0 ? chapters[chapters.length - 1].id : null
+    const newChapterId = addChapterWithHistory(project.id, lastChapterId, 'Untitled Chapter')
+    const paragraph = createDefaultBlock('paragraph')
+    insertBlockWithHistory(project.id, newChapterId, null, paragraph)
+    selectForEdit(newChapterId, paragraph.id, 'start')
+    setAddOpen(false)
+    setChrome(true)
   }
 
   const firstParagraphId = activeChapter?.blocks.find((b) => b.type === 'paragraph')?.id
@@ -136,6 +171,20 @@ export function MobileFocusWriteView({ project }: MobileFocusWriteViewProps) {
           <ChevronDown className="size-4 opacity-60" />
         </button>
         <div className="flex shrink-0 items-center gap-1">
+          {/* There is no hover on a phone, so the mobile equivalent of a
+              control that appears on hover is one that appears on tap — which
+              is exactly what this chrome already does: it fades away while
+              you write and comes back when you touch the page. Putting the
+              "+" here costs no permanent pixels and needs no new gesture to
+              learn. */}
+          <button
+            type="button"
+            onClick={() => setAddOpen(true)}
+            aria-label="Add to the book"
+            className="flex size-9 items-center justify-center rounded-full"
+          >
+            <Plus className="size-4" />
+          </button>
           <button
             type="button"
             onClick={toggleTypewriterMode}
@@ -159,6 +208,11 @@ export function MobileFocusWriteView({ project }: MobileFocusWriteViewProps) {
       <div
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6"
         onScroll={() => chrome && setChrome(false)}
+        // Typing hides the chrome too, not just scrolling. Revealing it with
+        // a tap and then leaving it on screen for the rest of the session
+        // defeats the point — the controls should retreat the moment you go
+        // back to writing.
+        onInput={() => chrome && setChrome(false)}
         onClick={() => !chrome && setChrome(true)}
       >
         {/* Generous top space so the first line starts where a page's text
@@ -206,6 +260,25 @@ export function MobileFocusWriteView({ project }: MobileFocusWriteViewProps) {
           {activeChapter && activeChapter.blocks.length > 0 && (
             <button type="button" onClick={addParagraph} aria-label="Add a paragraph" className="h-32 w-full" />
           )}
+
+          {/* The contextual route, and the one you actually reach for: at the
+              end of the last chapter, offer the next one. It reads as part of
+              the manuscript rather than as UI — a quiet rule and a line of
+              text, in the book's own type — so it costs nothing while you are
+              writing but is exactly where you look when a chapter is done. */}
+          {activeChapter && isLastChapter && activeChapter.blocks.length > 0 && (
+            <div className="flex flex-col items-center gap-3 pb-16 pt-4">
+              <span className="h-px w-16" style={{ background: page.ruleColor }} aria-hidden />
+              <button
+                type="button"
+                onClick={startNewChapter}
+                className="rounded-full px-3 py-1.5 text-[13px]"
+                style={{ color: page.mutedInk, fontFamily: fonts.body }}
+              >
+                Start the next chapter
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -218,6 +291,46 @@ export function MobileFocusWriteView({ project }: MobileFocusWriteViewProps) {
       >
         {words.toLocaleString()} words
       </div>
+
+      <Sheet open={addOpen} onOpenChange={setAddOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Add</SheetTitle>
+          </SheetHeader>
+          <div className="flex flex-col">
+            <button
+              type="button"
+              onClick={startNewChapter}
+              className="flex items-center gap-3 border-b border-border px-2 py-3.5 text-left text-[15px] text-text-primary active:bg-hover"
+            >
+              <BookOpen className="size-4 shrink-0 text-text-secondary" />
+              New chapter
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                addHeading()
+                setAddOpen(false)
+              }}
+              className="flex items-center gap-3 border-b border-border px-2 py-3.5 text-left text-[15px] text-text-primary active:bg-hover"
+            >
+              <Heading2 className="size-4 shrink-0 text-text-secondary" />
+              Heading
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                addParagraph()
+                setAddOpen(false)
+              }}
+              className="flex items-center gap-3 border-b border-border px-2 py-3.5 text-left text-[15px] text-text-primary active:bg-hover"
+            >
+              <Pilcrow className="size-4 shrink-0 text-text-secondary" />
+              Paragraph
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <Sheet open={switcherOpen} onOpenChange={setSwitcherOpen}>
         <SheetContent>
