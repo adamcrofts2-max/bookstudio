@@ -10514,3 +10514,63 @@ AI provider 11/11, and the rest of the gate unchanged: writing 20/20,
 spell-check 8/8, spell-fix 15/15, structure 40/40, mobile blocks 14/14,
 export 31/31, diagnostics 14/14, project-delete 10/10, runtime audit clean,
 `npm test` ALL PASS, `npm audit` 0 vulnerabilities, build clean, lint exit 0.
+
+---
+
+## Phase 155 — an app should not ask you to perform a ritual
+
+The More tab on a phone disabled every export and said:
+
+> **Open Preview once to lay the book out first**
+
+`docs/ROADMAP.md` had this filed as "acceptable (and explained in the row
+itself) but worth removing". That was the wrong call, and the give-away is the
+parenthesis: an instruction being *explained* does not make it acceptable. It
+was the app asking its user to perform a ritual to work around where a
+component happened to be mounted.
+
+### Why it was there
+
+PDF export renders `exportStore`'s layout rather than deriving its own — that
+is deliberate, and it is what keeps the exported PDF identical to the preview.
+`MobilePreviewView` was the only thing on mobile that ever populated it, so
+until you had visited that tab, there was nothing to export.
+
+### Why it didn't need to be
+
+None of that work needs anything to be visible. `HeightMeasurer` renders
+off-screen by design; `paginate` and `composeBookPages` are pure functions.
+The only thing tying the pipeline to the Preview tab was **where it had been
+written**.
+
+So it moved into `useBookLayout` — measure, paginate, compose, publish — and
+both tabs use it. Preview renders its pages from it; More just renders the
+measurer and nothing else. Mounted in More rather than in the mobile shell on
+purpose: a phone should not be measuring a whole book while someone is trying
+to write in it, and by the time anyone has scrolled down to Export it has long
+since finished.
+
+### Result
+
+A phone exports a print-ready PDF from a standing start: 225 KB, valid
+`%PDF`/`%%EOF`, seven real embedded fonts — byte-for-byte the same shape
+desktop produces, because it is the same pipeline.
+
+### The refactor's own risk, covered
+
+Moving code out of a working component is exactly how a working component
+stops working, so the suite also asserts Preview still paginates and still
+renders the manuscript.
+
+That assertion failed on its first run, and the failure was mine, not the
+app's: it looked for the chapter's body text without scrolling, and since
+Phase 149 a spread's pages only mount when they come near the viewport — so
+the text genuinely was not in the DOM yet. Asserting against correct
+behaviour. Fixed by scrolling the preview first, which is what a reader does
+anyway.
+
+### Verified
+Mobile export 11/11, and the rest of the gate unchanged: writing 20/20,
+spell-check 8/8, spell-fix 15/15, structure 40/40, mobile blocks 14/14, AI
+provider 11/11, export 31/31, diagnostics 14/14, project-delete 10/10,
+runtime audit clean, `npm test` ALL PASS, build clean, lint exit 0.

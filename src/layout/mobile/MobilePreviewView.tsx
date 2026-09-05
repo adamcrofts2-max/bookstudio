@@ -1,15 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BookOpen, Loader2 } from 'lucide-react'
 
 import type { Project } from '@/types'
 import { useContentStore } from '@/store/contentStore'
-import { useExportStore } from '@/store/exportStore'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
-import { computePageBox } from '@/renderer/pageGeometry'
-import { resolveTheme } from '@/theme/presets'
-import { paginate, type LaidOutPage } from '@/renderer/paginate'
-import { composeBookPages } from '@/renderer/composePages'
-import { HeightMeasurer } from '@/renderer/HeightMeasurer'
+import { useBookLayout } from '@/renderer/useBookLayout'
 import { LazySpread } from '@/renderer/LazySpread'
 import { computePreviewScale } from '@/layout/mobile/previewScale'
 
@@ -48,64 +43,13 @@ interface MobilePreviewViewProps {
  */
 export function MobilePreviewView({ project }: MobilePreviewViewProps) {
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
-  const contentRevision = useContentStore((s) => s.revisionByProject[project.id] ?? 0)
   const structuralPages = useStructuralPageStore((s) => s.byProject[project.id] ?? EMPTY_STRUCTURAL_PAGES)
 
-  const theme = resolveTheme(project.settings.themeId)
-  const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
-
-  const chapters = useMemo(() => manuscript?.chapters ?? [], [manuscript])
-
-  const dropCapBlockIds = useMemo(() => {
-    const ids = new Set<string>()
-    if (!theme.typography.dropCap) return ids
-    for (const chapter of chapters) {
-      const first = chapter.blocks.find((b) => b.type === 'paragraph')
-      if (first) ids.add(first.id)
-    }
-    return ids
-  }, [chapters, theme.typography.dropCap])
-
-  const [heights, setHeights] = useState<Record<string, number> | null>(null)
-  // Same key `BookRenderer` uses: folding in the content revision is what
-  // makes an edit made in the Write tab actually repaginate here rather than
-  // reusing stale cached heights.
-  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript?.importedAt ?? ''}-${contentRevision}`
-
-  const { pages: paginatedPages, toc } = useMemo(() => {
-    if (!heights) return { pages: [] as LaidOutPage[], toc: [] }
-    return paginate(
-      chapters,
-      (b) => heights[b.id] ?? 24,
-      pageBox.contentHeightPx,
-      theme.chapterOpener.topSpacer,
-      (chapter) => heights[`opener:${chapter.id}`] ?? 0,
-    )
-  }, [heights, chapters, pageBox.contentHeightPx, theme.chapterOpener.topSpacer])
-
-  const frontMatter = useMemo(
-    () => structuralPages.filter((p) => p.category === 'front-matter').sort((a, b) => a.order - b.order),
-    [structuralPages],
-  )
-  const backMatter = useMemo(
-    () => structuralPages.filter((p) => p.category === 'back-matter').sort((a, b) => a.order - b.order),
-    [structuralPages],
-  )
-  const pages = useMemo(
-    () => composeBookPages(frontMatter, paginatedPages, backMatter),
-    [frontMatter, paginatedPages, backMatter],
-  )
-
-  // Publishes exactly what is on screen, mirroring `BookRenderer`'s own
-  // effect. PDF export renders `exportStore`'s layout rather than
-  // re-deriving one, so without this mobile could lay a book out but never
-  // export it — and populating it from the same pagination is what keeps the
-  // exported PDF identical to the preview, the same WYSIWYG guarantee the
-  // desktop canvas provides.
-  const setExportLayout = useExportStore((s) => s.setLayout)
-  useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
-  }, [pages, toc, pageBox, theme, project.id, setExportLayout])
+  // The measure/paginate/compose/publish pipeline, shared with the More tab
+  // so exporting no longer depends on this view having been opened — see
+  // `useBookLayout`'s own doc comment for why that was a defect.
+  const { pages, toc, pageBox, theme, dropCapBlockIds, measurer } = useBookLayout(project)
+  const chapters = manuscript?.chapters ?? []
 
   // Scale is measured from the real container rather than `window.innerWidth`
   // so it stays correct through rotation and any future chrome around this
@@ -127,16 +71,7 @@ export function MobilePreviewView({ project }: MobilePreviewViewProps) {
 
   return (
     <div ref={containerRef} className="h-full overflow-y-auto overscroll-contain bg-background">
-      {/* Off-screen measurement — must stay mounted for repagination to
-          react to edits, exactly as in `BookRenderer`. */}
-      <HeightMeasurer
-        chapters={chapters}
-        contentWidthPx={pageBox.contentWidthPx}
-        theme={theme}
-        dropCapBlockIds={dropCapBlockIds}
-        measureKey={measureKey}
-        onMeasured={setHeights}
-      />
+      {measurer}
 
       {!hasSomethingToShow ? (
         <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center">

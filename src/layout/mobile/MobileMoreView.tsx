@@ -29,6 +29,7 @@ import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
 import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
 import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
 import { useTemplateStore } from '@/store/templateStore'
+import { useBookLayout } from '@/renderer/useBookLayout'
 import { DiagnosticsDialog } from '@/components/common/DiagnosticsDialog'
 import { useErrorLogStore } from '@/store/errorLogStore'
 import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
@@ -131,6 +132,21 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  /**
+   * Lays the book out from here, so exporting no longer depends on the
+   * Preview tab having been opened first.
+   *
+   * The More tab used to say "Open Preview once to lay the book out first"
+   * and disable every export until you had — an app asking its user to
+   * perform a ritual to work around where a component happened to be
+   * mounted. None of the work needs anything visible: `measurer` renders
+   * off-screen, and by the time anyone has scrolled down to Export it has
+   * long since finished.
+   *
+   * Mounted here rather than in the mobile shell so a phone is not measuring
+   * a whole book while someone is trying to write in it.
+   */
+  const { ready: layoutReady, measurer } = useBookLayout(project)
   const templateCount = useTemplateStore((s) => s.templates.length)
   const errorCount = useErrorLogStore((s) => s.errors.length)
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
@@ -174,16 +190,26 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
 
   return (
     <div className="h-full overflow-y-auto overscroll-contain bg-background pb-6">
+      {/* Off-screen block measurement. Renders nothing visible; it is what
+          makes the exports below work without a trip to Preview first. */}
+      {measurer}
       <input {...projectFileInputProps} />
 
       <Group title="Export">
         <Row
           icon={Download}
           label="Export PDF"
-          // `canExport` is false until the Preview tab has laid the book out —
+          // `canExport` is false only for the moment it takes the layout above
+          // to run; it is no longer a state the user has to resolve —
           // PDF export renders exactly what was paginated, so saying why is
           // more useful than an unexplained disabled row.
-          detail={pdf.canExport ? 'Print-ready, with bleed and crop marks' : 'Open Preview once to lay the book out first'}
+          detail={
+            pdf.canExport
+              ? 'Print-ready, with bleed and crop marks'
+              : layoutReady
+                ? 'Print-ready, with bleed and crop marks'
+                : 'Laying the book out…'
+          }
           onClick={() => handleExportClick('pdf')}
           disabled={!pdf.canExport}
           busy={pdf.busy}

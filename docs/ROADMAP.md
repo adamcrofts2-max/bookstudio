@@ -1842,9 +1842,15 @@ a gap to close later.)*
       scope at the user's explicit request**; what stays desktop-only is now an
       interaction boundary (the bleed/trim-precise page canvas and drag-to-
       position cover tooling) rather than a feature one
-- [ ] Mobile PDF export currently requires opening the Preview tab once first,
-      so the book gets paginated — pagination only runs while Preview is
-      mounted. Acceptable (and explained in the row itself) but worth removing
+- [x] Mobile export no longer requires a trip to Preview — fixed 2026-09-05
+      (Phase 155). Calling it "acceptable because the row explains it" was the
+      wrong call: the row was an app asking its user to perform a ritual to
+      work around where a component happened to be mounted. None of the work
+      needs anything visible — `HeightMeasurer` renders off-screen, `paginate`
+      and `composeBookPages` are pure — so the pipeline moved into
+      `useBookLayout` and the More tab runs it itself. Covered by
+      `scripts/e2e/mobileExport.e2e.mjs`, which also checks the refactor left
+      Preview working
 - [x] Mobile front/back-matter management — shipped 2026-09-04 (Phase 136),
       More -> Book pages. Add/reorder/duplicate/delete/edit every structural
       page type, cover image included. (add/reorder title page, copyright,
