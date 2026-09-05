@@ -1795,6 +1795,15 @@ Book Studio today and an actual multi-device Canva-style product.)*
       registry access to `npm install` a repair from this sandbox — the fix
       (`npm ci`) is written up in `docs/TERMINAL_SETUP.md` for the user to
       run from their own terminal. Leave unchecked until confirmed fixed.
+- [ ] Verify an exported PDF's *pixels*, not just its bytes. Export is checked
+      end to end (valid `%PDF`, real embedded TrueType, subsetted, a cover in
+      the book since Phase 157) but nothing has ever compared a rendered PDF
+      page against the app's own rendering of that page, and no proof has been
+      through a real print-on-demand preflight. WYSIWYG is this product's
+      central claim and its least-tested one. Rasterise the exported pages and
+      diff them against screenshots of the same spreads. Referenced by Phase
+      157's STATUS entry and by `export.e2e.mjs`'s own comment, neither of
+      which had an item here to point at until now.
 - [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
 - [x] `LazySpread` unmounts spreads that scroll far away — shipped
       2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew
