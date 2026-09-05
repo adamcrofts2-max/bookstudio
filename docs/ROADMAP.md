@@ -1795,15 +1795,36 @@ Book Studio today and an actual multi-device Canva-style product.)*
       registry access to `npm install` a repair from this sandbox — the fix
       (`npm ci`) is written up in `docs/TERMINAL_SETUP.md` for the user to
       run from their own terminal. Leave unchecked until confirmed fixed.
-- [ ] Verify an exported PDF's *pixels*, not just its bytes. Export is checked
-      end to end (valid `%PDF`, real embedded TrueType, subsetted, a cover in
-      the book since Phase 157) but nothing has ever compared a rendered PDF
-      page against the app's own rendering of that page, and no proof has been
-      through a real print-on-demand preflight. WYSIWYG is this product's
-      central claim and its least-tested one. Rasterise the exported pages and
-      diff them against screenshots of the same spreads. Referenced by Phase
-      157's STATUS entry and by `export.e2e.mjs`'s own comment, neither of
-      which had an item here to point at until now.
+- [x] Verify the exported PDF against the screen — shipped 2026-09-05 (Phase
+      159), as geometry rather than pixels: there is no rasteriser in this
+      environment, and comparing two text renderers' screenshots would measure
+      their antialiasing as much as their layout. `pdfFidelity.e2e.mjs` parses
+      the PDF's own content streams for every text-drawing position and
+      compares them with the same lines' `getClientRects()` in the DOM. It
+      immediately found what byte-level checks never could: every block gap
+      was smaller in print than on screen (a paragraph's was 14px vs 4pt), so
+      the two renderings drifted apart by ~8.7px per paragraph — an inch and
+      three quarters over a twenty-paragraph chapter. Fixed via a shared
+      `blocks/blockSpacing.ts`; body-line drift is now 0.05–0.19px per page.
+- [ ] A real print-on-demand preflight — send an exported PDF to KDP or Lulu
+      and act on what comes back. Phase 159 proves the PDF agrees with the
+      screen; nothing yet proves either agrees with a printer.
+- [ ] The chapter opener composes differently in the two renderers: the label
+      and title are drawn in `exportPdf.ts` by stepping a baseline down in
+      points, while the screen lays them out as boxes with CSS padding. Net
+      effect measured in Phase 159: on a chapter-start page the first block
+      lands about 29px higher in print than on screen. Constant, not
+      accumulating (unlike the block gaps that phase fixed), and scoped out of
+      `pdfFidelity.e2e.mjs`'s image-position check rather than hidden inside a
+      loose tolerance.
+- [ ] Nine block types still carry hand-chosen `cursorY -=` gaps in their own
+      `drawPdf` (callout, caseStudy, checklist, faq, gallery, pullQuote,
+      statistics, table, timeline) rather than reading `blocks/blockSpacing.ts`.
+      Phase 159 converted the five a book is mostly made of — paragraph,
+      heading, list, image, quote — because those are the ones the fidelity
+      suite actually exercises, and a shared table claiming types nobody
+      measured would be back to guessing. Each of the nine needs the same
+      treatment plus a page in the suite's test book to prove it.
 - [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
 - [x] `LazySpread` unmounts spreads that scroll far away — shipped
       2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew

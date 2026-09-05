@@ -14,6 +14,7 @@ import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { selectTextRange } from '@/blocks/caretOffset'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 function ParagraphRender(props: BlockRenderProps) {
   const {
@@ -149,10 +150,14 @@ function ParagraphRender(props: BlockRenderProps) {
         className={cn(
           'outline-offset-4 transition-[outline-color] duration-150',
           outlineClass(!!selected, primary.isEditing),
-          'cursor-pointer pb-3.5',
+          'cursor-pointer',
           dropCap && 'book-drop-cap',
         )}
         style={{
+          // Paired with `drawParagraphPdf`'s trailing gap below — see
+          // `blocks/blockSpacing.ts` for why this is a shared number and
+          // not a Tailwind class.
+          paddingBottom: BLOCK_SPACING.paragraph.after,
           fontFamily: theme.fonts.body,
           fontSize: theme.typography.bodySize,
           lineHeight: theme.typography.lineHeight,
@@ -213,7 +218,7 @@ function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
     const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt, wrapOptions)
     drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont, drawOptions)
   }
-  ctx.cursorY -= 4
+  ctx.cursorY -= BLOCK_SPACING.paragraph.after * PX_TO_PT
 }
 
 export const paragraphBlockType: BlockTypeDefinition = {

@@ -10936,3 +10936,117 @@ off-site, and not versioned — restoring means opening the project file, which
 loads as a new project. That is Phase G's territory and this deliberately
 doesn't pretend otherwise. What it removes is the case where there is nothing
 to restore *from*.
+
+## Phase 159 — does the PDF put the ink where the screen said it would?
+
+Export has been checked end to end since Phase 145: a valid `%PDF`, real
+embedded TrueType, subsetted fonts, and — since Phase 157 — a cover in the
+book. Every one of those is a fact about the *file*. None of them could tell
+you whether the page inside it looks like the page the author was editing,
+which is the only claim this product cannot afford to get wrong.
+
+It turned out it didn't.
+
+### What the measurement found
+
+There is no PDF rasteriser in this environment, and adding one to compare
+screenshots would have compared two text renderers' antialiasing as much as
+their layout. So the comparison is geometric instead, which is both exact and
+closer to the actual question: `scripts/e2e/pdfGeometry.mjs` parses the
+exported PDF's own content streams for every text-drawing position, and the
+suite compares those against the same lines' `getClientRects()` in the DOM.
+
+Laid side by side, the body of a page looked like this (px from the trim's top
+edge, PDF baseline vs DOM line-box top):
+
+```
+    4  |  298.2 |  299.6 |   -1.4 | "The library kept its own hou…"
+    5  |  321.1 |  326.0 |   -4.9 |
+   ...                       -4.9  (eleven more lines)
+   12  |  505.9 |  510.7 |   -4.8 |
+   13  |  537.6 |  551.1 |  -13.5 | "Miss Vale had worked there f…"   <- paragraph break
+   14  |  564.0 |  577.5 |  -13.5 |
+```
+
+A PDF baseline sits a fixed distance below a DOM line box's top; that constant
+is a convention, and subtracting it is fair. The constant **changing** is the
+defect. At every paragraph boundary it jumped by 8.7px, because the gap after
+a paragraph was `pb-3.5` (14px) on screen and `ctx.cursorY -= 4` (4pt, 5.3px)
+in print. Every block type was the same shape of mistake: heading 32/10px on
+screen against 20/6pt, list 16px against 10pt, image 20px against 10pt, quote
+24/24px against 8/10pt.
+
+This is not cosmetic. `HeightMeasurer` measures the *screen* layout and
+pagination assigns blocks to pages from those heights, so the exporter was
+laying the same blocks onto the same pages with systematically tighter
+spacing: the right words on the right page, the wrong rhythm, and a strip of
+unexplained white space at the foot of every full page. Over a twenty-
+paragraph chapter it compounds to about an inch and three quarters.
+
+### The fix
+
+`src/blocks/blockSpacing.ts` — one table, in CSS pixels, read by both
+renderers: the component as an inline style (rather than a Tailwind `pb-*`
+class, which an exporter cannot see) and `drawPdf` via `PX_TO_PT`. Converting
+the class to an inline style changes nothing computed, so measured heights and
+pagination are untouched; it just makes the pairing literal instead of a
+coincidence maintained by hand.
+
+Five block types are converted — paragraph, heading, list, image, quote —
+because those are the ones the new suite actually exercises. The other nine
+keep their hand-chosen numbers and are listed in `docs/ROADMAP.md`; a shared
+table claiming types nobody measured would be back to guessing.
+
+Body-line drift after the fix: **0.19px over 21 lines** on one page, **0.05px
+over 6** on another. Before it, 17.27px.
+
+### The suite
+
+`scripts/e2e/pdfFidelity.e2e.mjs`, registered in `test:e2e` (twelve suites
+now). It builds a book with three long paragraphs and a figure, exports a real
+PDF through the real UI, and checks:
+
+| Assertion | Measured how |
+| --- | --- |
+| a PDF page for every page on screen | mounted page elements vs `getPages()` |
+| the media box is trim plus bleed on all four sides | `MediaBox` vs the page element's size |
+| a drawn line for every line of body text | modal font size in the PDF, modal line-box height in the DOM |
+| the text column starts in the same place | min `Tm` x vs min DOM `left`, bleed included |
+| **every line lands in the same place, to within a pixel** | spread of the per-line offsets |
+| the image is the same size, at the same left edge | accumulated `cm` matrices vs the `<img>` rect |
+
+Three harness details worth keeping:
+
+- **Lazy mounting.** No single moment has the whole book in the DOM, so the
+  suite reads it from the top and from the bottom and merges by page id in
+  first-seen order.
+- **Compare like with like.** A page also carries a running head, a folio, a
+  chapter title and sometimes a drop cap, each with its own relationship
+  between a DOM box top and a PDF baseline. Mixing them in would measure that
+  convention rather than the layout, so both sides are filtered to body text —
+  the modal font size in the PDF, the modal line-box height in the DOM.
+- **pdf-lib does not emit one tidy matrix before `Do`.** An image placement is
+  the product of four separate `cm` operators; a regex reading the nearest one
+  finds `1 0 0 1 0 0` and concludes the image is a point at the origin. It
+  took two wrong readings — that, and a font-size regex that didn't allow the
+  hyphens in a subset font name (`/SourceSerif4-Medium-7572533686`), which
+  silently made every font size `0` and every "body line" comparison
+  meaningless — before the numbers meant anything. Both are the same lesson
+  this project keeps relearning: a measurement that returns a plausible number
+  is not the same as a measurement that is right.
+
+The drift assertion was proved by putting the old 4pt paragraph gap back:
+`drift 17.27px` and a failure, against `drift 0.19px` and a pass.
+
+### Found, not fixed
+
+The chapter opener composes differently in the two renderers — `exportPdf.ts`
+steps a baseline down in points, the screen lays out boxes with CSS padding —
+so on a chapter-start page the first block lands about 29px higher in print.
+It is constant rather than accumulating, and it is logged in the roadmap with
+the measurement rather than absorbed into a wider tolerance here: a tolerance
+loose enough to hide it would be loose enough to hide the next one.
+
+And what still isn't proven: that either rendering matches what a printer
+produces. That needs a real print-on-demand preflight, which is now its own
+roadmap item.
