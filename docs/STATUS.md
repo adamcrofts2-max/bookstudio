@@ -10367,3 +10367,68 @@ Spell-fix 15/15 across both shells, spell-check 8/8, writing 20/20, structure
 33/33, export 31/31, diagnostics 14/14, project-delete 10/10, runtime audit
 clean, `npm test` ALL PASS, build clean, lint exit 0 at the 49-warning
 baseline.
+
+---
+
+## Phase 153 — footnotes that land on the right chapter, and a phone that can caption a photo
+
+### EPUB footnotes were arriving on the wrong chapter
+
+Some EPUB toolchains gather a whole book's footnotes into one file at the
+back. Imported literally, that file became a chapter of orphaned note text
+sitting after the end of the book. The notes survived — attached to the wrong
+thing, which is worse than losing them, because it looks deliberate.
+
+A notes file is now detected by **how much of its text lives inside note
+elements**, not by its filename. `notes.xhtml` is a convention, not a rule,
+and a real chapter that happens to be called that would be destroyed by a
+filename test. A document that is mostly notes is a notes file; a chapter with
+a couple of asides in it is a chapter, and stays one.
+
+Reattachment is **exact rather than positional**: a noteref is a real link
+(`href="notes.xhtml#fn3"`) and `sanitiseInline` keeps `<a>` elements, so the
+chapter that cited a note still contains its id. Only a note nothing
+references falls back to the last chapter — which is where it would have
+ended up anyway, so the fallback cannot be worse than doing nothing.
+
+Notes land as paragraphs under a "Notes" heading in their own chapter. The
+Content layer has no footnote block, and inventing one here would have meant a
+block type the layout engine, the PDF exporter and the EPUB exporter all know
+nothing about. The right words in the right chapter, visibly marked, is the
+honest version of this until a real footnote block exists.
+
+Both `epub:type` and ARIA `role` spellings are checked, because EPUB 2
+toolchains emit one and EPUB 3 increasingly emits the other, and plenty of
+real books carry both.
+
+### Mobile can now annotate and caption
+
+`docs/ROADMAP.md` had the block-level surfaces filed as blocked on "a block
+selection model mobile Write doesn't have yet". That overstated it, and the
+design pass was mostly noticing why: desktop needs a selection model because
+its Inspector is a **persistent panel** that has to know what it is looking at
+from moment to moment. A sheet does not — it is opened *from* a block's own
+menu, which already knows exactly which block it belongs to. The two shells
+don't need the same mechanism to reach the same data.
+
+So the per-block menu gained one more item, and it opens a sheet with:
+
+- **Notes on any block** — add, resolve, delete, with the same
+  history-recording actions the desktop panel uses, so a note written on a
+  phone is undoable the same way.
+- **Caption, alt text and width for an image.** Images have been insertable
+  on a phone since Phase 146 and were never captionable — which left that
+  feature half-finished in a way a printed book notices, since an uncaptioned
+  plate is a proof correction. The width presets match the desktop panel's
+  exactly rather than inventing a mobile-only set, so a book's images stay
+  consistent whichever device last touched them.
+
+Per-block *typography* was deliberately left out rather than shipped for
+completeness: a phone is where prose gets written, not where one paragraph's
+leading gets tuned, and every control added to that screen costs something.
+
+### Verified
+Mobile blocks 14/14 on a real touch viewport, structure 40/40 (33 + 7
+footnote), and the rest of the gate unchanged: writing 20/20, spell-check
+8/8, spell-fix 15/15, export 31/31, diagnostics 14/14, project-delete 10/10,
+runtime audit clean, `npm test` ALL PASS, build clean, lint exit 0.

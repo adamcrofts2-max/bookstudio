@@ -34,6 +34,8 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/common/EmptyState'
 import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
+import { MobileBlockSheet } from '@/layout/mobile/MobileBlockSheet'
+import { EMPTY_NOTES, useNotesStore } from '@/store/notesStore'
 
 interface MobileWriteViewProps {
   projectId: string
@@ -257,6 +259,10 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const importFiles = useAssetStore((s) => s.importFiles)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const galleryInputRef = useRef<HTMLInputElement>(null)
+  /** The block whose sheet is open — mobile's answer to desktop's Inspector
+   * selection, scoped to one interaction rather than held as app state. */
+  const [sheetBlock, setSheetBlock] = useState<ContentBlock | null>(null)
+  const notes = useNotesStore((s) => s.byProject[projectId]) ?? EMPTY_NOTES
 
   useEffect(() => {
     if (chapters.length === 0) {
@@ -546,6 +552,16 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
         }}
       />
 
+      {activeChapter && (
+        <MobileBlockSheet
+          projectId={projectId}
+          chapterId={activeChapter.id}
+          block={sheetBlock}
+          open={sheetBlock !== null}
+          onOpenChange={(open) => !open && setSheetBlock(null)}
+        />
+      )}
+
       <input
         ref={galleryInputRef}
         type="file"
@@ -614,6 +630,10 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                         onSelect={() => moveBlockWithHistory(projectId, activeChapter.id, block.id, 'down')}
                       >
                         Move down
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setSheetBlock(block)}>
+                        {block.type === 'image' ? 'Caption & size' : 'Notes'}
+                        {notes.some((n) => n.blockId === block.id && !n.resolved) ? ' •' : ''}
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => deleteBlockWithHistory(projectId, activeChapter.id, block.id)} className="text-danger">
                         Delete

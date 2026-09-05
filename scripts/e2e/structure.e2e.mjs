@@ -287,6 +287,58 @@ async function main() {
       check('the second chapter is not empty', (imported[1]?.html ?? '').includes('longer than the building'))
     }
 
+    // ---- EPUB footnotes ----
+    // Some toolchains gather a whole book's footnotes into one file at the
+    // back. Imported literally that file becomes a chapter of orphaned note
+    // text sitting after the end of the book — the notes survive, attached
+    // to the wrong thing, which is worse than losing them because it looks
+    // deliberate. This fixture has exactly that shape: three notes in one
+    // notes.xhtml, referenced from two different chapters.
+    const notesEpub = await readFile('scripts/fixtures/manuscript-notes.epub')
+    await page.goto(server.url)
+    await page.waitForTimeout(900)
+    await page.getByRole('button', { name: /new project/i }).first().click()
+    await page.waitForTimeout(300)
+    await page.locator('#new-project-idea').fill('Notes')
+    await page.getByRole('button', { name: /^create/i }).last().click()
+    await page.waitForTimeout(2500)
+    const backForNotes = page.getByRole('button', { name: /back to editor/i }).first()
+    if (await backForNotes.count()) {
+      await backForNotes.click()
+      await page.waitForTimeout(1500)
+    }
+    const notesInput = page.locator('input[type="file"][accept*=".epub"]').first()
+    await notesInput.waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    if (await notesInput.count()) {
+      await notesInput.setInputFiles({
+        name: 'manuscript-notes.epub',
+        mimeType: 'application/epub+zip',
+        buffer: notesEpub,
+      })
+      await page.waitForTimeout(3500)
+      const withNotes = await chapters(page)
+      check(`the notes file is not imported as a chapter (${withNotes.length} chapters)`, withNotes.length === 2)
+      check(
+        `notes 1 and 2 land on the chapter that cites them (${(withNotes[0]?.html ?? '').slice(-70)})`,
+        (withNotes[0]?.html ?? '').includes('Opening times were never posted') &&
+          (withNotes[0]?.html ?? '').includes('oak shelving predates'),
+      )
+      check(
+        'note 3 lands on its own chapter, not chapter one',
+        (withNotes[1]?.html ?? '').includes('Surveyors disagreed') &&
+          !(withNotes[0]?.html ?? '').includes('Surveyors disagreed'),
+      )
+      const noteHeadings = await page.evaluate(() => {
+        const id = location.pathname.split('/project/')[1]?.split('/')[0]
+        const raw = localStorage.getItem('book-studio.content')
+        if (!raw || !id) return []
+        const m = JSON.parse(raw).state.byProject[id]
+        return (m?.chapters ?? []).flatMap((c) => c.blocks.filter((b) => b.type === 'heading').map((b) => b.text))
+      })
+      check(`each group is marked as notes (${noteHeadings.join(', ')})`, noteHeadings.filter((t) => t === 'Notes').length === 2)
+      check('the chapter text itself is unharmed', (withNotes[0]?.html ?? '').includes('kept their own counsel'))
+    }
+
     check(`no page errors throughout (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
   } finally {
     await browser.close()

@@ -602,9 +602,14 @@ daily use of everything built so far.)*
 - [ ] EPUB import: preserve verse as a distinct block type — verse lines are
       currently imported as one paragraph each, which keeps the line structure
       but loses the semantic distinction (the Content layer has no verse block)
-- [ ] EPUB import: reattach footnotes to the document that references them —
-      some EPUB toolchains gather a book's footnotes at the end of a later
-      file, so they currently import as trailing text on the wrong chapter
+- [x] EPUB import: footnotes are reattached to the chapter that cites them —
+      shipped 2026-09-05 (Phase 153). A notes file is detected by how much of
+      its text sits inside note elements (not by its filename — `notes.xhtml`
+      is a convention, and a real chapter called that would have been
+      destroyed by a filename test), kept out of the chapter list, and each
+      note appended under a "Notes" heading on the chapter whose text
+      actually contains its `#id`. Exact matching, not positional: a noteref
+      is a real link and `sanitiseInline` keeps `<a>`
 - [ ] PDF manuscript import — deliberately not attempted: PDFs carry no
       reliable structure, so chapter detection is guesswork
 
@@ -1513,10 +1518,19 @@ Book Studio today and an actual multi-device Canva-style product.)*
       running the real Virtual Editor; find and replace; the image library
       (browse + delete, not just add); chapter reorder; and the export
       readiness warning mobile used to skip straight past
-- [ ] Mobile: block-level Inspector surfaces — Notes on a block, the
-      Typography panel and the Image panel. All three depend on a block
-      selection model mobile Write doesn't have yet (it now publishes the
-      chapter, not the block), so this is a design pass, not a port
+- [x] Mobile: block-level surfaces — shipped 2026-09-05 (Phase 153). The
+      "blocked on a block selection model" framing overstated it: desktop
+      needs one because its Inspector is a persistent panel that must know
+      what it is looking at from moment to moment; a sheet opened from a
+      block's own menu already knows. Notes on any block (add, resolve,
+      delete) and an image's caption, alt text and width. Images had been
+      insertable on a phone since Phase 146 and never captionable, which left
+      that half-finished in a way a printed book notices. Covered by
+      `scripts/e2e/mobileBlocks.e2e.mjs`
+- [ ] Mobile: per-block typography overrides — the remaining third of the
+      old item. Deliberately not built with the other two: a phone is where
+      prose gets written, not where a single paragraph's leading gets
+      tuned, and every control added to that screen costs something
 - [x] Mobile distraction-free writing — shipped 2026-09-04 (Phase 140), and
       the earlier "probably correct to leave out" call was wrong: a phone
       being single-column is not the same as being distraction-free. Takes
