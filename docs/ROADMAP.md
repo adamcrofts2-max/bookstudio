@@ -823,8 +823,13 @@ daily use of everything built so far.)*
       template — deferred: template image references are stripped today because
       assets are per-project IndexedDB blobs, so an id captured in one project
       resolves to nothing in another. Needs template-scoped asset storage
-- [ ] Book templates: manage saved templates (rename/delete) from a gallery — today
-      they can only be created and picked, not curated
+- [x] Book templates: manage saved templates (rename/delete) from a gallery —
+      shipped 2026-09-05 (Phase 146). `templateStore` had `renameTemplate` and
+      `deleteTemplate` from the day the feature shipped; nothing in the UI ever
+      reached them, so a series template lived forever under whatever name it
+      was given on the day. `ManageTemplatesDialog` now offers both, from the
+      desktop toolbar menu and from mobile's More tab (which had no template
+      controls at all)
 - [ ] Community/shareable template gallery — deferred: needs a real backend
       service to host/browse shared templates, which this client-only app
       doesn't have
@@ -1584,6 +1589,28 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [x] `isTextFirstBlock` — one shared rule for which block types open with a
       field the writer should be typing into, so desktop and mobile cannot
       diverge on it
+- [x] Deleting a project actually deletes it — fixed 2026-09-05 (Phase 146).
+      `deleteProject` removed the Layer 1 row only; the manuscript, structural
+      pages, notes, ideas, planning bible, graph layout, snapshots, undo
+      history, editorial report, writing sessions and image blobs all stayed
+      behind under an id that no longer appeared anywhere, so nothing could
+      ever name them to clean them up. On a browser's few-megabyte
+      `localStorage` quota, deleting books to make room did nothing.
+      Coordination lives in `useDeleteProject`, mirroring
+      `useImportProjectFile` on the way in, so no store reaches into a layer
+      it doesn't own. Measured both ways by
+      `scripts/e2e/projectDelete.e2e.mjs`
+- [x] Deleting a project asks first — added 2026-09-05 (Phase 146). Single
+      unconfirmed click was survivable while the bin icon only appeared on
+      hover; it stopped being survivable the moment that control became
+      permanently visible on touch. `ConfirmDialog` is shared with template
+      deletion; deletes that undo already covers stay single-click
+- [x] Hover-only controls are reachable on touch — fixed 2026-09-05 (Phase
+      146). Delete-project, edit/delete-theme and the sidebar's remove-image
+      button were `opacity-0` until hover: still tappable on a phone, but
+      invisible, so on the home screen there was no discoverable way to
+      delete a book at all. A `can-hover:` custom variant now gates the
+      hiding half
 - [ ] Production error monitoring / crash reporting
 - [ ] Resolve the conflicting `react-router` npm audit advisories
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
@@ -1733,9 +1760,12 @@ a gap to close later.)*
       Panels are reused unmodified. The Ideas tab was folded into Develop,
       mirroring desktop where Ideas is a category inside Planning, keeping the
       tab bar at four.
-- [ ] Mobile image/gallery block insertion (asset picker UI) — desktop-only
-      today, same underlying gap `defaultContent.ts` already documents for
-      the desktop "+" inserter.
+- [x] Mobile image/gallery block insertion — shipped 2026-09-05 (Phase 146).
+      The item as written was half wrong and hid something worse: mobile could
+      already add a single photo (Phase 129), and the real gap was that
+      `gallery` could be rendered, exported, accessibility-checked and
+      inspected but **created by no code path on either shell**. Both shells
+      now insert one from a multi-photo pick.
 - [x] Decided 2026-09-03 (Phase 129): Develop's non-Idea categories DO belong on
       mobile — the user asked for them directly. Book Graph is the one part that
       stays desktop-only, on interaction grounds rather than scope.

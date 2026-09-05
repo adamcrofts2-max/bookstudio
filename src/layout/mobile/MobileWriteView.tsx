@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/common/EmptyState'
-import type { ContentBlock, ImageBlock } from '@/types/content'
+import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
 
 interface MobileWriteViewProps {
   projectId: string
@@ -256,6 +256,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const [titleDraft, setTitleDraft] = useState('')
   const importFiles = useAssetStore((s) => s.importFiles)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (chapters.length === 0) {
@@ -318,6 +319,35 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
    * existing photo, and this is "add a picture to the book," not "take a
    * picture right now"). `onChange` below does the actual import + insert. */
   const handleAddImage = () => imageInputRef.current?.click()
+
+  /** Same picker, `multiple` — a gallery is defined by the photos in it, so
+   * unlike every other block type it has no blank starting point to insert
+   * and fill in afterwards. Without this the `gallery` block type was
+   * unreachable on both shells: renderable, exportable, and impossible to
+   * create. */
+  const handleAddGallery = () => galleryInputRef.current?.click()
+
+  const handleGallerySelected = async (files: File[]) => {
+    if (!activeChapter || files.length === 0) return
+    setImageError(null)
+    const { imported, failed } = await importFiles(projectId, files)
+    if (imported.length === 0) {
+      setImageError(failed[0]?.reason ?? 'Those files could not be added.')
+      return
+    }
+    // Partial success still makes a gallery — losing four good photos
+    // because the fifth was corrupt is the failure mode Phase 137 removed
+    // from importing, and it must not come back here.
+    if (failed.length > 0) setImageError(`${failed.length} of ${files.length} couldn't be added.`)
+    const block: GalleryBlock = {
+      id: generateId('block'),
+      type: 'gallery',
+      assetIds: imported.map((asset) => asset.id),
+      caption: undefined,
+    }
+    const lastBlockId = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
+    insertBlockWithHistory(projectId, activeChapter.id, lastBlockId, block)
+  }
 
   const handleImageSelected = async (file: File) => {
     if (!activeChapter) return
@@ -516,6 +546,19 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
         }}
       />
 
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          if (files.length > 0) void handleGallerySelected(files)
+        }}
+      />
+
       {imageError && (
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-background-secondary px-4 py-2.5">
           <p className="text-[13px] text-danger">{imageError}</p>
@@ -620,6 +663,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
             <DropdownMenuItem onSelect={() => handleAddBlock('paragraph')}>Add paragraph</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => handleAddBlock('heading')}>Add heading</DropdownMenuItem>
             <DropdownMenuItem onSelect={handleAddImage}>Add photo</DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleAddGallery}>Add photo gallery</DropdownMenuItem>
             {/* The prominent "+" used to add blocks only, so the single most
                 obvious control on the screen couldn't do the most structural
                 thing a writer needs — chapters were three taps deep inside

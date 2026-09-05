@@ -9,6 +9,7 @@ import {
   Globe,
   Images,
   Layers,
+  LayoutTemplate,
   Loader2,
   Palette,
   Maximize2,
@@ -24,6 +25,9 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { ThemeGallery } from '@/components/settings/ThemeGallery'
 import { ProjectSettingsDialog } from '@/components/settings/ProjectSettingsDialog'
 import { VersionHistoryDialog } from '@/components/common/VersionHistoryDialog'
+import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
+import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
+import { useTemplateStore } from '@/store/templateStore'
 import { ExportReadinessDialog } from '@/components/common/ExportReadinessDialog'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { ImportManuscriptButton } from '@/editor/ImportManuscriptButton'
@@ -124,6 +128,9 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
   const [importOpen, setImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const templateCount = useTemplateStore((s) => s.templates.length)
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false)
   const [pagesOpen, setPagesOpen] = useState(false)
   const [assetsOpen, setAssetsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -252,6 +259,22 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
       <Group title="Design">
         <Row icon={Palette} label="Theme" detail="Typography, colour and chapter openers" onClick={() => setThemeOpen(true)} />
         <Row icon={Settings} label="Project settings" detail="Trim size, margins, bleed and language" onClick={() => setSettingsOpen(true)} />
+        <Row
+          icon={LayoutTemplate}
+          label="Save as template"
+          detail="Reuse this book's design for the next volume"
+          onClick={() => setSaveTemplateOpen(true)}
+        />
+        <Row
+          icon={LayoutTemplate}
+          label="Saved templates"
+          detail={
+            templateCount === 0
+              ? 'None saved yet'
+              : `Rename or remove your ${templateCount} template${templateCount === 1 ? '' : 's'}`
+          }
+          onClick={() => setManageTemplatesOpen(true)}
+        />
       </Group>
 
       {/* Bottom sheets rather than centred dialogs: a phone has no room for a
@@ -306,6 +329,8 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
 
       <ProjectSettingsDialog project={project} open={settingsOpen} onOpenChange={setSettingsOpen} />
       <VersionHistoryDialog projectId={project.id} open={historyOpen} onOpenChange={setHistoryOpen} />
+      <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
+      <ManageTemplatesDialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen} />
     </div>
   )
 }

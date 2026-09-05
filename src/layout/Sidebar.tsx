@@ -505,7 +505,7 @@ export function Sidebar({ project }: SidebarProps) {
                       type="button"
                       onClick={() => removeAssetWithHistory(project.id, asset.id)}
                       aria-label={`Delete ${asset.name}`}
-                      className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                      className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white transition-opacity duration-150 can-hover:opacity-0 can-hover:group-hover:opacity-100"
                     >
                       <Trash2 className="size-3" />
                     </button>

@@ -50,6 +50,9 @@ interface AssetStoreActions {
    */
   restoreAsset: (projectId: string, asset: ImageAsset, blob: Blob) => Promise<void>
   getObjectUrl: (assetId: string) => string | undefined
+  /** Drops every image a project owns, from this store, from IndexedDB and
+   * from the object-URL cache. Called only from `useDeleteProject`. */
+  clearProject: (projectId: string) => Promise<void>
 }
 
 function readImageDimensions(url: string): Promise<{ width: number; height: number }> {
@@ -126,6 +129,25 @@ export const useAssetStore = create<AssetStoreState & AssetStoreActions>()((set,
       byProject: { ...state.byProject, [projectId]: [...(state.byProject[projectId] ?? []), ...imported] },
     }))
     return { imported, failed }
+  },
+
+  clearProject: async (projectId) => {
+    // From IndexedDB, not from `byProject`: a project the user never opened
+    // this session has no assets in memory, and those are precisely the
+    // blobs that would otherwise be stranded under an id nothing can name.
+    const stored = await listAssetsForProject(projectId)
+    await Promise.all(stored.map((asset) => deleteAsset(asset.id)))
+    set((state) => {
+      const nextObjectUrls = { ...state.objectUrls }
+      for (const asset of stored) {
+        const url = nextObjectUrls[asset.id]
+        if (url) URL.revokeObjectURL(url)
+        delete nextObjectUrls[asset.id]
+      }
+      const nextByProject = { ...state.byProject }
+      delete nextByProject[projectId]
+      return { byProject: nextByProject, objectUrls: nextObjectUrls }
+    })
   },
 
   removeAsset: async (projectId, assetId) => {

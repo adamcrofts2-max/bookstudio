@@ -14,6 +14,11 @@ export interface ExportableLayout {
 interface ExportStoreState {
   byProject: Record<string, ExportableLayout | undefined>
   setLayout: (projectId: string, layout: ExportableLayout) => void
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject`. Not persisted, so this only matters within a
+   * session — but a deleted project's layout lingering in memory is still a
+   * deleted project's layout. */
+  clearProject: (projectId: string) => void
 }
 
 /**
@@ -24,4 +29,10 @@ interface ExportStoreState {
 export const useExportStore = create<ExportStoreState>()((set) => ({
   byProject: {},
   setLayout: (projectId, layout) => set((state) => ({ byProject: { ...state.byProject, [projectId]: layout } })),
+  clearProject: (projectId) =>
+    set((state) => {
+      const nextByProject = { ...state.byProject }
+      delete nextByProject[projectId]
+      return { byProject: nextByProject }
+    }),
 }))

@@ -101,28 +101,3 @@ const STRUCTURAL_PAGE_REGISTRY: Record<StructuralPageType, StructuralPageTypeDef
 export function getStructuralPageTypeDefinition(type: StructuralPageType): StructuralPageTypeDefinition | undefined {
   return STRUCTURAL_PAGE_REGISTRY[type]
 }
-
-/** All registered structural page types, in a stable display order — used
- * by the Sidebar's "Add Page" picker. */
-export function listStructuralPageTypes(): StructuralPageTypeDefinition[] {
-  return [
-    coverPageType,
-    halfTitlePageType,
-    titlePageType,
-    copyrightPageType,
-    dedicationPageType,
-    forewordPageType,
-    prefacePageType,
-    acknowledgementsPageType,
-    conclusionPageType,
-    appendixPageType,
-    aboutTheAuthorPageType,
-    bibliographyPageType,
-    glossaryPageType,
-    indexPageType,
-    isbnPagePageType,
-    barcodePageType,
-    backCoverPageType,
-    blankPageType,
-  ]
-}

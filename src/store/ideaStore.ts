@@ -17,6 +17,10 @@ interface IdeaStoreState {
 }
 
 interface IdeaStoreActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getIdeas: (projectId: string) => Idea[]
   /** Every Idea linked to one manuscript block — powers `IdeaIndicatorBadge`
    * (Phase 83), mirrors `notesStore.getNotesForBlock`'s exact shape. */
@@ -39,6 +43,13 @@ export const useIdeaStore = create<IdeaStoreState & IdeaStoreActions>()(
   persist(
     (set, get) => ({
       byProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextByProject = { ...state.byProject }
+          delete nextByProject[projectId]
+          return { byProject: nextByProject }
+        }),
 
       getIdeas: (projectId) => get().byProject[projectId] ?? EMPTY_IDEAS,
 

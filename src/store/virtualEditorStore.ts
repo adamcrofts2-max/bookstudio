@@ -77,6 +77,10 @@ interface VirtualEditorState {
 }
 
 interface VirtualEditorActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   /** Runs every registered checker against the current manuscript and
    * stores the resulting report, replacing any previous one for this
    * project. `styleGuide` is optional and simply forwarded to
@@ -134,6 +138,24 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
       findingStatusByProject: {},
       revisionsByProject: {},
       reviewingByProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextReportsByProject = { ...state.reportsByProject }
+          delete nextReportsByProject[projectId]
+          const nextFindingStatusByProject = { ...state.findingStatusByProject }
+          delete nextFindingStatusByProject[projectId]
+          const nextRevisionsByProject = { ...state.revisionsByProject }
+          delete nextRevisionsByProject[projectId]
+          const nextReviewingByProject = { ...state.reviewingByProject }
+          delete nextReviewingByProject[projectId]
+          return {
+            reportsByProject: nextReportsByProject,
+            findingStatusByProject: nextFindingStatusByProject,
+            revisionsByProject: nextRevisionsByProject,
+            reviewingByProject: nextReviewingByProject,
+          }
+        }),
 
       runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets, layer0Bible) => {
         set((state) => ({ reviewingByProject: { ...state.reviewingByProject, [projectId]: true } }))

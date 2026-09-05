@@ -37,10 +37,26 @@ interface VersionStoreActions {
   restoreSnapshot: (projectId: string, snapshotId: string) => Promise<void>
   deleteSnapshot: (projectId: string, snapshotId: string) => Promise<void>
   getSnapshots: (projectId: string) => readonly Snapshot[]
+  /** Drops every snapshot for a project, from both this store and the
+   * IndexedDB table behind it. Called only from `useDeleteProject`. */
+  clearProject: (projectId: string) => Promise<void>
 }
 
 export const useVersionStore = create<VersionStoreState & VersionStoreActions>()((set, get) => ({
   byProject: {},
+
+  clearProject: async (projectId) => {
+    // Read from IndexedDB rather than from `byProject`: snapshots for a
+    // project the user never opened this session were never loaded into
+    // memory, and those are exactly the ones that would be orphaned.
+    const stored = await listSnapshotsForProject(projectId)
+    await Promise.all(stored.map((snapshot) => deleteSnapshotFromDb(snapshot.id)))
+    set((state) => {
+      const nextByProject = { ...state.byProject }
+      delete nextByProject[projectId]
+      return { byProject: nextByProject }
+    })
+  },
 
   createSnapshot: async (projectId, kind, label) => {
     const manuscript = useContentStore.getState().getManuscript(projectId)

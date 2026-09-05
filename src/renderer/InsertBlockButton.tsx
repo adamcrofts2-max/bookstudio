@@ -1,10 +1,10 @@
-import { Plus, ImagePlus, Sparkles } from 'lucide-react'
+import { Plus, ImagePlus, Images, Sparkles } from 'lucide-react'
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { INSERTABLE_BLOCK_TYPES, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useRef } from 'react'
-import { useImageUpload } from '@/hooks/useImageUpload'
+import { useImageUpload, useImagesUpload } from '@/hooks/useImageUpload'
 import { UploadError } from '@/components/common/UploadError'
 
 interface InsertBlockButtonProps {
@@ -16,6 +16,11 @@ interface InsertBlockButtonProps {
    * block even exists, unlike every other type's blank starting point).
    * Phase 51. */
   onInsertImage: (assetId: string) => void
+  /** Inserts a `GalleryBlock` from a multi-photo pick. Same reason as
+   * `onInsertImage` for being its own callback, plus one of its own: until
+   * this existed, `gallery` was a block type the app could render, export
+   * and inspect but that no code path anywhere could ever create. */
+  onInsertGallery: (assetIds: string[]) => void
   /** Opens `AiDraftInsertDialog.tsx` scoped to this exact gap — a separate
    * callback rather than a new `InsertableBlockType`, since a pasted AI
    * draft can expand into several blocks at once, not one blank block of a
@@ -46,13 +51,16 @@ interface InsertBlockButtonProps {
  * which already documented this exact future UI as its reason for existing.
  * See docs/ROADMAP.md Phase B.
  *
- * "Image" sits above the rest, separated, and opens a file picker
- * (`useImageUpload`, Phase 51) rather than inserting a blank block — the
- * same click-to-upload flow the Cover designer and placeholder-to-real-
- * image conversion also use.
+ * "Image" and "Photo gallery" sit above the rest, separated, and open a
+ * file picker (`useImageUpload`/`useImagesUpload`) rather than inserting a
+ * blank block — the same click-to-upload flow the Cover designer and
+ * placeholder-to-real-image conversion also use. Neither is an
+ * `InsertableBlockType`: both need real asset ids before a valid block
+ * exists at all.
  */
-export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
+export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertGallery, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
   const { openPicker, error: uploadError, inputProps } = useImageUpload(projectId, onInsertImage)
+  const { openPicker: openGalleryPicker, error: galleryError, inputProps: galleryInputProps } = useImagesUpload(projectId, onInsertGallery)
 
   /**
    * The chosen type, inserted once the menu has finished closing.
@@ -80,6 +88,10 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
       <DropdownMenuItem onClick={openPicker} className="gap-2">
         <ImagePlus className="size-3.5" />
         Image
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={openGalleryPicker} className="gap-2">
+        <Images className="size-3.5" />
+        Photo gallery
       </DropdownMenuItem>
       <DropdownMenuItem onClick={onInsertAiDraft} className="gap-2">
         <Sparkles className="size-3.5" />
@@ -122,7 +134,8 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
           {menu}
         </DropdownMenu>
         <input {...inputProps} />
-        <UploadError message={uploadError} />
+        <input {...galleryInputProps} />
+        <UploadError message={uploadError ?? galleryError} />
       </div>
     )
   }
@@ -157,7 +170,8 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
         {menu}
       </DropdownMenu>
       <input {...inputProps} />
-      <UploadError message={uploadError} />
+      <input {...galleryInputProps} />
+      <UploadError message={uploadError ?? galleryError} />
     </div>
   )
 }

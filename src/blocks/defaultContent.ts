@@ -2,12 +2,15 @@ import { generateId } from '@/utils'
 import type { ContentBlock, ContentBlockType } from '@/types/content'
 
 /**
- * Block types the "+" inserter (`InsertBlockButton.tsx`) offers — every
- * `ContentBlockType` except `image`/`gallery`, which need a real asset
- * picked first (images are created via drag-and-drop from the asset
- * library — `Page.tsx`'s `handleDropAsset`/`ImageDropZone` — and there's no
- * equivalent "pick images for a new gallery" flow yet). See
- * docs/ROADMAP.md Phase B.
+ * Block types the "+" inserter (`InsertBlockButton.tsx`) can create from
+ * nothing — every `ContentBlockType` except `image`/`gallery`.
+ *
+ * Those two are still offered by the same menu; they are excluded from this
+ * list because they cannot be built from a type alone. An image needs one
+ * real asset id and a gallery needs several, so both go through their own
+ * picker callbacks (`onInsertImage`/`onInsertGallery`) and their own
+ * factories, rather than `createDefaultBlock`. There is no such thing as a
+ * blank image block to fill in afterwards.
  */
 export type InsertableBlockType = Exclude<ContentBlockType, 'image' | 'gallery'>
 

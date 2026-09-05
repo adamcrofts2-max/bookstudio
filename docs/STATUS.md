@@ -9695,3 +9695,132 @@ than remembered.
 Writing E2E 20/20 both shells, spell-check 8/8, runtime audit clean, copy
 audit 0 findings, `npm test` ALL PASS, build clean, lint exit 0 at the
 49-warning baseline.
+
+---
+
+## Phase 146 — deleting a book didn't delete the book
+
+Continuing the audit for the class rather than the bug. Phase 145 hunted
+"creates content, drops the caret"; this pass hunted **"the feature exists but
+nothing can reach it"** — and then followed one of its findings somewhere much
+worse.
+
+### 1. Hover-only controls are invisible on a phone
+
+Three controls were `opacity-0` until `group-hover`: delete-project on the home
+screen, edit/delete-theme in the theme gallery, and remove-image in the
+sidebar. `opacity-0` does not block pointer events, so on a touch screen they
+were fully tappable and completely invisible — the worst possible combination,
+because nothing shows the affordance exists while a stray thumb can still fire
+it. On the home screen that meant a phone had **no discoverable way to delete a
+book at all**.
+
+`index.css` gained one custom variant beside the existing `dark` one:
+
+```css
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+```
+
+and the hiding half of each control is now gated on it. Asserted at
+`opacity: 1` in an emulated touch context, which really does report
+`hover: none` (checked, rather than assumed).
+
+### 2. Which made an unconfirmed one-tap delete dangerous
+
+The app's convention was to delete on a single click with no confirmation
+anywhere. That was survivable while every delete control was hover-revealed —
+a mouse pointer has to travel there deliberately. It stops being survivable the
+moment the bin icon sits permanently under the thumb that is scrolling the
+list. So making those controls visible required making the destructive ones
+ask first.
+
+`ConfirmDialog` (`components/common/`) is the shared gate, used for the two
+deletes that destroy something the user cannot get back: a project and a saved
+template. Cancel takes focus, not Delete — a dialog whose whole job is to make
+the destructive path deliberate should not let Enter destroy the thing faster
+than clicking could. Deletes that undo already covers (a block, a page, a
+node) stay single-click.
+
+### 3. And then: deleting a project never deleted the project
+
+Writing that dialog meant reading `deleteProject`, which turned out to remove
+the Layer 1 row and nothing else:
+
+```
+FAIL — no per-project data is left behind
+       (left: book-studio.content/byProject,
+              book-studio.content/revisionByProject,
+              book-studio.ideas/byProject)
+FAIL — no image rows left in IndexedDB (found 1)
+FAIL — no image binaries left in IndexedDB (found 1)
+```
+
+The manuscript, structural pages, notes, ideas, planning bible, graph layout,
+snapshots, undo history, editorial report, writing sessions and image blobs all
+stayed behind — keyed by a project id that no longer appeared anywhere, so
+nothing could ever name them again to clean them up. On a browser's few-megabyte
+`localStorage` quota that is not untidiness: **deleting books to make room did
+nothing**, and the quota error it eventually causes would arrive with no
+explanation and no remedy.
+
+The fix respects the layer boundary rather than working around it. A Layer 1
+store must never reach into Layer 2's manuscript to mutate it, so each store
+gained its own `clearProject(projectId)` and the coordination lives in
+`hooks/useDeleteProject.ts` — the exact mirror of `useImportProjectFile`, which
+already seeds those same layers one public action at a time on the way in. The
+two IndexedDB-backed stores go first and are awaited: they need the project id
+to find their own rows via the `by-project` index, and `deleteProject` is what
+makes that id unfindable.
+
+`scripts/e2e/projectDelete.e2e.mjs` measures it in both directions — 8
+assertions, proved failing (3 FAILs) with the purge disabled and passing with
+it. It imports a real PNG so the IndexedDB half measures an actual blob rather
+than passing vacuously.
+
+### 4. A block type nothing could create
+
+`gallery` could be rendered, exported to EPUB, accessibility-checked and shown
+in the Inspector — and was constructed by **no code path anywhere**. Grepping
+for `type: 'gallery'` found the renderer, the exporter, the checker and the
+type definition, and no factory. It has been unreachable dead weight since it
+shipped.
+
+Both shells now insert one from a multi-photo pick: `useImagesUpload` beside
+`useImageUpload` (a separate hook, because a gallery is created from the whole
+selection in one insert), "Photo gallery" in the desktop "+" menu, and "Add
+photo gallery" in mobile's. Partial success stays a success — four good photos
+and one corrupt one make a four-photo gallery plus a message, which is the
+failure mode Phase 137 removed from importing and must not come back.
+
+`defaultContent.ts`'s doc comment had also drifted: it claimed images were
+drag-and-drop only, which stopped being true in Phase 51.
+
+### 5. Templates could be created but never curated
+
+`templateStore` shipped with `renameTemplate` and `deleteTemplate` and no UI
+ever called either, so a series template lived forever under whatever name it
+was given on the day. `ManageTemplatesDialog` now offers both — a plain list
+rather than `ThemeGallery`'s preview grid, because a theme's identity is visual
+and a template's identity is what it *contains*, which is a sentence rather
+than a picture. Reachable from the desktop toolbar's More menu and from
+mobile's More tab, which had no template controls at all (neither save nor
+manage).
+
+### 6. Dead code that lied about itself
+
+`listStructuralPageTypes()` carried the comment "used by the Sidebar's 'Add
+Page' picker" and had no callers — the Sidebar keeps its own two ordered lists.
+Removed. (The lists themselves check out: all 18 registered page types are
+reachable between front and back matter.)
+
+### Also
+- The home screen's header and grid overflowed at phone widths (`px-8`, no
+  wrapping). Now `px-5 sm:px-8` and `flex-wrap`.
+
+### Verified
+Writing E2E 20/20 both shells, spell-check 8/8, project-delete 8/8 (and 3/8
+failing with the fix disabled, checked), runtime audit clean, copy audit 4
+findings all in desktop-only components (0 that can render on a phone),
+`npm test` ALL PASS, build clean, lint exit 0 at the 49-warning baseline.
+Gallery insertion, template save, rename and delete each driven end-to-end in
+a real browser.

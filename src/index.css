@@ -216,6 +216,13 @@
  * colour-scheme media query, so the in-app toggle has full control. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Enables `can-hover:` utilities, for affordances that are allowed to hide
+ * until the pointer arrives. A control revealed only by `group-hover` is
+ * invisible forever on a touch screen — `opacity-0` still accepts taps, so
+ * the button is there but unfindable. Wrap the hiding half in `can-hover:`
+ * and the control stays permanently visible on a phone. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
 :root {
   /* Surfaces */
   --background: #fafaf8;

@@ -7,9 +7,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { EmptyState } from '@/components/common/EmptyState'
 import { Logo } from '@/components/common/Logo'
 import { useProjectStore } from '@/store/projectStore'
+import { useDeleteProject } from '@/hooks/useDeleteProject'
 import { useTheme } from '@/hooks/useTheme'
 import { formatRelativeTime } from '@/utils'
 import { NewProjectDialog } from '@/pages/NewProjectDialog'
+import { ConfirmDialog } from '@/components/common/ConfirmDialog'
 import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 
@@ -17,9 +19,10 @@ import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 export function ProjectsPage() {
   const navigate = useNavigate()
   const projects = useProjectStore((s) => s.projects)
-  const deleteProject = useProjectStore((s) => s.deleteProject)
+  const deleteProject = useDeleteProject()
   const { resolved, setAppearance } = useTheme()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null)
   const { busy: loadingProject, error: loadProjectError, runImport } = useImportProjectFile()
   const { openPicker: openProjectFilePicker, inputProps: projectFileInputProps } = useProjectFilePicker(async (file) => {
     const newProjectId = await runImport(file)
@@ -28,7 +31,7 @@ export function ProjectsPage() {
 
   return (
       <div className="min-h-dvh bg-background">
-        <header className="mx-auto flex max-w-5xl items-center justify-between px-8 py-6">
+        <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-6 sm:px-8">
           <Logo withWordmark />
           <div className="flex items-center gap-2">
             <Tooltip>
@@ -61,7 +64,7 @@ export function ProjectsPage() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-5xl px-8 pb-16">
+        <main className="mx-auto max-w-5xl px-5 pb-16 sm:px-8">
           {projects.length === 0 ? (
             <div className="mt-12 rounded-[var(--radius-card)] border border-dashed border-border">
               <EmptyState
@@ -105,9 +108,9 @@ export function ProjectsPage() {
                     aria-label={`Delete ${project.name}`}
                     onClick={(e) => {
                       e.stopPropagation()
-                      deleteProject(project.id)
+                      setPendingDelete({ id: project.id, name: project.name })
                     }}
-                    className="absolute right-3 top-3 rounded-full p-1.5 text-text-muted opacity-0 transition-opacity duration-150 hover:bg-hover hover:text-danger group-hover:opacity-100"
+                    className="absolute right-3 top-3 rounded-full p-1.5 text-text-muted transition-opacity duration-150 hover:bg-hover hover:text-danger can-hover:opacity-0 can-hover:group-hover:opacity-100"
                   >
                     <Trash2 className="size-3.5" />
                   </button>
@@ -118,6 +121,19 @@ export function ProjectsPage() {
         </main>
 
         <NewProjectDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+
+        <ConfirmDialog
+          open={pendingDelete !== null}
+          onOpenChange={(open) => {
+            if (!open) setPendingDelete(null)
+          }}
+          title={`Delete ${pendingDelete?.name ?? 'this project'}?`}
+          description="The manuscript, illustrations and every page of this book are removed from this device permanently. Save it as a .bookstudio file first if you might want it back."
+          confirmLabel="Delete project"
+          onConfirm={() => {
+            if (pendingDelete) void deleteProject(pendingDelete.id)
+          }}
+        />
       </div>
   )
 }

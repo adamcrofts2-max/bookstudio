@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react'
 import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
-import type { ContentBlock, ImageBlock } from '@/types/content'
+import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
 import { Trash2 } from 'lucide-react'
 import { BlockContent } from '@/renderer/BlockContent'
 import { BlockToolbar } from '@/renderer/BlockToolbar'
@@ -336,6 +336,23 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     setInspectorTab('image')
   }
 
+  /** A gallery is the one block type with no blank starting point: it is
+   * defined by the photos in it, so it is only ever created from a real
+   * multi-photo pick. Selecting it opens the Image inspector tab, same as a
+   * single image, so captioning is one click away. */
+  const handleInsertGallery = (chapterId: string, afterBlockId: string | null, assetIds: string[]) => {
+    if (assetIds.length === 0) return
+    const newBlock: GalleryBlock = {
+      id: generateId('block'),
+      type: 'gallery',
+      assetIds,
+      caption: undefined,
+    }
+    insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
+    select(chapterId, newBlock.id)
+    setInspectorTab('image')
+  }
+
   const handleInsertBlock = (chapterId: string, afterBlockId: string | null, type: InsertableBlockType) => {
     const newBlock = createDefaultBlock(type)
     insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
@@ -377,6 +394,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           projectId={projectId}
           onInsert={(type) => handleInsertBlock(chapterId, afterId, type)}
           onInsertImage={(assetId) => handleDropAsset(chapterId, afterId, assetId)}
+          onInsertGallery={(assetIds) => handleInsertGallery(chapterId, afterId, assetIds)}
           onInsertAiDraft={() => setAiDraftTarget({ chapterId, afterBlockId: afterId })}
           emptyChapter={emptyChapter}
         />

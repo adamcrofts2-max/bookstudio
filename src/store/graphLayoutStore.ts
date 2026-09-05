@@ -49,6 +49,10 @@ interface GraphLayoutState {
 }
 
 interface GraphLayoutActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getPositions: (projectId: string) => Record<string, { x: number; y: number }>
   setPosition: (projectId: string, nodeId: string, position: { x: number; y: number }) => void
   /** Drops every manual position for one project — the Book Graph's "Reset
@@ -76,6 +80,24 @@ export const useGraphLayoutStore = create<GraphLayoutState & GraphLayoutActions>
       nodeScaleByProject: {},
       nodeColorByProject: {},
       nodeSizeByProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextByProject = { ...state.byProject }
+          delete nextByProject[projectId]
+          const nextNodeScaleByProject = { ...state.nodeScaleByProject }
+          delete nextNodeScaleByProject[projectId]
+          const nextNodeColorByProject = { ...state.nodeColorByProject }
+          delete nextNodeColorByProject[projectId]
+          const nextNodeSizeByProject = { ...state.nodeSizeByProject }
+          delete nextNodeSizeByProject[projectId]
+          return {
+            byProject: nextByProject,
+            nodeScaleByProject: nextNodeScaleByProject,
+            nodeColorByProject: nextNodeColorByProject,
+            nodeSizeByProject: nextNodeSizeByProject,
+          }
+        }),
 
       getPositions: (projectId) => get().byProject[projectId] ?? EMPTY_POSITIONS,
 
