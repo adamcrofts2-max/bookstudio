@@ -75,6 +75,12 @@ async function main() {
     await page.waitForTimeout(600)
     const seeded = await pages(page)
 
+    // Park the Inspector somewhere else first, so "it opens on the new
+    // page" below is a real measurement rather than a tautology about
+    // whatever tab happened to be showing already.
+    await page.locator('aside.border-l [role="tab"]', { hasText: 'Theme' }).first().click()
+    await page.waitForTimeout(400)
+
     await page.getByRole('button', { name: /add front matter page/i }).first().click()
     await page.waitForTimeout(400)
     await page.getByRole('menuitem', { name: /^dedication$/i }).click()
@@ -84,6 +90,43 @@ async function main() {
       `adding a Dedication persists it (${added.filter((t) => t === 'dedication').length} present)`,
       added.filter((t) => t === 'dedication').length === seeded.filter((t) => t === 'dedication').length + 1,
     )
+
+    // Phase 156: adding a page used to leave the canvas exactly where it
+    // was — usually on blank space nowhere near the page just created — so
+    // the one thing you came to do (fill it in) started with a hunt. The
+    // page must be on screen and selected, the way clicking an existing
+    // row in this same list has always behaved.
+    const landing = await page.evaluate(() => {
+      const projectId = location.pathname.split('/project/')[1]?.split('/')[0]
+      const raw = localStorage.getItem('book-studio.structuralPages')
+      const list = raw && projectId ? (JSON.parse(raw).state.byProject[projectId] ?? []) : []
+      const added = list.find((sp) => sp.type === 'dedication')
+      const el = added ? document.getElementById(`page-${added.id}`) : null
+      if (!el) return { mounted: false }
+      const r = el.getBoundingClientRect()
+      return { mounted: true, inViewport: r.top < window.innerHeight && r.bottom > 0 }
+    })
+    check('a newly added page is mounted on the canvas', landing.mounted === true)
+    check('the canvas scrolls to the page just added', landing.inViewport === true)
+    const inspectorTab = await page.evaluate(() => {
+      const inspector = document.querySelector('aside.border-l')
+      const active = [...(inspector?.querySelectorAll('[role="tab"]') ?? [])].find((t) => t.getAttribute('data-state') === 'active')
+      return active?.textContent?.trim() ?? null
+    })
+    check(`the Inspector opens on the new page's own tab (${inspectorTab})`, inspectorTab === 'Page')
+
+    // Phase 156: the thumbnail rail used to print `LaidOutPage.number`
+    // verbatim, and `composePages.ts` gives every structural page number 0
+    // by design (front matter is unnumbered), so a book's cover was
+    // captioned "0" — seen in the running app, not by any assertion, which
+    // is why this one measures the rendered caption rather than the model.
+    const railCaptions = await page.evaluate(() =>
+      [...document.querySelectorAll('button.group')]
+        .map((b) => b.lastElementChild?.textContent?.trim() ?? '')
+        .filter((t, i, all) => all.indexOf(t) === i),
+    )
+    check(`no thumbnail is captioned "0" (${railCaptions.join('|')})`, !railCaptions.includes('0'))
+    check('a structural page is captioned by name', railCaptions.includes('Dedication'))
 
     await page.getByRole('button', { name: /^duplicate dedication$/i }).first().click()
     await page.waitForTimeout(900)
@@ -186,6 +229,36 @@ async function main() {
     const afterRemove = (await bible(page))?.characters ?? []
     check(`deleting a character persists (${afterRemove.length} left)`, !afterRemove.some((c) => c.name === 'Miriam Vale'))
 
+    // ---- Develop's way out ----
+    // Phase 156: leaving Develop returns you to whichever workspace you
+    // came from (`uiStore.workspaceMode` is remembered), but the button
+    // always read "Back to editor" — so arriving at a review dashboard
+    // looked like a bug. The label has to name the actual destination.
+    const backFromManuscript = (await page.getByRole('button', { name: /^back to (virtual )?editor$/i }).first().textContent())?.trim()
+    check(`Develop's exit names the manuscript (${backFromManuscript})`, backFromManuscript === 'Back to editor')
+    await page.getByRole('button', { name: /^back to (virtual )?editor$/i }).first().click()
+    await page.waitForTimeout(1500)
+
+    await page.getByRole('button', { name: /virtual editor/i }).first().click()
+    await page.waitForTimeout(1800)
+    await page.getByRole('button', { name: /^develop$/i }).first().click()
+    await page.waitForTimeout(1200)
+    const backFromVirtualEditor = (await page.getByRole('button', { name: /^back to (virtual )?editor$/i }).first().textContent())?.trim()
+    check(
+      `Develop's exit names the Virtual Editor when that's where you came from (${backFromVirtualEditor})`,
+      backFromVirtualEditor === 'Back to Virtual Editor',
+    )
+    await page.getByRole('button', { name: /^back to (virtual )?editor$/i }).first().click()
+    await page.waitForTimeout(1500)
+    const landedOnVirtualEditor = await page.evaluate(() => {
+      const raw = localStorage.getItem('book-studio.ui')
+      return raw ? JSON.parse(raw).state.workspaceMode : null
+    })
+    check(`and lands there (${landedOnVirtualEditor})`, landedOnVirtualEditor === 'virtualEditor')
+    // Leave the workspace on the manuscript for everything below.
+    await page.getByRole('button', { name: /virtual editor/i }).first().click()
+    await page.waitForTimeout(1500)
+
     // ---- manuscript import (.docx) ----
     // The most-used way a real manuscript enters this app, and it had no
     // coverage of any kind — which mattered the day `@xmldom/xmldom`
@@ -208,7 +281,7 @@ async function main() {
     // The Develop/editor view is a remembered global preference, so a new
     // project opens wherever the last one was left — which after the section
     // above is Develop, where there is no importer.
-    const backToEditor = page.getByRole('button', { name: /back to editor/i }).first()
+    const backToEditor = page.getByRole('button', { name: /^back to (virtual )?editor$/i }).first()
     if (await backToEditor.count()) {
       await backToEditor.click()
       await page.waitForTimeout(1500)

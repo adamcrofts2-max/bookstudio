@@ -557,6 +557,23 @@ daily use of everything built so far.)*
       into a heading/list item isn't well-defined the same way). No new
       dependency. Verified via `tsc`; not yet live-verified in Chrome (see
       STATUS.md).
+- [x] Block furniture lives in the page margin, not on the text — shipped
+      2026-09-05 (Phase 156). `BlockToolbar`'s icon bar (`-top-3 right-2`) sat
+      on the block's own first line and hid it; it is now a single handle in
+      the margin opening a labelled menu, the pattern `MobileWriteView`
+      already used. `NoteIndicatorBadge` moved with it (always-visible, so
+      worse). Needed a horizontal twin of Phase 89's clip-box buffer; content
+      width measured identical before and after, so pagination is untouched.
+- [x] Thumbnail rail captions structural pages by name — shipped 2026-09-05
+      (Phase 156). `composePages` numbers them 0 by design, and the rail
+      printed it, so every book's cover was captioned "0".
+- [x] Develop's exit names its real destination — shipped 2026-09-05 (Phase
+      156). "Back to editor" landed on the Virtual Editor whenever that was
+      where you came from; it now reads "Back to Virtual Editor".
+- [x] Adding a structural page lands on it — shipped 2026-09-05 (Phase 156).
+      Insert from the Structure tab now selects, scrolls to and opens the new
+      page's Inspector tab, matching both an existing row's click and what
+      `MobilePagesView` already did.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 

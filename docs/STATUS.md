@@ -10574,3 +10574,114 @@ Mobile export 11/11, and the rest of the gate unchanged: writing 20/20,
 spell-check 8/8, spell-fix 15/15, structure 40/40, mobile blocks 14/14, AI
 provider 11/11, export 31/31, diagnostics 14/14, project-delete 10/10,
 runtime audit clean, `npm test` ALL PASS, build clean, lint exit 0.
+
+## Phase 156 — four things you can only find by looking
+
+The previous session ended by driving the built app through Chromium and
+reading the screenshots rather than asserting on them: 37 shots of the desktop
+shell, 12 of the mobile one, no runtime errors in either. Everything the
+suites test passed, and four defects were sitting in plain sight anyway. Every
+one of them is invisible to the kind of test this project already had, because
+in every case the DOM was correct and the *pixels* were wrong.
+
+### 1. The block toolbar covered the block's own first line
+
+`BlockToolbar` was `absolute -top-3 right-2`: a ~28px-tall icon bar hung 12px
+above the block's top edge, so roughly half of it sat squarely on the opening
+words. In the screenshot, "and the hours kept" was unreadable while its own
+paragraph was hovered — an editor hiding your text at the exact moment you
+reach for it.
+
+There are only three places block furniture can go, and two of them are wrong:
+
+- over the block's own text (what this was);
+- over the **previous** block's text (what `bottom-full` would be — manuscript
+  paragraphs are packed edge-to-edge with no gap between them);
+- out in the margin, which is empty by construction, and is where books have
+  kept marginalia for five hundred years.
+
+A full icon bar (~150px) doesn't fit a 16mm outer margin. A 24px handle does.
+So the bar became a labelled dropdown — Move up / Move down / Duplicate / Page
+break after / Delete block — behind a single handle parked in the margin,
+which is what `MobileWriteView` had already settled on for the same reason
+("so it never covers text/images regardless of block type"). Desktop had
+simply never been given the same treatment. The menu content is a Radix
+portal, so unlike the old bar it can't be clipped by the page's content box
+either.
+
+Two supporting changes made that possible:
+
+- **`BLOCK_OVERLAY_SIDE_BUFFER_PX`** (Page.tsx) — the horizontal twin of Phase
+  89's vertical buffer. The content-flow container's `overflow-hidden` box
+  would otherwise clip the handle dead at the text column's edge, exactly as
+  it used to clip `-top-3` overlays at its top edge. Same remedy: pull the box
+  outward by up to 48px per side and give the same pixels back as padding, so
+  text starts and ends in the identical position. Measured in the running app:
+  block width 432px before and after, which is `contentWidthPx` to the pixel —
+  pagination is untouched.
+- **A fallback.** A project can set margins narrower than the handle needs, so
+  `Page.tsx` measures its own margins and passes `placement='inside'` when
+  there isn't room, where the handle tucks into the corner as before. A 24px
+  square covers far less than a 150px bar did.
+
+`NoteIndicatorBadge` went with it, from `-top-3 left-2` into the left margin.
+It had the same defect and a worse version of it: unlike the hover-gated
+toolbar, that badge is *always* visible, so any paragraph carrying an open
+note had its opening words permanently covered.
+
+### 2. Every structural page in the thumbnail rail was captioned "0"
+
+`composePages.ts` gives structural pages `number: 0` deliberately — front
+matter is conventionally unnumbered and main-body folios start fresh at
+chapter one — and `ThumbnailRail` printed that straight out. So a book's cover
+was labelled "0".
+
+Structural pages don't have a folio to show. They have a name, which is more
+use for navigation anyway, so the rail now reads the page's type from the
+registry and captions it "Cover", "Dedication", "Title Page". Blank pages stay
+deliberately unlabelled, as before.
+
+### 3. Develop's exit named the wrong destination
+
+Clicking "Back to editor" from Develop landed on the Virtual Editor. The
+behaviour is right — `uiStore.workspaceMode` is remembered, so you return to
+whichever workspace you left — and the label was the lie. Sending everyone to
+the manuscript instead would have thrown away where they were. The button now
+reads "Back to Virtual Editor" when that's where it will take you.
+
+### 4. Adding a page left you nowhere near it
+
+Adding a front-matter page from the Structure tab inserted it and left the
+canvas exactly where it was — in the screenshot, parked on blank space with
+the new page off screen entirely. A page is added because it needs filling in,
+so the one thing you came to do began with a hunt.
+
+It now does what clicking an existing row in that same list has always done —
+select, scroll to, and open the Inspector's Page tab — which is also what
+`MobilePagesView` already did on a phone. Verified in the browser: the new
+Dedication is centred on the canvas with its editor open beside it.
+
+### Verification
+
+Each fix has a regression assertion, and each assertion was proved to fail
+against the old behaviour before being kept:
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| the actions handle never covers the block's own text | `writing` | handle rect intersects block rect |
+| no thumbnail is captioned "0" | `structure` | `0\|1\|\|3` |
+| a structural page is captioned by name | `structure` | caption is `0`, not `Dedication` |
+| a newly added page is mounted on the canvas | `structure` | never mounted at all |
+| the canvas scrolls to the page just added | `structure` | out of viewport |
+| the Inspector opens on the new page's own tab | `structure` | still on `Theme` |
+| Develop's exit names the Virtual Editor | `structure` | reads "Back to editor" |
+
+The Inspector assertion needed a fix of its own to be worth anything: as first
+written it passed either way, because the Page tab already happened to be
+active. The suite now parks the Inspector on Theme first, so the check
+measures something.
+
+Geometry is the point. "The actions handle never covers the block's own text"
+is not a rewording of "the toolbar renders" — it is the first assertion in
+this project that would have caught a control sitting on top of a sentence,
+and it exists because a screenshot showed one doing exactly that.

@@ -58,6 +58,21 @@ import { cn } from '@/lib/utils'
 const BLOCK_OVERLAY_BUFFER_PX = 16
 
 /**
+ * Horizontal counterpart to `BLOCK_OVERLAY_BUFFER_PX`, added for Phase 156.
+ * Block furniture — the `BlockToolbar` handle, `NoteIndicatorBadge` — now
+ * parks in the page's side margin rather than on top of the block's own
+ * first line, and the content-flow container's `overflow-hidden` box would
+ * otherwise clip it dead at the text column's edge, exactly as that
+ * container used to clip `-top-3` overlays at its top edge (Phase 89).
+ * Same remedy: pull the box outward and give back the same number of
+ * pixels as padding, so text still starts and ends at the identical
+ * position and pagination is untouched. Wide enough for the note badge
+ * (~39px) plus its 8px gutter; clamped per-side to the margin actually
+ * available, since a project can set margins narrower than this.
+ */
+const BLOCK_OVERLAY_SIDE_BUFFER_PX = 48
+
+/**
  * Thin drop target rendered between two adjacent blocks (or before the
  * first / after the last) so a dragged asset thumbnail can be placed there.
  * Renders nothing at all — zero DOM — while no drag is in progress, so it
@@ -159,6 +174,16 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const isRight = page.side === 'right'
   const marginLeft = isRight ? pageBox.marginInnerPx : pageBox.marginOuterPx
   const marginRight = isRight ? pageBox.marginOuterPx : pageBox.marginInnerPx
+  // How much of each side margin the content-flow container can borrow for
+  // block furniture without ever reaching past the page's own trim edge.
+  const sideBufferLeft = Math.min(BLOCK_OVERLAY_SIDE_BUFFER_PX, marginLeft)
+  const sideBufferRight = Math.min(BLOCK_OVERLAY_SIDE_BUFFER_PX, marginRight)
+  // A 24px handle plus its 8px gutter is the least the margin placement
+  // needs; anything tighter and the handle falls back inside the block.
+  const blockToolbarPlacement = sideBufferRight >= 32 ? 'margin' : 'inside'
+  // The note badge is wider than the handle, so it needs the full buffer
+  // before it can move out of the text column.
+  const noteBadgeInMargin = sideBufferLeft >= BLOCK_OVERLAY_SIDE_BUFFER_PX
 
   const handleSelect = (chapterId: string, block: { id: string; type: string }) => {
     select(chapterId, block.id)
@@ -286,6 +311,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           // path once a block is selected.
           <BlockToolbar
             selected={isSelected}
+            placement={blockToolbarPlacement}
             canMoveUp={canMoveUp}
             canMoveDown={canMoveDown}
             onMoveUp={() => moveBlockWithHistory(projectId, chapterId, block.id, 'up')}
@@ -305,13 +331,19 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           </BlockToolbar>
         )}
         {chapterId && !decorative && (
-          // Restored to its pre-Phase-83 standalone position — Notes alone
-          // (without Ideas sharing the spot) never had a collision problem,
-          // so only Ideas needed to move.
+          // Phase 156 moved this out into the left margin alongside the
+          // block-actions handle. Its old spot (`-top-3 left-2`) sat on the
+          // block's own first line, and unlike the hover-gated handle this
+          // badge is always visible whenever a block has an unresolved
+          // note — so a noted paragraph had its opening words permanently
+          // covered. The margin is empty by construction; text is not.
           <NoteIndicatorBadge
             projectId={projectId}
             blockId={block.id}
-            className="absolute -top-3 left-2 z-10"
+            className={cn(
+              'absolute z-10',
+              noteBadgeInMargin ? 'right-full top-0 mr-2' : '-top-3 left-2',
+            )}
             onClick={() => {
               select(chapterId, block.id)
               setInspectorTab('notes')
@@ -584,10 +616,12 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           // own bounds.
           top: pageBox.marginTopPx - Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginTopPx),
           bottom: pageBox.marginBottomPx - Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginBottomPx),
-          left: marginLeft,
-          right: marginRight,
+          left: marginLeft - sideBufferLeft,
+          right: marginRight - sideBufferRight,
           paddingTop: Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginTopPx),
           paddingBottom: Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginBottomPx),
+          paddingLeft: sideBufferLeft,
+          paddingRight: sideBufferRight,
         }}
       >
         {page.kind === 'toc' && (

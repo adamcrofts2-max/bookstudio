@@ -163,9 +163,24 @@ interface StructuralSectionProps {
 }
 
 function StructuralSection({ title, category, pages, addableTypes, projectId, selectedStructuralPageId }: StructuralSectionProps) {
+  const selectStructuralPage = useSelectionStore((s) => s.selectStructuralPage)
+  const requestScrollToPage = useSelectionStore((s) => s.requestScrollToPage)
+  const setInspectorTab = useUiStore((s) => s.setInspectorTab)
+
   const handleAdd = (type: StructuralPageType) => {
     const lastId = pages.length > 0 ? pages[pages.length - 1].id : null
-    insertPageWithHistory(projectId, category, type, lastId)
+    const newId = insertPageWithHistory(projectId, category, type, lastId)
+    // A page is added because it needs filling in, so land on it: same
+    // select + scroll + open-the-Page-tab that clicking an existing row
+    // does (`StructuralPageRow.handleClick` above), and the same thing
+    // `MobilePagesView` already did on a phone. Without this the canvas
+    // stayed wherever it happened to be — usually blank space several
+    // spreads away — and the new page was somewhere you had to go and
+    // find (seen while walking the built app, Phase 156).
+    if (!newId) return
+    selectStructuralPage(newId)
+    requestScrollToPage(newId)
+    setInspectorTab('page')
   }
 
   return (

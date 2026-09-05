@@ -152,6 +152,44 @@ async function run(mobile) {
     afterInsert.some((t) => t.includes('Typed straight after inserting.')),
   )
 
+  if (!mobile) {
+    // Phase 156: block furniture belongs in the margin, not on the block's
+    // own first line. The old toolbar was `absolute -top-3 right-2`, ~28px
+    // tall against a 12px offset, so half of it sat on the opening words —
+    // a defect no assertion here could see, because the words were still in
+    // the DOM. Geometry is what makes it visible, so geometry is what this
+    // measures: the handle's box must not intersect the block's box at all.
+    const blockEl = page.locator('[data-block-id]').first()
+    await blockEl.hover()
+    await page.waitForTimeout(400)
+    const handle = page.locator('button[aria-label="Block actions"]').first()
+    check(`${label}: hovering a block reveals its actions handle`, (await handle.count()) > 0)
+    const overlap = await page.evaluate(() => {
+      const block = document.querySelector('[data-block-id]')
+      const btn = block?.querySelector('button[aria-label="Block actions"]')
+      if (!block || !btn) return null
+      const b = block.getBoundingClientRect()
+      const h = btn.getBoundingClientRect()
+      const clip = block.closest('.absolute.overflow-hidden')?.getBoundingClientRect()
+      return {
+        intersects: h.left < b.right && h.right > b.left && h.top < b.bottom && h.bottom > b.top,
+        // and it must not be quietly clipped away by the content box either
+        visible: !!clip && h.right <= clip.right + 0.5 && h.left >= clip.left - 0.5,
+      }
+    })
+    check(`${label}: the actions handle never covers the block's own text`, overlap?.intersects === false)
+    check(`${label}: the actions handle is inside the page's visible box`, overlap?.visible === true)
+    await handle.click()
+    await page.waitForTimeout(400)
+    const items = await page.locator('[role="menuitem"], [role="menuitemcheckbox"]').allTextContents()
+    check(
+      `${label}: the block menu offers move, duplicate and delete`,
+      ['Move up', 'Move down', 'Duplicate', 'Delete block'].every((t) => items.includes(t)),
+    )
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(300)
+  }
+
   check(`${label}: no uncaught page errors`, pageErrors.length === 0)
   if (pageErrors.length) pageErrors.forEach((e) => console.log('        ' + e))
 

@@ -139,6 +139,17 @@ function EntityKindNavButton({
  */
 export function PlanningShell({ project }: PlanningShellProps) {
   const setAppMode = useUiStore((s) => s.setAppMode)
+  // Leaving Develop returns you to whichever workspace you left — the
+  // centre column's mode is remembered (`uiStore.workspaceMode`), so
+  // someone who opened Develop from the Virtual Editor lands back on the
+  // Virtual Editor. That's the right behaviour and the wrong label: the
+  // button said "Back to editor" and then showed a review dashboard, which
+  // reads as a bug the first time it happens (spotted while walking the
+  // built app in a browser, Phase 156). Naming the actual destination is
+  // the fix; sending everyone to the manuscript instead would have thrown
+  // away where they were.
+  const workspaceMode = useUiStore((s) => s.workspaceMode)
+  const backLabel = workspaceMode === 'virtualEditor' ? 'Back to Virtual Editor' : 'Back to editor'
   const bible = useLayer0Store((s) => s.getBible(project.id))
   const ideaCount = (useIdeaStore((s) => s.byProject[project.id]) ?? EMPTY_IDEAS).length
   const [activeView, setActiveView] = useState<PlanningView>('ideas')
@@ -148,7 +159,7 @@ export function PlanningShell({ project }: PlanningShellProps) {
       <div className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4">
         <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => setAppMode('editor')}>
           <ArrowLeft className="size-4" />
-          Back to editor
+          {backLabel}
         </Button>
         <div className="h-6 w-px bg-border" />
         <p className="truncate text-sm font-medium text-text-primary">{project.name} — Develop</p>
