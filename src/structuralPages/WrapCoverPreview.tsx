@@ -87,7 +87,7 @@ export function WrapCoverPreviewButton({ projectId }: { projectId: string }) {
   const scale = Math.min(MAX_PREVIEW_WIDTH_PX / totalWidthPx, MAX_PREVIEW_HEIGHT_PX / pageBox.heightPx, 1)
 
   const noop = () => {}
-  const renderProps = { theme, pageBox, projectId, siblingPages: pages, selected: false, onSelect: noop, onCommit: noop }
+  const renderProps = { theme, pageBox, projectId, siblingPages: pages, bookTitle: project.name, selected: false, onSelect: noop, onCommit: noop }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

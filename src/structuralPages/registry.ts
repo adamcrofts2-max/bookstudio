@@ -49,6 +49,17 @@ export interface StructuralPageRenderProps {
    * one store read it already needs to do to resolve which page to render.
    */
   siblingPages: StructuralPage[]
+  /**
+   * The project's own name, so a page that stands in for the book's title
+   * can fall back to it rather than showing "Untitled" on a book the author
+   * has already named (Phase 157 — Cover and Title Page both did exactly
+   * that). Same "display the computed default, edit writes an explicit
+   * override" shape `halfTitle.tsx` and `copyright.tsx` already use for
+   * their sibling-page fallbacks; supplied by `Page.tsx`, which needs the
+   * title anyway for running heads. `DrawCtx` carries the same field so the
+   * PDF can't drift from the screen.
+   */
+  bookTitle: string
   selected: boolean
   onSelect: () => void
   onCommit: (updates: Partial<StructuralPage['content']>) => void

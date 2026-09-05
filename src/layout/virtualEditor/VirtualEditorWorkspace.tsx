@@ -177,9 +177,19 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               <Sparkles className="size-5 text-accent" />
               Virtual Editor
             </h1>
+            {/* Was: "Proofreading is real today; the rest of the taxonomy is
+             * designed and lands incrementally — see docs/VIRTUAL_EDITOR.md."
+             * Two problems, both found by reading the screen as a user
+             * (Phase 157): it pointed an author at a Markdown file inside a
+             * repository they don't have, and it had quietly gone false —
+             * `src/virtualEditor/checkers/` now holds a real checker for
+             * every one of the twelve categories, not just proofreading.
+             * A tile with no applicable checker still says "Not yet
+             * analysed" on its own, which is where that caveat belongs. */}
             <p className="max-w-[60ch] text-sm text-text-secondary">
-              Reviews the whole project like a publishing team would. Proofreading is real today; the rest of the
-              taxonomy is designed and lands incrementally — see <span className="font-medium">docs/VIRTUAL_EDITOR.md</span>.
+              Reads the whole book the way a publishing team would — proofreading, grammar, consistency,
+              readability, layout, typography and print readiness — and lists what it finds, with a one-click
+              fix wherever the correction is unambiguous. Nothing is rewritten without you.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">

@@ -75,6 +75,16 @@ async function main() {
     await page.waitForTimeout(600)
     const seeded = await pages(page)
 
+    // Phase 157: the Page tab's margins row was labelled "Margins (in)"
+    // above a millimetre value. Everything in `ProjectSettings.margins` is
+    // mm, so the label was simply wrong — the kind of thing only reading
+    // the screen catches, since the number itself was right.
+    const settingRows = await page.evaluate(() => {
+      const aside = document.querySelector('aside.border-l')
+      return [...(aside?.querySelectorAll('div') ?? [])].map((d) => d.textContent ?? '').filter((t) => t.startsWith('Margins'))
+    })
+    check(`the margins row does not claim inches (${settingRows[0] ?? 'not found'})`, settingRows.length > 0 && !settingRows.some((t) => t.includes('(in)')))
+
     // Park the Inspector somewhere else first, so "it opens on the new
     // page" below is a real measurement rather than a tautology about
     // whatever tab happened to be showing already.
@@ -127,6 +137,45 @@ async function main() {
     )
     check(`no thumbnail is captioned "0" (${railCaptions.join('|')})`, !railCaptions.includes('0'))
     check('a structural page is captioned by name', railCaptions.includes('Dedication'))
+
+    // Phase 157: a Cover added to a book that already has a name showed
+    // "Untitled" — `defaultContent()` is argument-less, so nothing carried
+    // the project's own title across, and the exported PDF printed nothing
+    // at all. Both now fall back to the book's name at render/draw time,
+    // the same shape `halfTitle.tsx` already used for its sibling fallback:
+    // the page displays it, and the stored content stays empty so renaming
+    // the project still follows through.
+    await page.getByRole('button', { name: /add front matter page/i }).first().click()
+    await page.waitForTimeout(400)
+    await page.getByRole('menuitem', { name: /^cover$/i }).click()
+    await page.waitForTimeout(2200)
+    // Read the cover page element *by id*, not "the first page containing
+    // the project name" — the running head on the Contents page carries it
+    // too, so the looser search passed against the unfixed build and would
+    // have shipped a test that could never fail.
+    const coverText = await page.evaluate(() => {
+      const projectId = location.pathname.split('/project/')[1]?.split('/')[0]
+      const raw = localStorage.getItem('book-studio.structuralPages')
+      const list = raw && projectId ? (JSON.parse(raw).state.byProject[projectId] ?? []) : []
+      const cover = list.find((sp) => sp.type === 'cover')
+      const el = cover ? document.getElementById(`page-${cover.id}`) : null
+      return el ? (el.textContent ?? '') : '<cover not mounted>'
+    })
+    check(`a new Cover shows the book's own title (${coverText.slice(0, 60)})`, coverText.includes('E2E'))
+    const storedCoverTitle = await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      const raw = localStorage.getItem('book-studio.structuralPages')
+      const list = raw && id ? (JSON.parse(raw).state.byProject[id] ?? []) : []
+      return list.find((sp) => sp.type === 'cover')?.content?.title ?? null
+    })
+    check('the inherited title is a fallback, not a copy', storedCoverTitle === null)
+
+    // Phase 157: and the "Drop a cover image here" pill used to sit
+    // permanently in the dead centre of an imageless cover — across its own
+    // title and subtitle. It is drag feedback now, so with no drag in
+    // progress it must not be on screen at all.
+    const dropPill = await page.evaluate(() => document.body.innerText.includes('Drop a cover image here'))
+    check('no drop-image pill sits on top of the cover', dropPill === false)
 
     await page.getByRole('button', { name: /^duplicate dedication$/i }).first().click()
     await page.waitForTimeout(900)
@@ -241,6 +290,13 @@ async function main() {
 
     await page.getByRole('button', { name: /virtual editor/i }).first().click()
     await page.waitForTimeout(1800)
+    // Phase 157: the Virtual Editor's own blurb told an author to "see
+    // docs/VIRTUAL_EDITOR.md" — a file in a repository they don't have —
+    // and claimed only proofreading was real, which stopped being true
+    // once `checkers/` grew one per category. Developer notes are not
+    // product copy.
+    const veCopy = await page.evaluate(() => document.body.innerText)
+    check('the Virtual Editor does not cite a source file at the reader', !veCopy.includes('VIRTUAL_EDITOR.md'))
     await page.getByRole('button', { name: /^develop$/i }).first().click()
     await page.waitForTimeout(1200)
     const backFromVirtualEditor = (await page.getByRole('button', { name: /^back to (virtual )?editor$/i }).first().textContent())?.trim()

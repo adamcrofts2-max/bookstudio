@@ -259,7 +259,6 @@ export function ResetFieldPositionButton({ onReset }: { onReset: () => void }) {
 }
 
 interface StructuralImageDropZoneProps {
-  hasImage: boolean
   onDropAsset: (assetId: string) => void
   label?: string
 }
@@ -279,7 +278,7 @@ interface StructuralImageDropZoneProps {
  * background space works — not gated behind "only when no image is set yet"
  * so it doubles as a replace affordance too.
  */
-export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop an image here' }: StructuralImageDropZoneProps) {
+export function StructuralImageDropZone({ onDropAsset, label = 'Drop an image here' }: StructuralImageDropZoneProps) {
   const [isOver, setIsOver] = useState(false)
   // There is no drag source on a touch device — no Assets sidebar to drag
   // from — and this label is `pointer-events-none`, so on a phone it was an
@@ -305,7 +304,18 @@ export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop a
         if (assetId) onDropAsset(assetId)
       }}
     >
-      {canDrag && (isOver || !hasImage) && (
+      {/* Shown only while a drag is actually over the page. It used to
+       * render whenever the cover had no image yet, which meant a dark
+       * "Drop a cover image here" pill sat permanently in the dead centre
+       * of the cover — directly across the title and subtitle, so a brand
+       * new book's own cover was unreadable in its own editor (seen in the
+       * running app, Phase 157). Dropping works whether or not the pill is
+       * there, and the discoverable path for someone who'd never think to
+       * drag is the "Add cover image" button on the page and in the
+       * Inspector (Phase 46), so as instruction it was redundant and as
+       * decoration it was destructive. As drag feedback it earns its
+       * place. */}
+      {canDrag && isOver && (
         <div className="pointer-events-none flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 px-4 py-2 text-xs text-white">
           <ImagePlus className="size-3.5" />
           {label}

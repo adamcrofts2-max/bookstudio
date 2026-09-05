@@ -10685,3 +10685,132 @@ Geometry is the point. "The actions handle never covers the block's own text"
 is not a rewording of "the toolbar renders" — it is the first assertion in
 this project that would have caught a control sitting on top of a sentence,
 and it exists because a screenshot showed one doing exactly that.
+
+## Phase 157 — the first hour of a new book
+
+Phase 156 walked the app as someone editing an existing book. This one walked
+it as someone starting a new one, on a laptop and on a phone: 21 desktop
+screenshots, 16 mobile, read rather than asserted on. No runtime errors in
+either walk, and five defects that every green suite had missed — all of them
+in the first few minutes of a book's life, which is exactly the stretch that
+had never been re-walked since the app grew an importer.
+
+### 1. A chapter written on a phone was always called "Untitled Chapter"
+
+`MobileWriteView.handleAddChapter` set `renamingChapterId` and carried a
+comment claiming parity with `Sidebar.tsx`'s "type the real title next, no
+separate naming step". The input that state drives is rendered *inside* the
+chapter switcher sheet — and nothing opened the sheet. So the editor sat in a
+naming state with nothing on screen to type into, and the default name stuck.
+
+Measured rather than argued, which is also what the new assertion measures:
+straight after tapping Add Chapter, `document.activeElement` was `INPUT` with
+`"Untitled Chapter"` selected on desktop, and `BODY` on mobile.
+
+The fix opens the sheet, and closes it again when that particular rename
+commits (renaming an existing chapter from inside the sheet leaves it open —
+that's a list the user chose to be looking at).
+
+**A correction to the report that prompted this phase:** it said every chapter
+was named "Untitled Chapter" on both shells. Desktop was fine; the walkthrough
+script pressed Escape immediately after adding a chapter, which cancelled the
+rename that had correctly begun. The bug was real but half as wide as
+reported, and only the phone had it.
+
+### 2. A book you had already named had an untitled cover
+
+The New Project dialog says, under its one field, *"This becomes your
+project's title."* It does — and then Cover and Title Page, whose
+`defaultContent()` is an argument-less factory, both started empty. On screen
+that read "Untitled"; in the exported PDF it printed **nothing at all**, since
+`drawCoverPdf` (correctly) refuses to print placeholder text. So a book titled
+at minute one exported with a blank cover.
+
+Fixed the way this codebase already solves the same shape of problem:
+`halfTitle.tsx` falls back to a sibling Title Page's title, and `copyright.tsx`
+to its author, both resolved at render time rather than copied at creation.
+Cover and Title Page now fall back to the project's own name the same way, so
+renaming the project still follows through and an explicit edit still wins.
+`bookTitle` is threaded to both sides — `StructuralPageRenderProps` for the
+screen, `DrawCtx` for the PDF — because a fallback that only one of them knows
+about is WYSIWYG drift by construction.
+
+The Inspector's Title field shows the inherited name as its *placeholder* now,
+too: an empty "Book title…" box beside a cover reading "The Hidden Library"
+was telling two different stories.
+
+### 3. A pill sat permanently on the cover's own title
+
+`StructuralImageDropZone` rendered its "Drop a cover image here" label
+whenever the page had no image — dead centre, dark, across the title and
+subtitle. A new book's cover was unreadable in its own editor. It is drag
+feedback now (`isOver` only): dropping works whether or not the pill is
+visible, and the discoverable path for someone who would never think to drag a
+sidebar thumbnail is the "Add cover image" button that Phase 46 already added
+in two places. As instruction it was redundant; as decoration it was
+destructive. `hasImage` became unused and was removed from the component's
+props and its three call sites.
+
+### 4. Developer notes were shipping as product copy
+
+The Virtual Editor's own blurb read *"Proofreading is real today; the rest of
+the taxonomy is designed and lands incrementally — see
+docs/VIRTUAL_EDITOR.md."* It pointed an author at a Markdown file inside a
+repository they do not have, and it had quietly gone false:
+`src/virtualEditor/checkers/` now holds a real checker for every one of the
+twelve categories. A tile with no applicable checker already says "Not yet
+analysed" on its own — that caveat lives in the tile, not in the header.
+
+`docs/VIRTUAL_EDITOR.md`'s taxonomy table is the stale artefact here and is
+still stale; it claims typography, accessibility, print and commercial have no
+checker at all. Left for its own pass rather than half-corrected in passing.
+
+### 5. "Margins (in)" over a millimetre value
+
+Every margin in `ProjectSettings` is stored in mm. The row also showed only
+the inner margin; a book's outer, top and bottom margins matter as much as its
+gutter, and the Page tab is where you would look for them. Now: `22 inner · 16
+outer · 20/20 mm`.
+
+### Verification
+
+Each fix has a regression assertion, and each was proved to fail against the
+old behaviour before being kept:
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| adding a chapter focuses a name field | `writing` | `null` — focus was on `BODY` |
+| the typed chapter name is what gets stored | `writing` | `Untitled Chapter` |
+| a new Cover shows the book's own title | `structure` | cover reads `Untitled` |
+| the inherited title is a fallback, not a copy | `structure` | (guards against seeding) |
+| no drop-image pill sits on top of the cover | `structure` | pill present |
+| the Virtual Editor does not cite a source file | `structure` | cites `VIRTUAL_EDITOR.md` |
+| the margins row does not claim inches | `structure` | `Margins (in)22mm inner` |
+
+The cover assertion needed tightening before it was worth anything: as first
+written it looked for "the first page element containing the project name",
+which matched the **Contents page's running head** and therefore passed
+against the unfixed build. It reads the cover element by id now. That is the
+sixth time in this project a new assertion has been wrong before the code
+was — the pattern is always the same, a locator loose enough to find
+something else that happens to be correct.
+
+`newProjectWithChapter` in `scripts/e2e/runner.mjs` now presses Enter after
+adding a chapter on mobile: the naming sheet is modal, so every suite that
+carried on tapping would otherwise have been tapping its overlay. Accepting
+the default name is what a writer in a hurry does.
+
+`export.e2e.mjs` now puts a Cover in the book it exports. Until this phase no
+suite exported a book with a cover at all, so `drawCoverPdf` ran in no test —
+including when this phase changed what it draws. Its bytes are checked; its
+pixels still are not, which remains the open Phase J item.
+
+### Deliberately not fixed here
+
+The walkthrough also found that mobile's empty state says "or import a
+manuscript on desktop" while its own More tab offers "Import a manuscript",
+that switching the sidebar from Structure back to Chapters leaves the canvas
+parked on the cover, and that the Virtual Editor scores an almost-empty book
+99/100 because checkers only fire on content that exists. The first two are
+small and separate; the third is a design question about whether absence
+should be a finding, and deserves its own decision rather than a quick patch.

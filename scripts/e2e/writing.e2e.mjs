@@ -152,6 +152,35 @@ async function run(mobile) {
     afterInsert.some((t) => t.includes('Typed straight after inserting.')),
   )
 
+  if (mobile) {
+    // Phase 157: naming a new chapter. `MobileWriteView.handleAddChapter`
+    // has always set `renamingChapterId`, and its own comment claimed
+    // parity with desktop — but the input that state drives lives inside
+    // the chapter sheet, which nothing opened, so every chapter written on
+    // a phone stayed "Untitled Chapter". The measurement that caught it is
+    // the one this repeats: what has focus straight after adding.
+    // Past the first chapter the affordance is "New chapter" inside the
+    // chapter sheet, so open the sheet the way a writer would.
+    await page.getByText('Untitled Chapter', { exact: true }).first().tap()
+    await page.waitForTimeout(900)
+    await page.getByRole('button', { name: /new chapter/i }).first().tap()
+    await page.waitForTimeout(1600)
+    const naming = await page.evaluate(() => {
+      const el = document.activeElement
+      return el instanceof HTMLInputElement ? el.value : null
+    })
+    check(`${label}: adding a chapter focuses a name field (${JSON.stringify(naming)})`, naming === 'Untitled Chapter')
+    await page.keyboard.type('The Reading Room')
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(1400)
+    const titles = await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      const raw = localStorage.getItem('book-studio.content')
+      return raw && id ? (JSON.parse(raw).state.byProject[id]?.chapters ?? []).map((c) => c.title) : []
+    })
+    check(`${label}: the typed chapter name is what gets stored (${titles.join(' | ')})`, titles.includes('The Reading Room'))
+  }
+
   if (!mobile) {
     // Phase 156: block furniture belongs in the margin, not on the block's
     // own first line. The old toolbar was `absolute -top-3 right-2`, ~28px

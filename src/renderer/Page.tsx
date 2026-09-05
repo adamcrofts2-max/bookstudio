@@ -511,6 +511,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               pageBox={pageBox}
               projectId={projectId}
               siblingPages={structuralPages}
+              bookTitle={bookTitle}
               selected={isStructuralPageSelected}
               onSelect={
                 decorative

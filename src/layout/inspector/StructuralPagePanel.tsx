@@ -16,6 +16,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
+import { useProjectStore } from '@/store/projectStore'
 import { useExportStore } from '@/store/exportStore'
 import { useUiStore } from '@/store/uiStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
@@ -424,6 +425,13 @@ function SpineWidthInfo({ projectId }: { projectId: string }) {
  */
 export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
   const pages = useStructuralPageStore((s) => s.byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES)
+  // What the page will actually show while its own Title is blank — Cover
+  // and Title Page both fall back to the project's name (Phase 157), so a
+  // panel whose field read an empty "Book title…" beside a cover reading
+  // "The Hidden Library" would be telling two different stories. Shown as
+  // the placeholder, not the value: empty still means "inherit", and typing
+  // still writes an explicit override.
+  const bookTitle = useProjectStore((s) => s.projects.find((pr) => pr.id === projectId)?.name ?? '')
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
   const selectedCoverElementId = useSelectionStore((s) => s.selectedCoverElementId)
   const selectCoverElement = useSelectionStore((s) => s.selectCoverElement)
@@ -535,7 +543,7 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             <Label htmlFor="structural-title">Title</Label>
             <Input
               id="structural-title"
-              placeholder="Book title…"
+              placeholder={bookTitle || 'Book title…'}
               value={page.content.title ?? ''}
               onChange={(e) => patch({ title: e.target.value })}
             />

@@ -184,6 +184,22 @@ async function main() {
       await page.waitForTimeout(1500)
     }
 
+    // A real book has a cover, and until Phase 157 no export suite ever put
+    // one in the book it exported — so `drawCoverPdf` ran in no test at all,
+    // including when Phase 157 threaded the book's title into `DrawCtx` for
+    // it to fall back to. Everything below now exports a book with a cover
+    // on the front. (What still isn't verified anywhere is what that page
+    // *looks* like once rendered: the bytes are checked, the pixels are not
+    // — see docs/ROADMAP.md Phase J.)
+    await page.getByRole('tab', { name: /^structure$/i }).first().click()
+    await page.waitForTimeout(600)
+    await page.getByRole('button', { name: /add front matter page/i }).first().click()
+    await page.waitForTimeout(400)
+    await page.getByRole('menuitem', { name: /^cover$/i }).click()
+    await page.waitForTimeout(2200)
+    await page.getByRole('tab', { name: /^chapters$/i }).first().click()
+    await page.waitForTimeout(900)
+
     // Preview at least once: PDF export mirrors the on-screen pagination via
     // `exportStore`, so it is only armed after the renderer has run.
     const preview = page.getByRole('button', { name: /^preview$/i }).first()

@@ -574,6 +574,41 @@ daily use of everything built so far.)*
       Insert from the Structure tab now selects, scrolls to and opens the new
       page's Inspector tab, matching both an existing row's click and what
       `MobilePagesView` already did.
+- [x] Naming a chapter works on a phone — shipped 2026-09-05 (Phase 157).
+      `MobileWriteView` set its rename state without opening the sheet that
+      holds the rename input, so every chapter written on a phone stayed
+      "Untitled Chapter". Desktop was always fine.
+- [x] Cover and Title Page inherit the book's own name — shipped 2026-09-05
+      (Phase 157). Both started empty, so a book titled at creation showed
+      "Untitled" on screen and printed a blank cover. Resolved at render/draw
+      time (the `halfTitle.tsx` fallback pattern), with `bookTitle` threaded
+      into both `StructuralPageRenderProps` and `DrawCtx` so screen and PDF
+      can't drift.
+- [x] The cover's drop-image pill no longer sits on its own title — shipped
+      2026-09-05 (Phase 157). It is drag feedback now, not a permanent caption.
+- [x] Virtual Editor copy is written for authors, not for the repo — shipped
+      2026-09-05 (Phase 157). It cited `docs/VIRTUAL_EDITOR.md` at the reader
+      and claimed only proofreading was implemented, which is no longer true.
+- [x] The Page tab's margins row states real units — shipped 2026-09-05 (Phase
+      157). It was labelled "(in)" over a millimetre value, and showed only
+      the inner margin.
+- [ ] `docs/VIRTUAL_EDITOR.md`'s issue-type taxonomy table is stale — it says
+      typography, accessibility, print readiness and commercial quality have
+      no checker and always render "Not yet analysed". All twelve categories
+      have had a real checker since Phase 25-ish; the table has not caught up,
+      and it misled a review of the app's own state (Phase 157).
+- [ ] Mobile contradicts itself about importing: the empty state says "import
+      a manuscript on desktop" while the More tab offers "Import a manuscript
+      — EPUB, DOCX, Markdown, TXT or HTML" (found Phase 157).
+- [ ] Switching the sidebar from Structure back to Chapters leaves the canvas
+      wherever it was — usually on the cover — with no route back to the text
+      but scrolling (found Phase 157). Same family as Phase 156's "land on the
+      page you just added".
+- [ ] The Virtual Editor scores an almost-empty book 99/100: a two-paragraph
+      manuscript with an untitled cover, no author, no ISBN and no back cover
+      returned Print Readiness 100 and Publishing Quality 100, because every
+      checker only fires on content that exists. Deciding whether absence
+      should be a finding is a design question, not a patch (found Phase 157).
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 

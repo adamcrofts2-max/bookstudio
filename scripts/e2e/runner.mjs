@@ -88,6 +88,16 @@ export async function newProjectWithChapter(page, { mobile }) {
   if (mobile) await add.tap()
   else await add.click()
   await page.waitForTimeout(1500)
+  // Both shells drop straight into naming the new chapter. On desktop that
+  // is an inline input in the Sidebar, which blocks nothing; on mobile it
+  // is the chapter sheet (Phase 157), which is modal, so a suite that just
+  // carries on tapping would be tapping the overlay. Accepting the default
+  // name with Enter is what a writer in a hurry does, and it leaves the
+  // shell in the state every caller below already expects.
+  if (mobile) {
+    await page.keyboard.press('Enter')
+    await page.waitForTimeout(900)
+  }
 }
 
 /** Reads the manuscript straight out of persisted state. */

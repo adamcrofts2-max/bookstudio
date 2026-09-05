@@ -99,7 +99,15 @@ export function Inspector({ project }: InspectorProps) {
             ) : (
               <div className="flex flex-col divide-y divide-border">
                 <SettingRow label="Trim size" value={settings.trimSize.replace('x', ' × ')} />
-                <SettingRow label="Margins (in)" value={`${settings.margins.inner}mm inner`} />
+                {/* Label said "(in)" over a millimetre value (Phase 157).
+                 * Every margin in `ProjectSettings` is stored in mm, and
+                 * three of the four were being hidden anyway — a book's
+                 * outer, top and bottom margins matter as much as its
+                 * gutter, and the Page tab is where you'd look for them. */}
+                <SettingRow
+                  label="Margins"
+                  value={`${settings.margins.inner} inner · ${settings.margins.outer} outer · ${settings.margins.top}/${settings.margins.bottom} mm`}
+                />
                 <SettingRow label="Bleed" value={`${settings.bleed}mm`} />
                 <SettingRow label="Language" value={settings.language.toUpperCase()} />
               </div>

@@ -31,6 +31,11 @@ export interface DrawCtx {
    */
   projectId: string
   structuralPages: StructuralPage[]
+  /** The book's title, for structural pages that fall back to it when their
+   * own title field is empty — see `StructuralPageRenderProps.bookTitle`.
+   * Both sides carry it so an untitled Cover prints exactly what the screen
+   * shows. Ignored by every `ContentBlock` `drawPdf`. */
+  bookTitle: string
   /** Colour space every `hexToPdfColor`/`pdfBlack`/`pdfWhite` call in this
    * export should use — resolved once from `ProjectSettings.colorProfile`
    * (`?? 'rgb'`) at the top of `exportBookToPdf` and threaded through every
@@ -137,6 +142,7 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
           cursorY: mediaHeight - bleedPt - marginTopPt,
           projectId,
           structuralPages,
+          bookTitle,
           colorMode,
         }
         await def.drawPdf(ctx, structuralPage, theme, pageBox)
@@ -149,7 +155,7 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
     const contentTop = mediaHeight - bleedPt - marginTopPt
     const contentBottom = bleedPt + marginBottomPt
 
-    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages, colorMode }
+    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages, bookTitle, colorMode }
 
     if (page.kind === 'toc') {
       const headingFont = pickFont(fonts, theme.fonts.heading, 600)

@@ -252,6 +252,9 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
+  /** Set only while the switcher sheet is standing in as the naming step
+   * for a brand-new chapter, so committing can close it again. */
+  const [namingNewChapterId, setNamingNewChapterId] = useState<string | null>(null)
   const [imageError, setImageError] = useState<string | null>(null)
   const setFocusMode = useUiStore((s) => s.setFocusMode)
   const selectBlockForEdit = useSelectionStore((s) => s.selectForEdit)
@@ -379,16 +382,36 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const commitRenameChapter = (chapterId: string, fallback: string) => {
     renameChapterWithHistory(projectId, chapterId, titleDraft.trim() || fallback)
     setRenamingChapterId(null)
+    // The sheet was opened only to hold the naming field for a chapter that
+    // was just created, so close it again and leave the writer in the new
+    // chapter. Renaming an existing chapter from inside the sheet leaves it
+    // open, since that's a list the user chose to be looking at.
+    if (namingNewChapterId === chapterId) {
+      setNamingNewChapterId(null)
+      setSwitcherOpen(false)
+    }
   }
 
   /** Drops straight into rename mode for the freshly-created chapter — same
    * "type the real title next, no separate naming step" UX `Sidebar.tsx`'s
-   * `handleAddChapter` already establishes on desktop. */
+   * `handleAddChapter` already establishes on desktop.
+   *
+   * Opening the switcher sheet is the whole trick, and its absence was the
+   * bug (Phase 157): the rename input is rendered *inside* that sheet, so
+   * setting `renamingChapterId` while the sheet was closed put the editor
+   * into a naming state with nothing on screen to type into. Every chapter
+   * written on a phone was therefore called "Untitled Chapter" — the
+   * comment above claimed parity with desktop that the code never had.
+   * Measured, not guessed: after tapping Add Chapter, `document
+   * .activeElement` was `BODY` on mobile and a selected `INPUT` on desktop.
+   */
   const handleAddChapter = () => {
     const lastChapterId = chapters.length > 0 ? chapters[chapters.length - 1].id : null
     const newChapterId = addChapterWithHistory(projectId, lastChapterId, 'Untitled Chapter')
     setActiveChapterId(newChapterId)
     startRenameChapter(newChapterId, 'Untitled Chapter')
+    setNamingNewChapterId(newChapterId)
+    setSwitcherOpen(true)
   }
 
   const handleDeleteChapter = (chapterId: string) => {
