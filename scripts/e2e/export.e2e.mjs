@@ -16,6 +16,8 @@
  * for a real user. The anchor fallback is not what is under test here; the
  * bytes are.
  */
+import zlib from 'node:zlib'
+
 import { loadChromium, serveDist, check, failureCount, newProjectWithChapter } from './runner.mjs'
 
 const PNG_1x1 = Buffer.from(
@@ -43,6 +45,63 @@ const CAPTURE_SAVES = () => {
         },
       }
     },
+  })
+}
+
+
+/**
+ * Inflates every stream in a PDF and returns the font programs it embeds,
+ * resolved through their `FontDescriptor`s.
+ *
+ * This exists because of a bug that produced no error anywhere: the two
+ * interior families were embedded straight from the `.woff2` files the
+ * stylesheet uses, and `FontFile2` must be a TrueType font program. Readers
+ * silently substitute a lookalike rather than complain, so every exported
+ * book had the wrong typeface and nothing said so. An assertion on the
+ * bytes is the only thing that would have caught it, so here it is.
+ */
+function embeddedFonts(pdf) {
+  const objects = new Map()
+  const streamRe = /(\d+) 0 obj([\s\S]{0,800}?)stream\r?\n/g
+  const streams = []
+  let m
+  while ((m = streamRe.exec(pdf.toString('latin1'))) !== null) {
+    const start = m.index + m[0].length
+    const end = pdf.indexOf('endstream', start)
+    if (end === -1) continue
+    streams.push({ num: Number(m[1]), header: m[2], body: pdf.subarray(start, end) })
+  }
+  const inflate = (buf) => {
+    try {
+      return zlib.inflateSync(buf)
+    } catch {
+      return buf
+    }
+  }
+  // Object streams hold the dictionaries; expand them so FontDescriptors are
+  // findable at all.
+  for (const s of streams) {
+    if (!s.header.includes('ObjStm')) continue
+    const data = inflate(s.body).toString('latin1')
+    for (const fd of data.split('>>')) {
+      const name = /\/FontName\s*\/([-\w+]+)/.exec(fd)
+      const ref = /\/FontFile2\s+(\d+) 0 R/.exec(fd)
+      if (name && ref) objects.set(name[1], Number(ref[1]))
+    }
+  }
+  const byNum = new Map(streams.map((s) => [s.num, s]))
+  return [...objects.entries()].map(([name, ref]) => {
+    const target = byNum.get(ref)
+    const data = target ? inflate(target.body) : Buffer.alloc(0)
+    const magic = data.subarray(0, 4).toString('latin1')
+    return {
+      name,
+      bytes: data.length,
+      compressed: target ? target.body.length : 0,
+      // The four containers a PDF `FontFile2`/`FontFile3` may legally hold.
+      valid: ['\u0000\u0001\u0000\u0000', 'OTTO', 'true', 'ttcf'].includes(magic),
+      magic,
+    }
   })
 }
 
@@ -141,6 +200,25 @@ async function main() {
     check('the PDF starts with %PDF', pdfBytes.subarray(0, 4).toString('latin1') === '%PDF')
     check('the PDF ends with %%EOF', pdfBytes.subarray(-1024).toString('latin1').includes('%%EOF'))
     check(`the PDF is named for the book (${pdf?.name})`, /\.pdf$/i.test(pdf?.name ?? ''))
+
+    // Every embedded font program must be something a PDF reader can
+    // actually open. See `embeddedFonts` for the bug this exists to prevent
+    // coming back.
+    const fonts = embeddedFonts(pdfBytes)
+    const invalid = fonts.filter((f) => !f.valid)
+    check(`the PDF embeds real font programs (${fonts.length} fonts)`, fonts.length > 0)
+    check(
+      `every embedded font is a TrueType/OpenType program (bad: ${invalid.map((f) => `${f.name}=${JSON.stringify(f.magic)}`).join(', ') || 'none'})`,
+      invalid.length === 0,
+    )
+    // A book that uses two typefaces should not carry eight families. This
+    // caught 19 fonts and 1.11 MB — 80% of the file — being embedded whether
+    // used or not; the bound is loose enough not to be a nuisance and tight
+    // enough that a return of that would fail it.
+    check(`the PDF embeds only the fonts it uses (${fonts.length} fonts)`, fonts.length <= 10)
+    check(`the PDF is not bloated by unused fonts (${Math.round(pdfBytes.length / 1024)} KB)`, pdfBytes.length < 600 * 1024)
+    const duplicates = fonts.length - new Set(fonts.map((f) => f.bytes)).size
+    check(`no font file is embedded twice (${duplicates} duplicate${duplicates === 1 ? '' : 's'})`, duplicates === 0)
 
     // ---- EPUB ----
     const epub = await exportVia(page, /export epub/i)

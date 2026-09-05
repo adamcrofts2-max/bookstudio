@@ -626,26 +626,37 @@ daily use of everything built so far.)*
       one; hyperlinks get underline+accent colour, deliberately not a
       clickable annotation — see Phase 39's reasoning)
 - [x] Table cell text wrapping in PDF export — see STATUS.md Phase 39
-- [ ] Real font subsetting — **re-diagnosed, Phase 109 (2026-08-02): the
-      earlier note above was wrong.** `@pdf-lib/fontkit` has been a real
-      dependency of this app since Phase 7 (needed for any custom-font
-      embedding at all, not just subsetting) and pdf-lib's `embedFont`
-      already accepts `{ subset: true }` — no new package needed, nothing
-      was ever actually blocked by npm access. The real blocker is
-      different and worse: `@pdf-lib/fontkit`'s subsetting encoder has a
-      genuine, longstanding, documented reliability bug (multiple open
-      GitHub issues — malformed/unsorted font `loca`-table offsets,
-      content-dependent crashes). Reproduced here directly: the exact same
-      font + text, subsetted repeatedly in a standalone script, sometimes
-      succeeded instantly, sometimes threw "Index out of range" mid-encode,
-      and sometimes hung indefinitely — real non-determinism, not a
-      one-off. A PDF export that randomly fails or freezes is a far worse
-      regression than a somewhat larger embedded font file, so `subset:
-      true` was tried in `src/pdf/fonts.ts`'s `embed()` and then explicitly
-      reverted rather than shipped — see that function's own comment and
-      STATUS.md's Phase 109 entry for the full reproduction. Revisit only
-      alongside a fixed `@pdf-lib/fontkit` release or a different
-      subsetting approach, not by re-flipping this flag.
+- [x] PDF font weight — fixed 2026-09-05 (Phase 150), and the fix was not
+      subsetting. The Phase 109 diagnosis below still stands (fontkit's
+      subsetting encoder is genuinely unreliable), but subsetting was never
+      the biggest lever. Measured on a one-paragraph book: **19 embedded
+      fonts, 1.11 MB, 80% of a 1.39 MB PDF** — `loadThemeFonts` embedded
+      every family the app can draw with, used or not. It now embeds only
+      the families the book references (`pdf/usedFonts.ts`), and no file
+      twice. 1,389,930 -> 225,533 bytes, an 84% reduction, with no change to
+      how anything looks
+- [x] **Exported PDFs had unreadable interior fonts** — fixed 2026-09-05
+      (Phase 150). Found while measuring the above, by reading the bytes of a
+      real export. `embed()` fetched `/fonts/inter-400.woff2` and handed the
+      bytes straight to `embedFont`, so `/FontFile2` — which must be a
+      TrueType font program — held a WOFF2 web container instead. Readers
+      substitute a lookalike silently rather than error, so **every book this
+      app has ever exported printed in the wrong typeface**, with no error
+      anywhere and no way to notice on screen. The interior families now load
+      from real `.ttf` twins in `public/fonts/`; the stylesheet still uses the
+      woff2. `scripts/e2e/export.e2e.mjs` now asserts every embedded font
+      program's magic bytes, proved to fail when one woff2 is put back
+      Historic diagnosis, still accurate and still the reason subsetting
+      itself is not attempted:
+      `@pdf-lib/fontkit` has been a real dependency since Phase 7 and
+      pdf-lib's `embedFont` accepts `{ subset: true }` — no package was ever
+      missing. Its subsetting encoder has a documented reliability bug
+      (malformed/unsorted `loca` offsets, content-dependent crashes),
+      reproduced here as non-deterministic "Index out of range" crashes and
+      hangs on identical input. An export that randomly fails is worse than a
+      larger file, so `subset: true` stays off. Revisit only with a fixed
+      fontkit release, not by re-flipping the flag.
+
 - [x] CMYK-aware export workflow for commercial print — shipped 2026-08-02
       (Phase 100+1): `ProjectSettings.colorProfile` ('rgb' default | 'cmyk'),
       naive RGB→CMYK conversion via pdf-lib's built-in `cmyk()` (no new

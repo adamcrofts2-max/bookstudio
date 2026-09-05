@@ -10085,3 +10085,102 @@ Perf suite passing at 1,700 blocks, writing 20/20, spell-check 8/8, structure
 21/21, export 24/24, project-delete 10/10, runtime audit clean, copy audit 4
 desktop-only findings, `npm test` ALL PASS, build clean, lint exit 0 at the
 49-warning baseline.
+
+---
+
+## Phase 150 — every exported PDF has printed in the wrong typeface
+
+The plan was font subsetting: `docs/ROADMAP.md` had it open, and Phase 149's
+new export suite had just measured a 1.39 MB PDF for a one-paragraph book. The
+plan lasted until the first measurement, which is becoming the pattern.
+
+### What was actually in the file
+
+Decompressing every stream in a real exported PDF:
+
+```
+  1,109,251 bytes  (79.8%)   19 x TrueType/OpenType font
+    252,032 bytes  (18.1%)   39 x other
+     23,976 bytes  ( 1.7%)    2 x object stream
+```
+
+**Nineteen embedded fonts** — for a book that uses two typefaces.
+`loadThemeFonts` embedded every family the app can draw with (the two
+interior families plus all seven cover-only display faces) on every export,
+used or not. Its own doc comment said so plainly; it had simply never been
+read as a size problem.
+
+Subsetting nineteen unnecessary fonts is the wrong fix. Not embedding them is
+the right one. `pdf/usedFonts.ts` collects the CSS families a book will
+actually draw with — the theme's heading and body, plus every cover
+`fontChoice` stored on its structural pages — and everything else resolves to
+a standard-14 face, which costs no bytes.
+
+That collection is a **deep walk for any `fontChoice` key**, not a list of the
+places one is known to live. Enumerating known paths would work today and
+start silently missing fonts the first time a page type nests a `typography`
+block somewhere new — and the failure mode is a cover printing in Times New
+Roman, which nobody notices until a proof comes back.
+
+### And then the bytes said something worse
+
+With the display faces gone, the remaining font streams were visible for the
+first time — and their magic number was `wOF2`.
+
+```
+  obj 47: FontName=Inter-Regular-8784  FontFile2 -> 46
+          -> stream magic b'wOF2'   (WOFF2 — not a PDF font format)
+```
+
+`embed()` fetched `/fonts/inter-400.woff2` — the same file the stylesheet
+uses — and handed the bytes straight to `embedFont`, which wrote them into
+the PDF as the font program. A PDF `FontFile2` must be a TrueType font
+program. WOFF2 is a web transport container; no PDF reader can parse one.
+
+So every book this app has ever exported declared `/BaseFont /Inter-Regular`
+and then handed the reader something it could not open. **Readers substitute
+a lookalike silently rather than complain**, which is why this survived: on
+screen the real Inter, in the PDF whatever the reader chose, no error
+anywhere, and the two look similar enough at a glance to pass. For an app
+whose central promise is that the preview and the print are the same
+document, this was the worst possible kind of bug — invisible, total, and in
+the flagship output.
+
+Fixed by loading the interior families from real `.ttf` twins in
+`public/fonts/` (decompressed from the same woff2 with fontTools). The
+stylesheet still uses the woff2, where a small transfer matters and the
+browser understands the container.
+
+Also: several families deliberately point two weights at the same file
+(Source Serif 4 ships no 700, so bold reuses the 600), and each was embedding
+the same bytes twice. One embed per file per document now.
+
+### Result
+
+| | before | after |
+|---|---:|---:|
+| PDF size, one-paragraph book | 1,389,930 | **225,533** |
+| embedded fonts | 19 | 7 |
+| embedded fonts a reader can open | **0** | 7 |
+
+84% smaller, and for the first time the typeface in the PDF is the typeface
+on the screen.
+
+### Guarded
+
+`export.e2e.mjs` now resolves every `FontDescriptor` to its font program and
+checks the magic bytes, plus font count, total size and duplicates. Proved by
+putting one `.woff2` back:
+
+```
+FAIL — every embedded font is a TrueType/OpenType program
+       (bad: Inter-Regular-2163="wOF2")
+```
+
+An assertion on the bytes is the only thing that could ever have caught this,
+because there was never an error to catch.
+
+### Verified
+Export 29/29, writing 20/20, spell-check 8/8, structure 21/21, project-delete
+10/10, runtime audit clean, copy audit 4 desktop-only findings, `npm test` ALL
+PASS, build clean, lint exit 0 at the 49-warning baseline.

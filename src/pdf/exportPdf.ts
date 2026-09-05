@@ -6,6 +6,7 @@ import type { ContentBlock } from '@/types/content'
 import type { ProjectSettings } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import { loadThemeFonts, pickFont, type ThemeFontSet } from '@/pdf/fonts'
+import { collectUsedFontFamilies } from '@/pdf/usedFonts'
 import { hexToPdfColor, pdfBlack, type PdfColorMode } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { getBlockTypeDefinition } from '@/blocks/registry'
@@ -86,13 +87,16 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
   doc.setProducer('Book Studio')
   doc.setCreator('Book Studio')
 
-  const fonts = await loadThemeFonts(doc)
   // Structural pages (Cover/Title Page/Copyright/Blank — see
   // docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2) live in their own store,
   // not in `layout`; `layout.pages` only carries each one's id
   // (`structuralPageId`) via `composeBookPages`, so the full objects are
   // read once here, outside the loop.
   const structuralPages = useStructuralPageStore.getState().byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES
+
+  // Read before embedding, not after: which fonts this book draws with
+  // decides which ones are worth putting in the file at all.
+  const fonts = await loadThemeFonts(doc, collectUsedFontFamilies(theme, structuralPages))
   // See `ProjectSettings.colorProfile`'s doc comment — `undefined` (every
   // project persisted before this setting existed) is `'rgb'`, unchanged
   // behaviour from before this feature existed.
