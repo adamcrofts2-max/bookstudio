@@ -9,7 +9,7 @@
     "lint": "oxlint",
     "preview": "vite preview --config-loader runner",
     "test": "tsx --tsconfig tsconfig.app.json scripts/smoke-test.ts",
-    "test:e2e": "node scripts/e2e/writing.e2e.mjs && node scripts/e2e/spellcheck.e2e.mjs && node scripts/e2e/projectDelete.e2e.mjs",
+    "test:e2e": "node scripts/e2e/writing.e2e.mjs && node scripts/e2e/spellcheck.e2e.mjs && node scripts/e2e/structure.e2e.mjs && node scripts/e2e/export.e2e.mjs && node scripts/e2e/projectDelete.e2e.mjs",
     "test:audit": "node scripts/e2e/audit.e2e.mjs",
     "audit:copy": "node scripts/audit-copy.mjs"
   },

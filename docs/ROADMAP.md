@@ -1445,9 +1445,12 @@ Book Studio today and an actual multi-device Canva-style product.)*
       fix is reverted. Playwright stays out of `package.json` on purpose —
       it pulls a browser download — so the runner resolves it from wherever
       it is installed and says so plainly when it isn't
-- [ ] Add Playwright as a devDependency and run `test:e2e` in CI too — needs
-      a decision on the install-time cost, since every other check runs
-      without a browser
+- [x] Run the browser suites in CI — shipped 2026-09-05 (Phase 147), without
+      the devDependency the item asked for. A separate `e2e` job installs
+      Playwright with `--no-save` and builds before running, so contributors'
+      `npm ci` stays browser-free and `verify` is never blocked by browser
+      infrastructure. "Not a dependency" had quietly come to mean "never runs
+      in CI"
 - [x] Error boundaries — shipped 2026-09-03 (Phase 133). The app previously had
       **none**, so any render error unmounted the whole tree to a blank page
       with no message and no way back. Now a root boundary, a per-route
@@ -1512,9 +1515,25 @@ Book Studio today and an actual multi-device Canva-style product.)*
       wired `onSplit` at all. Enter at the end of a heading now starts the
       paragraph beneath it, and Backspace at the start of a paragraph joins
       it upward, on mobile too
-- [ ] PDF export could not be exercised end-to-end in the headless harness
-      (no download event fires, identically before and after Phase 139) —
-      needs either a harness fix or a manual check
+- [x] PDF export verified end-to-end — shipped 2026-09-05 (Phase 147).
+      `saveBlob` prefers `showSaveFilePicker`, which in headless Chromium
+      neither opens a dialog nor falls through to the anchor download, so
+      nothing observable ever happened and the item stood open for months.
+      Replacing that one browser API before the app loads hands the bytes to
+      the suite instead of to a file system, with the whole pipeline —
+      pagination, font embedding, image extraction — running unchanged.
+      `scripts/e2e/export.e2e.mjs` now asserts a 1.4 MB PDF with a `%PDF`
+      header and `%%EOF` trailer, a valid EPUB (uncompressed `mimetype` first
+      entry), a self-contained HTML book carrying the manuscript text and its
+      image as a data URI, and a `.bookstudio` zip — 24 assertions
+- [x] Structural pages and Develop entity forms covered behaviourally —
+      added 2026-09-05 (Phase 147). Both were named as the likeliest places
+      for another "looks like it worked, store never changed" defect.
+      `scripts/e2e/structure.e2e.mjs` drives add / duplicate / reorder /
+      delete / edit-and-reload on a structural page and add / edit / delete on
+      a Layer 0 character, asserting persisted state throughout. Result: both
+      paths are sound — no defect found
+
 - [x] Spell-check actually works — fixed 2026-09-04 (Phase 141). It had been
       dead for every user since Phase 125: that phase resolved the dictionary
       URL against `document.baseURI`, but the editor always lives on
@@ -1554,8 +1573,8 @@ Book Studio today and an actual multi-device Canva-style product.)*
       (Phase 142). There was no upload control at all, so a phone could never
       set an author photo; the panel only described dragging one from the
       Assets tab
-- [ ] Add Playwright to CI so `test:audit` and `test:e2e` run there too —
-      same dependency decision as Phase 140
+- [x] Add Playwright to CI so `test:audit` and `test:e2e` run there too —
+      shipped 2026-09-05 (Phase 147) as a separate job; see Phase J
 - [x] Spell-check is actually visible — fixed 2026-09-04 (Phase 143). Phase
       141 made the dictionary load; the underlining was still wrong in two
       ways. It was scoped to the focused paragraph, so exactly ONE

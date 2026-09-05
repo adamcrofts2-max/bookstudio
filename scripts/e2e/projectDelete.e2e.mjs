@@ -23,37 +23,53 @@ const PNG_1x1 = Buffer.from(
 
 /** Every persisted store that keys its state by project id, and the field
  * that map lives under. Kept explicit rather than inferred so a new store
- * added without a delete path shows up here as an obvious omission. */
+ * added without a delete path shows up here as an obvious omission.
+ *
+ * Only stores that actually reach `localStorage` belong here — `assetStore`
+ * and `versionStore` live in IndexedDB (checked separately below) and
+ * `exportStore`/`historyStore` are memory-only by design. The first version
+ * of this list spelled four of these keys wrong, and `residue` skipped every
+ * missing key in silence, so the suite passed while measuring almost
+ * nothing. `unreadable` is why that cannot happen again. */
 const PER_PROJECT = [
   ['book-studio.content', 'byProject'],
   ['book-studio.content', 'revisionByProject'],
-  ['book-studio.structural-pages', 'byProject'],
+  ['book-studio.structuralPages', 'byProject'],
+  ['book-studio.structuralPages', 'revisionByProject'],
   ['book-studio.notes', 'byProject'],
   ['book-studio.ideas', 'byProject'],
   ['book-studio.layer0', 'byProject'],
   ['book-studio.graph-layout', 'byProject'],
-  ['book-studio.versions', 'byProject'],
-  ['book-studio.assets', 'byProject'],
-  ['book-studio.writing-sessions', 'byProject'],
+  ['book-studio.virtualEditor', 'reportsByProject'],
+  ['book-studio.writingSessions', 'byProject'],
 ]
 
 async function residue(page, projectId) {
   return page.evaluate(
     ({ entries, id }) => {
       const left = []
+      const unreadable = []
       for (const [key, field] of entries) {
         const raw = localStorage.getItem(key)
-        if (!raw) continue
+        if (!raw) {
+          unreadable.push(`${key} (no such key)`)
+          continue
+        }
         let parsed
         try {
           parsed = JSON.parse(raw)
         } catch {
+          unreadable.push(`${key} (unparseable)`)
           continue
         }
         const map = parsed?.state?.[field]
-        if (map && Object.prototype.hasOwnProperty.call(map, id)) left.push(`${key}/${field}`)
+        if (map === undefined) {
+          unreadable.push(`${key}/${field} (no such field)`)
+          continue
+        }
+        if (Object.prototype.hasOwnProperty.call(map, id)) left.push(`${key}/${field}`)
       }
-      return left
+      return { left, unreadable }
     },
     { entries: PER_PROJECT, id: projectId },
   )
@@ -134,8 +150,39 @@ async function main() {
     })
     check('a project was created', typeof projectId === 'string' && projectId.length > 0)
 
+    // Seed every remaining per-project store directly. Driving each one
+    // through the UI would take minutes and test those features rather than
+    // this one; what needs proving here is that the purge reaches all of
+    // them. Writing the persisted shape and reloading makes each store
+    // rehydrate real state for this project, so an absent key afterwards is
+    // unambiguously the purge working — not a store that was never touched.
+    await page.evaluate(
+      ({ entries, id }) => {
+        for (const [key, field] of entries) {
+          const raw = localStorage.getItem(key)
+          const parsed = raw ? JSON.parse(raw) : { state: {}, version: 1 }
+          parsed.state = parsed.state ?? {}
+          parsed.state[field] = parsed.state[field] ?? {}
+          if (!Object.prototype.hasOwnProperty.call(parsed.state[field], id)) {
+            parsed.state[field][id] = field.startsWith('revision') ? 1 : { seededByTest: true }
+          }
+          localStorage.setItem(key, JSON.stringify(parsed))
+        }
+      },
+      { entries: PER_PROJECT, id: projectId },
+    )
+    await page.reload()
+    await page.waitForTimeout(1200)
+
     const before = await residue(page, projectId)
-    check(`project data exists before deleting (found ${before.length} stores)`, before.length > 0)
+    check(
+      `every per-project store is readable and seeded (missing: ${before.unreadable.join(', ') || 'none'})`,
+      before.unreadable.length === 0,
+    )
+    check(
+      `all ${PER_PROJECT.length} per-project stores hold data before deleting (found ${before.left.length})`,
+      before.left.length === PER_PROJECT.length,
+    )
 
     const assetsBefore = await countAssets(page, projectId)
     check(`the project owns an image before deleting (found ${assetsBefore})`, assetsBefore > 0)
@@ -160,7 +207,7 @@ async function main() {
     check('the project row is gone', projectGone)
 
     const after = await residue(page, projectId)
-    check(`no per-project data is left behind (left: ${after.join(', ') || 'none'})`, after.length === 0)
+    check(`no per-project data is left behind (left: ${after.left.join(', ') || 'none'})`, after.left.length === 0)
 
     const assetsLeft = await countAssets(page, projectId)
     check(`no image rows left in IndexedDB (found ${assetsLeft})`, assetsLeft === 0)

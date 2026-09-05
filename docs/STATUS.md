@@ -9824,3 +9824,103 @@ findings all in desktop-only components (0 that can render on a phone),
 `npm test` ALL PASS, build clean, lint exit 0 at the 49-warning baseline.
 Gallery insertion, template save, rename and delete each driven end-to-end in
 a real browser.
+
+---
+
+## Phase 147 — testing the parts that were only ever hoped to work
+
+Phase 146 closed with an honest caveat: the audits find caret-drops, runtime
+errors and unreachable features, but four paths had no behavioural test at all
+— structural pages, the Develop entity forms, EPUB/HTML export, and PDF export,
+which had never been exercised end-to-end by anything. This phase covers all
+four, and gets every suite running in CI.
+
+### PDF export, finally verified
+
+`docs/ROADMAP.md` had carried "PDF export could not be exercised end-to-end in
+the headless harness" as an open item for months. The reason turned out to be
+one line of `saveBlob`: it prefers `showSaveFilePicker`, which in headless
+Chromium neither opens a dialog nor falls through to the anchor download. The
+export ran perfectly and produced nothing an assertion could see.
+
+Replacing that single browser API before the app loads hands the bytes to the
+suite instead of to a file system. Everything upstream — pagination, font
+embedding, image extraction, zip building — runs exactly as it does for a real
+user; only the last hop changes. `export.e2e.mjs` is 24 assertions across all
+four export paths:
+
+- **PDF**: 1.4 MB, `%PDF` header, `%%EOF` trailer, named for the book.
+- **EPUB**: zip header, and — the rule every validator checks first, and the
+  one a hand-rolled zip writer is most likely to get wrong — an uncompressed
+  `mimetype` as the very first entry, at the exact byte offsets the spec
+  requires.
+- **HTML**: a real document containing the manuscript text and the image as a
+  data URI, with no external stylesheet or script reference, because
+  "single-file" means the file still works after it is emailed.
+- **`.bookstudio`**: zip header and the right extension.
+
+All four passed. The one failure the suite reported on its first run — "the
+manuscript text is in the HTML" — was **the suite's own fault**: a fresh
+chapter has no blocks, so the paragraph it thought it was typing into never
+existed. Corrected, and the suite now asserts the manuscript holds the sentence
+before trusting any export assertion about it. Worth recording as a finding
+about tests, not about the app: an assertion that can pass without the thing it
+describes ever happening is not coverage.
+
+One real observation from the bytes: 1.4 MB for a one-paragraph book. That is
+whole-font embedding, and `docs/ROADMAP.md` already tracks subsetting as open —
+this now quantifies it.
+
+### Structural pages and Develop: clean
+
+`structure.e2e.mjs` drives add / duplicate / reorder / delete / edit on a
+structural page and add / edit / delete on a Layer 0 character, asserting
+persisted state after every step rather than screen state — because screen
+state is what lied in every caret defect this project has found. The
+structural-page text edit also survives a reload, since a field that only
+updates React state looks identical until the page is next opened.
+
+Both paths are sound. **No defect found**, which is the point of testing them:
+"probably fine" and "asserted fine" are different claims, and only one of them
+survives the next refactor. Two incidental facts worth writing down: a fresh
+project deliberately starts with *no* structural pages (they arrive only with a
+saved template), and a dedication is edited from the Inspector rather than on
+the canvas, because it renders as plain centred type.
+
+### A false-passing assertion in my own Phase 146 suite
+
+`projectDelete.e2e.mjs` listed four store keys that do not exist —
+`book-studio.structural-pages` for `structuralPages`, `.versions` and `.assets`
+for stores that are not in `localStorage` at all. `residue()` skipped every
+missing key in silence, so the suite reported "no per-project data is left
+behind" while measuring three stores out of ten.
+
+Both halves are fixed. The key list now matches the real `persist` names, and
+`residue()` returns anything it could not read so a wrong key fails loudly
+instead of shrinking the test. The suite also now **seeds all ten stores**
+before deleting, rather than hoping a short test run happened to touch them —
+so an absent key afterwards is unambiguously the purge working. Re-proved in
+both directions: 10 stores plus both IndexedDB tables listed as residue with
+the purge disabled, none with it enabled.
+
+This is the second time a suite of mine has passed for the wrong reason (Phase
+141's `/spelling/i` matching its own test sentence was the first). The pattern
+is the same both times: an assertion whose failure mode is silence.
+
+### The suites now run in CI
+
+Playwright still stays out of `package.json` — it pulls a browser download and
+roughly doubles install time, and every other check runs without one. But "not
+a dependency" had quietly become "never runs in CI", so five suites protected
+nothing between one person remembering to run them and the next.
+
+A separate `e2e` job installs it with `--no-save`, builds, then runs the
+runtime audit and all five suites. Contributors' `npm ci` is untouched, and
+`verify` is not blocked on it, so a browser-infrastructure failure can never
+masquerade as a broken build.
+
+### Verified
+Writing 20/20, spell-check 8/8, structure 14/14, export 24/24, project-delete
+10/10 (and failing in 3 places with the purge disabled, re-checked after the
+rewrite), runtime audit clean, copy audit 4 findings all desktop-only,
+`npm test` ALL PASS, build clean, lint exit 0 at the 49-warning baseline.

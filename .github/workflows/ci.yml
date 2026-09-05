@@ -49,3 +49,52 @@ jobs:
       # defect that shipped three times before anyone noticed.
       - name: Audit user-facing copy
         run: npm run audit:copy
+
+  # The browser suites run in their own job, deliberately.
+  #
+  # Playwright stays out of `package.json` on purpose (see
+  # `scripts/e2e/runner.mjs`): it pulls a browser download and roughly doubles
+  # install time, and every check in `verify` above runs without one. But
+  # "not a dependency" had quietly come to mean "never runs in CI", so five
+  # suites — writing, spell-check, structure, export and project deletion —
+  # protected nothing between one person remembering to run them and the
+  # next.
+  #
+  # Installing it here, in a job of its own, costs the contributors nothing
+  # and gets the suites running on every push. `verify` is not blocked on it,
+  # so a browser-infrastructure failure can never masquerade as a broken
+  # build.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # Pinned, and installed alongside the project rather than into it, so
+      # the lockfile the `verify` job installs stays untouched.
+      - name: Install Playwright
+        run: |
+          npm install --no-save --no-package-lock playwright@1.56.1
+          npx playwright install --with-deps chromium
+
+      # The suites serve `dist/`, so it has to exist first.
+      - name: Build
+        run: npm run build
+
+      # Runtime health across ~25 surfaces: no uncaught errors, unhandled
+      # rejections or failed requests.
+      - name: Runtime audit
+        run: npm run test:audit
+
+      # Writing, spell-check, structural pages + Develop, every export
+      # format, and project deletion.
+      - name: Browser suites
+        run: npm run test:e2e
+

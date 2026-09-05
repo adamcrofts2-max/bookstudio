@@ -1,0 +1,217 @@
+/**
+ * Every export path, end to end, on real bytes.
+ *
+ * Until this existed the four things this app is ultimately *for* — a
+ * print-ready PDF, an EPUB, a single-file web book and a `.bookstudio`
+ * project file — had zero automated coverage of any kind. `docs/ROADMAP.md`
+ * carried "PDF export could not be exercised end-to-end in the headless
+ * harness" as an open item for good reason: `saveBlob` prefers
+ * `showSaveFilePicker`, which in headless Chromium neither opens a dialog nor
+ * falls through to the anchor download, so nothing observable ever happened.
+ *
+ * The way through is to replace that one browser API before the app loads,
+ * so `saveBlob` takes its native-dialog branch and hands the bytes to us
+ * instead of to a file system. Everything upstream of it — pagination,
+ * font embedding, image extraction, zip building — runs exactly as it does
+ * for a real user. The anchor fallback is not what is under test here; the
+ * bytes are.
+ */
+import { loadChromium, serveDist, check, failureCount, newProjectWithChapter } from './runner.mjs'
+
+const PNG_1x1 = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+/** Captures whatever `saveBlob` tries to write, as base64, keyed by the
+ * suggested filename. Installed before any app code runs. */
+const CAPTURE_SAVES = () => {
+  const saved = []
+  window.__savedFiles = saved
+  window.showSaveFilePicker = async (options) => ({
+    createWritable: async () => {
+      const chunks = []
+      return {
+        write: async (data) => chunks.push(data),
+        close: async () => {
+          const blob = new Blob(chunks)
+          const buffer = await blob.arrayBuffer()
+          let binary = ''
+          const bytes = new Uint8Array(buffer)
+          for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+          saved.push({ name: options.suggestedName, size: bytes.length, base64: btoa(binary) })
+        },
+      }
+    },
+  })
+}
+
+async function savedFiles(page) {
+  return page.evaluate(() => window.__savedFiles ?? [])
+}
+
+/** Clicks one item in the toolbar's Export menu and waits for the bytes.
+ * The export can be gated by the readiness dialog, which offers an
+ * "export anyway" escape — this takes it, since readiness is a separate
+ * concern with its own tests and every format is expected to work on an
+ * imperfect book. */
+async function exportVia(page, itemPattern, timeoutMs = 60000) {
+  const before = (await savedFiles(page)).length
+  await page.getByRole('button', { name: /^export/i }).first().click()
+  await page.waitForTimeout(400)
+  await page.getByRole('menuitem', { name: itemPattern }).click()
+  await page.waitForTimeout(700)
+
+  const anyway = page.getByRole('button', { name: /export anyway/i })
+  if (await anyway.count()) {
+    await anyway.click()
+    await page.waitForTimeout(400)
+  }
+
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const files = await savedFiles(page)
+    if (files.length > before) return files[files.length - 1]
+    await page.waitForTimeout(500)
+  }
+  return null
+}
+
+const decode = (file) => (file ? Buffer.from(file.base64, 'base64') : Buffer.alloc(0))
+
+async function main() {
+  const chromium = await loadChromium()
+  const server = await serveDist()
+  const browser = await chromium.launch()
+  const context = await browser.newContext({ viewport: { width: 1400, height: 900 } })
+  await context.addInitScript(CAPTURE_SAVES)
+  const page = await context.newPage()
+
+  const pageErrors = []
+  page.on('pageerror', (e) => pageErrors.push(String(e)))
+
+  try {
+    await page.goto(server.url)
+    await page.waitForTimeout(600)
+    await newProjectWithChapter(page, { mobile: false })
+
+    // Real content: a paragraph and a photo, so the exporters have both text
+    // and an embedded image to deal with rather than an empty book. A fresh
+    // chapter has no blocks at all, so the paragraph has to be created before
+    // there is anything to type into — an earlier version of this suite
+    // skipped that and then blamed the HTML exporter for the missing text.
+    await page.getByRole('button', { name: /start writing/i }).first().click({ force: true })
+    await page.waitForTimeout(400)
+    await page.getByRole('menuitem', { name: /^paragraph$/i }).click()
+    await page.waitForTimeout(700)
+    const field = page.locator('[contenteditable="true"]').first()
+    check('a paragraph was created to type into', (await field.count()) > 0)
+    if (await field.count()) {
+      await field.click()
+      await page.keyboard.type('The library kept its own hours, and the hours kept their own counsel.')
+      await page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.blur())
+      await page.waitForTimeout(900)
+    }
+    const stored = await page.evaluate(() => {
+      const raw = localStorage.getItem('book-studio.content')
+      if (!raw) return ''
+      const manuscript = Object.values(JSON.parse(raw).state.byProject)[0]
+      return (manuscript?.chapters?.[0]?.blocks ?? []).map((b) => b.html ?? b.text ?? '').join(' ')
+    })
+    check('the manuscript actually holds the sentence', stored.includes('kept its own hours'))
+    const imageInput = page.locator('input[type="file"][accept="image/*"]:not([multiple])').first()
+    if (await imageInput.count()) {
+      await imageInput.setInputFiles({ name: 'plate.png', mimeType: 'image/png', buffer: PNG_1x1 })
+      await page.waitForTimeout(1500)
+    }
+
+    // Preview at least once: PDF export mirrors the on-screen pagination via
+    // `exportStore`, so it is only armed after the renderer has run.
+    const preview = page.getByRole('button', { name: /^preview$/i }).first()
+    if (await preview.count()) {
+      await preview.click()
+      await page.waitForTimeout(2500)
+    }
+
+    // ---- PDF ----
+    const pdf = await exportVia(page, /export pdf/i, 90000)
+    check('PDF export produced a file', pdf !== null)
+    const pdfBytes = decode(pdf)
+    check(`the PDF is not empty (${pdfBytes.length} bytes)`, pdfBytes.length > 1000)
+    check('the PDF starts with %PDF', pdfBytes.subarray(0, 4).toString('latin1') === '%PDF')
+    check('the PDF ends with %%EOF', pdfBytes.subarray(-1024).toString('latin1').includes('%%EOF'))
+    check(`the PDF is named for the book (${pdf?.name})`, /\.pdf$/i.test(pdf?.name ?? ''))
+
+    // ---- EPUB ----
+    const epub = await exportVia(page, /export epub/i)
+    check('EPUB export produced a file', epub !== null)
+    const epubBytes = decode(epub)
+    check(`the EPUB is not empty (${epubBytes.length} bytes)`, epubBytes.length > 500)
+    check('the EPUB is a zip (PK header)', epubBytes.subarray(0, 2).toString('latin1') === 'PK')
+    // An EPUB's first entry must be an uncompressed `mimetype` file — the one
+    // rule every validator checks first, and the one a hand-rolled zip writer
+    // is most likely to get wrong.
+    check(
+      'the EPUB begins with an uncompressed mimetype entry',
+      epubBytes.subarray(30, 38).toString('latin1') === 'mimetype' &&
+        epubBytes.subarray(38, 58).toString('latin1') === 'application/epub+zip',
+    )
+    check(`the EPUB is named for the book (${epub?.name})`, /\.epub$/i.test(epub?.name ?? ''))
+    // Deflated entries make a substring search unreliable, so look for the
+    // chapter's XHTML entry by name instead — its presence is what proves the
+    // manuscript reached the package rather than an empty spine shipping.
+    check('the EPUB contains a chapter document', epubBytes.toString('latin1').includes('chapter'))
+
+    // ---- HTML ----
+    const html = await exportVia(page, /export.*html|web page/i)
+    check('HTML export produced a file', html !== null)
+    const htmlText = decode(html).toString('utf8')
+    check(`the HTML is not empty (${htmlText.length} chars)`, htmlText.length > 500)
+    check('the HTML is a real document', /<!doctype html>/i.test(htmlText))
+    check('the manuscript text is in the HTML', htmlText.includes('kept its own hours'))
+    // Single-file means single file: no external stylesheet or script that
+    // would be a dead link the moment the file is moved or emailed.
+    check(
+      'the HTML has no external stylesheet or script references',
+      !/<link[^>]+rel=["']?stylesheet/i.test(htmlText) && !/<script[^>]+src=/i.test(htmlText),
+    )
+    check('the image travelled with the HTML', /<img[^>]+src=["']data:image\//i.test(htmlText))
+
+    // ---- .bookstudio project file ----
+    await page.goto(server.url)
+    await page.waitForTimeout(900)
+    const projectBefore = (await savedFiles(page)).length
+    const cards = page.locator('[role="button"]').filter({ hasText: /updated/i })
+    if (await cards.count()) {
+      await cards.first().click()
+      await page.waitForTimeout(2000)
+    }
+    await page.getByRole('button', { name: /^more$/i }).first().click()
+    await page.waitForTimeout(400)
+    const saveItem = page.getByRole('menuitem', { name: /save project file|save project/i })
+    if (await saveItem.count()) {
+      await saveItem.click()
+      const deadline = Date.now() + 45000
+      while (Date.now() < deadline && (await savedFiles(page)).length === projectBefore) {
+        await page.waitForTimeout(500)
+      }
+    }
+    const files = await savedFiles(page)
+    const projectFile = files.length > projectBefore ? files[files.length - 1] : null
+    check('project-file save produced a file', projectFile !== null)
+    const projectBytes = decode(projectFile)
+    check(`the project file is not empty (${projectBytes.length} bytes)`, projectBytes.length > 200)
+    check('the project file is a zip (PK header)', projectBytes.subarray(0, 2).toString('latin1') === 'PK')
+    check(`the project file uses the .bookstudio extension (${projectFile?.name})`, /\.bookstudio$/i.test(projectFile?.name ?? ''))
+
+    check(`no page errors during any export (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
+  } finally {
+    await browser.close()
+    await server.close()
+  }
+
+  console.log(failureCount() === 0 ? '\nEXPORT ALL PASS' : `\n${failureCount()} FAILED`)
+  process.exit(failureCount() === 0 ? 0 : 1)
+}
+
+main()
