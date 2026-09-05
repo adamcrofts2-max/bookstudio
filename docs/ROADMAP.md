@@ -1631,7 +1631,19 @@ Book Studio today and an actual multi-device Canva-style product.)*
       delete a book at all. A `can-hover:` custom variant now gates the
       hiding half
 - [ ] Production error monitoring / crash reporting
-- [ ] Resolve the conflicting `react-router` npm audit advisories
+- [x] npm audit clean — 2026-09-05 (Phase 148). The `react-router`
+      advisories this item named are long gone; two others had taken their
+      place (`nanoid` high, via vite/postcss; `@xmldom/xmldom` moderate, via
+      mammoth). Both were transitive patch bumps with no direct-dependency
+      change. `npm audit` now reports 0 vulnerabilities
+- [x] `.docx` manuscript import covered — added 2026-09-05 (Phase 148). The
+      most-used way a real manuscript enters this app had no test of any
+      kind, which is what made the mammoth-related bump above unverifiable.
+      Now asserted end-to-end against a real minimal Word package
+      (`scripts/fixtures/manuscript.docx`): chapter splitting on Heading 1,
+      titles, body text and bold runs. It has to run in the browser suite —
+      mammoth swaps its unzip implementation for the browser build, so
+      `{ arrayBuffer }` is only valid input there
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
       confirmed concretely in Phase 53 (2026-07-31): `@tailwindcss/node/dist/
       index.mjs` is truncated mid-file (17,347 bytes, cuts off mid-string).

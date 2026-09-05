@@ -7,28 +7,51 @@
  * assertion here checks persisted state, not the screen, because the screen
  * is what lied in every one of those cases.
  */
+import { readFile } from 'node:fs/promises'
+
 import { loadChromium, serveDist, check, failureCount, newProjectWithChapter } from './runner.mjs'
 
+/** Everything below reads the project currently open, by id from the URL.
+ * Taking the first entry of a `byProject` map works right up until a second
+ * project exists — and then it silently measures the wrong book, which is
+ * exactly what happened while writing the import section. */
 const pages = (page) =>
   page.evaluate(() => {
+    const id = location.pathname.split('/project/')[1]?.split('/')[0]
     const raw = localStorage.getItem('book-studio.structuralPages')
-    if (!raw) return []
-    const byProject = JSON.parse(raw).state.byProject
-    return (Object.values(byProject)[0] ?? []).map((p) => p.type)
+    if (!raw || !id) return []
+    return (JSON.parse(raw).state.byProject[id] ?? []).map((p) => p.type)
+  })
+
+/** Chapters of the project currently open, read by id from the URL — there
+ * is more than one project by the time this runs, and taking the first entry
+ * in `byProject` silently measured the wrong book. */
+const chapters = (page) =>
+  page.evaluate(() => {
+    const id = location.pathname.split('/project/')[1]?.split('/')[0]
+    const raw = localStorage.getItem('book-studio.content')
+    if (!raw || !id) return []
+    const manuscript = JSON.parse(raw).state.byProject[id]
+    return (manuscript?.chapters ?? []).map((c) => ({
+      title: c.title,
+      html: c.blocks.map((b) => b.html ?? b.text ?? '').join(' '),
+    }))
   })
 
 const bible = (page) =>
   page.evaluate(() => {
+    const id = location.pathname.split('/project/')[1]?.split('/')[0]
     const raw = localStorage.getItem('book-studio.layer0')
-    if (!raw) return null
-    return Object.values(JSON.parse(raw).state.byProject)[0] ?? null
+    if (!raw || !id) return null
+    return JSON.parse(raw).state.byProject[id] ?? null
   })
 
 const pageContent = (page, type) =>
   page.evaluate((wanted) => {
+    const id = location.pathname.split('/project/')[1]?.split('/')[0]
     const raw = localStorage.getItem('book-studio.structuralPages')
-    if (!raw) return null
-    const list = Object.values(JSON.parse(raw).state.byProject)[0] ?? []
+    if (!raw || !id) return null
+    const list = JSON.parse(raw).state.byProject[id] ?? []
     return list.find((p) => p.type === wanted)?.content ?? null
   }, type)
 
@@ -162,6 +185,56 @@ async function main() {
     await page.waitForTimeout(900)
     const afterRemove = (await bible(page))?.characters ?? []
     check(`deleting a character persists (${afterRemove.length} left)`, !afterRemove.some((c) => c.name === 'Miriam Vale'))
+
+    // ---- manuscript import (.docx) ----
+    // The most-used way a real manuscript enters this app, and it had no
+    // coverage of any kind — which mattered the day `@xmldom/xmldom`
+    // (mammoth's XML parser) was bumped for a security advisory with nothing
+    // to say whether DOCX still parsed. It has to run here rather than in the
+    // Node unit tests: mammoth swaps its unzip implementation for the browser
+    // build, so `{ arrayBuffer }` is only a valid input in a browser.
+    //
+    // The fixture is a real, minimal Word package — two Heading 1 paragraphs,
+    // body text, and one bold run — so this asserts chapter splitting and
+    // inline formatting, not just "didn't throw".
+    const docx = await readFile('scripts/fixtures/manuscript.docx')
+    await page.goto(server.url)
+    await page.waitForTimeout(900)
+    await page.getByRole('button', { name: /new project/i }).first().click()
+    await page.waitForTimeout(300)
+    await page.locator('#new-project-idea').fill('Imported')
+    await page.getByRole('button', { name: /^create/i }).last().click()
+    await page.waitForTimeout(2500)
+    // The Develop/editor view is a remembered global preference, so a new
+    // project opens wherever the last one was left — which after the section
+    // above is Develop, where there is no importer.
+    const backToEditor = page.getByRole('button', { name: /back to editor/i }).first()
+    if (await backToEditor.count()) {
+      await backToEditor.click()
+      await page.waitForTimeout(1500)
+    }
+
+    const importInput = page.locator('input[type="file"][accept*=".docx"]').first()
+    await importInput.waitFor({ state: 'attached', timeout: 15000 }).catch(() => {})
+    const acceptAttrs = await page.evaluate(() =>
+      [...document.querySelectorAll('input[type=file]')].map((i) => i.getAttribute('accept')),
+    )
+    check(`the manuscript importer accepts .docx (inputs: ${JSON.stringify(acceptAttrs)})`, (await importInput.count()) > 0)
+    if (await importInput.count()) {
+      await importInput.setInputFiles({
+        name: 'manuscript.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer: docx,
+      })
+      await page.waitForTimeout(3000)
+      const imported = await chapters(page)
+      check(`.docx import splits on Heading 1 into 2 chapters (${imported.length})`, imported.length === 2)
+      check(`the first chapter takes its title from the heading (${imported[0]?.title})`, imported[0]?.title === 'The Keeper of Hours')
+      check(`the second chapter title (${imported[1]?.title})`, imported[1]?.title === 'A Second Door')
+      check('body text survives the import', (imported[0]?.html ?? '').includes('kept their own counsel'))
+      check('bold runs survive as <strong>', (imported[0]?.html ?? '').includes('<strong>'))
+      check('no imported chapter is empty', imported.length > 0 && imported.every((c) => c.html.trim().length > 0))
+    }
 
     check(`no page errors throughout (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
   } finally {

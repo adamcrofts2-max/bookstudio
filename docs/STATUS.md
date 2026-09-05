@@ -9924,3 +9924,50 @@ Writing 20/20, spell-check 8/8, structure 14/14, export 24/24, project-delete
 10/10 (and failing in 3 places with the purge disabled, re-checked after the
 rewrite), runtime audit clean, copy audit 4 findings all desktop-only,
 `npm test` ALL PASS, build clean, lint exit 0 at the 49-warning baseline.
+
+---
+
+## Phase 148 — the security bump that had nothing to check it
+
+`npm audit` reported two vulnerabilities: `nanoid` (high, via vite → postcss)
+and `@xmldom/xmldom` (moderate, via mammoth). Both transitive, both fixed by a
+patch bump with no direct-dependency change — `0.8.13 → 0.8.15` and
+`3.3.16 → 3.3.18`, six lines of lockfile. `npm audit` now reports zero.
+
+The interesting part is what taking that bump exposed. `@xmldom/xmldom` is
+mammoth's XML parser, which means it is `.docx` import — **the most-used way a
+real manuscript enters this app**, and it had no test of any kind. Nothing in
+the repo could say whether Word documents still parsed after the upgrade. A
+security fix you cannot verify is a coin flip with better paperwork.
+
+So `.docx` import is now covered, against a real minimal Word package built by
+hand (`scripts/fixtures/manuscript.docx`, 1 KB): two Heading 1 paragraphs, body
+text, and one bold run. Chapter splitting, chapter titles, body text and
+`<strong>` are all asserted — not just "didn't throw".
+
+It has to live in the browser suite rather than the Node unit tests. mammoth
+swaps its unzip implementation for the browser build, so `{ arrayBuffer }` —
+what `parseDocx` passes — is only valid input in a browser. Node's build wants
+`{ buffer }` or `{ path }`, and testing it there would have been testing a code
+path the app never takes. That was worth finding out by trying.
+
+### Two more of my own test bugs, worth recording
+
+Both found while writing the import section, both the same shape as Phase 147's:
+
+- **`Object.values(byProject)[0]`.** Every reader in `structure.e2e.mjs` took
+  the first project in the map. Correct right up to the moment a second project
+  exists — which the import section creates — and then it silently measured the
+  wrong book and reported the import had produced one chapter called "Untitled
+  Chapter". Every reader is now keyed by the project id in the URL.
+- **A new project opens wherever the last one was left.** The Develop/editor
+  view is a remembered *global* preference, so creating a project mid-suite
+  landed in Develop, where there is no importer, and the test reported "the
+  manuscript importer accepts .docx — FAIL" about a screen that has no importer
+  on it. Not a defect, but worth writing down: the preference is global, not
+  per-project.
+
+### Verified
+Structure suite 21/21 (was 14/14, plus 7 import assertions), everything else as
+Phase 147, `npm audit` 0 vulnerabilities, build clean, lint exit 0 at the
+49-warning baseline.
