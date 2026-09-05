@@ -30,6 +30,25 @@ interface ErrorLogActions {
  * crash loop fill the storage quota that the manuscript also lives in. */
 export const MAX_LOGGED_ERRORS = 25
 
+/**
+ * Anything shaped like an Anthropic API key, so it cannot ride out of the
+ * browser inside a stack trace.
+ *
+ * `AiSettingsDialog` tells the user their key is "never included in a
+ * problem report". That has to be enforced rather than believed: the point
+ * of a diagnostics report is that people send it to someone else, and an
+ * SDK is entitled to put a request — headers included — into an error
+ * message without asking this app's opinion. Redacting at the moment of
+ * recording covers every path into the log at once, which is cheaper and
+ * far more reliable than auditing each producer.
+ */
+const API_KEY_PATTERN = /sk-ant-[\w-]{8,}/g
+
+function redactSecrets(text: string | undefined): string | undefined {
+  if (!text) return text
+  return text.replace(API_KEY_PATTERN, 'sk-ant-[redacted]')
+}
+
 /** Shared empty array so selectors never return a fresh `[]` literal — see
  * `templateStore.ts`'s `EMPTY_TEMPLATES` for the re-render loop this avoids. */
 export const EMPTY_ERRORS: LoggedError[] = []
@@ -63,6 +82,8 @@ export const useErrorLogStore = create<ErrorLogState & ErrorLogActions>()(
         set((state) => {
           const entry: LoggedError = {
             ...error,
+            message: redactSecrets(error.message) ?? error.message,
+            stack: redactSecrets(error.stack),
             id: `err_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
             at: new Date().toISOString(),
           }

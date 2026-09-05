@@ -1188,8 +1188,25 @@ daily use of everything built so far.)*
       `promptContext.ts` into `utils/format.ts` so this checker (a different
       layer) and `pasteBackSuggestions.ts` share one implementation instead of a
       cross-layer import into `layout/planning`.
-- [ ] AI Workspace: `ApiKeyProvider` (direct API call, streamed diff) — deferred
-      until there's a real story for cost/accounts (Phase G/H)
+- [x] AI Workspace: `ApiKeyProvider` — shipped 2026-09-05 (Phase 154). The
+      "deferred until there's a real story for cost/accounts" note was right
+      about a *hosted* provider and wrong about this one: bring-your-own-key
+      has no cost story to tell, because the cost is the user's and always
+      was, and needs no accounts, because there is nobody to account to. It
+      removes the copy-paste round trip and nothing else — the reply comes
+      back as text for the same paste-back diff, because
+      `docs/AI_WORKSPACE_VISION.md`'s rule is that the bible is never edited
+      without an author accepting a diff. Claude Opus 5, streamed, SDK
+      dynamically imported so it stays out of the main bundle. The clipboard
+      provider remains the default. Covered by
+      `scripts/e2e/aiProvider.e2e.mjs`, which stubs the API so the whole path
+      runs without spending anything
+- [x] API keys cannot leave in a problem report — 2026-09-05 (Phase 154).
+      `errorLogStore` redacts anything shaped like an Anthropic key at the
+      moment of recording. An SDK is entitled to put a request's headers in
+      an error message without asking this app's opinion, and a diagnostics
+      report is made to be sent to someone else, so the settings dialog's
+      promise is enforced rather than believed
 - [x] Idea/Notes badge clipping — actual root cause fixed (Phase 89, 2026-08-02),
       after four guessed corner/offset fixes (Phases 85-88) each traded one
       collision for another. Real cause: `Page.tsx`'s content-flow container clips

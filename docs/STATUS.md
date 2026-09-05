@@ -10432,3 +10432,85 @@ Mobile blocks 14/14 on a real touch viewport, structure 40/40 (33 + 7
 footnote), and the rest of the gate unchanged: writing 20/20, spell-check
 8/8, spell-fix 15/15, export 31/31, diagnostics 14/14, project-delete 10/10,
 runtime audit clean, `npm test` ALL PASS, build clean, lint exit 0.
+
+---
+
+## Phase 154 — bring your own key
+
+`docs/ROADMAP.md` had `ApiKeyProvider` deferred "until there's a real story
+for cost/accounts (Phase G/H)". That was right about a *hosted* provider and
+wrong about this one, and the distinction is worth stating because it is what
+unblocked the item: **bring-your-own-key has no cost story to tell**, because
+the cost is the user's and always was, and it needs no accounts, because there
+is nobody to account to. It removes a copy-paste round trip. Nothing else
+about the architecture changes.
+
+### What it does not remove
+
+The reply comes back as **text**, for the same paste-back diff the clipboard
+flow feeds. `docs/AI_WORKSPACE_VISION.md`'s rule is that the planning bible is
+never edited without an author accepting a diff, and an API key makes the
+*request* automatic, not the *acceptance*. Conflating those two would have
+been the easiest possible way to ruin this feature — the whole reason the AI
+workspace is shaped the way it is.
+
+So `AiProvider` gained one optional method rather than a new interface:
+`requestResponse(text, onDelta, signal)`. Optional because the clipboard
+provider genuinely cannot implement it — there is no round trip there, only a
+hand-off.
+
+### Shape
+
+- **Claude Opus 5**, streamed. Editorial judgement on a manuscript is exactly
+  the work the most capable model earns its cost on; the alternative to a
+  good answer is not a cheaper answer, it is the author doing the reading
+  themselves.
+- **The SDK is dynamically imported** — 182 KB in its own chunk, loaded only
+  if someone turns this on. Same reasoning as `mammoth` for DOCX: a large
+  dependency for one optional feature has no business in a bundle every
+  reader downloads.
+- **`stop_reason: "refusal"` is handled.** It arrives as a 200, not a thrown
+  error, so reading `content` without checking would present a refusal as an
+  empty reply and leave the author wondering what they did wrong.
+- **The clipboard provider stays the default**, and stays first in the
+  settings list, because it is the one with nothing to disclose.
+
+### The honest part
+
+A client-only app calling a paid API directly has to keep the key where the
+page can read it, which means anything running on this origin can read it
+too. The SDK's option for this is called `dangerouslyAllowBrowser` and the
+name is appropriate. That trade is stated in the dialog where the decision is
+actually made, not in a README nobody opens.
+
+Three promises are made there, and all three are now **asserted rather than
+believed**:
+
+- **It goes to `api.anthropic.com` and nowhere else.** The suite records every
+  request the page makes and fails if any other host appears.
+- **It is not in a `.bookstudio` file.** `exportProjectFile` writes named
+  entries and this store is not one of them; the suite checks no other
+  storage key contains it.
+- **It cannot ride out in a problem report.** This one needed code, not just
+  checking: `errorLogStore` now redacts anything shaped like an Anthropic key
+  at the moment of recording. An SDK is entitled to put a request's headers
+  into an error message without asking this app's opinion, and a diagnostics
+  report exists to be sent to someone else. Redacting at the single point
+  every error passes through is cheaper and far more reliable than auditing
+  each producer.
+
+### Tested without spending anything
+
+`aiProvider.e2e.mjs` intercepts `api.anthropic.com` and answers with a real
+SSE stream in the shape the SDK parses — deliberately in several deltas, so
+accumulation is genuinely exercised rather than passing on a single chunk
+that would work even if the code ignored streaming. Everything from the
+button to the rendered reply runs for real: the dynamic import, the browser
+client, `messages.stream`, delta accumulation, the UI. Only the model is
+fake.
+
+### Verified
+AI provider 11/11, and the rest of the gate unchanged: writing 20/20,
+spell-check 8/8, spell-fix 15/15, structure 40/40, mobile blocks 14/14,
+export 31/31, diagnostics 14/14, project-delete 10/10, runtime audit clean,
+`npm test` ALL PASS, `npm audit` 0 vulnerabilities, build clean, lint exit 0.
