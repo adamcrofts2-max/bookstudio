@@ -28,6 +28,10 @@ interface StructuralPageStoreState {
 }
 
 interface StructuralPageStoreActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getPages: (projectId: string) => StructuralPage[]
   getPagesByCategory: (projectId: string, category: StructuralPageCategory) => StructuralPage[]
   getRevision: (projectId: string) => number
@@ -128,6 +132,15 @@ export const useStructuralPageStore = create<StructuralPageStoreState & Structur
     (set, get) => ({
       byProject: {},
       revisionByProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextByProject = { ...state.byProject }
+          delete nextByProject[projectId]
+          const nextRevisionByProject = { ...state.revisionByProject }
+          delete nextRevisionByProject[projectId]
+          return { byProject: nextByProject, revisionByProject: nextRevisionByProject }
+        }),
 
       getPages: (projectId) => get().byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES,
       getPagesByCategory: (projectId, category) =>

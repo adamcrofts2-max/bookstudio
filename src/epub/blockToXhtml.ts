@@ -29,12 +29,30 @@ import { escapeXmlText, escapeXmlAttr } from '@/epub/xhtmlEscape'
  * `break-after`, which e-readers that paginate (most do, even though EPUB
  * content is reflowable) honour the same way a printed book would.
  */
-export function blockToXhtml(block: ContentBlock, imageSrc: (assetId: string) => string): string {
-  const html = blockToXhtmlContent(block, imageSrc)
+export interface BlockToXhtmlOptions {
+  /**
+   * Emit EPUB Structural Semantics (`epub:type`). True for the EPUB export,
+   * whose XHTML declares the `epub:` namespace; false for the standalone
+   * HTML book, where a namespaced attribute would be invalid and no reader
+   * is looking for it. Only `verse` uses it today.
+   */
+  epubSemantics?: boolean
+}
+
+export function blockToXhtml(
+  block: ContentBlock,
+  imageSrc: (assetId: string) => string,
+  options: BlockToXhtmlOptions = {},
+): string {
+  const html = blockToXhtmlContent(block, imageSrc, options)
   return block.breakAfter && html ? `${html}<div class="bs-page-break"></div>` : html
 }
 
-function blockToXhtmlContent(block: ContentBlock, imageSrc: (assetId: string) => string): string {
+function blockToXhtmlContent(
+  block: ContentBlock,
+  imageSrc: (assetId: string) => string,
+  options: BlockToXhtmlOptions,
+): string {
   switch (block.type) {
     case 'heading': {
       const level = Math.min(block.level + 1, 6)
@@ -67,6 +85,23 @@ function blockToXhtmlContent(block: ContentBlock, imageSrc: (assetId: string) =>
     case 'quote': {
       const cite = block.attribution ? `<cite>${escapeXmlText(block.attribution)}</cite>` : ''
       return `<blockquote class="bs-quote"><p>${escapeXmlText(block.text)}</p>${cite}</blockquote>`
+    }
+    case 'verse': {
+      // `epub:type="z3998:verse"` is the semantic marker real EPUBs use for
+      // poetry, and the one this app's own importer looks for — so an
+      // exported book round-trips back through `parser/epub.ts` as verse
+      // rather than as a run of paragraphs. The `<p class="bs-line">` per
+      // line is what carries the author's breaks to readers whose engine
+      // ignores the semantics.
+      const lines = block.lines
+        .map((line) =>
+          line.trim() === ''
+            ? '<p class="bs-stanza-break"></p>'
+            : `<p class="bs-line">${escapeXmlText(line)}</p>`,
+        )
+        .join('')
+      const semantics = options.epubSemantics ? ' epub:type="z3998:verse"' : ''
+      return `<div class="bs-verse"${semantics}>${lines}</div>`
     }
     case 'pull-quote': {
       const cite = block.attribution ? `<cite>${escapeXmlText(block.attribution)}</cite>` : ''

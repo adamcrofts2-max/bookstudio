@@ -16,6 +16,7 @@ import {
 import { Switch } from '@/components/ui/switch'
 import { EmptyState } from '@/components/common/EmptyState'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
+import { useProjectStore } from '@/store/projectStore'
 import { useExportStore } from '@/store/exportStore'
 import { useUiStore } from '@/store/uiStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
@@ -27,6 +28,8 @@ import { isFieldHidden, toggleHiddenField } from '@/structuralPages/coverVisibil
 import { CoverElementPanel } from '@/layout/inspector/CoverElementPanel'
 import { CoverLayersPanel } from '@/layout/inspector/CoverLayersPanel'
 import { WrapCoverPreviewButton } from '@/structuralPages/WrapCoverPreview'
+import { CoverImageUploadButton } from '@/structuralPages/shared'
+import { canDragOnThisDevice } from '@/lib/pointer'
 import type {
   StructuralPage,
   CoverTextLayout,
@@ -66,9 +69,16 @@ function LayoutPicker({ value, onChange }: { value: CoverTextLayout | undefined;
           </Button>
         ))}
       </div>
-      <p className="text-xs text-text-secondary">
-        Select the page in the preview, then drag the small handle above its text to fine-tune position.
-      </p>
+      {/* The nudge handle lives on the interactive canvas; mobile's page
+          preview is deliberately `decorative`, so on a phone this sentence
+          described a control that isn't there. Same defect as the cover and
+          back-cover hints — found by `npm run audit:copy`. */}
+      {/* audit-copy-ok: rendered only where a fine pointer exists */}
+      {canDragOnThisDevice() && (
+        <p className="text-xs text-text-secondary">
+          Select the page in the preview, then drag the small handle above its text to fine-tune position.
+        </p>
+      )}
     </div>
   )
 }
@@ -163,7 +173,9 @@ const FONT_CHOICE_OPTIONS: { id: CoverFontChoice; label: string }[] = [
   // `public/fonts/custom/` and `pdf/fonts.ts`. Deliberately not offered
   // for the book's interior theme (see `CoverFontChoice`'s doc comment).
   { id: 'anton', label: 'Anton' },
-  { id: 'bebas-neue', label: 'Bebas Neue' },
+  // Bebas Neue was removed from this list (Phase 125): it cannot be embedded
+  // in an exported PDF — see `pdf/fonts.ts`'s `'bebas-neue'` entry. The id
+  // itself is retained so existing projects still load, rendering in Anton.
   { id: 'oswald', label: 'Oswald' },
   { id: 'playfair-display', label: 'Playfair Display' },
   { id: 'dm-serif-display', label: 'DM Serif Display' },
@@ -413,6 +425,13 @@ function SpineWidthInfo({ projectId }: { projectId: string }) {
  */
 export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
   const pages = useStructuralPageStore((s) => s.byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES)
+  // What the page will actually show while its own Title is blank — Cover
+  // and Title Page both fall back to the project's name (Phase 157), so a
+  // panel whose field read an empty "Book title…" beside a cover reading
+  // "The Hidden Library" would be telling two different stories. Shown as
+  // the placeholder, not the value: empty still means "inherit", and typing
+  // still writes an explicit override.
+  const bookTitle = useProjectStore((s) => s.projects.find((pr) => pr.id === projectId)?.name ?? '')
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
   const selectedCoverElementId = useSelectionStore((s) => s.selectedCoverElementId)
   const selectCoverElement = useSelectionStore((s) => s.selectCoverElement)
@@ -458,6 +477,32 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
            * it into each type-specific block below. Silently renders
            * nothing (see `WrapCoverPreviewButton`) until both pages exist. */}
           <WrapCoverPreviewButton projectId={projectId} />
+
+          {/* The background photo used to be settable only from a button drawn
+           * on the artwork in the preview canvas. That works with a mouse on a
+           * big canvas, but mobile has no such canvas — a phone could add a
+           * Cover and never put a picture on it — and even on desktop it meant
+           * hunting for a control on top of the image rather than finding it
+           * with the page's other settings. One control here serves Cover and
+           * Back Cover on both. The canvas button stays: it's the faster path
+           * when you're already working on the artwork. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <CoverImageUploadButton
+              projectId={projectId}
+              label={page.content.imageAssetId ? 'Change image' : 'Add cover image'}
+              onUploaded={(assetId) => patch({ imageAssetId: assetId })}
+              className="border-solid border-border bg-panel text-text-primary hover:bg-hover"
+            />
+            {page.content.imageAssetId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => patch({ imageAssetId: undefined, imageFocalPoint: undefined, imageZoom: undefined })}
+              >
+                Remove image
+              </Button>
+            )}
+          </div>
           <Separator />
         </>
       )}
@@ -498,7 +543,7 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             <Label htmlFor="structural-title">Title</Label>
             <Input
               id="structural-title"
-              placeholder="Book title…"
+              placeholder={bookTitle || 'Book title…'}
               value={page.content.title ?? ''}
               onChange={(e) => patch({ title: e.target.value })}
             />
@@ -550,9 +595,6 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
           </div>
           {page.type === 'cover' && (
             <>
-              <p className="text-xs text-text-secondary">
-                Click "Add cover image" in the preview (or drag one from the Assets tab) to set a background photo.
-              </p>
               <Separator />
               <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
               <Separator />
@@ -614,9 +656,6 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
               onChange={(hiddenFields) => patch({ hiddenFields })}
             />
           </div>
-          <p className="text-xs text-text-secondary">
-            Click "Add back-cover image" in the preview (or drag one from the Assets tab) to set a background photo.
-          </p>
           <Separator />
           <LayoutPicker value={page.content.layout} onChange={(layout) => patch({ layout })} />
           <Separator />
@@ -780,9 +819,19 @@ export function StructuralPagePanel({ projectId }: StructuralPagePanelProps) {
             value={page.content.text ?? ''}
             onChange={(e) => patch({ text: e.target.value })}
           />
-          <p className="text-xs text-text-secondary">
-            Drag an image from the Assets tab onto the author photo circle in the preview to set (or replace) it.
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <CoverImageUploadButton
+              projectId={projectId}
+              label={page.content.imageAssetId ? 'Change author photo' : 'Add author photo'}
+              onUploaded={(assetId) => patch({ imageAssetId: assetId })}
+              className="border-solid border-border bg-panel text-text-primary hover:bg-hover"
+            />
+            {page.content.imageAssetId && (
+              <Button variant="ghost" size="sm" onClick={() => patch({ imageAssetId: undefined })}>
+                Remove photo
+              </Button>
+            )}
+          </div>
         </div>
       )}
 

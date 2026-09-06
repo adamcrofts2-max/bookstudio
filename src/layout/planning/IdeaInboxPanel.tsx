@@ -20,8 +20,15 @@ interface IdeaInboxPanelProps {
    * already shows every Idea (icon, draggable, real cross-kind edges) with
    * everything else in the book, so a second, Ideas-only map with plain
    * orange circles and no drag was a strictly worse duplicate, not a
-   * complementary view. This button is the replacement affordance. */
-  onOpenBookGraph: () => void
+   * complementary view. This button is the replacement affordance.
+   *
+   * Optional since Phase 129: mobile Develop reuses this panel but has no
+   * Book Graph to open (it is a drag-and-zoom canvas, deliberately
+   * desktop-only), and previously it dropped a phone into the desktop-shaped
+   * `PlanningShell`. When omitted the button simply isn't rendered — a
+   * missing affordance is better than one that leads somewhere unusable.
+   * Desktop passes it, so desktop is unchanged. */
+  onOpenBookGraph?: () => void
 }
 
 /** One status's dot colour — a quick visual scan cue in the inbox list,
@@ -164,14 +171,16 @@ export function IdeaInboxPanel({ projectId, onOpenBookGraph }: IdeaInboxPanelPro
                 <LayoutGrid className="size-3.5" />
               </button>
             </div>
-            <button
-              type="button"
-              onClick={onOpenBookGraph}
-              className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-text-secondary transition-colors duration-150 hover:text-[var(--color-accent)]"
-            >
-              <Waypoints className="size-3.5" />
-              Open Book Graph
-            </button>
+            {onOpenBookGraph && (
+              <button
+                type="button"
+                onClick={onOpenBookGraph}
+                className="flex items-center gap-1.5 whitespace-nowrap text-xs font-medium text-text-secondary transition-colors duration-150 hover:text-[var(--color-accent)]"
+              >
+                <Waypoints className="size-3.5" />
+                Open Book Graph
+              </button>
+            )}
           </div>
         </div>
       )}

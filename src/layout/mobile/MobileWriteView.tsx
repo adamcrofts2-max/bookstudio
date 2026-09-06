@@ -1,109 +1,46 @@
 import { useEffect, useRef, useState } from 'react'
-import { BookText, Check, ChevronDown, ImageIcon, Images, ListPlus, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BookText, Check, ChevronDown, ChevronUp, ImageIcon, Images, ListPlus, Maximize2, MoreVertical, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
-import { useEditableField } from '@/blocks/shared'
 import { useContentStore } from '@/store/contentStore'
 import { useAssetStore } from '@/store/assetStore'
+import { useSelectionStore } from '@/store/selectionStore'
+import { useUiStore } from '@/store/uiStore'
+import { MobileTextField } from '@/layout/mobile/MobileTextField'
+import { IdeaCaptureAffordance } from '@/layout/IdeaCaptureAffordance'
 import {
   addChapterWithHistory,
   deleteBlockWithHistory,
   deleteChapterWithHistory,
+  moveChapterWithHistory,
+  splitParagraphWithHistory,
+  splitHeadingIntoParagraphWithHistory,
+  mergeParagraphWithPreviousHistory,
   editBlock,
   insertBlockWithHistory,
   moveBlockWithHistory,
   renameChapterWithHistory,
 } from '@/store/editorActions'
-import { createDefaultBlock } from '@/blocks/defaultContent'
+import { createDefaultBlock, isTextFirstBlock } from '@/blocks/defaultContent'
 import { generateId } from '@/utils'
 import { Button } from '@/components/ui/button'
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
 import { EmptyState } from '@/components/common/EmptyState'
-import type { ContentBlock, ImageBlock } from '@/types/content'
+import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
+import { MobileBlockSheet } from '@/layout/mobile/MobileBlockSheet'
+import { EMPTY_NOTES, useNotesStore } from '@/store/notesStore'
 
 interface MobileWriteViewProps {
   projectId: string
 }
 
-/**
- * A single editable text field, shared by every block type with one plain
- * string field (heading/quote/pull-quote/callout body/case-study title+text).
- * Reuses `useEditableField` (`src/blocks/shared.tsx`) — the exact same
- * commit-on-blur/Enter, cancel-on-Escape hook the desktop page canvas uses —
- * so the underlying edit semantics are identical, just without desktop's
- * double-click-to-enter-edit gesture (unreliable on touch): mobile fields
- * start editing on a single tap instead, since there's no separate
- * select-vs-edit state to preserve here (no toolbar/badge overlays in this
- * simplified view).
- *
- * `handleTap` calls `el.focus()` directly, synchronously, inside the tap's
- * own click handler — BEFORE flipping React state. This is deliberate, not
- * redundant with `useEditableField`'s own `ref.current.focus()` (which runs
- * in a `useLayoutEffect` after `isEditing` flips): iOS Safari (and some
- * Android browsers) only summon the on-screen keyboard for a programmatic
- * `.focus()` call if it happens synchronously within the original trusted
- * touch/click event — a `.focus()` reached via a subsequent React render
- * pass, even in the same tick, can be treated as untrusted and silently
- * ignored, so typing appears to do nothing on a real phone even though the
- * identical pattern works fine with a mouse (confirmed via automated click
- * testing, which doesn't reproduce this — mouse-driven `click` events don't
- * carry the same restriction). Desktop's block types don't hit this because
- * they've only ever been driven by a mouse/trackpad. Focusing here is a safe
- * no-op if `useEditableField`'s own effect-driven focus also fires — same
- * element, same result, just guaranteed to happen at least once inside the
- * gesture that must trigger it.
- */
-function MobileTextField({
-  mode,
-  value,
-  onCommit,
-  placeholder,
-  className,
-  as: Tag = 'div',
-}: {
-  mode: 'text' | 'html'
-  value: string
-  onCommit: (value: string) => void
-  placeholder: string
-  className?: string
-  as?: 'div' | 'h2' | 'h3'
-}) {
-  const field = useEditableField({ mode, initialValue: value, onCommit })
-  const isEmpty = value.trim().length === 0
-
-  const handleTap = () => {
-    if (field.isEditing) return
-    const el = field.ref.current
-    if (el) {
-      el.contentEditable = 'true'
-      el.focus()
-    }
-    field.startEditing()
-  }
-
-  return (
-    <Tag
-      ref={(el: HTMLElement | null) => {
-        field.ref.current = el
-      }}
-      onClick={!field.isEditing ? handleTap : undefined}
-      contentEditable={field.isEditing}
-      suppressContentEditableWarning
-      onBlur={field.isEditing ? field.handleBlur : undefined}
-      onKeyDown={field.isEditing ? field.handleKeyDown : undefined}
-      className={cn(
-        'rounded-[var(--radius-card)] outline-offset-4 transition-[outline-color] duration-150',
-        field.isEditing ? 'outline outline-2 outline-[var(--color-warning)]' : 'outline outline-2 outline-transparent',
-        isEmpty && !field.isEditing && 'text-text-muted',
-        className,
-      )}
-      {...(mode === 'html' && !field.isEditing ? { dangerouslySetInnerHTML: { __html: value || placeholder } } : {})}
-    >
-      {mode === 'text' && !field.isEditing ? value.trim() || placeholder : null}
-    </Tag>
-  )
-}
 
 /** Read-only preview card for block types too structured for a plain-text
  * mobile field (list/table/timeline/faq/statistics/checklist) or with no
@@ -146,6 +83,8 @@ function MobileReadOnlyCard({ block }: { block: ContentBlock }) {
     switch (block.type) {
       case 'list':
         return block.items.length > 0 ? block.items.join(' · ') : '(empty list)'
+      case 'verse':
+        return block.lines.filter((l) => l.trim() !== '').join(' / ') || '(empty verse)'
       case 'table':
         return `Table · ${block.header.length} columns, ${block.rows.length} rows`
       case 'timeline':
@@ -174,8 +113,22 @@ function MobileReadOnlyCard({ block }: { block: ContentBlock }) {
 
 /** One block in the mobile flow — branches to an editable field for the six
  * plain-text block types, or a read-only card for everything else. */
-function MobileBlockCard({ projectId, chapterId, block }: { projectId: string; chapterId: string; block: ContentBlock }) {
+function MobileBlockCard({
+  projectId,
+  chapterId,
+  block,
+  previousBlock,
+}: {
+  projectId: string
+  chapterId: string
+  block: ContentBlock
+  /** Backspace-at-start only joins paragraph into paragraph, mirroring the
+   * desktop canvas's identical scope check. */
+  previousBlock?: ContentBlock
+}) {
   const commit = (updates: Partial<ContentBlock>) => editBlock(projectId, chapterId, block.id, updates)
+  const selectForEdit = useSelectionStore((s) => s.selectForEdit)
+  const canMergeWithPrevious = block.type === 'paragraph' && previousBlock?.type === 'paragraph'
 
   switch (block.type) {
     case 'heading':
@@ -183,20 +136,39 @@ function MobileBlockCard({ projectId, chapterId, block }: { projectId: string; c
         <MobileTextField
           as={block.level === 2 ? 'h2' : 'h3'}
           mode="text"
+          blockId={block.id}
           value={block.text}
           placeholder="Heading"
           className={cn('font-semibold text-text-primary', block.level === 2 ? 'text-xl' : 'text-lg')}
           onCommit={(text) => commit({ text })}
+          onSplit={(before, after) => {
+            const newBlockId = splitHeadingIntoParagraphWithHistory(projectId, chapterId, block.id, before, after)
+            if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+          }}
         />
       )
     case 'paragraph':
       return (
         <MobileTextField
           mode="html"
+          blockId={block.id}
+          projectId={projectId}
           value={block.html}
           placeholder="Start writing…"
           className="text-[15px] leading-relaxed text-text-primary"
           onCommit={(html) => commit({ html })}
+          onSplit={(before, after) => {
+            const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
+            if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
+          }}
+          onMergeWithPrevious={
+            canMergeWithPrevious
+              ? () => {
+                  const result = mergeParagraphWithPreviousHistory(projectId, chapterId, block.id)
+                  if (result) selectForEdit(chapterId, result.mergedBlockId, result.caretOffset)
+                }
+              : undefined
+          }
         />
       )
     case 'quote':
@@ -282,9 +254,20 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
   const [renamingChapterId, setRenamingChapterId] = useState<string | null>(null)
+  /** Set only while the switcher sheet is standing in as the naming step
+   * for a brand-new chapter, so committing can close it again. */
+  const [namingNewChapterId, setNamingNewChapterId] = useState<string | null>(null)
+  const [imageError, setImageError] = useState<string | null>(null)
+  const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const selectBlockForEdit = useSelectionStore((s) => s.selectForEdit)
   const [titleDraft, setTitleDraft] = useState('')
   const importFiles = useAssetStore((s) => s.importFiles)
   const imageInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+  /** The block whose sheet is open — mobile's answer to desktop's Inspector
+   * selection, scoped to one interaction rather than held as app state. */
+  const [sheetBlock, setSheetBlock] = useState<ContentBlock | null>(null)
+  const notes = useNotesStore((s) => s.byProject[projectId]) ?? EMPTY_NOTES
 
   useEffect(() => {
     if (chapters.length === 0) {
@@ -301,11 +284,44 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
 
   const activeChapter = chapters.find((c) => c.id === activeChapterId) ?? null
 
+  // Mobile tracked the open chapter only in local state, so `selectionStore`
+  // stayed null and anything reading "which chapter is the user in" got
+  // nothing. Idea capture is the first thing to need it — a thought captured
+  // while writing should link to the chapter it was had in, exactly as it
+  // does on desktop — but the selection is genuinely app-wide state, not
+  // capture's private business, so it is published here rather than passed
+  // down as a prop.
+  const selectChapter = useSelectionStore((s) => s.select)
+  useEffect(() => {
+    if (activeChapterId) selectChapter(activeChapterId, null)
+  }, [activeChapterId, selectChapter])
+
+  /**
+   * Where the caret should go once the "+" menu has finished closing.
+   *
+   * Landing it inside `onSelect` does not work: Radix is still tearing down
+   * the menu's focus scope at that point and takes focus back afterwards, so
+   * the new block was focused and then quietly abandoned — every keystroke
+   * after "+ → Add paragraph" went to the document body and was lost.
+   * Neither `onCloseAutoFocus`-preventDefault nor a synchronous `focus()`
+   * settled it, because the steal happens after both. Requesting the caret
+   * from the close handler instead removes the race rather than competing
+   * with it.
+   */
+  const pendingCaretRef = useRef<string | null>(null)
+
   const handleAddBlock = (type: 'paragraph' | 'heading') => {
     if (!activeChapter) return
     const block = createDefaultBlock(type)
     const lastBlockId = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
     insertBlockWithHistory(projectId, activeChapter.id, lastBlockId, block)
+    if (isTextFirstBlock(type)) pendingCaretRef.current = block.id
+  }
+
+  const landPendingCaret = () => {
+    const blockId = pendingCaretRef.current
+    pendingCaretRef.current = null
+    if (blockId && activeChapter) selectBlockForEdit(activeChapter.id, blockId, 'start')
   }
 
   /** Opens the device's native photo picker (camera roll + camera, on
@@ -315,10 +331,46 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
    * picture right now"). `onChange` below does the actual import + insert. */
   const handleAddImage = () => imageInputRef.current?.click()
 
+  /** Same picker, `multiple` — a gallery is defined by the photos in it, so
+   * unlike every other block type it has no blank starting point to insert
+   * and fill in afterwards. Without this the `gallery` block type was
+   * unreachable on both shells: renderable, exportable, and impossible to
+   * create. */
+  const handleAddGallery = () => galleryInputRef.current?.click()
+
+  const handleGallerySelected = async (files: File[]) => {
+    if (!activeChapter || files.length === 0) return
+    setImageError(null)
+    const { imported, failed } = await importFiles(projectId, files)
+    if (imported.length === 0) {
+      setImageError(failed[0]?.reason ?? 'Those files could not be added.')
+      return
+    }
+    // Partial success still makes a gallery — losing four good photos
+    // because the fifth was corrupt is the failure mode Phase 137 removed
+    // from importing, and it must not come back here.
+    if (failed.length > 0) setImageError(`${failed.length} of ${files.length} couldn't be added.`)
+    const block: GalleryBlock = {
+      id: generateId('block'),
+      type: 'gallery',
+      assetIds: imported.map((asset) => asset.id),
+      caption: undefined,
+    }
+    const lastBlockId = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
+    insertBlockWithHistory(projectId, activeChapter.id, lastBlockId, block)
+  }
+
   const handleImageSelected = async (file: File) => {
     if (!activeChapter) return
-    const [asset] = await importFiles(projectId, [file])
-    if (!asset) return
+    setImageError(null)
+    const { imported, failed } = await importFiles(projectId, [file])
+    const asset = imported[0]
+    if (!asset) {
+      // Silence here meant the user picked a photo and watched nothing
+      // happen — a corrupt or mislabelled file used to reject unhandled.
+      setImageError(failed[0]?.reason ?? 'That file could not be added.')
+      return
+    }
     const block: ImageBlock = { id: generateId('block'), type: 'image', assetId: asset.id, caption: undefined, rotation: 0, widthPercent: 100 }
     const lastBlockId = activeChapter.blocks.length > 0 ? activeChapter.blocks[activeChapter.blocks.length - 1].id : null
     insertBlockWithHistory(projectId, activeChapter.id, lastBlockId, block)
@@ -332,16 +384,36 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const commitRenameChapter = (chapterId: string, fallback: string) => {
     renameChapterWithHistory(projectId, chapterId, titleDraft.trim() || fallback)
     setRenamingChapterId(null)
+    // The sheet was opened only to hold the naming field for a chapter that
+    // was just created, so close it again and leave the writer in the new
+    // chapter. Renaming an existing chapter from inside the sheet leaves it
+    // open, since that's a list the user chose to be looking at.
+    if (namingNewChapterId === chapterId) {
+      setNamingNewChapterId(null)
+      setSwitcherOpen(false)
+    }
   }
 
   /** Drops straight into rename mode for the freshly-created chapter — same
    * "type the real title next, no separate naming step" UX `Sidebar.tsx`'s
-   * `handleAddChapter` already establishes on desktop. */
+   * `handleAddChapter` already establishes on desktop.
+   *
+   * Opening the switcher sheet is the whole trick, and its absence was the
+   * bug (Phase 157): the rename input is rendered *inside* that sheet, so
+   * setting `renamingChapterId` while the sheet was closed put the editor
+   * into a naming state with nothing on screen to type into. Every chapter
+   * written on a phone was therefore called "Untitled Chapter" — the
+   * comment above claimed parity with desktop that the code never had.
+   * Measured, not guessed: after tapping Add Chapter, `document
+   * .activeElement` was `BODY` on mobile and a selected `INPUT` on desktop.
+   */
   const handleAddChapter = () => {
     const lastChapterId = chapters.length > 0 ? chapters[chapters.length - 1].id : null
     const newChapterId = addChapterWithHistory(projectId, lastChapterId, 'Untitled Chapter')
     setActiveChapterId(newChapterId)
     startRenameChapter(newChapterId, 'Untitled Chapter')
+    setNamingNewChapterId(newChapterId)
+    setSwitcherOpen(true)
   }
 
   const handleDeleteChapter = (chapterId: string) => {
@@ -354,7 +426,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
       <EmptyState
         icon={BookText}
         title="No chapters yet"
-        description="Start your first chapter to begin writing on the go, or import a manuscript on desktop."
+        description="Start your first chapter to begin writing on the go, or bring in a manuscript from More → Import."
         action={
           <Button type="button" size="sm" className="gap-1.5" onClick={handleAddChapter}>
             <Plus className="size-3.5" />
@@ -368,11 +440,12 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
 
   return (
     <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center border-b border-border bg-panel">
       <Sheet open={switcherOpen} onOpenChange={setSwitcherOpen}>
         <SheetTrigger asChild>
           <button
             type="button"
-            className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-panel px-4 py-3 text-left"
+            className="flex min-w-0 flex-1 items-center justify-between gap-2 px-4 py-3 text-left"
           >
             <span className="min-w-0 truncate text-[15px] font-semibold text-text-primary">
               {activeChapter?.title || 'Untitled chapter'}
@@ -429,6 +502,26 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                     </span>
                     {chapter.id === activeChapterId && <Check className="size-4 shrink-0" />}
                   </button>
+                  {/* Reordering existed on desktop only, so a chapter added
+                      out of order on a phone could never be moved. */}
+                  <button
+                    type="button"
+                    onClick={() => moveChapterWithHistory(projectId, chapter.id, 'up')}
+                    disabled={i === 0}
+                    aria-label={`Move ${chapter.title} up`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-hover hover:text-text-primary disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronUp className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveChapterWithHistory(projectId, chapter.id, 'down')}
+                    disabled={i === chapters.length - 1}
+                    aria-label={`Move ${chapter.title} down`}
+                    className="flex size-8 shrink-0 items-center justify-center rounded-full text-text-muted transition-colors duration-150 hover:bg-hover hover:text-text-primary disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <ChevronDown className="size-3.5" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => startRenameChapter(chapter.id, chapter.title)}
@@ -455,6 +548,22 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
           </Button>
         </SheetContent>
       </Sheet>
+      {/* The way into the book itself. Deliberately quiet and next to the
+          chapter name rather than buried in More: it's a writing control, so
+          it belongs where the writing is. */}
+      {/* Labelled, not a bare glyph. An unlabelled ⤢ sitting next to the
+          switcher chevron read as two mysteries in a row, and nobody found
+          it (user, 2026-09-04: "its not so obvious how to access it"). */}
+      <button
+        type="button"
+        onClick={() => setFocusMode('write')}
+        aria-label="Distraction-free writing"
+        className="mr-2 flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1.5 text-[12px] font-medium text-text-secondary active:bg-hover"
+      >
+        <Maximize2 className="size-3.5" />
+        Focus
+      </button>
+      </div>
 
       <input
         ref={imageInputRef}
@@ -468,12 +577,54 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
         }}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
+      {activeChapter && (
+        <MobileBlockSheet
+          projectId={projectId}
+          chapterId={activeChapter.id}
+          block={sheetBlock}
+          open={sheetBlock !== null}
+          onOpenChange={(open) => !open && setSheetBlock(null)}
+        />
+      )}
+
+      <input
+        ref={galleryInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? [])
+          e.target.value = ''
+          if (files.length > 0) void handleGallerySelected(files)
+        }}
+      />
+
+      {imageError && (
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-border bg-background-secondary px-4 py-2.5">
+          <p className="text-[13px] text-danger">{imageError}</p>
+          <button type="button" onClick={() => setImageError(null)} className="shrink-0 text-[13px] text-text-secondary active:text-text-primary">
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* `relative` so the capture affordance can dock to this region's
+          bottom-right rather than the viewport's — it must sit above the
+          scrolling text but below the tab bar. */}
+      <div className="relative min-h-0 flex-1">
+      <div className="h-full overflow-y-auto px-4 py-5">
         {activeChapter && activeChapter.blocks.length === 0 ? (
           <EmptyState
             icon={ListPlus}
             title="This chapter is empty"
             description="Add a paragraph to start writing."
+            action={
+              <Button type="button" size="sm" className="gap-1.5" onClick={() => handleAddBlock('paragraph')}>
+                <Plus className="size-3.5" />
+                Add a paragraph
+              </Button>
+            }
             className="mt-6"
           />
         ) : (
@@ -505,17 +656,28 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                       >
                         Move down
                       </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setSheetBlock(block)}>
+                        {block.type === 'image' ? 'Caption & size' : 'Notes'}
+                        {notes.some((n) => n.blockId === block.id && !n.resolved) ? ' •' : ''}
+                      </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => deleteBlockWithHistory(projectId, activeChapter.id, block.id)} className="text-danger">
                         Delete
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
-                <MobileBlockCard projectId={projectId} chapterId={activeChapter.id} block={block} />
+                <MobileBlockCard
+                  projectId={projectId}
+                  chapterId={activeChapter.id}
+                  block={block}
+                  previousBlock={i > 0 ? activeChapter.blocks[i - 1] : undefined}
+                />
               </div>
             ))}
           </div>
         )}
+      </div>
+        <IdeaCaptureAffordance projectId={projectId} />
       </div>
 
       {activeChapter && (
@@ -524,15 +686,35 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
             <Button
               type="button"
               size="icon"
+              aria-label="Add block"
               className="fixed bottom-20 right-4 z-30 size-12 rounded-full shadow-[var(--shadow-md)]"
             >
               <Plus className="size-5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
+          <DropdownMenuContent
+            align="end"
+            // Radix returns focus to the trigger when the menu closes, which
+            // landed on the "+" button *after* the newly inserted block had
+            // taken the caret — so the block was focused for a few
+            // milliseconds and then quietly handed back, and typing went
+            // nowhere. Traced with a focusin/focusout log: IN <field>, OUT
+            // <field>, IN <button "Add block">.
+            onCloseAutoFocus={(e) => {
+              e.preventDefault()
+              landPendingCaret()
+            }}
+          >
             <DropdownMenuItem onSelect={() => handleAddBlock('paragraph')}>Add paragraph</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => handleAddBlock('heading')}>Add heading</DropdownMenuItem>
             <DropdownMenuItem onSelect={handleAddImage}>Add photo</DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleAddGallery}>Add photo gallery</DropdownMenuItem>
+            {/* The prominent "+" used to add blocks only, so the single most
+                obvious control on the screen couldn't do the most structural
+                thing a writer needs — chapters were three taps deep inside
+                the switcher sheet. */}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={handleAddChapter}>New chapter</DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       )}

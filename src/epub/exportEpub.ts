@@ -144,7 +144,7 @@ export async function exportBookToEpub(
   // 3. One XHTML file per chapter — its own title as `<h1>`, then every
   // block converted via `blockToXhtml`.
   manuscript.chapters.forEach((chapter, index) => {
-    const bodyBlocks = chapter.blocks.map((block) => blockToXhtml(block, imageSrc)).join('\n')
+    const bodyBlocks = chapter.blocks.map((block) => blockToXhtml(block, imageSrc, { epubSemantics: true })).join('\n')
     const body = `<h1>${escapeXmlText(chapter.title)}</h1>\n${bodyBlocks}`
     const fileName = `chapter-${index + 1}.xhtml`
     xhtmlEntries.push({ name: `OEBPS/${fileName}`, data: xhtmlDocument(chapter.title, body) })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link2, Maximize2, Minus, Plus, RotateCcw, Search, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Expand, Link2, Maximize2, Minimize2, Minus, Plus, RotateCcw, Search, Waypoints, X, ZoomIn, ZoomOut } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { useContentStore } from '@/store/contentStore'
@@ -13,6 +13,10 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
+import { AddGraphNodeDialog, type AddableNodeKind } from '@/layout/planning/AddGraphNodeDialog'
+import { findFreeGraphPosition } from '@/layout/planning/graphPlacement'
+import { GraphMinimap, type MinimapNode } from '@/layout/planning/GraphMinimap'
+import { clampCentreToBounds, transformToCentreOn, visibleGraphRect } from '@/layout/planning/graphMinimapGeometry'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
 import type { Layout } from '@/layout/planning/graphLayoutEngine'
 import LayoutWorker from '@/layout/planning/graphLayout.worker?worker'
@@ -34,6 +38,19 @@ interface BookGraphViewProps {
    * "find and edit it properly" is one click away in the place that already
    * has the full form. */
   onFocusKind: (kind: Layer0EntityKind) => void
+  /**
+   * Mobile layout (Phase 130). Desktop puts the canvas and the selection
+   * panel side by side at a fixed 560px tall; on a 390px-wide phone the
+   * 288px panel would leave roughly 100px of graph, which is not a graph.
+   * `compact` stacks them and lets the canvas fill the height it is given.
+   *
+   * Deliberately a layout flag rather than a mobile fork of this component.
+   * The interaction already worked under touch — this view was built on
+   * pointer events with `touch-none` and `setPointerCapture` throughout — so
+   * there was never a second implementation to write, only a container to
+   * loosen.
+   */
+  compact?: boolean
 }
 
 interface GraphNode {
@@ -178,16 +195,19 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  *   click-to-connect (a labeled relationship previously required leaving the
  *   graph for the entity's own edit dialog, which is backwards for a tool
  *   whose entire premise is "connect things visually").
- * - *Deliberately not built* — a minimap (the mockup shows one). Reasonable
- *   at real scale, but this graph's `viewBox` already auto-fits every node
- *   into view any time the pan/zoom is reset (see "Reset view" below), which
- *   covers the minimap's actual job — "where am I relative to everything" —
- *   for the sizes this app targets (tens, not thousands, of nodes). Flagged
- *   in `docs/ROADMAP.md` as a real candidate if a genuinely huge project ever
- *   makes "reset view" an unsatisfying answer, rather than built speculatively
- *   now. Likewise no inline editing inside the graph itself (title, notes,
- *   fields) — the panel shows and links out, it never becomes a second copy
- *   of `EntityListPanel`'s form; one editing surface per field stays true.
+ * - *Built later, on the original terms* — a minimap (the mockup shows one).
+ *   Phase 102 deferred it because this graph's `viewBox` auto-fits every node
+ *   any time the pan/zoom is reset (see "Reset view" below), which covers a
+ *   minimap's actual job — "where am I relative to everything" — at the sizes
+ *   this app targets. That is still true at 100%, so `GraphMinimap` (Phase
+ *   166) is mounted only *above* 100%, where the zoom controls that shipped
+ *   in the same phase turn the canvas into a window onto something larger
+ *   than itself and "reset view" costs you the detail you zoomed in for.
+ *   Below that there is no extra furniture on the canvas at all.
+ * - *Deliberately not built* — inline editing inside the graph itself (title,
+ *   notes, fields). The panel shows and links out; it never becomes a second
+ *   copy of `EntityListPanel`'s form, so one editing surface per field stays
+ *   true.
  *
  * Every node is an icon-in-a-circle badge (`graphIcons.ts`'s per-kind icon)
  * — kind is legible from the icon alone, colour stays reserved for the
@@ -272,7 +292,7 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  *   `docs/ROADMAP.md` rather than pre-optimised against a problem not yet
  *   confirmed to exist.
  */
-export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: BookGraphViewProps) {
+export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, compact }: BookGraphViewProps) {
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
   const chapters = manuscript?.chapters ?? []
   const bible = useLayer0Store((s) => s.getBible(projectId))
@@ -290,6 +310,18 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const setNodeSizeAction = useGraphLayoutStore((s) => s.setNodeSize)
 
   const [hiddenKinds, setHiddenKinds] = useState<Set<GraphNodeKind>>(new Set())
+  /**
+   * Full-screen canvas (Phase 131). On a phone the heading, description,
+   * legend, kind filters and selection panel between them leave the canvas a
+   * strip barely taller than its own zoom controls — reported from a real
+   * device, where browser chrome takes height an emulator does not. This
+   * hands the whole viewport to the graph and hides everything else, which is
+   * what makes dragging nodes on a phone actually workable.
+   *
+   * Offered on desktop too: a large graph benefits from the whole window
+   * there as well, and one behaviour is simpler than a mobile-only one.
+   */
+  const [fullscreen, setFullscreen] = useState(false)
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -491,8 +523,30 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   // worker (loading its module, running top-level init) costs more than the
   // computation itself does at small graph sizes, which would make the
   // common case slower to "fix" the rare large-graph case.
-  const [layoutWorker] = useState(() => new LayoutWorker())
-  useEffect(() => () => layoutWorker.terminate(), [layoutWorker])
+  //
+  // The instance is held in a ref and created *lazily*, not in
+  // `useState(() => new LayoutWorker())`, because a terminated worker can
+  // never be revived and `useState` never re-runs its initialiser. Under
+  // React's StrictMode (which `main.tsx` enables, so: every `npm run dev`
+  // session) the mount is simulated twice — effects run, all cleanups run,
+  // then effects run again — so the cleanup below terminated the one and
+  // only worker and every later request was posted into a dead port. The
+  // graph therefore drew nothing at all locally while working perfectly in
+  // a production build, which is what made this look like a Vite
+  // dev-server quirk for six weeks; it was ours. Instrumenting
+  // `Worker.prototype` in the running dev app showed the order exactly:
+  // post, terminate, post. Nulling the ref on cleanup means the next
+  // request builds a fresh worker, which is also what a real unmount /
+  // remount of this view has always needed.
+  const workerRef = useRef<Worker | null>(null)
+  const acquireLayoutWorker = () => (workerRef.current ??= new LayoutWorker())
+  useEffect(
+    () => () => {
+      workerRef.current?.terminate()
+      workerRef.current = null
+    },
+    [],
+  )
 
   const [layout, setLayout] = useState<Layout>(() => ({
     positions: new Map(),
@@ -506,18 +560,28 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   // most recently sent request is applied; an earlier one arriving late is
   // silently dropped rather than flashing the graph back to a superseded
   // arrangement.
+  useEffect(() => {
+    if (!fullscreen) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [fullscreen])
+
   const layoutRequestIdRef = useRef(0)
   useEffect(() => {
+    const worker = acquireLayoutWorker()
     const requestId = ++layoutRequestIdRef.current
-    layoutWorker.postMessage({ requestId, nodes: visibleNodes, edges: visibleEdges, pinned: pinnedPositions })
     const handleMessage = (event: MessageEvent<{ requestId: number; positions: Map<string, { x: number; y: number }>; bounds: Layout['bounds'] }>) => {
       if (event.data.requestId !== layoutRequestIdRef.current) return
       setLayout({ positions: event.data.positions, bounds: event.data.bounds })
     }
-    layoutWorker.addEventListener('message', handleMessage)
-    return () => layoutWorker.removeEventListener('message', handleMessage)
+    // Listen before posting: the response can only arrive on a later task,
+    // but ordering the two this way means there is no window at all.
+    worker.addEventListener('message', handleMessage)
+    worker.postMessage({ requestId, nodes: visibleNodes, edges: visibleEdges, pinned: pinnedPositions })
+    return () => worker.removeEventListener('message', handleMessage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [depKey, layoutWorker])
+  }, [depKey])
 
   // Every node id directly reachable from `selectedNodeId` in one hop — the
   // "direct connections" the design review asked for. `null` when nothing
@@ -588,6 +652,80 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     null,
   )
 
+  const [addOpen, setAddOpen] = useState(false)
+
+  /** Places a just-created node and, when asked, links it to the selected
+   * node. Both steps live here rather than in the dialog because both need
+   * graph state the dialog doesn't own: the live layout positions and the
+   * on-screen viewport.
+   *
+   * Pinning the position matters. Without it the force layout drops a brand
+   * new node wherever its physics settle — frequently off-screen — so the
+   * user adds something and cannot find it. Pinning is exactly what a manual
+   * drag already does, so a placed node behaves like a dragged one. */
+  function handleNodeCreated(nodeId: string, kind: AddableNodeKind, relationshipLabel: string) {
+    // A chapter is the one kind that has a place of its own: the spine runs
+    // Book -> chapter 1 -> chapter 2 -> …, and the force layout draws it
+    // from the chapter-order edges. Pinning a new chapter wherever the view
+    // happened to be centred would drag it off that line and leave the
+    // spine visibly kinked, so chapters are left to the layout. Everything
+    // else is free-floating and gets pinned where it was dropped.
+    if (kind !== 'chapter') placeNewNode(nodeId)
+
+    if (relationshipLabel && selectedNodeId) {
+      const now = new Date().toISOString()
+      addLayer0EntityWithHistory(
+        projectId,
+        'relationships',
+        { id: generateId('rel'), aId: selectedNodeId, bId: nodeId, label: relationshipLabel, createdAt: now, updatedAt: now } as never,
+        'Add relationship',
+      )
+    }
+
+    // Select what was just added, so the side panel immediately describes it
+    // and a second add chains off it — the same "keep going" behaviour
+    // `submitPendingConnection` deliberately keeps for connections.
+    setSelectedNodeId(nodeId)
+  }
+
+  function placeNewNode(nodeId: string) {
+    const anchorPos = selectedNodeId ? layout.positions.get(selectedNodeId) : undefined
+    let candidate: { x: number; y: number }
+    if (anchorPos) {
+      // Just far enough from its anchor to read as a separate node rather
+      // than an overlap, at the node spacing the layout itself uses.
+      candidate = { x: anchorPos.x + 130, y: anchorPos.y + 90 }
+    } else {
+      const svg = svgRef.current
+      const box = containerRef.current?.getBoundingClientRect()
+      candidate =
+        svg && box
+          ? screenToSvgPoint(svg, box.x + box.width / 2, box.y + box.height / 2)
+          : { x: 0, y: 0 }
+    }
+    // Every existing node except the one just created (which has no position
+    // yet) is an obstacle — see `findFreeGraphPosition`'s doc comment for why
+    // an un-nudged centre-of-view lands underneath the Book hub.
+    const taken = [...layout.positions.entries()].filter(([id]) => id !== nodeId).map(([, p]) => p)
+    const position = findFreeGraphPosition(candidate, taken)
+    setSavedPosition(projectId, nodeId, position)
+  }
+
+  // The minimap needs the canvas's pixel size to work out which part of the
+  // graph is on screen, and the canvas is sized by CSS (flex in full screen,
+  // a fixed height otherwise), so measure it rather than deriving it.
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect
+      setCanvasSize({ width: box.width, height: box.height })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -621,6 +759,30 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [pendingConnection, connectSourceId, connectMode, selectedNodeId])
+
+  // Only above 100% is the canvas a window onto something bigger than
+  // itself: the `viewBox` auto-fits every node, so at 1x the whole graph is
+  // already on screen and an overview would overview what you can see. That
+  // is exactly why Phase 102 deferred a minimap, and it is still true — so
+  // the minimap appears when, and only when, zooming in makes it true no
+  // longer.
+  const showMinimap = transform.k > 1 && canvasSize.width > 0
+  const minimapNodes = useMemo<MinimapNode[]>(
+    () =>
+      visibleNodes.flatMap((node) => {
+        const position = layout.positions.get(node.id)
+        if (!position) return []
+        return [
+          {
+            id: node.id,
+            x: position.x,
+            y: position.y,
+            emphasis: node.id === selectedNodeId ? 'selected' : node.kind === 'book' ? 'hub' : 'normal',
+          } as MinimapNode,
+        ]
+      }),
+    [visibleNodes, layout.positions, selectedNodeId],
+  )
 
   const resetView = () => setTransform({ x: 0, y: 0, k: 1 })
   const resetLayout = () => clearSavedPositions(projectId)
@@ -666,11 +828,20 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
     e.currentTarget.setPointerCapture(e.pointerId)
   }
   const onBackgroundPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!panState.current) return
-    const dx = e.clientX - panState.current.startX
-    const dy = e.clientY - panState.current.startY
-    if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) panState.current.moved = true
-    setTransform((t) => ({ ...t, x: panState.current!.origX + dx, y: panState.current!.origY + dy }))
+    const pan = panState.current
+    if (!pan) return
+    const dx = e.clientX - pan.startX
+    const dy = e.clientY - pan.startY
+    if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) pan.moved = true
+    // Read the pan origin HERE, not inside the updater. A state updater runs
+    // when React renders, not when setState is called; pointermove is a
+    // continuous-priority event, so its render can be deferred past the
+    // discrete pointerup that clears `panState`. Dereferencing the ref inside
+    // the updater therefore crashed on real touch devices, where a finger's
+    // jitter emits moves too densely for React to flush between them.
+    const nextX = pan.origX + dx
+    const nextY = pan.origY + dy
+    setTransform((t) => ({ ...t, x: nextX, y: nextY }))
   }
   const onBackgroundPointerUp = () => {
     const state = panState.current
@@ -1062,9 +1233,30 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
   const selectedNode = selectedNodeId ? nodeById.get(selectedNodeId) : undefined
 
   return (
-    <div className="flex flex-col gap-3 p-6">
-      <div>
+    <div
+      className={cn(
+        'flex flex-col gap-3',
+        fullscreen ? 'fixed inset-0 z-50 gap-2 bg-background p-3' : compact ? 'p-3' : 'p-6',
+      )}
+    >
+      {fullscreen && (
+        <div className="flex shrink-0 items-center justify-between gap-2">
+          <span className="text-[15px] font-semibold text-text-primary">Book Graph</span>
+          <button
+            type="button"
+            onClick={() => setFullscreen(false)}
+            className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
+          >
+            <Minimize2 className="size-3.5" />
+            Exit full screen
+          </button>
+        </div>
+      )}
+
+      <div className={cn((fullscreen || compact) && 'hidden')}>
         <h2 className="text-lg font-semibold text-text-primary">Book Graph</h2>
+        {/* audit-copy-ok: this header is hidden on mobile via `compact`, and
+            touch drag genuinely works on the nodes anyway (Phase 129) */}
         <p className="text-sm text-text-secondary">
           Click a node to see its connections. Drag to rearrange. Turn on Connect to link two nodes with a label.
         </p>
@@ -1088,7 +1280,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className={cn('flex flex-wrap items-center gap-1.5', fullscreen && 'hidden')}>
         {GRAPH_KIND_ORDER.filter((kind) => (countByKind[kind] ?? 0) > 0).map((kind) => {
           const Icon = GRAPH_NODE_ICONS[kind]
           const hidden = hiddenKinds.has(kind)
@@ -1109,6 +1301,16 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         })}
 
         <div className="ml-auto flex items-center gap-2">
+          {!fullscreen && (
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              className="flex items-center gap-1.5 whitespace-nowrap rounded-full border border-border px-3 py-1.5 text-xs font-medium text-text-secondary transition-colors hover:bg-hover hover:text-text-primary"
+            >
+              <Expand className="size-3.5" />
+              Full screen
+            </button>
+          )}
           <div className="flex items-center gap-0.5 rounded-full border border-border px-1 py-1" title="Node size">
             <button
               type="button"
@@ -1147,10 +1349,29 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
         </div>
       </div>
 
-      <div className="flex gap-3">
+      {/* In full screen this row must be the flex child that absorbs the
+          remaining height, or the canvas's own `flex-1` has nothing bounded
+          to grow inside and overflows the viewport. */}
+      <div className={cn('flex gap-3', fullscreen && 'min-h-0 flex-1', compact && 'flex-col')}>
         <div
           ref={containerRef}
-          className="relative h-[560px] min-w-0 flex-1 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary"
+          className={cn(
+            'relative min-w-0 overflow-hidden rounded-[var(--radius-card)] border border-border bg-background-secondary',
+            // `shrink-0` and no `flex-1` on mobile, and a fixed pixel height
+            // rather than a viewport unit. Both matter:
+            //
+            // `flex-1` is `flex: 1 1 0%`, so inside the stacked flex column it
+            // GROWS past whatever height is set — the declared height computed
+            // to 782px in a 600px-tall viewport, pushing the canvas down under
+            // the bottom tab bar. A tap near the bottom of the graph then hit
+            // a nav button and jumped the user to another tab, which is what
+            // was reported as the graph "crashing" on touch.
+            //
+            // `dvh` was no better: `50dvh` also resolved to ~780px here. A
+            // fixed height cannot out-grow the pane it sits in, and full
+            // screen is the answer for wanting more room.
+            fullscreen ? 'min-h-0 flex-1' : compact ? 'h-[320px] shrink-0' : 'h-[560px] flex-1',
+          )}
         >
           <svg
             ref={svgRef}
@@ -1279,6 +1500,10 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
               return (
                 <g
                   key={node.id}
+                  // The one stable hook `scripts/e2e/graph.e2e.mjs` has for
+                  // "a node was actually drawn" — every other part of this
+                  // view renders whether or not the layout worker answered.
+                  data-graph-node={node.id}
                   transform={`translate(${p.x} ${p.y})`}
                   {...dragHandlers}
                   onClick={isBook ? () => handleNodeClick(node) : undefined}
@@ -1317,6 +1542,38 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
               )
             })}
           </svg>
+
+          {showMinimap && (
+            <GraphMinimap
+              bounds={layout.bounds}
+              canvas={canvasSize}
+              transform={transform}
+              nodes={minimapNodes}
+              onCentreOn={(point) =>
+                setTransform((t) => {
+                  const visible = visibleGraphRect(layout.bounds, canvasSize, t)
+                  const centre = clampCentreToBounds(point, layout.bounds, visible)
+                  return { ...t, ...transformToCentreOn(centre, layout.bounds, canvasSize, t.k) }
+                })
+              }
+            />
+          )}
+
+          <div className="absolute left-2 top-2 flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setAddOpen(true)}
+              title={
+                selectedNode && selectedNode.id !== BOOK_NODE_ID
+                  ? `Add something new, optionally linked to "${selectedNode.label}"`
+                  : 'Add a character, location, idea and so on straight to the graph'
+              }
+              className="flex h-7 items-center gap-1 rounded-[var(--radius-button)] border border-border bg-panel px-2 text-[11px] font-medium text-text-secondary shadow-[var(--shadow-sm)] transition-colors hover:bg-hover hover:text-text-primary"
+            >
+              <Plus className="size-3.5" />
+              Add
+            </button>
+          </div>
 
           <div className="absolute right-2 top-2 flex items-center gap-1">
             <button
@@ -1370,7 +1627,12 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
           </div>
         </div>
 
-        <div className="flex h-[560px] w-72 shrink-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-panel">
+        <div
+          className={cn(
+            'flex shrink-0 flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-panel',
+            fullscreen ? 'hidden' : compact ? 'max-h-52 w-full' : 'h-[560px] w-72',
+          )}
+        >
           <div className="border-b border-border p-3">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-text-muted" />
@@ -1413,6 +1675,19 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind }: B
       {selectedIdeaId && (
         <IdeaDetailDialog projectId={projectId} ideaId={selectedIdeaId} open onOpenChange={(open) => !open && setSelectedIdeaId(null)} />
       )}
+
+      <AddGraphNodeDialog
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        projectId={projectId}
+        bookForm={bookForm}
+        timelineEventCount={bible.timelineEvents.length}
+        lastChapterId={chapters.length ? chapters[chapters.length - 1].id : null}
+        // The Book hub is a synthetic node with no Layer 0 id, so it can't be
+        // one end of a relationship — offer the link only for real nodes.
+        connectTo={selectedNode && selectedNode.id !== BOOK_NODE_ID ? { id: selectedNode.id, label: selectedNode.label } : null}
+        onCreate={handleNodeCreated}
+      />
     </div>
   )
 }

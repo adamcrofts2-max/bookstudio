@@ -72,6 +72,20 @@ daily use of everything built so far.)*
       `renderBlocksWithDropZones` returned nothing) — a first-time author had no way
       to write their first paragraph. Found via live UX audit, fixed with a visible
       "Start writing" prompt for the empty-chapter case. Phase 77 (2026-08-02).
+- [x] Importing a manuscript on a phone closes its own sheet — fixed
+      2026-09-06 (Phase 161). It stayed open over a modal overlay after a
+      successful import, with no confirmation and nothing behind it tappable.
+      `ImportManuscriptButton` now reports success, and mobile lands the user
+      on Write with the chapters that just arrived.
+- [x] Distraction-free writing opens on the chapter — fixed 2026-09-06 (Phase
+      161). It opened on whatever the canvas last showed, which for a fresh
+      import is the contents page.
+- [x] Version history rows no longer print their timestamp twice — fixed
+      2026-09-06 (Phase 161). The store defaulted the label to a formatted
+      time and the row prints the time below the label.
+- [x] The export-readiness dialog names the format itself — fixed 2026-09-06
+      (Phase 161). Desktop and mobile each passed their own wording, and one
+      read "You can export PDF anyway".
 - [ ] Drag-to-reorder for all blocks — deprioritised in favour of the move-up/down
       buttons above, which solve the same need with less risk (full drag-and-drop
       across `LazySpread`'s lazily-mounted spreads is a materially bigger change)
@@ -518,7 +532,12 @@ daily use of everything built so far.)*
       click a word while already editing to confirm it now stays selected,
       confirm the "+" button no longer blocks toolbar clicks, and confirm
       the new sidebar spelling chips appear and apply corrections.
-- [ ] Enter-split focus bug persisted after Phase 118's fix — needs deeper
+- [x] Enter-split focus bug — FIXED 2026-09-04 (Phase 139), after Phase 118's
+      partial fix. Three causes, not one: random `page.id` per pagination run
+      remounted the whole page DOM; the Inspector's Typography box stole the
+      caret on every selection change; and mobile never wired `onSplit`.
+      Original note kept below for the record.
+- [x] (superseded) Enter-split focus bug persisted after Phase 118's fix — needs deeper
       investigation (found 2026-08-03, still open). Live-re-testing the
       exact same Enter-at-end-of-paragraph flow against the Phase 118
       bundle (confirmed genuinely deployed via bundle marker check) showed
@@ -552,6 +571,70 @@ daily use of everything built so far.)*
       into a heading/list item isn't well-defined the same way). No new
       dependency. Verified via `tsc`; not yet live-verified in Chrome (see
       STATUS.md).
+- [x] Block furniture lives in the page margin, not on the text — shipped
+      2026-09-05 (Phase 156). `BlockToolbar`'s icon bar (`-top-3 right-2`) sat
+      on the block's own first line and hid it; it is now a single handle in
+      the margin opening a labelled menu, the pattern `MobileWriteView`
+      already used. `NoteIndicatorBadge` moved with it (always-visible, so
+      worse). Needed a horizontal twin of Phase 89's clip-box buffer; content
+      width measured identical before and after, so pagination is untouched.
+- [x] Thumbnail rail captions structural pages by name — shipped 2026-09-05
+      (Phase 156). `composePages` numbers them 0 by design, and the rail
+      printed it, so every book's cover was captioned "0".
+- [x] Develop's exit names its real destination — shipped 2026-09-05 (Phase
+      156). "Back to editor" landed on the Virtual Editor whenever that was
+      where you came from; it now reads "Back to Virtual Editor".
+- [x] Adding a structural page lands on it — shipped 2026-09-05 (Phase 156).
+      Insert from the Structure tab now selects, scrolls to and opens the new
+      page's Inspector tab, matching both an existing row's click and what
+      `MobilePagesView` already did.
+- [x] Naming a chapter works on a phone — shipped 2026-09-05 (Phase 157).
+      `MobileWriteView` set its rename state without opening the sheet that
+      holds the rename input, so every chapter written on a phone stayed
+      "Untitled Chapter". Desktop was always fine.
+- [x] Cover and Title Page inherit the book's own name — shipped 2026-09-05
+      (Phase 157). Both started empty, so a book titled at creation showed
+      "Untitled" on screen and printed a blank cover. Resolved at render/draw
+      time (the `halfTitle.tsx` fallback pattern), with `bookTitle` threaded
+      into both `StructuralPageRenderProps` and `DrawCtx` so screen and PDF
+      can't drift.
+- [x] The cover's drop-image pill no longer sits on its own title — shipped
+      2026-09-05 (Phase 157). It is drag feedback now, not a permanent caption.
+- [x] Virtual Editor copy is written for authors, not for the repo — shipped
+      2026-09-05 (Phase 157). It cited `docs/VIRTUAL_EDITOR.md` at the reader
+      and claimed only proofreading was implemented, which is no longer true.
+- [x] The Page tab's margins row states real units — shipped 2026-09-05 (Phase
+      157). It was labelled "(in)" over a millimetre value, and showed only
+      the inner margin.
+- [x] `docs/VIRTUAL_EDITOR.md`'s issue-type taxonomy table corrected — done
+      2026-09-06 (Phase 160). It claimed four categories had no checker at all;
+      the real list, read out of `src/virtualEditor/checkers/`, is forty rules
+      across all twelve. Two other passages in the same file repeated the
+      claim and were corrected with it. Original entry said:
+      typography, accessibility, print readiness and commercial quality have
+      no checker and always render "Not yet analysed". All twelve categories
+      have had a real checker since Phase 25-ish; the table has not caught up,
+      and it misled a review of the app's own state (Phase 157).
+- [x] Mobile no longer contradicts itself about importing — fixed 2026-09-06
+      (Phase 160). Importing a .docx on a phone was measured first: it
+      produces two correctly split chapters, so the empty state's copy was
+      simply wrong, and `mobileBlocks.e2e.mjs` now asserts the capability.
+      Original entry said: the empty state says "import
+      a manuscript on desktop" while the More tab offers "Import a manuscript
+      — EPUB, DOCX, Markdown, TXT or HTML" (found Phase 157).
+- [x] Switching back to Chapters brings the canvas with you — fixed 2026-09-06
+      (Phase 160), gated on a structural page being selected so nobody reading
+      page 40 gets yanked to the top of a chapter. The original report ("no
+      route back but scrolling") was overstated — clicking a chapter row has
+      always scrolled. Original entry said: leaves the canvas
+      wherever it was — usually on the cover — with no route back to the text
+      but scrolling (found Phase 157). Same family as Phase 156's "land on the
+      page you just added".
+- [ ] The Virtual Editor scores an almost-empty book 99/100: a two-paragraph
+      manuscript with an untitled cover, no author, no ISBN and no back cover
+      returned Print Readiness 100 and Publishing Quality 100, because every
+      checker only fires on content that exists. Deciding whether absence
+      should be a finding is a design question, not a patch (found Phase 157).
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 
@@ -587,12 +670,30 @@ daily use of everything built so far.)*
       ZIP reader) and `parser/html.ts`'s `parseHtmlDocument`, adding no new
       dependency; images are extracted into the asset library like the DOCX
       importer does. Verified against a real 268KB Project Gutenberg EPUB
-- [ ] EPUB import: preserve verse as a distinct block type — verse lines are
-      currently imported as one paragraph each, which keeps the line structure
-      but loses the semantic distinction (the Content layer has no verse block)
-- [ ] EPUB import: reattach footnotes to the document that references them —
-      some EPUB toolchains gather a book's footnotes at the end of a later
-      file, so they currently import as trailing text on the wrong chapter
+- [x] EPUB import covered end-to-end — added 2026-09-05 (Phase 151) against
+      a real OCF package whose chapters are nested in `<section><div>` and
+      titled with `<h2>`, because that is what real EPUBs look like and those
+      two shapes are exactly what the parser's flattening and heading
+      promotion exist to handle. Also asserts the **round trip**: importing
+      this app's own EPUB export, which is the reason `parser/epub.ts` was
+      written and had never been tested in that direction. Both clean
+- [x] EPUB import: preserve verse as a distinct block type — shipped
+      2026-09-06 (Phase 167). The Content layer has a `verse` block now, and
+      `verseLinesFrom` recognises the four shapes poetry actually ships as
+      (`epub:type="z3998:verse"`, a `poem`/`verse`/`stanza`/`linegroup`/`lg`
+      class, `<pre>`, and nested line groups as stanzas). Set unjustified with
+      a hanging indent so a run-over line can't be mistaken for a new line;
+      exported with the same semantic and asserted as a round trip. The PDF
+      fidelity suite caught two real geometry bugs on the way in (7.88px →
+      0.08px)
+- [x] EPUB import: footnotes are reattached to the chapter that cites them —
+      shipped 2026-09-05 (Phase 153). A notes file is detected by how much of
+      its text sits inside note elements (not by its filename — `notes.xhtml`
+      is a convention, and a real chapter called that would have been
+      destroyed by a filename test), kept out of the chapter list, and each
+      note appended under a "Notes" heading on the chapter whose text
+      actually contains its `#id`. Exact matching, not positional: a noteref
+      is a real link and `sanitiseInline` keeps `<a>`
 - [ ] PDF manuscript import — deliberately not attempted: PDFs carry no
       reliable structure, so chapter detection is guesswork
 
@@ -621,26 +722,37 @@ daily use of everything built so far.)*
       one; hyperlinks get underline+accent colour, deliberately not a
       clickable annotation — see Phase 39's reasoning)
 - [x] Table cell text wrapping in PDF export — see STATUS.md Phase 39
-- [ ] Real font subsetting — **re-diagnosed, Phase 109 (2026-08-02): the
-      earlier note above was wrong.** `@pdf-lib/fontkit` has been a real
-      dependency of this app since Phase 7 (needed for any custom-font
-      embedding at all, not just subsetting) and pdf-lib's `embedFont`
-      already accepts `{ subset: true }` — no new package needed, nothing
-      was ever actually blocked by npm access. The real blocker is
-      different and worse: `@pdf-lib/fontkit`'s subsetting encoder has a
-      genuine, longstanding, documented reliability bug (multiple open
-      GitHub issues — malformed/unsorted font `loca`-table offsets,
-      content-dependent crashes). Reproduced here directly: the exact same
-      font + text, subsetted repeatedly in a standalone script, sometimes
-      succeeded instantly, sometimes threw "Index out of range" mid-encode,
-      and sometimes hung indefinitely — real non-determinism, not a
-      one-off. A PDF export that randomly fails or freezes is a far worse
-      regression than a somewhat larger embedded font file, so `subset:
-      true` was tried in `src/pdf/fonts.ts`'s `embed()` and then explicitly
-      reverted rather than shipped — see that function's own comment and
-      STATUS.md's Phase 109 entry for the full reproduction. Revisit only
-      alongside a fixed `@pdf-lib/fontkit` release or a different
-      subsetting approach, not by re-flipping this flag.
+- [x] PDF font weight — fixed 2026-09-05 (Phase 150), and the fix was not
+      subsetting. The Phase 109 diagnosis below still stands (fontkit's
+      subsetting encoder is genuinely unreliable), but subsetting was never
+      the biggest lever. Measured on a one-paragraph book: **19 embedded
+      fonts, 1.11 MB, 80% of a 1.39 MB PDF** — `loadThemeFonts` embedded
+      every family the app can draw with, used or not. It now embeds only
+      the families the book references (`pdf/usedFonts.ts`), and no file
+      twice. 1,389,930 -> 225,533 bytes, an 84% reduction, with no change to
+      how anything looks
+- [x] **Exported PDFs had unreadable interior fonts** — fixed 2026-09-05
+      (Phase 150). Found while measuring the above, by reading the bytes of a
+      real export. `embed()` fetched `/fonts/inter-400.woff2` and handed the
+      bytes straight to `embedFont`, so `/FontFile2` — which must be a
+      TrueType font program — held a WOFF2 web container instead. Readers
+      substitute a lookalike silently rather than error, so **every book this
+      app has ever exported printed in the wrong typeface**, with no error
+      anywhere and no way to notice on screen. The interior families now load
+      from real `.ttf` twins in `public/fonts/`; the stylesheet still uses the
+      woff2. `scripts/e2e/export.e2e.mjs` now asserts every embedded font
+      program's magic bytes, proved to fail when one woff2 is put back
+      Historic diagnosis, still accurate and still the reason subsetting
+      itself is not attempted:
+      `@pdf-lib/fontkit` has been a real dependency since Phase 7 and
+      pdf-lib's `embedFont` accepts `{ subset: true }` — no package was ever
+      missing. Its subsetting encoder has a documented reliability bug
+      (malformed/unsorted `loca` offsets, content-dependent crashes),
+      reproduced here as non-deterministic "Index out of range" crashes and
+      hangs on identical input. An export that randomly fails is worse than a
+      larger file, so `subset: true` stays off. Revisit only with a fixed
+      fontkit release, not by re-flipping the flag.
+
 - [x] CMYK-aware export workflow for commercial print — shipped 2026-08-02
       (Phase 100+1): `ProjectSettings.colorProfile` ('rgb' default | 'cmyk'),
       naive RGB→CMYK conversion via pdf-lib's built-in `cmyk()` (no new
@@ -818,8 +930,13 @@ daily use of everything built so far.)*
       template — deferred: template image references are stripped today because
       assets are per-project IndexedDB blobs, so an id captured in one project
       resolves to nothing in another. Needs template-scoped asset storage
-- [ ] Book templates: manage saved templates (rename/delete) from a gallery — today
-      they can only be created and picked, not curated
+- [x] Book templates: manage saved templates (rename/delete) from a gallery —
+      shipped 2026-09-05 (Phase 146). `templateStore` had `renameTemplate` and
+      `deleteTemplate` from the day the feature shipped; nothing in the UI ever
+      reached them, so a series template lived forever under whatever name it
+      was given on the day. `ManageTemplatesDialog` now offers both, from the
+      desktop toolbar menu and from mobile's More tab (which had no template
+      controls at all)
 - [ ] Community/shareable template gallery — deferred: needs a real backend
       service to host/browse shared templates, which this client-only app
       doesn't have
@@ -1155,8 +1272,25 @@ daily use of everything built so far.)*
       `promptContext.ts` into `utils/format.ts` so this checker (a different
       layer) and `pasteBackSuggestions.ts` share one implementation instead of a
       cross-layer import into `layout/planning`.
-- [ ] AI Workspace: `ApiKeyProvider` (direct API call, streamed diff) — deferred
-      until there's a real story for cost/accounts (Phase G/H)
+- [x] AI Workspace: `ApiKeyProvider` — shipped 2026-09-05 (Phase 154). The
+      "deferred until there's a real story for cost/accounts" note was right
+      about a *hosted* provider and wrong about this one: bring-your-own-key
+      has no cost story to tell, because the cost is the user's and always
+      was, and needs no accounts, because there is nobody to account to. It
+      removes the copy-paste round trip and nothing else — the reply comes
+      back as text for the same paste-back diff, because
+      `docs/AI_WORKSPACE_VISION.md`'s rule is that the bible is never edited
+      without an author accepting a diff. Claude Opus 5, streamed, SDK
+      dynamically imported so it stays out of the main bundle. The clipboard
+      provider remains the default. Covered by
+      `scripts/e2e/aiProvider.e2e.mjs`, which stubs the API so the whole path
+      runs without spending anything
+- [x] API keys cannot leave in a problem report — 2026-09-05 (Phase 154).
+      `errorLogStore` redacts anything shaped like an Anthropic key at the
+      moment of recording. An SDK is entitled to put a request's headers in
+      an error message without asking this app's opinion, and a diagnostics
+      report is made to be sent to someone else, so the settings dialog's
+      promise is enforced rather than believed
 - [x] Idea/Notes badge clipping — actual root cause fixed (Phase 89, 2026-08-02),
       after four guessed corner/offset fixes (Phases 85-88) each traded one
       collision for another. Real cause: `Page.tsx`'s content-flow container clips
@@ -1346,12 +1480,14 @@ daily use of everything built so far.)*
       interaction-model reasoning, including what was deliberately *not*
       built (a minimap) and why, lives in `BookGraphView.tsx`'s own doc
       comment.
-- [ ] Book Graph minimap — deliberately deferred in Phase 102 (see
-      `BookGraphView.tsx`'s doc comment): "Reset view" already auto-fits
-      every visible node via the SVG's dynamic `viewBox`, which covers a
-      minimap's actual job at the node counts this app targets today.
-      Revisit if a real project's graph ever gets large enough that "reset
-      view" stops being a satisfying answer.
+- [x] Book Graph minimap — shipped 2026-09-06 (Phase 166), on Phase 102's own
+      terms rather than against them. "Reset view" really does cover a
+      minimap's job at 100% zoom, because the `viewBox` auto-fits every node —
+      so the minimap is mounted only *above* 100%, where the canvas is a
+      window onto something bigger than itself whatever the project's size.
+      Click or drag it to centre the canvas, clamped so a corner click can
+      never land on empty space. Geometry is a pure module with twelve unit
+      assertions; six more in `scripts/e2e/graph.e2e.mjs`
 - [x] Book Graph: per-node colour + size, chapter-connection parity, node
       search, entity role subtitle (Phase 103, 2026-08-02, user: "change
       colour of individual nodes and make individual nodes larger and
@@ -1419,10 +1555,275 @@ Book Studio today and an actual multi-device Canva-style product.)*
 
 ## Phase J — Platform Hardening & Technical Debt
 
-- [ ] CI pipeline (GitHub Actions running build/lint/test on every push)
-- [ ] Real browser end-to-end tests (today's `smoke-test.ts` is jsdom-only)
-- [ ] Production error monitoring / crash reporting
-- [ ] Resolve the conflicting `react-router` npm audit advisories
+- [x] Repair the test suite — shipped 2026-09-03 (Phase 125). `npm test` had been
+      crashing partway through, so only 94 of 408 assertions ever ran. Four
+      independent root causes, one of them a live production bug: PDF export was
+      broken for every user because Bebas Neue cannot be embedded by
+      `@pdf-lib/fontkit`. 408 passing, exit 0
+- [x] CI pipeline — shipped 2026-09-04 (Phase 140). `.github/workflows/ci.yml`
+      runs `npm ci`, build, lint and tests on every push and pull request,
+      with in-progress runs cancelled when a branch is pushed again. This is
+      what actually enforces CLAUDE.md's "every commit compiles and lints
+      clean" instead of relying on remembering
+- [x] Real browser end-to-end tests — shipped 2026-09-04 (Phase 140).
+      `scripts/e2e/` holds a Playwright suite covering the writing experience
+      on both shells (`npm run test:e2e`), proven to fail when Phase 139's
+      fix is reverted. Playwright stays out of `package.json` on purpose —
+      it pulls a browser download — so the runner resolves it from wherever
+      it is installed and says so plainly when it isn't
+- [x] Run the browser suites in CI — shipped 2026-09-05 (Phase 147), without
+      the devDependency the item asked for. A separate `e2e` job installs
+      Playwright with `--no-save` and builds before running, so contributors'
+      `npm ci` stays browser-free and `verify` is never blocked by browser
+      infrastructure. "Not a dependency" had quietly come to mean "never runs
+      in CI"
+- [x] Error boundaries — shipped 2026-09-03 (Phase 133). The app previously had
+      **none**, so any render error unmounted the whole tree to a blank page
+      with no message and no way back. Now a root boundary, a per-route
+      boundary around the editor, and a targeted one around Book Graph that
+      degrades just that panel. Each shows the real error text and offers Try
+      again / Reload / Copy details
+- [x] Fix the mobile Book Graph white-screen crash — shipped 2026-09-04 (Phase
+      134). Root cause: `onBackgroundPointerMove` read `panState.current`
+      inside the `setTransform` updater, which React runs at render time, not
+      at call time. `pointermove` is continuous-priority so its render can be
+      deferred past the discrete `pointerup` that nulls the ref, giving
+      `TypeError: Cannot read properties of null (reading 'origX')`. Only
+      reproducible with real touch, where finger jitter emits moves too
+      densely for React to flush between them
+- [x] Add nodes from the Book Graph canvas — shipped 2026-09-04 (Phase 135).
+      An "Add" button on the canvas creates any of the eight Layer 0 kinds or
+      an Idea, places it clear of existing nodes and pins it there, and
+      optionally links it to the selected node in the same step. Chapters are
+      deliberately excluded — Layer 2 data, added in Write mode
+- [x] Let the graph create a chapter too — decided and shipped 2026-09-06
+      (Phase 165). The boundary Phase 135 defended was the wrong one: the
+      architecture's rule is that *stores* are never cross-imported for
+      mutation, not that a view may not call an action. `Sidebar` and both
+      mobile write views already call `addChapterWithHistory`; the graph now
+      calls the same one. A new chapter is appended to the book and left
+      unpinned so the spine stays a line
+- [x] Front/back matter on mobile — shipped 2026-09-04 (Phase 136). More ->
+      Book pages adds, reorders, duplicates, deletes and edits every
+      structural page type, including setting a cover image from the camera
+      roll. Mobile could previously render structural pages in Preview but
+      never create one, so a book started on a phone could not get a cover
+- [x] `assetStore.importFiles` no longer loses good files to one bad one —
+      shipped 2026-09-04 (Phase 137). It was worse than the unhandled
+      rejection first logged: one undecodable file threw out of the whole
+      loop, discarding every file picked alongside it AND orphaning the ones
+      already written by `putAsset` (stored in IndexedDB, never registered in
+      `byProject`, so unreachable and undeletable forever — measured at 1
+      orphan per failed batch). Now per-file isolated, object URL released on
+      failure, and it returns `{ imported, failed }` so the UI can name the
+      file that failed
+- [x] Cover image can be set from the page panel — shipped 2026-09-04
+      (Phase 137). Replaces the desktop-only hint text ("drag one from the
+      Assets tab") with a real control that works on both platforms, for
+      Cover and Back Cover
+- [x] Mobile parity pass — shipped 2026-09-04 (Phase 138). Capture a thought
+      while writing (linked to the open chapter, as on desktop); a Review tab
+      running the real Virtual Editor; find and replace; the image library
+      (browse + delete, not just add); chapter reorder; and the export
+      readiness warning mobile used to skip straight past
+- [x] Mobile: block-level surfaces — shipped 2026-09-05 (Phase 153). The
+      "blocked on a block selection model" framing overstated it: desktop
+      needs one because its Inspector is a persistent panel that must know
+      what it is looking at from moment to moment; a sheet opened from a
+      block's own menu already knows. Notes on any block (add, resolve,
+      delete) and an image's caption, alt text and width. Images had been
+      insertable on a phone since Phase 146 and never captionable, which left
+      that half-finished in a way a printed book notices. Covered by
+      `scripts/e2e/mobileBlocks.e2e.mjs`
+- [ ] Mobile: per-block typography overrides — the remaining third of the
+      old item. Deliberately not built with the other two: a phone is where
+      prose gets written, not where a single paragraph's leading gets
+      tuned, and every control added to that screen costs something
+- [x] Mobile distraction-free writing — shipped 2026-09-04 (Phase 140), and
+      the earlier "probably correct to leave out" call was wrong: a phone
+      being single-column is not the same as being distraction-free. Takes
+      the book's typographic identity (theme fonts, size, leading, drop cap,
+      paper and ink) rather than its page geometry, because a 6x9in page
+      scaled to a 390px phone is unwritable
+- [x] Fix the writing experience — shipped 2026-09-04 (Phase 139). Enter
+      genuinely continues writing now, on both desktop and mobile: it splits
+      the paragraph at the caret and the caret follows into the new one.
+      Three root causes, all fixed: `paginate` handed React a fresh random
+      `page.id` every run so every repagination rebuilt the page DOM and
+      destroyed the focused element; the Inspector's Typography box grabbed
+      the caret off the page whenever the selection changed; and mobile never
+      wired `onSplit` at all. Enter at the end of a heading now starts the
+      paragraph beneath it, and Backspace at the start of a paragraph joins
+      it upward, on mobile too
+- [x] PDF export verified end-to-end — shipped 2026-09-05 (Phase 147).
+      `saveBlob` prefers `showSaveFilePicker`, which in headless Chromium
+      neither opens a dialog nor falls through to the anchor download, so
+      nothing observable ever happened and the item stood open for months.
+      Replacing that one browser API before the app loads hands the bytes to
+      the suite instead of to a file system, with the whole pipeline —
+      pagination, font embedding, image extraction — running unchanged.
+      `scripts/e2e/export.e2e.mjs` now asserts a 1.4 MB PDF with a `%PDF`
+      header and `%%EOF` trailer, a valid EPUB (uncompressed `mimetype` first
+      entry), a self-contained HTML book carrying the manuscript text and its
+      image as a data URI, and a `.bookstudio` zip — 24 assertions
+- [x] Structural pages and Develop entity forms covered behaviourally —
+      added 2026-09-05 (Phase 147). Both were named as the likeliest places
+      for another "looks like it worked, store never changed" defect.
+      `scripts/e2e/structure.e2e.mjs` drives add / duplicate / reorder /
+      delete / edit-and-reload on a structural page and add / edit / delete on
+      a Layer 0 character, asserting persisted state throughout. Result: both
+      paths are sound — no defect found
+
+- [x] Spell-check actually works — fixed 2026-09-04 (Phase 141). It had been
+      dead for every user since Phase 125: that phase resolved the dictionary
+      URL against `document.baseURI`, but the editor always lives on
+      `/project/:projectId`, so the fetch asked for
+      `/project/dictionaries/en-gb/index.aff` and 404'd. nspell threw
+      "Missing `aff` in dictionary", the console message scrolled past, and
+      every caller fell back to "not yet analysed" — with native spellcheck
+      deliberately off, users got nothing at all. Now resolved against Vite's
+      `BASE_URL`, which is what Phase 125 actually wanted
+- [x] Spell-check on/off control — shipped 2026-09-04 (Phase 141), in the
+      desktop More menu and mobile More. Scoped to the live underlining; the
+      Virtual Editor's spelling review is a deliberate action and stays
+- [x] Clicking a flagged word selects it — shipped 2026-09-04 (Phase 141), so
+      the red underline leads somewhere: a single-word selection is what the
+      existing Fix-spelling list already keys off
+- [x] Mobile: the structural page editor shows the page — shipped 2026-09-04
+      (Phase 141). Editing a cover was a blind form; it now renders the real
+      `Page`, scaled and height-bounded so the cover and the fields are
+      visible together
+- [ ] Mobile: position cover elements by touch (drag, resize, focal point) —
+      still desktop-only. A canvas-interaction design pass, not a port
+- [x] "Drop an image here" no longer shows on touch — fixed 2026-09-04
+      (Phase 141). There is no drag source on a phone and the label is
+      pointer-events-none, so mobile Preview was showing an instruction the
+      user physically could not follow
+- [x] Whole-app runtime audit — shipped 2026-09-04 (Phase 142).
+      `npm run test:audit` walks ~25 surfaces across both shells and fails on
+      any uncaught error, unhandled rejection, console error or failed
+      request. Built specifically for the spell-check bug class: a feature
+      that fails at runtime while the UI still looks correct. Currently CLEAN
+- [x] User-facing copy audit — shipped 2026-09-04 (Phase 142).
+      `npm run audit:copy` (in CI) flags copy describing a pointer-only
+      interaction in a component that can render on a phone. Found three real
+      instances on its first run, including the back-cover twin of the hint
+      fixed in Phase 137
+- [x] About the Author: set the photo without dragging — shipped 2026-09-04
+      (Phase 142). There was no upload control at all, so a phone could never
+      set an author photo; the panel only described dragging one from the
+      Assets tab
+- [x] Add Playwright to CI so `test:audit` and `test:e2e` run there too —
+      shipped 2026-09-05 (Phase 147) as a separate job; see Phase J
+- [x] Spell-check is actually visible — fixed 2026-09-04 (Phase 143). Phase
+      141 made the dictionary load; the underlining was still wrong in two
+      ways. It was scoped to the focused paragraph, so exactly ONE
+      misspelling was ever visible and none at all once you stopped typing;
+      and the underlines are DOM React knows nothing about, so its next
+      render wiped them. Every editable paragraph now decorates itself and a
+      MutationObserver re-applies it whenever anything replaces the content
+- [x] Mobile spell-check — shipped 2026-09-04 (Phase 143). `MobileTextField`
+      never called `useLiveSpellcheck`, so mobile had none at all and the
+      on/off control added for it in Phase 141 governed nothing there
+- [x] Spell-check regression suite — shipped 2026-09-04 (Phase 143),
+      `scripts/e2e/spellcheck.e2e.mjs`, proven to fail against both
+      historical bugs
+- [x] Add a chapter from mobile distraction-free writing — shipped
+      2026-09-05 (Phase 144). Two routes, no permanent chrome: a "+" in the
+      controls that already reveal on tap (the mobile equivalent of
+      appear-on-hover), and a quiet "Start the next chapter" line at the end
+      of the last chapter, set in the book's own type. Both create the
+      chapter, give it a first paragraph and land the caret in it
+- [x] Focus mode: "Start writing…" now focuses the paragraph it creates —
+      fixed 2026-09-05 (Phase 144). It inserted a block without a caret, so
+      everything typed next went nowhere. Present since Phase 140 and masked
+      by a test with fallback selectors
+- [x] Inserting a block lands the caret — fixed 2026-09-05 (Phase 145),
+      found by auditing for the Phase 144 signature rather than by report.
+      "+ → Add paragraph" created the block and left the cursor nowhere, so
+      everything typed next was silently discarded, on BOTH shells. Two
+      causes: the insert handlers never asked for the caret, and the menus'
+      focus scopes took it back during close. The request is now made from
+      `onCloseAutoFocus`, after the menu is done with focus
+- [x] `isTextFirstBlock` — one shared rule for which block types open with a
+      field the writer should be typing into, so desktop and mobile cannot
+      diverge on it
+- [x] Deleting a project actually deletes it — fixed 2026-09-05 (Phase 146).
+      `deleteProject` removed the Layer 1 row only; the manuscript, structural
+      pages, notes, ideas, planning bible, graph layout, snapshots, undo
+      history, editorial report, writing sessions and image blobs all stayed
+      behind under an id that no longer appeared anywhere, so nothing could
+      ever name them to clean them up. On a browser's few-megabyte
+      `localStorage` quota, deleting books to make room did nothing.
+      Coordination lives in `useDeleteProject`, mirroring
+      `useImportProjectFile` on the way in, so no store reaches into a layer
+      it doesn't own. Measured both ways by
+      `scripts/e2e/projectDelete.e2e.mjs`
+- [x] Deleting a project asks first — added 2026-09-05 (Phase 146). Single
+      unconfirmed click was survivable while the bin icon only appeared on
+      hover; it stopped being survivable the moment that control became
+      permanently visible on touch. `ConfirmDialog` is shared with template
+      deletion; deletes that undo already covers stay single-click
+- [x] Hover-only controls are reachable on touch — fixed 2026-09-05 (Phase
+      146). Delete-project, edit/delete-theme and the sidebar's remove-image
+      button were `opacity-0` until hover: still tappable on a phone, but
+      invisible, so on the home screen there was no discoverable way to
+      delete a book at all. A `can-hover:` custom variant now gates the
+      hiding half
+- [x] Error capture and a report a user can hand over — shipped 2026-09-05
+      (Phase 151). Not a crash-reporting *service*: there is no backend to
+      send to and there will not be one before Phase G. What was actually
+      missing is smaller and more useful — the Phase 134 mobile crash reached
+      this project as a **photograph of a phone screen**, because there was
+      no route off the device. Now: `errorLogStore` keeps a bounded,
+      persisted log; `installErrorCapture` catches the two kinds a React
+      boundary never sees (an uncaught error in a task, and a rejected
+      promise nobody awaited); and "Report a problem" in both shells copies
+      or saves a full report with stacks, screen, pointer type and browser.
+      Covered by `scripts/e2e/diagnostics.e2e.mjs`
+- [x] Spelling suggestions are reachable from the red line — fixed
+      2026-09-05 (Phase 152), reported by the user: "there still doesn't
+      seem to be any spelling suggestions / corrections when red lines
+      appear". Three causes. `FloatingFormatToolbar` is mounted with
+      `active={isEditing}`, but Phase 143 gave *every* paragraph underlines,
+      so on any paragraph the reader had not already clicked into the red
+      line led nowhere. Entering edit mode reassigns `innerHTML`, which
+      destroyed the selection the click had just made. And mobile mounted no
+      toolbar at all, so on a phone the underline had never been actionable
+      in any circumstance. One click/tap now selects the word, opens the
+      block for editing, and offers real corrections — a dropdown on desktop,
+      a sheet on mobile. `scripts/e2e/spellFix.e2e.mjs` drives the whole
+      path on both shells, through to the corrected manuscript
+- [x] A rescan no longer destroys the selection — 2026-09-05 (Phase 152).
+      The underline pass rebuilds the field's nodes and only ever restored a
+      collapsed caret, so selecting a misspelled word and pausing for the
+      debounce silently threw the selection away, taking the toolbar with it.
+      `getSelectionTextRange`/`selectTextRange` restore a range
+- [x] Automatic backup to a file on disk — shipped 2026-09-05 (Phase 158).
+      Everything (manuscript, assets, and the version snapshots meant to
+      protect them) lived in one browser profile, so the safety net was
+      stored inside the thing it protects against. A file chosen once is now
+      rewritten whenever the manuscript changes, plus on the way out of the
+      tab; the app asks for non-evictable storage, warns at 80% of quota
+      before a save can fail, and says plainly where the book lives. Safari
+      and phone browsers can't do it and are told so rather than left
+      guessing.
+- [ ] Send crash reports somewhere automatically — needs Phase G's backend
+      decision. The local log above is the offline half of this and is what
+      makes the online half a small change when it arrives
+- [x] npm audit clean — 2026-09-05 (Phase 148). The `react-router`
+      advisories this item named are long gone; two others had taken their
+      place (`nanoid` high, via vite/postcss; `@xmldom/xmldom` moderate, via
+      mammoth). Both were transitive patch bumps with no direct-dependency
+      change. `npm audit` now reports 0 vulnerabilities
+- [x] `.docx` manuscript import covered — added 2026-09-05 (Phase 148). The
+      most-used way a real manuscript enters this app had no test of any
+      kind, which is what made the mammoth-related bump above unverifiable.
+      Now asserted end-to-end against a real minimal Word package
+      (`scripts/fixtures/manuscript.docx`): chapter splitting on Heading 1,
+      titles, body text and bold runs. It has to run in the browser suite —
+      mammoth swaps its unzip implementation for the browser build, so
+      `{ arrayBuffer }` is only valid input there
 - [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
       confirmed concretely in Phase 53 (2026-07-31): `@tailwindcss/node/dist/
       index.mjs` is truncated mid-file (17,347 bytes, cuts off mid-string).
@@ -1433,14 +1834,71 @@ Book Studio today and an actual multi-device Canva-style product.)*
       registry access to `npm install` a repair from this sandbox — the fix
       (`npm ci`) is written up in `docs/TERMINAL_SETUP.md` for the user to
       run from their own terminal. Leave unchecked until confirmed fixed.
-- [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
-- [ ] Full virtualisation of `LazySpread` (currently mount-only, never unmounts)
-- [ ] Profile and fix the structural-page mutation freeze (15–30s on a
-      17-chapter project) — Phase 53 (2026-07-31) added a "Reviewing…"
-      loading state to the Virtual Editor's "Review Entire Book" button so
-      the freeze is at least visible/honest instead of looking hung, but
-      the underlying synchronous main-thread block is unfixed; this item
-      stays open
+- [x] Verify the exported PDF against the screen — shipped 2026-09-05 (Phase
+      159), as geometry rather than pixels: there is no rasteriser in this
+      environment, and comparing two text renderers' screenshots would measure
+      their antialiasing as much as their layout. `pdfFidelity.e2e.mjs` parses
+      the PDF's own content streams for every text-drawing position and
+      compares them with the same lines' `getClientRects()` in the DOM. It
+      immediately found what byte-level checks never could: every block gap
+      was smaller in print than on screen (a paragraph's was 14px vs 4pt), so
+      the two renderings drifted apart by ~8.7px per paragraph — an inch and
+      three quarters over a twenty-paragraph chapter. Fixed via a shared
+      `blocks/blockSpacing.ts`; body-line drift is now 0.05–0.19px per page.
+- [ ] A real print-on-demand preflight — send an exported PDF to KDP or Lulu
+      and act on what comes back. Phase 159 proves the PDF agrees with the
+      screen; nothing yet proves either agrees with a printer.
+
+- [x] Every block type flows at the height the screen measured — shipped
+      2026-09-06 (Phase 162). Rather than correcting nine more hand-chosen
+      constants, `ExportableLayout` now carries `HeightMeasurer`'s own
+      `blockHeights` and `drawBlock` settles each block at exactly that
+      height, so present and future types agree by construction. Drift on a
+      book carrying every block type: 21.32px per page before, 0.09px after.
+- [x] The chapter opener no longer drifts — shipped 2026-09-06 (Phase 162).
+      `chapterOpenerMetrics.ts` is read by all three renderers.
+- [x] Callout and case-study cards are measured correctly — shipped
+      2026-09-06 (Phase 162). Both spaced themselves with `my-2`, and
+      `getBoundingClientRect().height` excludes margins, so `paginate`
+      reserved 16px too little for each. Found by the fidelity suite, and a
+      real layout-engine bug rather than a PDF one.
+- [ ] The `gallery` block is the one type the fidelity suite's rich fixture
+      can't carry — it needs real image assets, which a seeded manuscript
+      can't provide. Needs an asset-seeding path before it can be measured.
+- [ ] Line-level text flow (paragraphs currently move to the next page as a
+      whole block). **Designed 2026-09-06 — see `docs/LINE_LEVEL_FLOW_PLAN.md`
+      before starting.** Measured benefit: block-level flow leaves 6–29% of a
+      full page unused (mean 13–19%), reported by `pdfFidelity.e2e.mjs` on
+      every run — roughly 40 pages on a 300-page novel. Measured cost: four
+      milestones, of which the third is a rewrite of how the editable canvas
+      relates to pages. The plan recommends starting with per-line
+      measurement, which pays for itself as verification whether or not the
+      rest is ever built.
+- [x] `LazySpread` unmounts spreads that scroll far away — shipped
+      2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew
+      monotonically for as long as the app stayed open. Two margins now
+      (1200px to mount, 4000px to release) with the gap as hysteresis; the
+      placeholder is the same size as the pages it replaces so scroll never
+      jumps, and a spread holding the caret is never unmounted. Not the full
+      virtualised-list rewrite this item imagined — unmounting turned out to
+      be the whole of it
+- [x] The structural-page mutation freeze — profiled and fixed 2026-09-05
+      (Phase 149), open since Phase 21 (2026-07-31). **It had nothing to do
+      with structural pages.** The control that settled it: same 1,700-block
+      book, same insert — 140ms when the book had only been opened, 4,340ms
+      once it had been scrolled end to end (6,667 vs 76,911 DOM nodes). A CPU
+      profile put the time in `focus()` and Floating UI's offset-parent walk,
+      both O(DOM), both forced to recompute layout over a tree that never
+      stopped growing because `LazySpread` never unmounted. Fixed above.
+      After: insert 177ms, select 0ms, edit 0ms, delete 52ms, and the DOM
+      holds at ~6.8k nodes however far you scroll. Guarded by
+      `scripts/e2e/perf.e2e.mjs`
+- [x] Force-mounted spreads are released again — 2026-09-05 (Phase 149).
+      `forcedSpreadIndices` only ever grew, so every chapter or page ever
+      jumped to stayed pinned in the DOM for the rest of the session: the
+      same unbounded-DOM problem arriving by a different door, and it would
+      have quietly undone the fix above for anyone who navigates by clicking
+      chapters
 - [ ] Automated accessibility (WCAG) audit beyond Radix's built-in semantics
 - [ ] UI internationalisation / localisation
 
@@ -1487,7 +1945,21 @@ a gap to close later.)*
       book").
 - [x] Mobile Undo button in `MobileWorkspace`'s header (Phase 100) — needed
       once mobile gained real destructive actions (delete block/chapter).
-- [ ] Not yet live-verified in Chrome (this sandbox can't push) — owed:
+- [x] Live-verified in Chromium — shipped 2026-09-03 (Phase 126). Verified at real
+      device viewports: mobile shell renders and switches, Add Chapter, the "+"
+      FAB menu (Add paragraph/heading/photo), tap-to-edit inline with the text
+      persisting to `contentStore`, the per-block "⋮" menu (Move up/down,
+      Delete), header Undo, and the Ideas tab. Zero console or page errors.
+      Two defects found and fixed in the same phase — see the two entries below
+- [x] Phone in landscape no longer drops out to the desktop shell — fixed
+      2026-09-03 (Phase 126). `useIsMobile` keyed on width alone, so a rotated
+      phone (~844×390) cleared the 640px test and got the three-column desktop
+      shell inside 390px of height: toolbar clipped mid-word, page canvas an
+      unusable sliver. Now also matches a short viewport with a coarse pointer,
+      which leaves tablets and short desktop windows exactly as they were
+- [x] Mobile "+" FAB had no accessible name (icon-only button) — fixed 2026-09-03
+      (Phase 126)
+- [ ] Remaining live-verification owed:
       resize-triggered shell switch, chapter-switcher sheet (including the
       new add/rename/delete), inline edit of each of the six text-bearing
       block types, the new per-block "⋮" menu, "Add photo" actually
@@ -1495,19 +1967,84 @@ a gap to close later.)*
       from mobile edits, and Ideas List/Board on a narrow viewport. See
       STATUS.md Phase 95/100's verification caveats — Phase 100 additionally
       hasn't even had a local `tsc` pass yet due to a sandbox VM outage.
+- [x] Mobile book preview — shipped 2026-09-03 (Phase 127): a third bottom-tab
+      surface showing the real paginated book read-only (chapter flow, front/back
+      matter, running heads, folios, drop caps, generated Contents). Reuses
+      `HeightMeasurer` → `paginate` → `composeBookPages` → `Page` unchanged
+      rather than adding a second layout engine; the page is rendered at true
+      size and CSS-scaled to fit, so page breaks match what prints
+- [x] Mobile "More" tab — export (PDF/EPUB/HTML), import a manuscript, save/open
+      a .bookstudio project file, version history, theme gallery and project
+      settings, all on a phone — shipped 2026-09-03 (Phase 128). Reuses the same
+      hooks and components the desktop Toolbar and Inspector drive. **This
+      deliberately reverses Phase K's original "Writing + Idea capture only"
+      scope at the user's explicit request**; what stays desktop-only is now an
+      interaction boundary (the bleed/trim-precise page canvas and drag-to-
+      position cover tooling) rather than a feature one
+- [x] Mobile export no longer requires a trip to Preview — fixed 2026-09-05
+      (Phase 155). Calling it "acceptable because the row explains it" was the
+      wrong call: the row was an app asking its user to perform a ritual to
+      work around where a component happened to be mounted. None of the work
+      needs anything visible — `HeightMeasurer` renders off-screen, `paginate`
+      and `composeBookPages` are pure — so the pipeline moved into
+      `useBookLayout` and the More tab runs it itself. Covered by
+      `scripts/e2e/mobileExport.e2e.mjs`, which also checks the refactor left
+      Preview working
+- [x] Mobile front/back-matter management — shipped 2026-09-04 (Phase 136),
+      More -> Book pages. Add/reorder/duplicate/delete/edit every structural
+      page type, cover image included. (add/reorder title page, copyright,
+      dedication...) — Structure is still desktop-only
+- [x] Mobile manuscript search — shipped 2026-09-04 (Phase 138), More -> Find
+      and replace, hosting the desktop `SearchPanel` directly
+- [x] Mobile Virtual Editor access — shipped 2026-09-04 (Phase 138) as its own
+      Review tab, running the real `VirtualEditorWorkspace` so a review on a
+      phone applies the same checkers and scoring as on desktop
+- [x] Book Graph on mobile, with touch node dragging — shipped 2026-09-03
+      (Phase 130). Phase 129 had excluded it on the assumption a drag-and-zoom
+      canvas needed a pointer; that was wrong about this canvas, which was
+      already built on pointer events with `touch-none` and
+      `setPointerCapture`. Only the container needed loosening, via a new
+      `compact` prop. Touch drag verified to move a node by the same
+      displacement as mouse
+- [x] Book Graph renders no nodes under the Vite **dev server** — fixed
+      2026-09-06 (Phase 164). Not a Vite quirk, as this item had claimed since
+      Phase 108: the layout worker lived in `useState` and was terminated by
+      an effect cleanup, so React's StrictMode simulated unmount killed it
+      permanently (`useState` never re-runs its initialiser) and every later
+      request went into a dead port. Held in a lazily-created ref now.
+      Guarded by `scripts/e2e/graph.e2e.mjs`, the only suite that runs the dev
+      server — serving `dist` passes against the broken code, because
+      production builds don't double-invoke
+- [x] Book Graph full-screen mode — shipped 2026-09-03 (Phase 131). Reported
+      from a real phone: the canvas was collapsed to a strip barely taller than
+      its own zoom controls. Two fixes — the canvas now has a real minimum
+      height (55dvh) instead of relying on `flex-1`, and a "Full screen" button
+      hands it the whole viewport, hiding the heading, legend, filters and
+      selection panel. Escape or "Exit full screen" returns
+- [x] Fix: touching the mobile Book Graph jumped the user to another tab —
+      fixed 2026-09-03 (Phase 132). The canvas carried `flex-1`, which grew it
+      past its declared height (782px inside a 600px viewport) so it was drawn
+      under the bottom tab bar; a tap on the lower part of the graph hit a nav
+      button. Reported as the graph "crashing" on touch
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
-      checklist) — currently read-only cards on mobile; would need small
+      checklist/verse) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
-- [ ] Mobile access to Develop mode beyond Ideas (Characters, Locations, Book
-      Graph, etc.) — today's "Open Book Graph" button drops out to the
-      desktop-shaped `PlanningShell`, which isn't mobile-optimised; a real
-      mobile Develop experience is unscoped future work, not started.
-- [ ] Mobile image/gallery block insertion (asset picker UI) — desktop-only
-      today, same underlying gap `defaultContent.ts` already documents for
-      the desktop "+" inserter.
-- [ ] Decide whether Develop's non-Idea categories (Characters, Locations,
-      Timeline, etc.) ever belong on mobile, or stay a deliberate desktop-
-      only scope boundary — not decided yet, out of scope for this milestone.
+- [x] Mobile Develop mode — shipped 2026-09-03 (Phase 129): `MobileDevelopView`
+      renders desktop's `PlanningShell` information architecture as a
+      drill-down — a category list (Ideas + all eight Layer 0 kinds + Outline
+      Templates + AI Prompt, with counts) that pushes the real desktop panel.
+      Panels are reused unmodified. The Ideas tab was folded into Develop,
+      mirroring desktop where Ideas is a category inside Planning, keeping the
+      tab bar at four.
+- [x] Mobile image/gallery block insertion — shipped 2026-09-05 (Phase 146).
+      The item as written was half wrong and hid something worse: mobile could
+      already add a single photo (Phase 129), and the real gap was that
+      `gallery` could be rendered, exported, accessibility-checked and
+      inspected but **created by no code path on either shell**. Both shells
+      now insert one from a multi-photo pick.
+- [x] Decided 2026-09-03 (Phase 129): Develop's non-Idea categories DO belong on
+      mobile — the user asked for them directly. Book Graph is the one part that
+      stays desktop-only, on interaction grounds rather than scope.
 
 ---
 

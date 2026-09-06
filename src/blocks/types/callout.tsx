@@ -10,6 +10,7 @@ import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 /**
  * ONE callout type with a `variant`, per docs/MODULAR_PAGE_SYSTEM_PLAN.md
@@ -61,12 +62,16 @@ function CalloutRender(props: BlockRenderProps) {
   const Icon = variant.icon
 
   return (
+    // Transparent padding rather than a margin on the card itself: margins
+    // are outside `getBoundingClientRect()`, so `HeightMeasurer` couldn't
+    // see them — see `blocks/blockSpacing.ts`.
+    <div style={{ paddingTop: BLOCK_SPACING.callout.before, paddingBottom: BLOCK_SPACING.callout.after }}>
     <div
       onClick={!title.isEditing && !text.isEditing ? onSelect : undefined}
       className={cn(
         'outline-offset-4 transition-[outline-color] duration-150',
         outlineClass(!!selected, title.isEditing || text.isEditing),
-        'my-2 cursor-pointer rounded-[var(--radius-card)] py-4 pr-5 pl-4',
+        'cursor-pointer rounded-[var(--radius-card)] py-4 pr-5 pl-4',
       )}
       style={{ background: variant.background, borderLeft: `3px solid ${variant.accent}` }}
     >
@@ -123,6 +128,7 @@ function CalloutRender(props: BlockRenderProps) {
           </p>
         </div>
       </div>
+    </div>
     </div>
   )
 }

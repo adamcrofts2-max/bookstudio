@@ -8298,3 +8298,3372 @@ correct titles, 1,415 paragraphs, images and tables intact.
   click.
 - `npm test` remains broken on `main` for the reason recorded under Phase 123;
   these assertions likewise don't execute under it until that is fixed.
+
+## Phase 125 (2026-09-03) — Repair the test suite, and the production bug it was hiding
+
+`npm test` had been failing on `main`: 4 visible failures and a hard crash
+partway through, so **only 94 of 408 assertions ever ran**. Everything after
+the crash — roughly three quarters of the suite, including Phase 123's and
+124's new coverage — silently never executed. Four independent root causes.
+
+**Result: 408 passing, 0 failing, exit 0** (was 94 passing, 4 failing, crash).
+
+### 1. PDF export was broken for every user — a live production bug
+
+Not a test problem. `pdf/fonts.ts`'s `loadThemeFonts` embeds all custom cover
+fonts on **every** export, whether the book uses them or not, and
+`@pdf-lib/fontkit` throws `RangeError: Trying to access beyond buffer length`
+from `TTFGlyph._getCBox` on **Bebas Neue**. `exportBookToPdf` therefore threw
+before producing a single page — for every book, regardless of its fonts.
+
+Diagnosed rather than guessed:
+- The file is **not** corrupt. Its `loca` table matches
+  `head.indexToLocFormat` (short/2-byte) and `maxp.numGlyphs` (497), every
+  table lies inside the file, and no glyph offset runs past `glyf`.
+- A **freshly downloaded copy from Google Fonts crashes identically**, so
+  re-downloading the file cannot fix it. This is a fontkit defect on this
+  typeface.
+- The failure surfaces at `doc.save()`, not `embedFont`, so it cannot be
+  caught per-font at load time — a `try`/`catch` around the embed was tried
+  first and did not help.
+
+Fixed by not embedding it: `'bebas-neue'` now resolves to **Anton**, the
+closest working condensed display sans. Two supporting changes so this is
+coherent rather than a silent substitution:
+- `structuralPages/coverTypography.ts` maps the same id to Anton **on screen
+  too**. Rendering Bebas on screen and Anton in the PDF would break the
+  true-WYSIWYG guarantee this app treats as non-negotiable.
+- Bebas Neue was removed from both cover-font pickers so nobody new selects
+  it. The id is **kept** in `CustomCoverFontId`, so a project already saved
+  with it still loads and simply renders in Anton — this codebase's standing
+  "default in code, never migrate persisted data" convention.
+
+`embedOrFallback` was also added: a font that fails at embed time now falls
+back to a standard face with a logged error instead of taking down the whole
+export. It does not fix Bebas (whose failure is deferred to save), but it
+stops the *class* of failure from being fatal again.
+
+### 2. `runReview` is deferred by a tick; the tests asserted synchronously
+
+`virtualEditorStore.runReview` wraps `runPipeline` in
+`window.setTimeout(…, 0)` so the "Reviewing…" state paints before the
+synchronous pipeline blocks the main thread. That is correct and deliberate —
+but the tests read the report immediately afterwards, found none, and then
+dereferenced the missing report at `smoke-test.ts:621`, killing the run.
+**This was the crash that hid ~310 assertions.** Fixed test-side with a
+`flushReview()` helper awaited after each of the six `runReview` calls; the
+production deferral is untouched.
+
+### 3. The spell-check dictionary URL was root-relative
+
+`spellcheckDictionary.ts` fetched `/dictionaries/en-gb/index.aff`. Node
+rejects a root-relative URL with `ERR_INVALID_URL` (there is no origin to
+resolve it against), so the dictionary never loaded under the harness and
+every spelling-dependent checker silently reported "not analysed".
+
+Now resolved against `document.baseURI` (falling back to `window`), which is
+also a **real production improvement**: a root-relative path breaks the moment
+the app is served from a sub-path, such as a preview deployment under a
+prefix. The loader's existing fail-closed behaviour is preserved.
+
+The harness shim was widened to match: it previously served only `/fonts/`
+from `public/`, and now serves anything under `public/`, including absolute
+same-origin URLs. The spell-checker is therefore genuinely exercised by the
+suite for the first time.
+
+### 4. A stale assertion nobody could see failing
+
+The overall-score test averaged a hardcoded list of four categories. Four more
+(`developmental`, `typography`, `accessibility`, `commercial`) had checkers
+registered afterwards, so the assertion went stale and started failing —
+unnoticed, because the suite was already red. It now derives the analysed set
+from the report itself, so it cannot go stale again as checkers are added, with
+a separate assertion pinning the four long-standing categories.
+
+### Verified
+`npm test` — 408 passing, 0 failing, exit 0. `npm run build` clean.
+`npm run lint` exits 0 with 49 warnings before and after.
+
+### Worth doing next
+Phase J's CI pipeline. This suite was broken across multiple phases without
+anyone noticing; a GitHub Actions workflow running build/lint/test on every
+push would have caught it on the commit that introduced it.
+
+## Phase 126 (2026-09-03) — Mobile: live-verified at last, and two defects fixed
+
+Phase K's mobile mode had never been verified in a real browser — Phase 95/100
+shipped with that caveat recorded, and Phase 100 never even had a local `tsc`
+pass. Driven properly in Chromium at real device viewports for the first time.
+
+### What was verified working
+Mobile shell renders and switches at the breakpoint; Add Chapter; the "+" FAB
+menu (Add paragraph / Add heading / Add photo); tap-to-edit inline with typed
+text persisting to `contentStore` through the same history-wrapped actions
+desktop uses; the per-block "⋮" menu (Move up/down, Delete); the header Undo
+button; and the Ideas tab. **Zero console or page errors throughout.**
+
+Two earlier readings in this session were wrong and are corrected here: the
+per-block menu *does* carry `aria-label="Block actions"`, and a newly-added
+chapter genuinely has no blocks, so "no editable field" was the empty state
+behaving correctly, not a defect.
+
+### Defect 1 — a rotated phone fell out of the mobile app
+`useIsMobile` matched on width alone. A phone in landscape is roughly 844×390,
+which clears the 640px test, so it was handed the full three-column desktop
+shell — Sidebar, page canvas and Inspector — inside 390px of height.
+
+Confirmed visually at 844×390: the toolbar clips mid-word ("Virtual Edito…"),
+the centre column is squeezed to a sliver, and the page preview is unusable.
+Rotating the phone silently dropped the author out of the mobile app into a
+layout they cannot work in.
+
+Fixed by adding a second clause: `(max-height: 500px) and (pointer: coarse)`.
+The pointer test is what makes this safe — a short *desktop* window is short
+because the user chose it and still has a mouse (`pointer: fine`), so it keeps
+the desktop shell exactly as before. Tablets are likewise unaffected.
+
+Verified across five viewports in Chromium, all as intended: phone portrait →
+mobile, phone landscape → mobile (was desktop), tablet portrait → desktop,
+short desktop window → desktop, normal desktop → desktop.
+
+### Defect 2 — the "+" FAB had no accessible name
+An icon-only `Button` with no `aria-label`, so screen readers announced it as
+an unlabelled button — and it was the only way to add content on mobile. Now
+`aria-label="Add block"`.
+
+### Tests
+Five assertions added to `scripts/smoke-test.ts`. They evaluate the **real**
+exported `MOBILE_QUERY` against known device viewports rather than restating
+the rule, so the shipped query is what gets asserted — including an explicit
+regression test for the landscape-phone case.
+
+### Still open (deliberate scope, not defects)
+Structured blocks (list/table/timeline/faq/statistics/checklist) remain
+read-only cards on mobile; Develop beyond Ideas is desktop-only; there is no
+mobile preview or export. These are the scope boundary the user chose when
+Phase K was defined ("Writing + Idea capture only"), not gaps this phase left
+behind.
+
+## Phase 127 (2026-09-03) — Mobile book preview
+
+Mobile could write into a book but never look at it. That was the gap that made
+"on the go" mode feel like a notes app rather than Book Studio, and it is now
+closed: a third bottom-tab surface, **Preview**, showing the real paginated
+book read-only.
+
+### What it shows
+The actual book — chapter flow, front- and back-matter structural pages, the
+generated Contents page with its dot leaders, running heads, folios, drop caps
+and justified type. Verified in Chromium at 390×844 against a real typed
+chapter: Contents page listing the chapter at its true page number, then
+"CHAPTER ONE / Untitled Chapter" with a drop cap and justified, hyphenated
+prose, each page captioned with its number, and a "3 pages · preview only"
+footer.
+
+### It is a view, not a second layout engine
+The entire pipeline is reused unchanged: `HeightMeasurer` measures real block
+heights off-screen, `paginate` flows them, `composeBookPages` splices the
+structural pages around the result, and `Page` draws them via `LazySpread`.
+Reimplementing any of that for a small screen would create a second source of
+truth that could disagree with the printed book — exactly what this app's
+WYSIWYG non-negotiable exists to prevent.
+
+`LazySpread` is reused with a single-page array, which brings its
+IntersectionObserver lazy-mounting along for free: a long book renders
+placeholder boxes until each page scrolls near the viewport. No new
+virtualisation code.
+
+### Two mobile-specific concerns, and nothing else
+- **Scale.** A page is a fixed physical size (a 6×9in trim is ~680px wide here,
+  far wider than a phone). The page is rendered at full size and CSS-scaled to
+  fit rather than reflowed — reflowing would change where pages break and show
+  the author a different book from the one that prints. The scaled page is
+  wrapped in a box of the *scaled* size, because a CSS transform alone does not
+  affect layout and every page would otherwise overlap the next.
+- **Read-only.** Pages render with `decorative`, the same flag `ThumbnailPage`
+  uses: no editing affordances, and no duplicate DOM ids. Editing stays in the
+  Write tab.
+
+The measure key folds in `contentStore`'s revision counter, exactly as
+`BookRenderer` does, so a paragraph edited in the Write tab repaginates here
+rather than reusing a stale cached height.
+
+### Scope note
+This does not widen Phase K's "no precision layout tools on mobile" boundary —
+nothing in Preview is editable. It adds the ability to *see* the book, which is
+what makes writing on a phone feel connected to the object being made.
+
+### Tests
+Eight assertions covering `computePreviewScale`, extracted as a pure function
+for the purpose: a page always fits its container, is never magnified past 100%
+on a wide viewport, yields 0 before the container is measured (rendered as the
+loading state, not a zero-sized page), guards a zero page width, and scales a
+larger trim down further.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and after;
+full suite ALL PASS. Live-verified in Chromium at 390×844 — empty state, real
+pagination, prose rendering after lazy mount, no horizontal overflow, zero
+console or page errors.
+
+## Phase 128 (2026-09-03) — Mobile "More": most of Book Studio, on a phone
+
+**A deliberate reversal of Phase K's scope, at the user's explicit request:**
+mobile "should also include most of the other desktop features but be very
+usable and user friendly on the mobile". Phase K (2026-08-02) recorded the
+user's choice of "Writing + Idea capture only"; that boundary is now replaced.
+
+The boundary that remains is an **interaction** one rather than a feature one:
+the fixed-size, bleed/trim-precise page canvas and the drag-to-position cover
+tooling need a pointer and a large screen, so they stay desktop-only.
+Everything that is a choice, a command or a document is now reachable from a
+phone.
+
+### The fourth tab
+`MobileMoreView` — a grouped, thumb-reachable list (the platform-native
+settings shape) with three sections:
+
+- **Export** — PDF, EPUB, single-file HTML
+- **Manuscript** — import a manuscript, save a `.bookstudio` project file,
+  open one, version history
+- **Design** — theme gallery, project settings
+
+### Almost none of this is new code
+Every row drives the same hook or component the desktop Toolbar and Inspector
+already use: `useExportPdf`, `useExportEpub`, `useExportHtmlBook`,
+`useExportProjectFile`, `useImportProjectFile`, `ImportManuscriptButton`,
+`ThemeGallery`, `ProjectSettingsDialog`, `VersionHistoryDialog`. Rebuilding any
+of them for mobile would have created a second implementation to keep in sync.
+The mobile-specific work is presentation only: a list instead of a menu bar,
+and `ui/sheet.tsx` bottom sheets instead of centred dialogs.
+
+### Enabling PDF export on mobile
+`useExportPdf` renders `exportStore`'s layout rather than re-deriving one —
+that is what guarantees the PDF matches the screen — and only `BookRenderer`
+ever populated it. `MobilePreviewView` now publishes its layout with the same
+effect `BookRenderer` uses, so a phone can export a print-ready PDF from the
+exact pagination it just displayed.
+
+Consequence, surfaced honestly in the UI rather than hidden: the Export PDF row
+is disabled until Preview has been opened once, and says "Open Preview once to
+lay the book out first". Pagination only runs while Preview is mounted, and
+measuring every block off-screen is real work to do unprompted on a phone
+battery. Tracked in `docs/ROADMAP.md` as worth removing later.
+
+### Verified in Chromium at 390x844
+All nine rows render; the disabled PDF row explains itself; the Theme sheet
+opens with real resolved theme mock-ups; PDF becomes enabled after visiting
+Preview; no horizontal overflow; zero console or page errors.
+
+**All four exports were run for real and produced genuine files from the phone
+viewport:**
+
+| Export | File | Size |
+|---|---|---|
+| PDF | `The Book of Enoch.pdf` | 1,363 KB |
+| EPUB | `The Book of Enoch.epub` | 3 KB |
+| HTML | `The Book of Enoch.html` | 5 KB |
+| Project file | `The Book of Enoch.bookstudio` | 2 KB |
+
+One test-harness note, not a product defect: `saveBlob` prefers the File System
+Access API, and headless Chromium's `showSaveFilePicker` does not complete
+without a real user gesture, so the download event never fired on the first
+run. Deleting `window.showSaveFilePicker` to force the anchor-download fallback
+produced all four files above. Real mobile browsers (Safari included) take that
+same fallback path anyway.
+
+### A build-only type error worth recording
+`npx tsc --noEmit` passed while `npm run build` (`tsc -b`) failed: the first
+version passed `side="bottom"` to `SheetContent`, which has no such prop —
+`ui/sheet.tsx` is already a bottom sheet with its own max-height, drag handle
+and internal scrolling. Caught only because `CLAUDE.md` requires a real build
+before committing; `--noEmit` alone would have shipped it.
+
+### No new tests
+The verification that mattered here was the browser run — every row is a
+binding to a hook already covered by the existing suite, and a jsdom assertion
+that a list renders nine labels would have added confidence in nothing. Noted
+rather than papered over with a hollow test.
+
+## Phase 129 (2026-09-03) — Develop mode on mobile
+
+Requested directly: "can we also add develop mode to mobile?" This settles the
+open question Phase K left ("decide whether Develop's non-Idea categories ever
+belong on mobile") — they do.
+
+### Desktop's architecture, in the shape a phone can hold
+`PlanningShell` is a two-column shell: a nav rail of categories beside the
+selected category's panel. A phone has room for one column, so
+`MobileDevelopView` renders the same information architecture as a **drill-
+down** — the category list *is* the screen, and choosing one pushes its panel
+behind a back row. That is the platform-native master/detail shape, and it lets
+the list carry the same counts the desktop rail shows.
+
+Eleven rows: Ideas, the eight Layer 0 entity kinds (Characters, Locations,
+Timeline, Glossary, References, Illustration Briefs, Style Rules, Research
+Notes), Outline Templates and AI Prompt — each with its real icon, its
+`getLayer0KindLabel` label (so non-fiction projects get non-fiction wording),
+its description and a count badge.
+
+### The panels are desktop's, unmodified
+`IdeaInboxPanel`, `EntityListPanel`, `OutlineTemplatesPanel` and
+`PromptGeneratorPanel` each take a project id and render their own content, so
+Develop's real behaviour — add, edit, delete, relationships, the whole Layer 0
+bible — is identical on both platforms with no second implementation to drift.
+
+### Ideas folded into Develop
+The Ideas tab was replaced by Develop, with Ideas as its first category. That
+mirrors desktop, where Ideas has always been a category *inside* Planning
+rather than a peer of it, and it keeps the tab bar at four
+(Write · Preview · Develop · More) — as many as fits a phone comfortably.
+`MobileIdeasView` was deleted; it was a wrapper with nothing left to wrap.
+
+### Book Graph is excluded, and says so
+Book Graph is a force-directed canvas driven by dragging nodes and zooming a
+large surface — the one part of Develop that is an *interaction* rather than a
+document, the same test that keeps the page canvas and cover designer desktop-
+only (Phase 128). It also carries a documented main-thread cost (Phase 108) a
+phone would feel hardest. Rather than list a row that opens something unusable,
+the view states plainly why it isn't there.
+
+That required one small change to a shared component: `IdeaInboxPanel`'s
+`onOpenBookGraph` is now optional, and the button is not rendered when it is
+absent. Previously mobile passed a handler that dropped the phone into the
+desktop-shaped `PlanningShell` — a button leading somewhere unusable is worse
+than no button. Desktop still passes it, so desktop is unchanged.
+
+### Verified in Chromium at 390×844
+Twelve checks, all passing: the Develop tab replaced Ideas; all eleven
+categories list; the Book Graph exclusion is explained rather than silent;
+drilling into Characters shows the real panel; the add-entity dialog opens;
+the back row returns to the list; the Ideas panel still works inside Develop;
+no dead "Open Book Graph" button; no horizontal overflow; zero console or page
+errors.
+
+One iteration during verification: the back row first repeated the section
+name, so "Characters" appeared twice on screen. It now names the destination
+("‹ Develop") as platform back rows do.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
+
+## Phase 130 (2026-09-03) — Book Graph on mobile, with touch dragging
+
+Requested: "we also need the book graph. the mobile user should be able to drag
+the nodes etc."
+
+### Phase 129's exclusion was wrong, and this corrects it
+Phase 129 left Book Graph off mobile on the reasoning that a drag-and-zoom
+canvas is an interaction needing a pointer. That reasoning did not survive
+reading the code: `BookGraphView` was built on **pointer events** (which unify
+mouse, touch and pen) with `touch-none` and `setPointerCapture` throughout, and
+its force layout already runs in a Web Worker. Touch dragging was effectively
+already implemented — the assumption, not the code, was the problem.
+
+Only the container needed changing. Desktop places the canvas and the selection
+panel side by side at a fixed 560px tall; on a 390px phone the 288px panel
+would have left roughly 100px of graph. A new `compact` prop stacks them and
+lets the canvas fill the height it is given — a layout flag, deliberately not a
+mobile fork, since there was no second behaviour to write.
+
+Book Graph is now a row in mobile Develop, and tapping an entity node drills
+into that kind's list — the same navigation desktop's graph performs against
+`PlanningShell`.
+
+### Verified on the production build, at 390×844
+Graph lists in Develop; nodes render; **dragging a node with touch moves it by
+the same displacement as a mouse drag** (185,512 → 268,499 for both); no
+horizontal overflow; zero console or page errors.
+
+Two false alarms during verification, both mine, both recorded so the next
+person does not repeat them:
+- The first drag test targeted `document.querySelector('svg circle')`, which
+  selects the central **Book hub node — deliberately non-draggable** by design
+  (`isBook ? {} : dragHandlers`). Draggable nodes carry `cursor-grab`.
+- A fresh project's graph contains only that hub, so a drag test must seed a
+  chapter first or there is genuinely nothing to drag.
+
+### A real finding: the graph is empty under the Vite dev server
+While investigating, the graph rendered **no nodes at all** — and did so on
+desktop too, and on `main` with the file reverted, so it was neither mobile nor
+mine. Instrumenting the worker round trip showed the request posted twice
+(React StrictMode) and **no response ever arriving**, leaving
+`layout.positions` empty so every node hit `if (!p) return null`.
+
+It is **not a production defect**. The same code in a production build
+(`npm run build`, served statically) renders 4 node groups with the exact
+bounds the layout engine produces when called directly in Node
+(`-143.57 -237.12 233.57 471.86`, computed in 3ms). The worker script loads
+with HTTP 200 and raises no `error` or `messageerror`. So this is a Vite
+dev-server module-worker quirk, not broken application code — but it makes the
+graph impossible to develop locally, and is now tracked in `docs/ROADMAP.md`.
+
+**Consequence for future verification: Book Graph must be tested against a
+production build, not `npm run dev`.**
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
+
+## Phase 131 (2026-09-03) — Book Graph: usable canvas height, and a full-screen mode
+
+Reported from a real phone with a screenshot: the Book Graph canvas was
+collapsed to a strip barely taller than its own floating zoom controls, with no
+node visible at all. "There should be an option to make it the full page so
+users can use it easily."
+
+### Why Phase 130's verification missed it
+Phase 130 was verified at a bare 390×844 emulated viewport. A real phone
+browser spends a large share of that height on its own chrome — address bar,
+tab bar, system bars — so the real content viewport is far shorter (roughly
+412×600 on the reported device). The canvas was sized with `flex-1` and no
+minimum, so with less height to divide it collapsed to almost nothing while the
+heading, description, legend, kind filters and selection panel kept their
+natural size.
+
+**Testing lesson, recorded so it is not repeated: mobile layout must be checked
+at a realistic content viewport (~412×600), not at a device's full pixel
+height.** A layout that depends on `flex-1` will always look fine in an
+emulator that hands it the whole screen.
+
+### Two fixes
+- **A real minimum height.** The canvas is now `min-h-[55dvh]` in compact mode
+  rather than relying on `flex-1` alone, so it stays usable at any height. At
+  412×600 it measures 330px instead of a sliver.
+- **Full-screen mode.** A "Full screen" button hands the entire viewport to the
+  graph (`fixed inset-0`), hiding the heading, description, legend, kind
+  filters and the selection panel, leaving a slim bar with "Exit full screen".
+  At 412×600 the canvas measures 538px — about 90% of the viewport. Escape also
+  exits, for desktop.
+
+Offered on desktop as well as mobile: a large graph benefits from the whole
+window there too, and one behaviour is simpler to reason about than a
+mobile-only one.
+
+### Verified on the production build at 412×600
+Canvas height 330px normally and 538px in full screen; the "Full screen" button
+appears; surrounding chrome is hidden while full screen; **touch drag still
+works in full screen** (186,507 → 263,499); "Exit full screen" restores the
+normal view; zero console or page errors.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
+
+## Phase 132 (2026-09-03) — Fix: touching the mobile Book Graph jumped to another tab
+
+Reported as "crashes when I touch the book graph screen". Reproduced at a
+realistic 412×600 phone viewport, and it is not a crash — there is no JavaScript
+error at all. Touching the graph silently navigated away from Develop to the
+Write tab, which is indistinguishable from a crash from the user's side.
+
+### Root cause: `flex-1` beat the declared height
+The canvas carried `flex-1` (`flex: 1 1 0%`) in its base class list. Inside the
+stacked flex column that means `flex-grow: 1`, which **overrides whatever height
+is set** and stretches the element. Measured: a declared `320px` computed to
+`781.78px` inside a 600px-tall viewport, so the canvas ran from y=191 to y=972
+— roughly 370px of it drawn underneath the bottom tab bar.
+
+`document.elementFromPoint` at a spot that looks like the middle of the graph
+returned `BUTTON.flex.flex-1.flex-col` inside `NAV` — the **Write tab**. So a
+tap on the lower part of the graph pressed a nav button and switched tabs.
+
+This is also the true root cause of Phase 131's original report. That phase
+treated the symptom by adding `min-h-[55dvh]`, which made it worse: `flex-1`
+grew from that larger floor.
+
+Two units were tried and both were wrong for this:
+- **`dvh` is unreliable here.** `50dvh` resolved to ~780px against a 600px
+  visible viewport, so viewport units gave no protection either.
+- **`flex-1` cannot be combined with a fixed height** in a column that is
+  taller than its container.
+
+### Fix
+- The canvas is `h-[320px] shrink-0` on mobile — a fixed pixel height with no
+  grow. A fixed height cannot out-grow the pane it sits in; full screen is the
+  answer for wanting more room.
+- Full screen keeps `flex-1 min-h-0`, and its row wrapper regained
+  `min-h-0 flex-1` — without a bounded parent the canvas's own `flex-1` had
+  nothing to grow inside and overflowed the viewport (538px correct vs 782px
+  overflowing).
+- The Develop pane scrolls again instead of `overflow-hidden`, which had been
+  hiding the overflow rather than preventing it.
+- The heading, two-line description and edge legend are hidden on mobile. They
+  are explanatory, not operational, and they pushed the canvas below the fold.
+
+### Verified on the production build at 412×600
+Canvas is exactly 320px (y=191→511, entirely above the tab bar). **Five touch
+interactions all stay on Book Graph with zero errors**: single tap on empty
+background, background drag/pan, two-finger pinch, tap directly on a node, and
+a tap after entering full screen. Full screen: 538px canvas (~90% of viewport),
+chrome hidden, touch drag works (186,507 → 263,499), exit returns correctly.
+
+Desktop re-checked and unchanged: 560px canvas, side panel present, description
+still shown.
+
+### Verified
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
+
+## Phase 133 (2026-09-03) — Error boundaries, so a crash is never a white screen
+
+Reported: the mobile Book Graph "still crashes to white screen" after Phase
+132. A white screen is a *render* error — a different failure from Phase 132's
+tab-jump, which threw nothing at all.
+
+### Not reproduced, and said plainly
+The crash could not be reproduced at 412×600 in headless Chromium against this
+build. Attempts, all clean with zero errors: single tap on empty canvas,
+background drag/pan, two-finger pinch, tap on a node, **double-tap on every
+node type** (book hub, chapter, idea), eight rapid taps, Connect mode with two
+node taps, and toggling kind filters off and on. Full screen enter/exit and
+drag inside full screen are also clean.
+
+So this phase does not claim to have fixed the reported crash. It makes the
+crash **visible and recoverable**, which is what turns an unreproducible report
+into a fixable one.
+
+### The real gap: Book Studio had no error boundary anywhere
+Verified by search: no `componentDidCatch`, no `getDerivedStateFromError`, no
+boundary component existed. Any error thrown during render therefore unmounted
+the entire React tree, leaving a blank page — no message, no recovery, and
+nothing for a user to report beyond "it went white". `docs/STATUS.md` already
+records one such incident (the Zustand selector infinite-loop crash), which had
+to be diagnosed from the deployed bundle's minified React error code.
+
+For an app whose whole promise is that a manuscript is safe, a silent blank
+page is the worst possible failure mode.
+
+### What shipped
+`src/components/common/ErrorBoundary.tsx`, used in three places:
+- **Root**, wrapping the whole app.
+- **Per-route** around the editor, so a crash there leaves the router mounted
+  and browser navigation still works.
+- **Targeted around Book Graph**, with its own compact fallback — the graph is
+  the most complex view on mobile (force layout, a Web Worker, SVG pointer
+  handling), so a failure there costs the graph, not all of Develop.
+
+Each panel shows the **real error name and message**, not "Something went
+wrong", plus Try again / Reload / Copy details. A user who can read and copy
+`TypeError: Cannot read properties of null` gets a fix in one round trip; a
+generic apology costs several.
+
+React only routes *render* errors to a boundary — an error inside an event
+handler still escapes to `window.onerror` — but a blank screen is always a
+render error, so this covers exactly the reported case.
+
+### Verified
+The boundary was proved by injecting a deliberate render crash into the graph
+section and confirming the panel appears with the real message and working
+recovery actions, then removing the injection. Re-verified afterwards: five
+touch interactions clean, full-screen suite 7/7, desktop unchanged.
+`npm run build` clean; `npm run lint` exits 0 with 49 warnings before and
+after; full suite ALL PASS.
+
+## Phase 134 — the mobile Book Graph crash, found and fixed
+
+Phase 133's error boundary paid for itself immediately. Instead of a white
+screen the device showed:
+
+> `TypeError: Cannot read properties of null (reading 'origX')`
+
+That named the bug precisely — one line, `BookGraphView.tsx`:
+
+```ts
+const onBackgroundPointerMove = (e) => {
+  if (!panState.current) return           // guard passes here...
+  ...
+  setTransform((t) => ({ ...t, x: panState.current!.origX + dx, ... }))
+}                                          // ...but this runs LATER
+```
+
+### Root cause
+A state updater is **not** run when `setState` is called; React runs it when it
+renders. `pointermove` is a *continuous*-priority event, so its render can be
+deferred — while `pointerup` is *discrete* and flushes immediately, and it sets
+`panState.current = null`. When React finally runs the deferred updater the ref
+is already null, and the `!` non-null assertion turns a real possibility into a
+crash. The early-return guard reads like protection but guards the wrong
+moment in time.
+
+### Why it never reproduced in testing
+A real fingertip jitters, so even a "tap" emits a dense burst of `pointermove`
+between down and up, with no gap for React to flush. Every synthetic test
+either dispatched touchStart → touchEnd with *no* moves, or awaited 50–70ms
+between moves — both of which let React flush each update while `panState` was
+still live. The race simply could not occur.
+
+The reproduction is to fire pointerdown, ~12 jitter moves and pointerup
+**without awaiting between them**, so they queue back-to-back the way a
+touchscreen digitiser delivers them. Against the unfixed build that reproduces
+the user's exact error string on the first attempt.
+
+### The fix
+Read the pan origin in the handler, where the ref is known live, and close over
+plain numbers:
+
+```ts
+const pan = panState.current
+if (!pan) return
+const nextX = pan.origX + dx
+const nextY = pan.origY + dy
+setTransform((t) => ({ ...t, x: nextX, y: nextY }))
+```
+
+The `!` assertion is gone. A grep confirmed this was the only place in the
+codebase dereferencing a ref inside a state updater.
+
+### Verified
+Causation proved both ways against production builds: the unfixed build
+reproduces `TypeError: ... (reading 'origX')`, the fixed build is clean under
+the same input. Then 7/7 — 20 jittery taps, background pan still pans, node
+touch drag still works, 10 jittery taps in full screen, full-screen enter/exit
+— with zero page errors. Desktop 5/5: 560px canvas, side panel, mouse pan,
+mouse node drag, no fallback. `npm run build` clean; `npm run lint` exits 0 at
+the 49-warning baseline; `npm test` ALL PASS.
+
+One testing lesson worth keeping: a first pass of the pan assertion read
+`svg g[transform]`, which matched a *node's* position group rather than the
+`<svg>` whose inline CSS transform panning actually changes — a false FAIL.
+Same class of wrong-element measurement seen in Phase 131; when an assertion
+fails, confirm it is looking at the right element before believing it.
+
+## Phase 135 — adding nodes from the Book Graph
+
+The graph could create *edges* but not *nodes*: Connect mode already called
+`addLayer0EntityWithHistory` to write a relationship, while adding the thing
+being related meant leaving the graph, finding the right category, adding it
+and navigating back — five taps on mobile, and the graph re-lays out in the
+meantime, so you lose your place. The graph is also the one screen where you
+*see* the gap ("this character connects to nothing"), which makes it the worst
+place to have no way to fill it.
+
+### What ships
+An **Add** button on the canvas (top-left, clear of the zoom cluster) opening
+`src/layout/planning/AddGraphNodeDialog.tsx`: pick a kind, type one field,
+done.
+
+- **Addable:** the eight `Layer0EntityKind`s and `Idea`.
+- **Not addable — deliberately:** `chapter` is Layer 2 (Content) data.
+  `types/layer0.ts`'s own doc comment states the one-way boundary and
+  `CLAUDE.md` forbids one layer mutating another's, so the graph reads
+  chapters and never writes them; the dialog says where chapters are added
+  instead. `book` is the synthetic hub — there is nothing to create.
+- **One field, honestly.** Every kind is valid from its `primaryKey` alone
+  except `GlossaryTerm`, whose `definition` is non-optional in the type — that
+  one kind shows a second field. `timelineEvent` gets `order: entities.length`,
+  matching `EntityListPanel.save()`, the canonical add path.
+- **Add-and-link.** With a node selected, the dialog offers
+  `Relationship to "<node>"`. Typing one creates the same
+  `Layer0Relationship` Connect mode creates; leaving it blank creates none —
+  no unlabelled edges, since `label` is required on the type.
+- The new node is **selected** after creation, so a second add chains off it.
+
+### Placement — the part that was almost a bug
+First cut placed an unanchored node at the centre of the view. On a fresh
+graph that is *exactly* where the Book hub sits, so the new node rendered
+completely underneath it: you add a character and appear to get nothing. Only
+caught by looking at the screenshot, not by any assertion.
+
+`src/layout/planning/graphPlacement.ts` now holds a pure
+`findFreeGraphPosition(candidate, taken, minSeparation)` that searches outward
+in rings until it finds clear space, deterministically (no jitter — adding the
+same thing twice should be predictable). The result is pinned via
+`graphLayoutStore.setPosition`, exactly as a manual drag is, so the force
+layout can't fling a brand-new node off-screen where the user can't find it.
+
+Pulled out as a pure function specifically so it is unit-testable: the
+component around it needs a browser, a Web Worker and a settled force layout
+before it renders a single node.
+
+### Verified
+Six new unit tests in `scripts/smoke-test.ts` (unobstructed candidate used
+as-is, distant node ignored, on-top candidate moved off, deterministic, clears
+*every* obstacle not just the first, second add doesn't stack). Browser 14/14
+on both mobile (412x600, touch) and desktop (1440x900): button present, picker
+offers Character/Idea and *not* Chapter/Book, node created and labelled,
+placed inside the visible canvas, link offered against the selected node,
+relationship drawn as an edge caption, and no two nodes stacked (closest pair
+89px mobile / 156px desktop). Phase 134's crash suite still 7/7 and desktop
+5/5. Build clean, lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
+
+One testing note, again: the edge-caption assertion first read
+`svg.textContent`, which does not traverse into `<foreignObject>` HTML
+children, and reported a false FAIL on working code. The relationship was
+correct in `localStorage` all along. Query `svg foreignObject div` for any
+text the graph draws.
+
+## Phase 136 — front and back matter on mobile
+
+Mobile could *render* structural pages in Preview but had no way to create
+one (`MobilePreviewView` read `structuralPageStore`; nothing wrote to it). A
+book started on a phone could therefore never get a cover, title page or
+copyright page at all — user report, 2026-09-04.
+
+### What ships
+**More → Book pages** (`src/layout/mobile/MobilePagesView.tsx`), a pushed
+screen rather than a sheet, listing Front matter and Back matter with the same
+addable type lists the desktop Structure column offers. Each row adds,
+reorders, duplicates and deletes; tapping one opens the page editor.
+
+Controls are full 44px tap targets rather than the desktop row's 14px
+hover-revealed icons — those exist because a mouse can hit them precisely and
+because hovering the row is what reveals them, neither of which is true on a
+phone.
+
+### Editing reuses the desktop panel verbatim
+`StructuralPagePanel` already takes only a `projectId` and reads *which* page
+to edit from `selectionStore`, so selecting the page and rendering the panel
+is the entire integration — no reimplementation of ~890 lines of per-type
+forms, and any future page type gains a mobile editor the day it gains a
+desktop one, with no second place to remember. It is wrapped in an
+`ErrorBoundary` keyed by page id, so a bad page degrades to a message with a
+working back arrow instead of taking the screen.
+
+Adding a page drops you straight into its editor: a page added here is almost
+always added because it needs filling in, and "now go and find it" is a real
+cost on a phone. `insertPageWithHistory` already returned the new id.
+
+### The cover image — the part that would have made this half a feature
+"Add cover image" is normally a button drawn *on* the cover inside the preview
+canvas, which mobile Preview doesn't offer. Without something here, a phone
+could add a Cover and never put a picture on it, which is most of what a cover
+is. The mobile editor now shows the same `CoverImageUploadButton` (restyled
+via `cn`, no component change) for `cover` and `back-cover`, plus a Remove
+image action. It uses the same `useImageUpload` picker, so on a phone it opens
+the camera roll or camera directly.
+
+### Verified
+16/16 on a 412x600 touch viewport: the row exists, both sections render, the
+picker offers Cover/Title Page/Back Cover, adding opens the editor, the editor
+renders real fields, pages appear in the right section, move-up reorders,
+duplicate adds, delete removes, and Preview still paginates with the new pages
+present. Cover image proved end-to-end separately, 6/6: picker present, asset
+stored on the page, label flips to "Change image", Remove appears, the image
+actually renders in mobile Preview, and Remove clears it. Phases 134/135
+suites all still green (14 + 14 + 7 + 5, zero FAILs). Build clean, lint exit 0
+at the 49-warning baseline, `npm test` ALL PASS.
+
+Two pre-existing issues found while testing and logged rather than fixed here:
+`assetStore.importFiles` rejects unhandled when a picked file can't be decoded,
+and `StructuralPagePanel`'s cover hint text describes desktop affordances that
+don't exist on mobile.
+
+## Phase 137 — image import that doesn't lose your files
+
+Phase 136 logged an unhandled rejection when a picked image couldn't be
+decoded. Investigating it found something worse underneath.
+
+### What was actually wrong
+`assetStore.importFiles` looped over the picked files with a bare `await
+readImageDimensions(...)`. One undecodable file therefore threw out of the
+*whole loop*, which meant:
+
+1. **Every file picked alongside it was discarded.** Pick three photos, one
+   corrupt, and you got none.
+2. **Already-imported files were orphaned.** `putAsset` had already written
+   the earlier files to IndexedDB, but the `set` that registers them in
+   `byProject` came *after* the loop and never ran — so those rows existed in
+   the database while being invisible to the app and impossible to delete.
+   Measured directly against the old build: 2 good files + 1 corrupt gave 0
+   thumbnails, 1 row in IndexedDB, **1 permanently orphaned**.
+3. **The user was told nothing.** The rejection surfaced as an unhandled
+   `Event` — `img.onerror` hands back an Event, not an Error, so even the
+   console said nothing useful.
+
+### The fix
+Each file is now isolated in its own `try`/`catch`. A failure revokes that
+file's object URL (previously leaked for the page's lifetime) and records
+`{ name, reason }`; everything that succeeded is still registered. The return
+type is now `{ imported, failed }` rather than a bare array — TypeScript
+found both destructuring call sites immediately. `readImageDimensions` rejects
+with a real `Error` carrying a sentence a user can read.
+
+`useImageUpload` exposes `error`, and all seven picker call sites now show it
+through one shared `src/components/common/UploadError.tsx` rather than seven
+bespoke error styles. The multi-file Assets picker names the file
+("corrupt.png: The file could not be decoded as an image.") or, for several,
+counts them.
+
+### Cover image, one control, both platforms
+`StructuralPagePanel`'s hint said *Click "Add cover image" in the preview (or
+drag one from the Assets tab)* — describing two affordances that don't exist
+on a phone, on a panel that renders on phones. Rather than reword it, the
+panel now carries the actual control, in the block already shared by Cover and
+Back Cover. Desktop gains it too: the setting now lives with the page's other
+settings instead of only on a button drawn over the artwork. The canvas button
+stays — it's the faster path when you're already working on the cover — and
+Phase 136's mobile-only duplicate was deleted, since this supersedes it.
+
+### Verified
+Causally, both directions, against production builds. Old build: 0 of 3 files
+imported, 1 orphaned IndexedDB row, unhandled `Event`, no message. New build:
+2 of 3 imported, 0 orphans, the failure named on screen, no page errors. Panel
+cover control 8/8 on mobile and 8/8 on desktop (offers the control, misleading
+hint gone, label flips, Remove appears, image stored, corrupt file explains
+itself, no unhandled rejection, Remove clears). Phases 134-136 suites all
+still green. Build clean, lint exit 0 at the 49-warning baseline, `npm test`
+ALL PASS.
+
+## Phase 138 — mobile parity pass
+
+User report, 2026-09-04: no way to capture a thought on mobile, no editing
+tab, "review what else mobile mode is missing." So this began with an actual
+audit of every desktop surface against the mobile shell.
+
+### What the audit found missing
+| Desktop surface | Mobile before | Now |
+| --- | --- | --- |
+| Capture a thought (Write) | absent | **shipped** |
+| Virtual Editor | absent | **shipped** (Review tab) |
+| Search / find and replace | absent | **shipped** (More) |
+| Image library (browse, delete) | add only | **shipped** (More) |
+| Chapter reorder | add/rename/delete only | **shipped** |
+| Export readiness warning | skipped silently | **shipped** |
+| Notes on a block | absent | deferred — needs block selection |
+| Typography panel | absent | deferred — needs block selection |
+| Image panel | absent | deferred — needs block selection |
+| Focus mode | absent | deliberately not ported |
+| Keyboard shortcuts dialog | absent | not applicable |
+
+### Capture a thought
+`IdeaCaptureAffordance` is now touch-aware rather than duplicated. Two things
+had to change for it to be honest on a phone:
+
+- **A real Capture button.** The desktop footer reads "Enter to save ·
+  Shift+Enter for a line break" — a phone has no Shift key and its Return key
+  inserts a newline. It also can't keep `onBlur`-to-collapse on touch, because
+  the software keyboard blurs the field whenever it dismisses and the Capture
+  button is itself the blur target.
+- **It docks bottom-left on mobile**, because mobile Write already has its
+  "add block" FAB bottom-right.
+
+The subtler fix: **mobile never published its open chapter**. It tracked the
+active chapter in local state only, so `selectionStore.selectedChapterId`
+stayed `null` and a captured thought would have saved with no
+`linkedChapterId` — silently losing the "which chapter was I in" link desktop
+has always set. `MobileWriteView` now publishes the selection, and
+`selectionStore.select`'s `blockId` parameter was widened to `string | null`:
+"this chapter is open, no particular block" is a real state, and
+`selectedBlockId` was *already* `string | null` — only the action's signature
+was narrower than the field it writes.
+
+### Review tab
+`VirtualEditorWorkspace` takes only a `project`, so `MobileReviewView` is a
+thin host, not a mobile reimplementation. That matters beyond effort: a review
+on a phone now runs exactly the same checkers and scoring as on desktop. A
+cut-down mobile review that scored differently would be worse than none.
+
+Promoted to a fifth tab rather than buried in More, since it's where editing
+work happens. The five near-identical tab buttons became one data-driven list
+in the same change — a fifth copy of the same twelve lines is where a list
+earns its keep. Verified the bar holds at 320 / 360 / 390 / 412px: no page
+overflow, no bar overflow, no clipped label (64px per tab at the narrowest).
+
+### Image library
+Not a copy of the desktop grid — that one is built around dragging an asset
+onto a page, which has no touch equivalent. Placing an image stays in Write;
+this screen is for seeing and removing what the project holds. Delete is
+two-tap (tap → "Delete?" → confirm), because one mistap on a phone would
+otherwise destroy an illustration with no undo affordance in reach.
+
+### Export readiness
+Desktop warns before exporting a book with blocking print-readiness issues;
+mobile went straight past. The same manuscript produced a silently worse file
+depending on which device you pressed Export on. Now gated identically, and
+still never a hard block.
+
+### Two desktop-isms fixed on the way
+The Virtual Editor's score cards were `grid-cols-2` at every width, so two
+cards at 412px wrapped their titles across three lines — now one column below
+480px, with the existing ladder above it unchanged. And its empty-state hint
+said "open the Chapters view", which is the desktop sidebar tab; on mobile the
+same place is the Write tab. It now names the thing both have ("open your
+manuscript") rather than either one's chrome. Same class of leak as Phase
+137's cover hint — worth watching for whenever a desktop panel is reused on
+mobile.
+
+### Verified
+21/21 on a 412x600 touch viewport, 12/12 across four phone widths for the tab
+bar. Includes the two assertions that matter most: the captured thought is
+saved **and** carries `linkedChapterId`, and deleting an image asks first.
+Phases 134-137 suites all still green. Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS.
+
+## Phase 139 — the writing experience
+
+User, 2026-09-04: "the most important thing we need to fix is the writing
+experience. at the moment after a user presses enter it finishes the paragraph
+instead of starting a new sentence."
+
+Reproduced immediately, and it was worse than reported. On both platforms,
+pressing Enter mid-paragraph left `document.activeElement` as `BODY` — so
+**everything typed afterwards went nowhere**. The same scripted keystrokes
+captured 19 words before this phase and 114 after.
+
+### Three separate causes
+**1. Every repagination rebuilt the page DOM.** `paginate.ts` called
+`generateId('page')` for each page on every run, and `LazySpread` keys its
+pages by `page.id`. A fresh random id per run meant a brand-new React key for
+every page, so React unmounted and remounted the whole page subtree — taking
+the focused element and its caret with it. A `MutationObserver` trace of one
+Enter press showed the new paragraph focused at 27ms and remounted out of
+existence at 36ms, after three unmount/mount cycles in 15ms.
+
+Page ids are now derived: `flow-<pageNumber>`. "Page 7" stays page 7 across
+runs while its contents reflow, which is the identity a paginated document
+actually has. Nothing persists these ids — React keys, scroll-to-page DOM
+anchors and thumbnail keys, all session-scoped — so deriving them is safe, and
+it keeps a pending scroll target valid across a repagination too.
+
+**2. Two editors fought over the same block.** The Inspector's Typography box
+called `field.startEditing()` unconditionally on mount, and it remounts
+whenever `selectedBlockId` changes. So it reliably won the race and pulled the
+caret off the page into a side panel — not only after Enter but on any click
+that selected a paragraph. `selectionStore` now records
+`editRequestSource: 'canvas' | 'panel'`, defaulting to `'canvas'` (the page is
+the primary writing surface), and each editor ignores requests that aren't
+its own.
+
+**3. Mobile never opted in.** `MobileTextField` called `useEditableField`
+without `onSplit`, so Enter fell through to the plain commit-and-blur branch —
+it genuinely did "finish the paragraph". It now passes `onSplit` and
+`onMergeWithPrevious` for paragraphs and claims a pending edit request for its
+own block on mount, the same handshake the desktop canvas uses.
+
+### Also fixed, same complaint
+Enter at the end of a **heading** now starts the paragraph beneath it
+(`splitHeadingIntoParagraphWithHistory`, one undo step) instead of dropping
+the caret. And **Backspace at the start** of a paragraph joins it to the one
+above — desktop had this since Phase 112; mobile never did.
+
+The Inspector fix cured a second symptom nobody had reported: before it,
+merely *clicking* a paragraph on the page moved keyboard focus into the side
+panel. Deliberate editing in that panel still works exactly as Phase 113 built
+it — verified separately, 4/4, including Enter splitting there and keeping the
+caret there.
+
+### Verified
+9/9 on a realistic writing session, on desktop *and* mobile: three consecutive
+Enters produce three separate paragraphs with the right text in each; Enter
+mid-sentence splits at the caret ("Paragraph " / "one."); Backspace at the
+start rejoins. 4/4 for heading→paragraph on both. A long run wrote 14
+paragraphs and 380 words continuously across 5 pages with nothing lost —
+including across page boundaries. Three new `paginate` unit tests cover id
+stability (identical input → identical ids, ids unique within a run, adding a
+block leaves earlier page ids untouched). Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS, Phases 134-138 suites all green.
+
+### One thing not verified
+PDF export never fires a download in the headless harness, so it could not be
+exercised end-to-end. Confirmed identical on the pre-change build, so it is
+not a regression from this work — but it does mean export is unverified here
+and wants a manual check. Logged in ROADMAP.md.
+
+## Phase 140 — distraction-free writing on mobile, CI, and browser tests
+
+### Distraction-free writing on a phone
+User, 2026-09-04: "a distraction free writing mode that feels like you are
+writing straight into the book/full page experience, similar to desktop."
+
+**Why this does not render the real paginated page.** Desktop's
+`FocusModeLayout` puts `BookRenderer`'s actual laid-out pages full-screen,
+which works because a 6x9in page is ~680px wide and a desktop viewport is
+wider still. A phone is ~390px. Showing the same page means either scaling it
+to ~0.55 — body text lands around 8px, legible to look at and impossible to
+write in — or letting it overflow and asking the writer to pan sideways
+mid-sentence. Neither is "writing straight into the book"; both are squinting
+at a picture of the book.
+
+So `MobileFocusWriteView` takes the book's **typographic identity** instead of
+its page geometry: the theme's real body and heading fonts, its exact body
+size, leading, justification setting, drop cap, paper colour and ink — all
+read from the same `resolveTheme` the printed page uses, so changing the theme
+changes this screen too. The measure is set to the phone. What you type looks
+like the book because it *is* the book's typography, at a size a thumb can
+write at.
+
+Everything else is stripped: no app header, no tab bar, no block cards, no
+outlines until a field is being edited. The chrome itself fades on scroll and
+returns on tap — distraction-free has to mean the controls get out of the way
+too. A centred chapter title, a drop cap, and a quiet word count are the only
+furniture.
+
+Two things the first cut got wrong, both caught by looking at a screenshot
+rather than by an assertion:
+- The chapter title rendered **twice** — once in the chrome, once as the page
+  title. The chrome one is now an unlabelled chapter-switcher chevron.
+- **Justification at a 364px measure produced rivers.** Print justifies at
+  60-70 characters; a phone gives about 40, where the same setting stretches
+  word spaces visibly — worse than ragged-right, and the opposite of "looks
+  like the book". The theme's justification is now honoured only where the
+  measure can carry it (>= 34em), which in practice means tablets and
+  landscape.
+
+Typewriter mode carries over and matters *more* here than on desktop: the
+software keyboard covers the bottom half of a phone, so without a centred
+caret the line being typed spends its life hidden behind the keyboard.
+
+`MobileTextField` was extracted to its own module and is now shared by
+ordinary mobile Write and this view, so Enter-splits and Backspace-joins
+behave identically in both. Two editors for one manuscript drifting apart is
+exactly the bug class Phase 139 had to untangle; not repeating it.
+
+### CI
+`.github/workflows/ci.yml` runs `npm ci`, build, lint and tests on every push
+and pull request. Until now the only thing standing between a broken build and
+the branch was remembering to run three commands by hand.
+
+### Browser end-to-end tests
+`scripts/e2e/` (`npm run test:e2e`) covers the writing experience on both
+shells in a real browser — the class of failure `smoke-test.ts` structurally
+cannot catch, since Phase 139's bug was about real focus, real layout and real
+React reconciliation.
+
+**Proven to work by breaking it on purpose:** reintroducing the random page id
+fails 5 desktop assertions and correctly leaves mobile passing, since mobile
+doesn't paginate. A regression test that has never been seen to fail is a
+guess.
+
+Playwright is deliberately not in `package.json` — it pulls a browser download
+and every other check here runs without one — so the runner resolves it from
+wherever it's installed and says so plainly when it isn't. Wiring it into CI
+needs that dependency decision; logged in ROADMAP.md.
+
+### Verified
+Focus mode 14/14 on a 412x700 touch viewport, including that the surface is
+painted with the book's paper colour, the body uses the theme serif (not the
+UI font), justification is suppressed at a narrow measure, the drop cap
+applies, Enter keeps the caret live, and exiting restores the shell with the
+writing intact. E2E 16/16. Phases 134-139 suites all still green. Build clean,
+lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
+
+## Phase 141 — spell-check was dead, and four mobile affordances
+
+### Spell-check has never worked in production
+The headline finding. User: "we need to properly implement spellcheck… also in
+desktop as it doesn't work so well." It didn't work *at all*, on either
+platform, and hadn't since Phase 125.
+
+Phase 125 changed the dictionary URL to resolve relatively against
+`document.baseURI`, so a sub-path deployment would work. But the editor always
+lives on a client-side route — `/project/:projectId` — so `document.baseURI`
+is the *route*, not the app root, and
+`new URL('./dictionaries/…', '/project/abc')` asks the server for
+`/project/dictionaries/en-gb/index.aff`. Observed live: **404**. nspell then
+throws "Missing `aff` in dictionary", the console line scrolls past, and every
+caller falls back to its honest "not yet analysed" state. Because the editor
+also sets `spellCheck={false}` to suppress the browser's own checker (so two
+sets of squiggles never disagree), the user was left with **no spell-check of
+any kind** — in the page editor *and* in the Virtual Editor's review, which
+shares the dictionary.
+
+Nothing failed loudly, which is why it survived a phase that was specifically
+about this loader.
+
+Fixed by resolving against Vite's `BASE_URL` — the deployed app root as a
+build-time constant, `/` normally and the configured prefix under a sub-path.
+That is what Phase 125 was reaching for, without depending on which route the
+user happens to be on.
+
+Verified live: `200` for both files; "sentance"/"mispelled" flagged and
+"colour"/"realise" correctly accepted by the British dictionary.
+
+### The rest of spell-check
+- **An on/off control**, as asked: desktop More menu and mobile More, defaulting
+  to on. Scoped to the live underlining — the Virtual Editor's spelling review
+  is a deliberate action and stays available either way.
+- **Clicking a flagged word now selects it**, which is what makes the underline
+  actionable: a single-word selection is exactly what `FloatingFormatToolbar`
+  already keys its Fix-spelling list off. Verified the whole flow — click the
+  squiggle, "Fix spelling" appears, it offers "sentence", picking it rewrites
+  the text.
+
+A testing note worth keeping: the first assertion for that flow searched the
+page for /spelling/i and **passed against the word "spellings" in the test
+sentence itself**. A false pass. Re-tested by enumerating the toolbar's real
+`aria-label`s and applying a suggestion end to end. An assertion that can pass
+for the wrong reason is worse than no assertion.
+
+### Four mobile affordances
+- **"Drop a cover image here" is gone on touch.** There is no drag source on a
+  phone, and the label is `pointer-events-none`, so mobile Preview was showing
+  an instruction the user physically could not follow. Hidden on coarse
+  pointers; the working path (Add cover image, Phase 137) is unaffected.
+- **Focus mode is labelled.** An unlabelled ⤢ next to the switcher chevron read
+  as two mysteries in a row and nobody found it. Now a labelled "Focus" pill,
+  plus a row in More for anyone who browses rather than scans.
+- **Chapters come from the "+".** The one prominent control on the writing
+  screen added blocks only, so the most structural thing a writer needs was
+  three taps deep in the switcher sheet. "New chapter" now sits in that menu,
+  and the empty-chapter state has a real button instead of only prose.
+- **The structural page editor shows the page.** Editing a cover was a blind
+  form — title, toggles, layout, and no sight of the cover. It now renders the
+  real `Page` component, CSS-scaled, so what you see is what prints. Fitting on
+  width alone made it 570px tall on a 700px phone and pushed the fields
+  off-screen, so it is bounded by height too (34vh): the cover and the field
+  you are changing are visible together. Positioning cover *elements* by touch
+  stays desktop-only — a canvas-interaction design pass, not a port.
+
+The fix reaches the Virtual Editor too, since it shares the dictionary: a
+review now returns real findings ("\"mispelled\" isn't in the dictionary — did
+you mean \"misspelled\"?") where it previously reported Proofreading as not yet
+analysed.
+
+### Verified
+Spell-check 10/10 plus a separate 3/3 for the fix-and-apply flow and 2/2 for
+the Virtual Editor review; the four
+mobile changes 10/10 at 412x700 touch, including that typing a title updates
+the preview live. Phases 134-140 suites all still green, E2E 16/16. Build
+clean, lint exit 0 at the 49-warning baseline, `npm test` ALL PASS.
+
+## Phase 142 — auditing for the bug class, not the bugs
+
+User, 2026-09-04: "this is exactly the kind of things we need to audit across
+the whole program before we can call it completed."
+
+The right response wasn't to re-inspect every screen by hand. The last few
+phases exposed a *signature*, and it is worth naming precisely:
+
+> Something fails at runtime, or describes an interaction the device cannot
+> perform, and the app carries on looking correct.
+
+Spell-check is the pure case. It was dead for every user across many phases:
+the dictionary 404'd, nspell threw, the console line scrolled past, and every
+caller fell back to an honest-looking "not yet analysed". No unit test could
+catch it — the failure is a URL resolved against the wrong base at runtime —
+and no screenshot showed it, because the UI was fine. So this phase builds two
+audits that hunt the signature, and fixes what they found.
+
+### `npm run test:audit` — whole-app runtime health
+Walks ~25 surfaces across both shells (projects, editor, all four sidebar
+tabs, all five Inspector tabs, Develop and its sections, the Book Graph, the
+Virtual Editor including a full review, focus mode, and every mobile tab and
+More row) recording per surface: uncaught errors, unhandled promise
+rejections, console errors, and failed requests. It does not assert that
+features work — the other suites do that — it asserts the app is not quietly
+failing while it looks fine.
+
+Result: **clean**. No errors, no 404s, no unhandled rejections anywhere.
+
+Its first run was *not* clean, and the finding was in the audit itself: two
+desktop surfaces were unreachable because Develop replaces the toolbar and the
+script never navigated back, so it had silently stopped covering them. Fixed
+before trusting the result — an audit that skips surfaces and reports "clean"
+is worse than none.
+
+### `npm run audit:copy` — copy that lies about the device
+Static, no browser, wired into CI. Flags user-facing copy describing a
+pointer-only interaction (drag, hover, right-click, Ctrl+, "the sidebar",
+"Assets tab") in a component that can render on a phone.
+
+Three real findings on the first run, all in `StructuralPagePanel` — the
+Inspector panel mobile reuses wholesale since Phase 136:
+- The **back-cover** image hint: the exact twin of the cover hint fixed in
+  Phase 137, which I had assumed settled the class. It hadn't.
+- The **author photo** hint — worse than stale copy: About the Author had **no
+  upload control at all**, so a phone could never set an author photo. It now
+  has one, matching the cover's.
+- The **layout nudge** hint, describing a drag handle that only exists on the
+  interactive canvas; mobile's page preview is deliberately `decorative`. Now
+  rendered only where a fine pointer exists.
+
+Two audit defects fixed on the way, both of which had made it untrustworthy:
+- It stripped block comments with a plain replace, **collapsing lines and
+  shifting every reported line number** after the first comment in a file.
+- It missed prose on its own line — the way prettier wraps a long JSX text
+  node — which is exactly how the layout-nudge hint was formatted. The audit
+  was blind to the finding that prompted it.
+
+Findings that are genuinely fine are silenced with an explicit
+`audit-copy-ok: <reason>` comment rather than by inference, so every exception
+is visible in the diff. Deliberately not clever: an audit that guesses will
+guess wrong in both directions, and one that reports known-good lines gets
+ignored — which is the failure mode that matters.
+
+`canDragOnThisDevice()` moved to `src/lib/pointer.ts`: it is a device fact,
+not a structural-page concern, and a non-component export in a component
+module trips `only-export-components`.
+
+### Verified
+Runtime audit clean across both shells; copy audit 0 reachable-on-mobile
+findings (exit 0, now enforced in CI); About the Author photo 7/7 on mobile.
+Phases 134-141 suites all green, E2E 16/16. Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS.
+
+### What this does and doesn't tell us
+It says no surface throws, 404s, or leaks an unhandled rejection, and no
+mobile-reachable copy describes an impossible gesture. It does **not** say
+every feature is correct — that is what the behavioural suites are for, and
+they cover the writing experience, the graph, structural pages, covers and
+image import, not everything. The honest summary is that the *silent-failure*
+class is now covered by a repeatable check rather than by noticing.
+
+## Phase 143 — spell-check you can actually see
+
+User: "incorrect spelling/spellcheck still doesn't show properly whilst its
+turned on?" Correct, in two ways Phase 141 didn't reach. Measured before
+touching anything:
+
+| | while editing | after moving on | after finishing |
+| --- | --- | --- | --- |
+| desktop | 1 underline | 1 | **0** |
+| mobile | **0** | **0** | **0** |
+
+### Mobile had no spell-check at all
+`MobileTextField` never called `useLiveSpellcheck`. So the on/off control
+added to mobile More in Phase 141 governed a feature that did not exist on
+that platform — my error, shipped in the same phase that was meant to fix
+spell-check. Now wired, using the same hook, dictionary and exclusion rules
+as the desktop canvas.
+
+### Underlines were scoped to the focused paragraph — and then wiped
+Two separate causes, and fixing only the first wasn't enough:
+
+**Scope.** The hook ran with `active = isEditing`, a deliberate Phase 116
+choice ("deliberately smaller, safer"). The result is that only the paragraph
+under the cursor is ever checked, so you can see at most one mistake at a
+time and none once you stop writing. A spell-checker you can only see one
+word of is not one. Every *editable* paragraph now decorates itself —
+`editable` is false for thumbnails and the off-screen height measurer, so
+neither does needless work.
+
+**Erasure.** Widening the scope alone still measured 0 after blur. The
+underlines are DOM React knows nothing about, and a paragraph that isn't
+being edited renders through `dangerouslySetInnerHTML`, so React's next
+render replaces the contents and strips every span. Re-scanning only when the
+hook's dependencies changed missed every other render.
+
+A `MutationObserver` on the field makes the decoration self-healing: it comes
+back whenever anything replaces the content, whoever did it, and it covers
+typing too, so the separate `input` listener is gone. Our own wrap/unwrap is
+guarded by a flag cleared in a microtask, so the observer never loops on it.
+
+Decoration can never reach stored content: every commit path goes through
+`parser/html.ts`'s `sanitiseInline`, which keeps an allow-list of inline tags
+and unwraps everything else — a `book-spell-error` span cannot be written
+into the manuscript even if a commit fired while one was present. Checked
+before widening the scope, not assumed.
+
+After: desktop 1 → 2 → **2**; mobile 1 → 1 → **2**. Mistakes stay visible.
+
+### A committed regression suite
+Spell-check has now shipped broken twice, in two unrelated ways, and neither
+was catchable without a real browser. `scripts/e2e/spellcheck.e2e.mjs` (part
+of `npm run test:e2e`) asserts what a user cares about: after writing, are my
+mistakes visible?
+
+Proven against both historical bugs by reintroducing them:
+- Phase 141's URL bug → fails on "correct British spellings are not flagged"
+  (12 words flagged instead of 2).
+- Phase 143's scope bug → fails on "real misspellings are flagged" and
+  "mistakes stay visible after writing has finished (0 shown)".
+
+That first result is worth recording: with the wrong URL the dev server's SPA
+fallback returns `index.html` with a **200**, so nspell parses HTML as a
+dictionary and flags *everything* rather than failing cleanly. Vercel behaves
+the same way. There is no 404 to notice — which is exactly why the bug
+survived so long, and why the canary is "words that must NOT be flagged"
+rather than "the request succeeded".
+
+### Verified
+Spell-check suite 8/8 on both shells, and demonstrated failing against both
+historical regressions. Runtime audit clean, copy audit 0 findings, Phases
+134-142 suites green, writing E2E 16/16. Build clean, lint exit 0 at the
+49-warning baseline, `npm test` ALL PASS.
+
+## Phase 144 — adding a chapter without leaving the page
+
+User: "distraction free mode on mobile does need a way of adding a new chapter
+etc. but still needs to be completely distraction free. a circular plus that
+only appears on hover or something? have a good think how this could work on
+mobile."
+
+### There is no hover — but this mode already had the right equivalent
+The instinct is exactly right and the mechanism already existed: the chrome in
+focus mode fades away while you work and returns when you touch the page.
+That *is* appear-on-hover, translated to touch. So the answer wasn't a new
+gesture; it was to put the control into the mechanism already there, and make
+that mechanism better.
+
+Options considered and rejected:
+- **A permanent floating "+".** The standard mobile answer, and wrong here: a
+  button that is always on screen is the distraction the mode exists to
+  remove.
+- **Long-press, or a swipe.** Invisible. Nobody would find it, and swipe
+  fights the scroll.
+
+What shipped is two routes, because they serve different moments:
+
+**1. A "+" in the revealed chrome.** Tap the page, the controls fade in, the
+"+" is among them: New chapter / Heading / Paragraph. Deliberate,
+discoverable, and it costs zero permanent pixels.
+
+**2. "Start the next chapter", at the end of the last chapter.** The
+contextual route, and the one you actually reach for. A hairline rule and a
+line of text in the book's own type, in the flow of the manuscript rather than
+floating over it — invisible while you write, exactly where you look when a
+chapter is finished.
+
+Both go through one action that creates the chapter, gives it a first
+paragraph, and puts the caret in it. Adding a chapter has to leave you
+*writing*, not looking at a fresh empty screen — that is the whole point of
+the mode.
+
+The chrome also now hides when you **type**, not only when you scroll.
+Revealing it with a tap and leaving it up for the rest of the session defeats
+the purpose.
+
+### A real bug the test found
+The first run failed on "the first chapter is untouched" — chapter one was
+empty. Tracing it: `focused while typing: BODY`. The empty-state "Start
+writing…" button inserted a paragraph and never focused it, so every keystroke
+after it went nowhere and was silently lost.
+
+That is the same failure Phase 139 fixed for Enter, reintroduced by a button
+that inserts without focusing — present since focus mode shipped in Phase 140,
+and masked by that phase's test, which had fallback selectors that tapped the
+field directly when focus was missing. A test that works around the bug it
+should be catching is worse than no test; this one now asserts the caret is
+live and that the text lands in the right chapter.
+
+### Verified
+12/12 at 412x800 touch: the "+" exists in the revealed chrome, chrome fades on
+typing and returns on tap, the end-of-chapter route creates a chapter and
+leaves you writing in it, text lands in the new chapter with the previous one
+intact, the "+" route works too, and neither drops you out of focus mode.
+Runtime audit clean, copy audit 0 findings, spell-check 8/8, writing E2E
+16/16, Phases 134-143 suites green. Build clean, lint exit 0 at the 49-warning
+baseline, `npm test` ALL PASS.
+
+## Phase 145 — auditing for "creates content, drops the caret"
+
+Phase 144's bug had a precise, searchable signature: something creates
+editable content and never puts the caret in it, so the next keystrokes go to
+`document.body` and are lost. Rather than wait for the next report, I swept
+the codebase for it — every call to `insertBlockWithHistory`,
+`addChapterWithHistory`, the split/merge actions — and checked whether the
+surrounding handler lands a caret.
+
+Two candidates survived triage (`editorActions.ts` hits were the function
+definitions; `handleDropAsset` inserts an image, which has nothing to type
+into). Both were real, and both silently destroyed work:
+
+- **`MobileWriteView.handleAddBlock`** — the "+" menu, the ordinary way to
+  start a paragraph on a phone.
+- **`Page.handleInsertBlock`** — the desktop inter-block insert. It called
+  `select`, which highlights a block but does not make it editable, so you
+  had to double-click before you could type.
+
+Measured before the fix, both shells: caret live after inserting = `false`,
+and the manuscript stored `""` after typing a full sentence.
+
+### The interesting half: fixing it needed three attempts
+Adding `selectForEdit` fixed desktop's empty-chapter path and did nothing for
+the menus. A focusin/focusout trace showed why:
+
+```
+IN  DIV rounded-…      ← the new field takes the caret
+OUT DIV rounded-…      ← and loses it
+IN  BUTTON Add block   ← Radix restores focus to the trigger on close
+```
+
+`onCloseAutoFocus` + `preventDefault()` was not enough on its own, and nor was
+focusing the element synchronously: the steal happens after both. A bounded
+`requestAnimationFrame` retry fixed the simple case and still lost the crowded
+one — at which point the right move was to stop racing and remove the race.
+The caret is now requested **from the close handler**, once the menu has
+finished with focus. That retry was then deleted rather than left in as
+insurance; speculative complexity that no longer earns its place is its own
+kind of debt.
+
+`isTextFirstBlock` (in `blocks/defaultContent.ts`) is the single rule for
+which types open with a field worth focusing — paragraph, heading, quote,
+pull-quote, callout, case-study, list — so the two shells cannot drift. An
+image or placeholder is deliberately excluded: there is nothing to type, and
+grabbing focus would move the caret somewhere the user did not ask for.
+
+### Now covered by the committed suite
+`writing.e2e.mjs` gained "inserting a paragraph leaves a live caret" and "text
+typed right after inserting is not lost", on both shells — 20 assertions
+total. This is the app's most repeated defect (Enter in Phase 139, "Start
+writing…" in Phase 144, both insert menus here), so it is now asserted rather
+than remembered.
+
+### Verified
+Writing E2E 20/20 both shells, spell-check 8/8, runtime audit clean, copy
+audit 0 findings, `npm test` ALL PASS, build clean, lint exit 0 at the
+49-warning baseline.
+
+---
+
+## Phase 146 — deleting a book didn't delete the book
+
+Continuing the audit for the class rather than the bug. Phase 145 hunted
+"creates content, drops the caret"; this pass hunted **"the feature exists but
+nothing can reach it"** — and then followed one of its findings somewhere much
+worse.
+
+### 1. Hover-only controls are invisible on a phone
+
+Three controls were `opacity-0` until `group-hover`: delete-project on the home
+screen, edit/delete-theme in the theme gallery, and remove-image in the
+sidebar. `opacity-0` does not block pointer events, so on a touch screen they
+were fully tappable and completely invisible — the worst possible combination,
+because nothing shows the affordance exists while a stray thumb can still fire
+it. On the home screen that meant a phone had **no discoverable way to delete a
+book at all**.
+
+`index.css` gained one custom variant beside the existing `dark` one:
+
+```css
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+```
+
+and the hiding half of each control is now gated on it. Asserted at
+`opacity: 1` in an emulated touch context, which really does report
+`hover: none` (checked, rather than assumed).
+
+### 2. Which made an unconfirmed one-tap delete dangerous
+
+The app's convention was to delete on a single click with no confirmation
+anywhere. That was survivable while every delete control was hover-revealed —
+a mouse pointer has to travel there deliberately. It stops being survivable the
+moment the bin icon sits permanently under the thumb that is scrolling the
+list. So making those controls visible required making the destructive ones
+ask first.
+
+`ConfirmDialog` (`components/common/`) is the shared gate, used for the two
+deletes that destroy something the user cannot get back: a project and a saved
+template. Cancel takes focus, not Delete — a dialog whose whole job is to make
+the destructive path deliberate should not let Enter destroy the thing faster
+than clicking could. Deletes that undo already covers (a block, a page, a
+node) stay single-click.
+
+### 3. And then: deleting a project never deleted the project
+
+Writing that dialog meant reading `deleteProject`, which turned out to remove
+the Layer 1 row and nothing else:
+
+```
+FAIL — no per-project data is left behind
+       (left: book-studio.content/byProject,
+              book-studio.content/revisionByProject,
+              book-studio.ideas/byProject)
+FAIL — no image rows left in IndexedDB (found 1)
+FAIL — no image binaries left in IndexedDB (found 1)
+```
+
+The manuscript, structural pages, notes, ideas, planning bible, graph layout,
+snapshots, undo history, editorial report, writing sessions and image blobs all
+stayed behind — keyed by a project id that no longer appeared anywhere, so
+nothing could ever name them again to clean them up. On a browser's few-megabyte
+`localStorage` quota that is not untidiness: **deleting books to make room did
+nothing**, and the quota error it eventually causes would arrive with no
+explanation and no remedy.
+
+The fix respects the layer boundary rather than working around it. A Layer 1
+store must never reach into Layer 2's manuscript to mutate it, so each store
+gained its own `clearProject(projectId)` and the coordination lives in
+`hooks/useDeleteProject.ts` — the exact mirror of `useImportProjectFile`, which
+already seeds those same layers one public action at a time on the way in. The
+two IndexedDB-backed stores go first and are awaited: they need the project id
+to find their own rows via the `by-project` index, and `deleteProject` is what
+makes that id unfindable.
+
+`scripts/e2e/projectDelete.e2e.mjs` measures it in both directions — 8
+assertions, proved failing (3 FAILs) with the purge disabled and passing with
+it. It imports a real PNG so the IndexedDB half measures an actual blob rather
+than passing vacuously.
+
+### 4. A block type nothing could create
+
+`gallery` could be rendered, exported to EPUB, accessibility-checked and shown
+in the Inspector — and was constructed by **no code path anywhere**. Grepping
+for `type: 'gallery'` found the renderer, the exporter, the checker and the
+type definition, and no factory. It has been unreachable dead weight since it
+shipped.
+
+Both shells now insert one from a multi-photo pick: `useImagesUpload` beside
+`useImageUpload` (a separate hook, because a gallery is created from the whole
+selection in one insert), "Photo gallery" in the desktop "+" menu, and "Add
+photo gallery" in mobile's. Partial success stays a success — four good photos
+and one corrupt one make a four-photo gallery plus a message, which is the
+failure mode Phase 137 removed from importing and must not come back.
+
+`defaultContent.ts`'s doc comment had also drifted: it claimed images were
+drag-and-drop only, which stopped being true in Phase 51.
+
+### 5. Templates could be created but never curated
+
+`templateStore` shipped with `renameTemplate` and `deleteTemplate` and no UI
+ever called either, so a series template lived forever under whatever name it
+was given on the day. `ManageTemplatesDialog` now offers both — a plain list
+rather than `ThemeGallery`'s preview grid, because a theme's identity is visual
+and a template's identity is what it *contains*, which is a sentence rather
+than a picture. Reachable from the desktop toolbar's More menu and from
+mobile's More tab, which had no template controls at all (neither save nor
+manage).
+
+### 6. Dead code that lied about itself
+
+`listStructuralPageTypes()` carried the comment "used by the Sidebar's 'Add
+Page' picker" and had no callers — the Sidebar keeps its own two ordered lists.
+Removed. (The lists themselves check out: all 18 registered page types are
+reachable between front and back matter.)
+
+### Also
+- The home screen's header and grid overflowed at phone widths (`px-8`, no
+  wrapping). Now `px-5 sm:px-8` and `flex-wrap`.
+
+### Verified
+Writing E2E 20/20 both shells, spell-check 8/8, project-delete 8/8 (and 3/8
+failing with the fix disabled, checked), runtime audit clean, copy audit 4
+findings all in desktop-only components (0 that can render on a phone),
+`npm test` ALL PASS, build clean, lint exit 0 at the 49-warning baseline.
+Gallery insertion, template save, rename and delete each driven end-to-end in
+a real browser.
+
+---
+
+## Phase 147 — testing the parts that were only ever hoped to work
+
+Phase 146 closed with an honest caveat: the audits find caret-drops, runtime
+errors and unreachable features, but four paths had no behavioural test at all
+— structural pages, the Develop entity forms, EPUB/HTML export, and PDF export,
+which had never been exercised end-to-end by anything. This phase covers all
+four, and gets every suite running in CI.
+
+### PDF export, finally verified
+
+`docs/ROADMAP.md` had carried "PDF export could not be exercised end-to-end in
+the headless harness" as an open item for months. The reason turned out to be
+one line of `saveBlob`: it prefers `showSaveFilePicker`, which in headless
+Chromium neither opens a dialog nor falls through to the anchor download. The
+export ran perfectly and produced nothing an assertion could see.
+
+Replacing that single browser API before the app loads hands the bytes to the
+suite instead of to a file system. Everything upstream — pagination, font
+embedding, image extraction, zip building — runs exactly as it does for a real
+user; only the last hop changes. `export.e2e.mjs` is 24 assertions across all
+four export paths:
+
+- **PDF**: 1.4 MB, `%PDF` header, `%%EOF` trailer, named for the book.
+- **EPUB**: zip header, and — the rule every validator checks first, and the
+  one a hand-rolled zip writer is most likely to get wrong — an uncompressed
+  `mimetype` as the very first entry, at the exact byte offsets the spec
+  requires.
+- **HTML**: a real document containing the manuscript text and the image as a
+  data URI, with no external stylesheet or script reference, because
+  "single-file" means the file still works after it is emailed.
+- **`.bookstudio`**: zip header and the right extension.
+
+All four passed. The one failure the suite reported on its first run — "the
+manuscript text is in the HTML" — was **the suite's own fault**: a fresh
+chapter has no blocks, so the paragraph it thought it was typing into never
+existed. Corrected, and the suite now asserts the manuscript holds the sentence
+before trusting any export assertion about it. Worth recording as a finding
+about tests, not about the app: an assertion that can pass without the thing it
+describes ever happening is not coverage.
+
+One real observation from the bytes: 1.4 MB for a one-paragraph book. That is
+whole-font embedding, and `docs/ROADMAP.md` already tracks subsetting as open —
+this now quantifies it.
+
+### Structural pages and Develop: clean
+
+`structure.e2e.mjs` drives add / duplicate / reorder / delete / edit on a
+structural page and add / edit / delete on a Layer 0 character, asserting
+persisted state after every step rather than screen state — because screen
+state is what lied in every caret defect this project has found. The
+structural-page text edit also survives a reload, since a field that only
+updates React state looks identical until the page is next opened.
+
+Both paths are sound. **No defect found**, which is the point of testing them:
+"probably fine" and "asserted fine" are different claims, and only one of them
+survives the next refactor. Two incidental facts worth writing down: a fresh
+project deliberately starts with *no* structural pages (they arrive only with a
+saved template), and a dedication is edited from the Inspector rather than on
+the canvas, because it renders as plain centred type.
+
+### A false-passing assertion in my own Phase 146 suite
+
+`projectDelete.e2e.mjs` listed four store keys that do not exist —
+`book-studio.structural-pages` for `structuralPages`, `.versions` and `.assets`
+for stores that are not in `localStorage` at all. `residue()` skipped every
+missing key in silence, so the suite reported "no per-project data is left
+behind" while measuring three stores out of ten.
+
+Both halves are fixed. The key list now matches the real `persist` names, and
+`residue()` returns anything it could not read so a wrong key fails loudly
+instead of shrinking the test. The suite also now **seeds all ten stores**
+before deleting, rather than hoping a short test run happened to touch them —
+so an absent key afterwards is unambiguously the purge working. Re-proved in
+both directions: 10 stores plus both IndexedDB tables listed as residue with
+the purge disabled, none with it enabled.
+
+This is the second time a suite of mine has passed for the wrong reason (Phase
+141's `/spelling/i` matching its own test sentence was the first). The pattern
+is the same both times: an assertion whose failure mode is silence.
+
+### The suites now run in CI
+
+Playwright still stays out of `package.json` — it pulls a browser download and
+roughly doubles install time, and every other check runs without one. But "not
+a dependency" had quietly become "never runs in CI", so five suites protected
+nothing between one person remembering to run them and the next.
+
+A separate `e2e` job installs it with `--no-save`, builds, then runs the
+runtime audit and all five suites. Contributors' `npm ci` is untouched, and
+`verify` is not blocked on it, so a browser-infrastructure failure can never
+masquerade as a broken build.
+
+### Verified
+Writing 20/20, spell-check 8/8, structure 14/14, export 24/24, project-delete
+10/10 (and failing in 3 places with the purge disabled, re-checked after the
+rewrite), runtime audit clean, copy audit 4 findings all desktop-only,
+`npm test` ALL PASS, build clean, lint exit 0 at the 49-warning baseline.
+
+---
+
+## Phase 148 — the security bump that had nothing to check it
+
+`npm audit` reported two vulnerabilities: `nanoid` (high, via vite → postcss)
+and `@xmldom/xmldom` (moderate, via mammoth). Both transitive, both fixed by a
+patch bump with no direct-dependency change — `0.8.13 → 0.8.15` and
+`3.3.16 → 3.3.18`, six lines of lockfile. `npm audit` now reports zero.
+
+The interesting part is what taking that bump exposed. `@xmldom/xmldom` is
+mammoth's XML parser, which means it is `.docx` import — **the most-used way a
+real manuscript enters this app**, and it had no test of any kind. Nothing in
+the repo could say whether Word documents still parsed after the upgrade. A
+security fix you cannot verify is a coin flip with better paperwork.
+
+So `.docx` import is now covered, against a real minimal Word package built by
+hand (`scripts/fixtures/manuscript.docx`, 1 KB): two Heading 1 paragraphs, body
+text, and one bold run. Chapter splitting, chapter titles, body text and
+`<strong>` are all asserted — not just "didn't throw".
+
+It has to live in the browser suite rather than the Node unit tests. mammoth
+swaps its unzip implementation for the browser build, so `{ arrayBuffer }` —
+what `parseDocx` passes — is only valid input in a browser. Node's build wants
+`{ buffer }` or `{ path }`, and testing it there would have been testing a code
+path the app never takes. That was worth finding out by trying.
+
+### Two more of my own test bugs, worth recording
+
+Both found while writing the import section, both the same shape as Phase 147's:
+
+- **`Object.values(byProject)[0]`.** Every reader in `structure.e2e.mjs` took
+  the first project in the map. Correct right up to the moment a second project
+  exists — which the import section creates — and then it silently measured the
+  wrong book and reported the import had produced one chapter called "Untitled
+  Chapter". Every reader is now keyed by the project id in the URL.
+- **A new project opens wherever the last one was left.** The Develop/editor
+  view is a remembered *global* preference, so creating a project mid-suite
+  landed in Develop, where there is no importer, and the test reported "the
+  manuscript importer accepts .docx — FAIL" about a screen that has no importer
+  on it. Not a defect, but worth writing down: the preference is global, not
+  per-project.
+
+### Verified
+Structure suite 21/21 (was 14/14, plus 7 import assertions), everything else as
+Phase 147, `npm audit` 0 vulnerabilities, build clean, lint exit 0 at the
+49-warning baseline.
+
+---
+
+## Phase 149 — the freeze was never about structural pages
+
+Open since Phase 21 (2026-07-31), flagged in five separate status entries,
+never once profiled: "15-30s main-thread freezes on structural-page mutations
+in a 17-chapter project." Every previous note guessed at the same cause — a
+full-book re-pagination running synchronously on every structural-page
+mutation. That guess was wrong, and it is why the item survived a year.
+
+### Reproducing it first
+
+`scripts/e2e/perf.e2e.mjs` seeds a real book straight into `localStorage` (17
+chapters, 100 blocks each) and times the reported interactions with a
+`longtask` observer, so time is attributed to actual main-thread blocking
+rather than to waiting.
+
+The first run showed nothing: 245ms at worst. The freeze only appeared after
+adding a step that scrolls the whole book first — because `LazySpread` mounts
+a spread when it scrolls near the viewport and, by explicit design, never
+unmounted it again. A book that has been read through is a completely
+different React tree from one just opened, and that is the state a real user
+is in by the time they go and add a dedication.
+
+With that step, the same interaction that took 140ms took 4,340ms.
+
+### The control that settled it
+
+Same book, same insert, one variable — whether the book had been scrolled:
+
+```
+  6,667 DOM nodes (opened, not scrolled)  ->    140ms longest task
+ 76,911 DOM nodes (scrolled end to end)   ->  4,340ms longest task
+```
+
+Structural pages were incidental. Any interaction would have been slow;
+inserting a page was simply the one people did after enough scrolling.
+
+### What the profile actually said
+
+A CDP CPU profile, source-mapped back to real names, put the time in:
+
+- `@floating-ui/utils/dom` — 1,369ms. Radix's offset-parent walk, which calls
+  `getComputedStyle` up the ancestor chain.
+- `focus` — 1,266ms. A forced layout recalculation.
+- `src/blocks/caretOffset.ts` — 1,117ms, via live spell-check.
+
+React's own render work was ~330ms of a 15s window. Two of the three are
+O(DOM) browser work, not application logic — which is exactly the signature of
+"the tree is too big", not "this handler is too slow".
+
+Two hypotheses died here, and both are worth recording because both were
+plausible enough to have been shipped as "the fix":
+
+- **Memoising `HeightMeasurer`** (it renders every block off-screen and was
+  re-rendering on any parent render). Tried first: 4,340ms -> 3,986ms. Kept,
+  because re-rendering a thousand subtrees that cannot have changed is still
+  waste, but its doc comment now says plainly that it fixed nothing.
+- **Live spell-check.** Disabling it entirely: 3,986ms -> 3,449ms. Real, and
+  about 15% — not the cause.
+
+### The fix
+
+`LazySpread` now unmounts. Two margins, 1200px to mount and 4000px to
+release, with the gap as deliberate hysteresis — a single threshold would
+make a spread parked on the boundary thrash on every few pixels of scroll.
+
+Two things make it safe. The placeholder is exactly the size of the pages it
+replaces, so the scroll position never moves. And a spread containing
+`document.activeElement` is never unmounted, so scrolling during an edit
+cannot discard the field being typed into.
+
+Fixing it also exposed the same bug wearing a different hat:
+`forcedSpreadIndices` (which pins a spread so a chapter jump has something to
+scroll to) only ever grew. Every chapter or page ever jumped to stayed pinned
+for the rest of the session, which would have quietly undone this fix for
+anyone who navigates by clicking chapters. The pin is now released once the
+scroll has landed — by then the spread is on screen and its own observer is
+holding it.
+
+### Result
+
+Same 1,700-block book, scrolled end to end:
+
+| | before | after |
+|---|---:|---:|
+| DOM nodes after scrolling | 76,911 | 6,773 |
+| insert a structural page | 4,340ms | 177ms |
+| select a structural page | 1,578ms | 0ms |
+| edit a structural page | 858ms | 0ms |
+| delete a structural page | 2,324ms | 52ms |
+
+The DOM now holds at roughly its opened size however far the book is
+scrolled.
+
+### The suite is not in `npm run test:e2e`
+
+Deliberately. Timings on shared CI hardware are too noisy to gate a build on,
+and a performance suite that cries wolf gets ignored. Its thresholds are loose
+by design — they catch the return of a multi-second freeze, not a few hundred
+ms of drift. Run it by hand: `node scripts/e2e/perf.e2e.mjs`, with
+`PERF_BLOCKS`, `PERF_CHAPTERS`, `PERF_SCROLL=0` and `PERF_NO_SPELLCHECK=1` to
+re-run any of the experiments above.
+
+It also asserts one correctness property the fix depends on: jumping to a
+chapter near the start, from the end of a scrolled-through book, still mounts
+and reaches it.
+
+### Verified
+Perf suite passing at 1,700 blocks, writing 20/20, spell-check 8/8, structure
+21/21, export 24/24, project-delete 10/10, runtime audit clean, copy audit 4
+desktop-only findings, `npm test` ALL PASS, build clean, lint exit 0 at the
+49-warning baseline.
+
+---
+
+## Phase 150 — every exported PDF has printed in the wrong typeface
+
+The plan was font subsetting: `docs/ROADMAP.md` had it open, and Phase 149's
+new export suite had just measured a 1.39 MB PDF for a one-paragraph book. The
+plan lasted until the first measurement, which is becoming the pattern.
+
+### What was actually in the file
+
+Decompressing every stream in a real exported PDF:
+
+```
+  1,109,251 bytes  (79.8%)   19 x TrueType/OpenType font
+    252,032 bytes  (18.1%)   39 x other
+     23,976 bytes  ( 1.7%)    2 x object stream
+```
+
+**Nineteen embedded fonts** — for a book that uses two typefaces.
+`loadThemeFonts` embedded every family the app can draw with (the two
+interior families plus all seven cover-only display faces) on every export,
+used or not. Its own doc comment said so plainly; it had simply never been
+read as a size problem.
+
+Subsetting nineteen unnecessary fonts is the wrong fix. Not embedding them is
+the right one. `pdf/usedFonts.ts` collects the CSS families a book will
+actually draw with — the theme's heading and body, plus every cover
+`fontChoice` stored on its structural pages — and everything else resolves to
+a standard-14 face, which costs no bytes.
+
+That collection is a **deep walk for any `fontChoice` key**, not a list of the
+places one is known to live. Enumerating known paths would work today and
+start silently missing fonts the first time a page type nests a `typography`
+block somewhere new — and the failure mode is a cover printing in Times New
+Roman, which nobody notices until a proof comes back.
+
+### And then the bytes said something worse
+
+With the display faces gone, the remaining font streams were visible for the
+first time — and their magic number was `wOF2`.
+
+```
+  obj 47: FontName=Inter-Regular-8784  FontFile2 -> 46
+          -> stream magic b'wOF2'   (WOFF2 — not a PDF font format)
+```
+
+`embed()` fetched `/fonts/inter-400.woff2` — the same file the stylesheet
+uses — and handed the bytes straight to `embedFont`, which wrote them into
+the PDF as the font program. A PDF `FontFile2` must be a TrueType font
+program. WOFF2 is a web transport container; no PDF reader can parse one.
+
+So every book this app has ever exported declared `/BaseFont /Inter-Regular`
+and then handed the reader something it could not open. **Readers substitute
+a lookalike silently rather than complain**, which is why this survived: on
+screen the real Inter, in the PDF whatever the reader chose, no error
+anywhere, and the two look similar enough at a glance to pass. For an app
+whose central promise is that the preview and the print are the same
+document, this was the worst possible kind of bug — invisible, total, and in
+the flagship output.
+
+Fixed by loading the interior families from real `.ttf` twins in
+`public/fonts/` (decompressed from the same woff2 with fontTools). The
+stylesheet still uses the woff2, where a small transfer matters and the
+browser understands the container.
+
+Also: several families deliberately point two weights at the same file
+(Source Serif 4 ships no 700, so bold reuses the 600), and each was embedding
+the same bytes twice. One embed per file per document now.
+
+### Result
+
+| | before | after |
+|---|---:|---:|
+| PDF size, one-paragraph book | 1,389,930 | **225,533** |
+| embedded fonts | 19 | 7 |
+| embedded fonts a reader can open | **0** | 7 |
+
+84% smaller, and for the first time the typeface in the PDF is the typeface
+on the screen.
+
+### Guarded
+
+`export.e2e.mjs` now resolves every `FontDescriptor` to its font program and
+checks the magic bytes, plus font count, total size and duplicates. Proved by
+putting one `.woff2` back:
+
+```
+FAIL — every embedded font is a TrueType/OpenType program
+       (bad: Inter-Regular-2163="wOF2")
+```
+
+An assertion on the bytes is the only thing that could ever have caught this,
+because there was never an error to catch.
+
+### Verified
+Export 29/29, writing 20/20, spell-check 8/8, structure 21/21, project-delete
+10/10, runtime audit clean, copy audit 4 desktop-only findings, `npm test` ALL
+PASS, build clean, lint exit 0 at the 49-warning baseline.
+
+---
+
+## Phase 151 — a crash report that isn't a photograph of a screen
+
+Two things, both closing gaps the previous phases named.
+
+### EPUB import, and the round trip nobody had tried
+
+`.epub` was the last import path with no coverage. The fixture is a real OCF
+package — uncompressed `mimetype` first, a container pointing at a package
+document, a two-document spine — and its chapters are deliberately wrapped in
+`<section><div>` and titled with `<h2>`. That shaping is the point: real EPUBs
+look like that, and flattening plus heading promotion are exactly what
+`parser/epub.ts` exists to do. A fixture of flat `<h1>`/`<p>` would have
+asserted nothing.
+
+Twelve assertions, all passing: chapter-per-spine-document, `<h2>` promotion,
+text nested two containers deep surviving, `<strong>`/`<em>`, and blockquote,
+list and image each becoming the right block type.
+
+More interesting is the round trip. `parser/epub.ts`'s own doc comment says it
+exists because "Book Studio already exported EPUB but could not read one, so a
+book could not be reopened from its own output" — and that claim had never
+been tested in the direction that matters. Both halves passing separately does
+not mean they agree with each other. `export.e2e.mjs` now exports an EPUB and
+imports the exported bytes straight back. It works.
+
+### Errors that a boundary never sees
+
+Phase 133 added error boundaries, which was the right fix for white screens.
+But React routes only *render* errors to a boundary. An exception thrown
+inside a `pointerup` handler, or a rejected promise nobody awaited, unwinds to
+the window — and on a phone that means a console nobody can open. Those are
+exactly the faults reported as "it just stopped working", with no detail
+attached, because there is no detail to attach.
+
+`errorLogStore` is a bounded, persisted log of what has gone wrong on this
+device. `installErrorCapture` feeds it from `window.onerror` and
+`unhandledrejection` (making a copy, never swallowing — the console must still
+get them). The boundary records into it too, so details survive the "Try
+again" that clears the panel. "Report a problem" in both shells copies or
+saves a report with stacks, screen size, pointer type, route and browser.
+
+This is not a crash-reporting service and does not pretend to be. There is no
+backend to send anything to and there will not be one before Phase G. But the
+thing that was actually missing was smaller than a service: the Phase 134
+mobile Book Graph crash reached this project as a **photograph of a phone
+screen**, because that was the only route off the device. One button is now
+that route, and when Phase G arrives, sending the same report somewhere is a
+small change rather than a new subsystem.
+
+Design notes worth keeping:
+
+- **Consecutive identical faults collapse.** A broken render loops and a bad
+  handler fires on every tap; without this the real first occurrence is pushed
+  out of a 25-entry buffer within seconds.
+- **Persisted.** The useful report is written after the app has recovered, and
+  a reload used to destroy the only evidence.
+- **Save-as-a-file as well as copy.** On a phone with a keyboard in the way, a
+  long clipboard paste is not a realistic way to file a bug.
+- **No version string.** This app has no release pipeline stamping one in, and
+  a hardcoded version that drifts is worse than none.
+
+### One more of my own test bugs
+
+The first pass at verifying capture appended a `<button>` to `document.body`
+and clicked it — behind the app's full-screen layout, so Playwright timed out
+and the handler never ran. The suite reported "an event-handler error is
+captured — FAIL" about code that was fine. It now throws from a `setTimeout`
+instead, which is what an exception from a pointer handler actually becomes
+once it escapes.
+
+### Verified
+Diagnostics 14/14, structure 33/33 (21 + 12 EPUB), export 31/31 (29 + the
+round trip), writing 20/20, spell-check 8/8, project-delete 10/10, runtime
+audit clean, copy audit 4 desktop-only findings, `npm test` ALL PASS, build
+clean, lint exit 0 at the 49-warning baseline.
+
+---
+
+## Phase 152 — the red line led nowhere
+
+Reported: *"there still doesn't seem to be any spelling suggestions /
+corrections when red lines appear"*. Correct, and there were three separate
+reasons, one of which Phase 143 introduced while fixing something else.
+
+### 1. The toolbar was gated on editing; the underlines were not
+
+`FloatingFormatToolbar` is mounted as:
+
+```tsx
+<FloatingFormatToolbar containerRef={primary.ref} active={primary.isEditing} … />
+```
+
+Phase 143's whole point was that mistakes should stay visible on paragraphs
+the writer is *not* editing — before it, exactly one misspelling was ever
+underlined. It succeeded. But it never touched this line, so the underlines
+spread across the whole book while the thing that acts on them stayed
+confined to the one paragraph with a caret in it. Red lines everywhere,
+suggestions almost nowhere. Phase 143 verified that the underlines appeared
+and stopped there; it never asked what happens when you click one.
+
+Clicking a flagged word now opens that paragraph for editing, which is what
+the toolbar needs to exist.
+
+### 2. Opening it for editing destroyed the selection
+
+`startEditing`'s layout effect reassigns `innerHTML` and places a caret —
+a fresh set of DOM nodes, so any selection made before it is gone. Measured:
+the first click on a red word left the selection empty; a *second* click
+(with the paragraph already editing) selected it correctly. That two-click
+behaviour is exactly what "the suggestions don't work" feels like from the
+outside.
+
+The word's position is recorded as plain-text offsets, which survive the
+rewrite, and the selection is re-applied once the field is actually editable.
+The same shape as every other "act after the DOM has settled" fix here.
+
+### 3. A rescan threw the selection away too
+
+The underline pass rebuilds the field's nodes on every rescan and restored
+only a *collapsed caret* afterwards. So selecting a misspelled word and
+pausing for the 350ms debounce silently discarded the selection — and the
+toolbar with it. `getSelectionTextRange`/`selectTextRange` now save and
+restore a range, which covers the caret case as `start === end`.
+
+### 4. Mobile had no toolbar at all
+
+`MobileTextField` called `useLiveSpellcheck` (Phase 141) but nothing was ever
+mounted to act on the result, so on a phone the underline had never been
+actionable in any circumstance. Given the user has been testing on mobile
+throughout, this is probably the version of the bug actually being seen.
+
+A floating toolbar is the wrong answer on touch anyway: it lands under the
+thumb that summoned it, and the on-screen keyboard owns the bottom half of
+the screen. Tapping a red word opens a **sheet** of suggestions — the idiom
+the rest of the mobile shell already uses for "here are your options".
+Choosing one rewrites the stored value directly rather than going through
+`execCommand`, because the field may not be in edit mode at all when the
+sheet is used.
+
+### A bug I nearly shipped inside the fix
+
+The first version of the mobile correction did the obvious thing:
+
+```ts
+el.textContent = text.slice(0, start) + replacement + text.slice(end)
+```
+
+That reads correct and is quietly destructive: `textContent` flattens every
+`<strong>`, `<em>` and link in the paragraph, so fixing one typo would strip
+the formatting from the sentence around it. The manuscript is not something a
+spelling fix gets to rewrite wholesale, and this is exactly the kind of damage
+that would have been noticed weeks later with no idea what caused it.
+
+`replaceTextRange` touches only the text nodes the word actually covers, and
+the commit goes through `sanitiseInline` — the same path `useEditableField`
+already uses, which also drops the decoration spans on the way out. The suite
+now writes a paragraph with bold in it and asserts the `<strong>` survives.
+
+(One incidental discovery from that assertion: `contenteditable` inserts a
+non-breaking space where you type a normal one, so `includes(' after.')`
+fails on text that looks identical. Not a bug — worth knowing.)
+
+### Now asserted
+
+`scripts/e2e/spellFix.e2e.mjs` drives the path a reader actually takes, on
+both shells: write a misspelling, blur so the paragraph is one nobody is
+editing, click/tap the red line **once**, pick a suggestion, and check the
+saved manuscript says "sentence" — and that the rest of the sentence was left
+alone.
+
+The lesson worth keeping: Phase 143's suite asserted that underlines appear
+and stay visible, and passed throughout. Every assertion in it was true the
+whole time. It just never asked the next question, which was the only one the
+writer cares about — *and then what?*
+
+### Verified
+Spell-fix 15/15 across both shells, spell-check 8/8, writing 20/20, structure
+33/33, export 31/31, diagnostics 14/14, project-delete 10/10, runtime audit
+clean, `npm test` ALL PASS, build clean, lint exit 0 at the 49-warning
+baseline.
+
+---
+
+## Phase 153 — footnotes that land on the right chapter, and a phone that can caption a photo
+
+### EPUB footnotes were arriving on the wrong chapter
+
+Some EPUB toolchains gather a whole book's footnotes into one file at the
+back. Imported literally, that file became a chapter of orphaned note text
+sitting after the end of the book. The notes survived — attached to the wrong
+thing, which is worse than losing them, because it looks deliberate.
+
+A notes file is now detected by **how much of its text lives inside note
+elements**, not by its filename. `notes.xhtml` is a convention, not a rule,
+and a real chapter that happens to be called that would be destroyed by a
+filename test. A document that is mostly notes is a notes file; a chapter with
+a couple of asides in it is a chapter, and stays one.
+
+Reattachment is **exact rather than positional**: a noteref is a real link
+(`href="notes.xhtml#fn3"`) and `sanitiseInline` keeps `<a>` elements, so the
+chapter that cited a note still contains its id. Only a note nothing
+references falls back to the last chapter — which is where it would have
+ended up anyway, so the fallback cannot be worse than doing nothing.
+
+Notes land as paragraphs under a "Notes" heading in their own chapter. The
+Content layer has no footnote block, and inventing one here would have meant a
+block type the layout engine, the PDF exporter and the EPUB exporter all know
+nothing about. The right words in the right chapter, visibly marked, is the
+honest version of this until a real footnote block exists.
+
+Both `epub:type` and ARIA `role` spellings are checked, because EPUB 2
+toolchains emit one and EPUB 3 increasingly emits the other, and plenty of
+real books carry both.
+
+### Mobile can now annotate and caption
+
+`docs/ROADMAP.md` had the block-level surfaces filed as blocked on "a block
+selection model mobile Write doesn't have yet". That overstated it, and the
+design pass was mostly noticing why: desktop needs a selection model because
+its Inspector is a **persistent panel** that has to know what it is looking at
+from moment to moment. A sheet does not — it is opened *from* a block's own
+menu, which already knows exactly which block it belongs to. The two shells
+don't need the same mechanism to reach the same data.
+
+So the per-block menu gained one more item, and it opens a sheet with:
+
+- **Notes on any block** — add, resolve, delete, with the same
+  history-recording actions the desktop panel uses, so a note written on a
+  phone is undoable the same way.
+- **Caption, alt text and width for an image.** Images have been insertable
+  on a phone since Phase 146 and were never captionable — which left that
+  feature half-finished in a way a printed book notices, since an uncaptioned
+  plate is a proof correction. The width presets match the desktop panel's
+  exactly rather than inventing a mobile-only set, so a book's images stay
+  consistent whichever device last touched them.
+
+Per-block *typography* was deliberately left out rather than shipped for
+completeness: a phone is where prose gets written, not where one paragraph's
+leading gets tuned, and every control added to that screen costs something.
+
+### Verified
+Mobile blocks 14/14 on a real touch viewport, structure 40/40 (33 + 7
+footnote), and the rest of the gate unchanged: writing 20/20, spell-check
+8/8, spell-fix 15/15, export 31/31, diagnostics 14/14, project-delete 10/10,
+runtime audit clean, `npm test` ALL PASS, build clean, lint exit 0.
+
+---
+
+## Phase 154 — bring your own key
+
+`docs/ROADMAP.md` had `ApiKeyProvider` deferred "until there's a real story
+for cost/accounts (Phase G/H)". That was right about a *hosted* provider and
+wrong about this one, and the distinction is worth stating because it is what
+unblocked the item: **bring-your-own-key has no cost story to tell**, because
+the cost is the user's and always was, and it needs no accounts, because there
+is nobody to account to. It removes a copy-paste round trip. Nothing else
+about the architecture changes.
+
+### What it does not remove
+
+The reply comes back as **text**, for the same paste-back diff the clipboard
+flow feeds. `docs/AI_WORKSPACE_VISION.md`'s rule is that the planning bible is
+never edited without an author accepting a diff, and an API key makes the
+*request* automatic, not the *acceptance*. Conflating those two would have
+been the easiest possible way to ruin this feature — the whole reason the AI
+workspace is shaped the way it is.
+
+So `AiProvider` gained one optional method rather than a new interface:
+`requestResponse(text, onDelta, signal)`. Optional because the clipboard
+provider genuinely cannot implement it — there is no round trip there, only a
+hand-off.
+
+### Shape
+
+- **Claude Opus 5**, streamed. Editorial judgement on a manuscript is exactly
+  the work the most capable model earns its cost on; the alternative to a
+  good answer is not a cheaper answer, it is the author doing the reading
+  themselves.
+- **The SDK is dynamically imported** — 182 KB in its own chunk, loaded only
+  if someone turns this on. Same reasoning as `mammoth` for DOCX: a large
+  dependency for one optional feature has no business in a bundle every
+  reader downloads.
+- **`stop_reason: "refusal"` is handled.** It arrives as a 200, not a thrown
+  error, so reading `content` without checking would present a refusal as an
+  empty reply and leave the author wondering what they did wrong.
+- **The clipboard provider stays the default**, and stays first in the
+  settings list, because it is the one with nothing to disclose.
+
+### The honest part
+
+A client-only app calling a paid API directly has to keep the key where the
+page can read it, which means anything running on this origin can read it
+too. The SDK's option for this is called `dangerouslyAllowBrowser` and the
+name is appropriate. That trade is stated in the dialog where the decision is
+actually made, not in a README nobody opens.
+
+Three promises are made there, and all three are now **asserted rather than
+believed**:
+
+- **It goes to `api.anthropic.com` and nowhere else.** The suite records every
+  request the page makes and fails if any other host appears.
+- **It is not in a `.bookstudio` file.** `exportProjectFile` writes named
+  entries and this store is not one of them; the suite checks no other
+  storage key contains it.
+- **It cannot ride out in a problem report.** This one needed code, not just
+  checking: `errorLogStore` now redacts anything shaped like an Anthropic key
+  at the moment of recording. An SDK is entitled to put a request's headers
+  into an error message without asking this app's opinion, and a diagnostics
+  report exists to be sent to someone else. Redacting at the single point
+  every error passes through is cheaper and far more reliable than auditing
+  each producer.
+
+### Tested without spending anything
+
+`aiProvider.e2e.mjs` intercepts `api.anthropic.com` and answers with a real
+SSE stream in the shape the SDK parses — deliberately in several deltas, so
+accumulation is genuinely exercised rather than passing on a single chunk
+that would work even if the code ignored streaming. Everything from the
+button to the rendered reply runs for real: the dynamic import, the browser
+client, `messages.stream`, delta accumulation, the UI. Only the model is
+fake.
+
+### Verified
+AI provider 11/11, and the rest of the gate unchanged: writing 20/20,
+spell-check 8/8, spell-fix 15/15, structure 40/40, mobile blocks 14/14,
+export 31/31, diagnostics 14/14, project-delete 10/10, runtime audit clean,
+`npm test` ALL PASS, `npm audit` 0 vulnerabilities, build clean, lint exit 0.
+
+---
+
+## Phase 155 — an app should not ask you to perform a ritual
+
+The More tab on a phone disabled every export and said:
+
+> **Open Preview once to lay the book out first**
+
+`docs/ROADMAP.md` had this filed as "acceptable (and explained in the row
+itself) but worth removing". That was the wrong call, and the give-away is the
+parenthesis: an instruction being *explained* does not make it acceptable. It
+was the app asking its user to perform a ritual to work around where a
+component happened to be mounted.
+
+### Why it was there
+
+PDF export renders `exportStore`'s layout rather than deriving its own — that
+is deliberate, and it is what keeps the exported PDF identical to the preview.
+`MobilePreviewView` was the only thing on mobile that ever populated it, so
+until you had visited that tab, there was nothing to export.
+
+### Why it didn't need to be
+
+None of that work needs anything to be visible. `HeightMeasurer` renders
+off-screen by design; `paginate` and `composeBookPages` are pure functions.
+The only thing tying the pipeline to the Preview tab was **where it had been
+written**.
+
+So it moved into `useBookLayout` — measure, paginate, compose, publish — and
+both tabs use it. Preview renders its pages from it; More just renders the
+measurer and nothing else. Mounted in More rather than in the mobile shell on
+purpose: a phone should not be measuring a whole book while someone is trying
+to write in it, and by the time anyone has scrolled down to Export it has long
+since finished.
+
+### Result
+
+A phone exports a print-ready PDF from a standing start: 225 KB, valid
+`%PDF`/`%%EOF`, seven real embedded fonts — byte-for-byte the same shape
+desktop produces, because it is the same pipeline.
+
+### The refactor's own risk, covered
+
+Moving code out of a working component is exactly how a working component
+stops working, so the suite also asserts Preview still paginates and still
+renders the manuscript.
+
+That assertion failed on its first run, and the failure was mine, not the
+app's: it looked for the chapter's body text without scrolling, and since
+Phase 149 a spread's pages only mount when they come near the viewport — so
+the text genuinely was not in the DOM yet. Asserting against correct
+behaviour. Fixed by scrolling the preview first, which is what a reader does
+anyway.
+
+### Verified
+Mobile export 11/11, and the rest of the gate unchanged: writing 20/20,
+spell-check 8/8, spell-fix 15/15, structure 40/40, mobile blocks 14/14, AI
+provider 11/11, export 31/31, diagnostics 14/14, project-delete 10/10,
+runtime audit clean, `npm test` ALL PASS, build clean, lint exit 0.
+
+## Phase 156 — four things you can only find by looking
+
+The previous session ended by driving the built app through Chromium and
+reading the screenshots rather than asserting on them: 37 shots of the desktop
+shell, 12 of the mobile one, no runtime errors in either. Everything the
+suites test passed, and four defects were sitting in plain sight anyway. Every
+one of them is invisible to the kind of test this project already had, because
+in every case the DOM was correct and the *pixels* were wrong.
+
+### 1. The block toolbar covered the block's own first line
+
+`BlockToolbar` was `absolute -top-3 right-2`: a ~28px-tall icon bar hung 12px
+above the block's top edge, so roughly half of it sat squarely on the opening
+words. In the screenshot, "and the hours kept" was unreadable while its own
+paragraph was hovered — an editor hiding your text at the exact moment you
+reach for it.
+
+There are only three places block furniture can go, and two of them are wrong:
+
+- over the block's own text (what this was);
+- over the **previous** block's text (what `bottom-full` would be — manuscript
+  paragraphs are packed edge-to-edge with no gap between them);
+- out in the margin, which is empty by construction, and is where books have
+  kept marginalia for five hundred years.
+
+A full icon bar (~150px) doesn't fit a 16mm outer margin. A 24px handle does.
+So the bar became a labelled dropdown — Move up / Move down / Duplicate / Page
+break after / Delete block — behind a single handle parked in the margin,
+which is what `MobileWriteView` had already settled on for the same reason
+("so it never covers text/images regardless of block type"). Desktop had
+simply never been given the same treatment. The menu content is a Radix
+portal, so unlike the old bar it can't be clipped by the page's content box
+either.
+
+Two supporting changes made that possible:
+
+- **`BLOCK_OVERLAY_SIDE_BUFFER_PX`** (Page.tsx) — the horizontal twin of Phase
+  89's vertical buffer. The content-flow container's `overflow-hidden` box
+  would otherwise clip the handle dead at the text column's edge, exactly as
+  it used to clip `-top-3` overlays at its top edge. Same remedy: pull the box
+  outward by up to 48px per side and give the same pixels back as padding, so
+  text starts and ends in the identical position. Measured in the running app:
+  block width 432px before and after, which is `contentWidthPx` to the pixel —
+  pagination is untouched.
+- **A fallback.** A project can set margins narrower than the handle needs, so
+  `Page.tsx` measures its own margins and passes `placement='inside'` when
+  there isn't room, where the handle tucks into the corner as before. A 24px
+  square covers far less than a 150px bar did.
+
+`NoteIndicatorBadge` went with it, from `-top-3 left-2` into the left margin.
+It had the same defect and a worse version of it: unlike the hover-gated
+toolbar, that badge is *always* visible, so any paragraph carrying an open
+note had its opening words permanently covered.
+
+### 2. Every structural page in the thumbnail rail was captioned "0"
+
+`composePages.ts` gives structural pages `number: 0` deliberately — front
+matter is conventionally unnumbered and main-body folios start fresh at
+chapter one — and `ThumbnailRail` printed that straight out. So a book's cover
+was labelled "0".
+
+Structural pages don't have a folio to show. They have a name, which is more
+use for navigation anyway, so the rail now reads the page's type from the
+registry and captions it "Cover", "Dedication", "Title Page". Blank pages stay
+deliberately unlabelled, as before.
+
+### 3. Develop's exit named the wrong destination
+
+Clicking "Back to editor" from Develop landed on the Virtual Editor. The
+behaviour is right — `uiStore.workspaceMode` is remembered, so you return to
+whichever workspace you left — and the label was the lie. Sending everyone to
+the manuscript instead would have thrown away where they were. The button now
+reads "Back to Virtual Editor" when that's where it will take you.
+
+### 4. Adding a page left you nowhere near it
+
+Adding a front-matter page from the Structure tab inserted it and left the
+canvas exactly where it was — in the screenshot, parked on blank space with
+the new page off screen entirely. A page is added because it needs filling in,
+so the one thing you came to do began with a hunt.
+
+It now does what clicking an existing row in that same list has always done —
+select, scroll to, and open the Inspector's Page tab — which is also what
+`MobilePagesView` already did on a phone. Verified in the browser: the new
+Dedication is centred on the canvas with its editor open beside it.
+
+### Verification
+
+Each fix has a regression assertion, and each assertion was proved to fail
+against the old behaviour before being kept:
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| the actions handle never covers the block's own text | `writing` | handle rect intersects block rect |
+| no thumbnail is captioned "0" | `structure` | `0\|1\|\|3` |
+| a structural page is captioned by name | `structure` | caption is `0`, not `Dedication` |
+| a newly added page is mounted on the canvas | `structure` | never mounted at all |
+| the canvas scrolls to the page just added | `structure` | out of viewport |
+| the Inspector opens on the new page's own tab | `structure` | still on `Theme` |
+| Develop's exit names the Virtual Editor | `structure` | reads "Back to editor" |
+
+The Inspector assertion needed a fix of its own to be worth anything: as first
+written it passed either way, because the Page tab already happened to be
+active. The suite now parks the Inspector on Theme first, so the check
+measures something.
+
+Geometry is the point. "The actions handle never covers the block's own text"
+is not a rewording of "the toolbar renders" — it is the first assertion in
+this project that would have caught a control sitting on top of a sentence,
+and it exists because a screenshot showed one doing exactly that.
+
+## Phase 157 — the first hour of a new book
+
+Phase 156 walked the app as someone editing an existing book. This one walked
+it as someone starting a new one, on a laptop and on a phone: 21 desktop
+screenshots, 16 mobile, read rather than asserted on. No runtime errors in
+either walk, and five defects that every green suite had missed — all of them
+in the first few minutes of a book's life, which is exactly the stretch that
+had never been re-walked since the app grew an importer.
+
+### 1. A chapter written on a phone was always called "Untitled Chapter"
+
+`MobileWriteView.handleAddChapter` set `renamingChapterId` and carried a
+comment claiming parity with `Sidebar.tsx`'s "type the real title next, no
+separate naming step". The input that state drives is rendered *inside* the
+chapter switcher sheet — and nothing opened the sheet. So the editor sat in a
+naming state with nothing on screen to type into, and the default name stuck.
+
+Measured rather than argued, which is also what the new assertion measures:
+straight after tapping Add Chapter, `document.activeElement` was `INPUT` with
+`"Untitled Chapter"` selected on desktop, and `BODY` on mobile.
+
+The fix opens the sheet, and closes it again when that particular rename
+commits (renaming an existing chapter from inside the sheet leaves it open —
+that's a list the user chose to be looking at).
+
+**A correction to the report that prompted this phase:** it said every chapter
+was named "Untitled Chapter" on both shells. Desktop was fine; the walkthrough
+script pressed Escape immediately after adding a chapter, which cancelled the
+rename that had correctly begun. The bug was real but half as wide as
+reported, and only the phone had it.
+
+### 2. A book you had already named had an untitled cover
+
+The New Project dialog says, under its one field, *"This becomes your
+project's title."* It does — and then Cover and Title Page, whose
+`defaultContent()` is an argument-less factory, both started empty. On screen
+that read "Untitled"; in the exported PDF it printed **nothing at all**, since
+`drawCoverPdf` (correctly) refuses to print placeholder text. So a book titled
+at minute one exported with a blank cover.
+
+Fixed the way this codebase already solves the same shape of problem:
+`halfTitle.tsx` falls back to a sibling Title Page's title, and `copyright.tsx`
+to its author, both resolved at render time rather than copied at creation.
+Cover and Title Page now fall back to the project's own name the same way, so
+renaming the project still follows through and an explicit edit still wins.
+`bookTitle` is threaded to both sides — `StructuralPageRenderProps` for the
+screen, `DrawCtx` for the PDF — because a fallback that only one of them knows
+about is WYSIWYG drift by construction.
+
+The Inspector's Title field shows the inherited name as its *placeholder* now,
+too: an empty "Book title…" box beside a cover reading "The Hidden Library"
+was telling two different stories.
+
+### 3. A pill sat permanently on the cover's own title
+
+`StructuralImageDropZone` rendered its "Drop a cover image here" label
+whenever the page had no image — dead centre, dark, across the title and
+subtitle. A new book's cover was unreadable in its own editor. It is drag
+feedback now (`isOver` only): dropping works whether or not the pill is
+visible, and the discoverable path for someone who would never think to drag a
+sidebar thumbnail is the "Add cover image" button that Phase 46 already added
+in two places. As instruction it was redundant; as decoration it was
+destructive. `hasImage` became unused and was removed from the component's
+props and its three call sites.
+
+### 4. Developer notes were shipping as product copy
+
+The Virtual Editor's own blurb read *"Proofreading is real today; the rest of
+the taxonomy is designed and lands incrementally — see
+docs/VIRTUAL_EDITOR.md."* It pointed an author at a Markdown file inside a
+repository they do not have, and it had quietly gone false:
+`src/virtualEditor/checkers/` now holds a real checker for every one of the
+twelve categories. A tile with no applicable checker already says "Not yet
+analysed" on its own — that caveat lives in the tile, not in the header.
+
+`docs/VIRTUAL_EDITOR.md`'s taxonomy table is the stale artefact here and is
+still stale; it claims typography, accessibility, print and commercial have no
+checker at all. Left for its own pass rather than half-corrected in passing.
+
+### 5. "Margins (in)" over a millimetre value
+
+Every margin in `ProjectSettings` is stored in mm. The row also showed only
+the inner margin; a book's outer, top and bottom margins matter as much as its
+gutter, and the Page tab is where you would look for them. Now: `22 inner · 16
+outer · 20/20 mm`.
+
+### Verification
+
+Each fix has a regression assertion, and each was proved to fail against the
+old behaviour before being kept:
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| adding a chapter focuses a name field | `writing` | `null` — focus was on `BODY` |
+| the typed chapter name is what gets stored | `writing` | `Untitled Chapter` |
+| a new Cover shows the book's own title | `structure` | cover reads `Untitled` |
+| the inherited title is a fallback, not a copy | `structure` | (guards against seeding) |
+| no drop-image pill sits on top of the cover | `structure` | pill present |
+| the Virtual Editor does not cite a source file | `structure` | cites `VIRTUAL_EDITOR.md` |
+| the margins row does not claim inches | `structure` | `Margins (in)22mm inner` |
+
+The cover assertion needed tightening before it was worth anything: as first
+written it looked for "the first page element containing the project name",
+which matched the **Contents page's running head** and therefore passed
+against the unfixed build. It reads the cover element by id now. That is the
+sixth time in this project a new assertion has been wrong before the code
+was — the pattern is always the same, a locator loose enough to find
+something else that happens to be correct.
+
+`newProjectWithChapter` in `scripts/e2e/runner.mjs` now presses Enter after
+adding a chapter on mobile: the naming sheet is modal, so every suite that
+carried on tapping would otherwise have been tapping its overlay. Accepting
+the default name is what a writer in a hurry does.
+
+`export.e2e.mjs` now puts a Cover in the book it exports. Until this phase no
+suite exported a book with a cover at all, so `drawCoverPdf` ran in no test —
+including when this phase changed what it draws. Its bytes are checked; its
+pixels still are not, which remains the open Phase J item.
+
+### Deliberately not fixed here
+
+The walkthrough also found that mobile's empty state says "or import a
+manuscript on desktop" while its own More tab offers "Import a manuscript",
+that switching the sidebar from Structure back to Chapters leaves the canvas
+parked on the cover, and that the Virtual Editor scores an almost-empty book
+99/100 because checkers only fire on content that exists. The first two are
+small and separate; the third is a design question about whether absence
+should be a finding, and deserves its own decision rather than a quick patch.
+
+## Phase 158 — a copy that survives the laptop
+
+Every previous phase made the app better at editing a book. This one is
+about not losing it.
+
+Until now everything Book Studio holds — projects, manuscript, image assets,
+**and the version snapshots that exist to protect all three** — lived in a
+single browser profile's `localStorage` and IndexedDB. The safety net was
+stored inside the thing it protects against. Clear site data, switch browser,
+or lose the machine, and the book goes with it. `.bookstudio` export has
+existed since Phase 51 and is a real answer, with one flaw: you have to
+remember it, every time, forever.
+
+Three changes, smallest first.
+
+### The app now says where the book lives
+
+A browser-only app that never mentions it leaves every author to find out the
+hard way. The Backups dialog opens with the plain version — stored in this
+browser, on this device, version history included, and what each of the three
+ways of losing it costs. Mobile's More list says the same thing in its row
+subtitle before you ever open anything: *"This book lives only in this
+browser."*
+
+### It asks the browser not to throw the data away
+
+`navigator.storage.persist()` asks the origin to be exempt from automatic
+eviction — silent in Chromium, a prompt in Firefox, absent in Safari. Asked
+once per install (the flag is persisted precisely so Firefox users aren't
+prompted at every launch), and the dialog reports the answer honestly rather
+than implying a guarantee nobody made.
+
+`navigator.storage.estimate()` supplies the other half: the app warns at 80%
+of quota, while there is still room to save a copy and delete something,
+instead of after a write has already failed half-way. The warning is
+deliberately not confined to the dialog — a person in trouble has no reason
+to open it — so it also puts a dot on the toolbar's overflow button and
+rewrites the Backups row's subtitle on both shells.
+
+### And it keeps a real copy on real disk, without being asked twice
+
+The File System Access API can hold a `FileSystemFileHandle` across reloads,
+which turns "save a copy" from a chore into a decision made once: choose a
+file, and the app writes to it whenever the manuscript has actually changed.
+
+- **`useAutoBackup`** is deliberately shaped like `useAutosaveSnapshots` —
+  mounted once per project in each shell, driven by a real interval (2
+  minutes) rather than re-renders, and skipped entirely when
+  `contentStore`'s revision hasn't moved. The difference is the destination:
+  a snapshot goes to IndexedDB, this goes outside the browser.
+- It also writes on `visibilitychange` → hidden, the closest a web app gets
+  to "on close". Best effort by nature, and a backstop for the interval
+  rather than the only path — but it is the one that matters when someone
+  shuts a laptop.
+- **Permission is not the same as the handle.** A handle restored from a
+  previous session usually comes back in `'prompt'` state, and permission
+  can only be requested from a user gesture. Hence `needsPermission` in the
+  status and a "Resume backups" button: a timer must never be able to raise
+  a permission dialog, and a button must be able to.
+- **One list of what goes in the file.** `readProjectFileSource` is now the
+  single place that gathers a project's contents, shared by "Save project
+  file" and the automatic backup. A backup that quietly bundles less than a
+  manual save is worse than no backup, and that happens when someone adds a
+  store to one list and not the other six months later.
+- **Deleting a project drops the handle, never the file.** That copy is the
+  author's and may be the only one left; the app simply stops writing to it.
+  (`useDeleteProject` gained a third IndexedDB-backed store to clear, which
+  is exactly the leak Phase 149 was about.)
+- **Safari and most phone browsers can't do any of this.** The dialog says so
+  and offers the manual save instead of pretending — an automatic backup that
+  silently never runs would be worse than none.
+
+### A real case the test harness exposed
+
+A stub file handle written in JavaScript is not structured-cloneable, so
+IndexedDB refuses it — which is also what happens in private browsing with
+storage blocked, or when a quota runs out mid-write. Failing to *remember*
+the file for next time is no reason to stop backing up for the next hour of
+writing, so `backupDb` keeps the target in memory as well and reads that
+first. The consequence stays honest by construction: after a reload nothing
+is stored, `loadBackupStatus` finds no target, and the app goes back to
+saying the book lives only in the browser rather than claiming an
+arrangement it no longer has.
+
+### Verification
+
+New suite, `scripts/e2e/backup.e2e.mjs`, registered in `test:e2e` (eleven
+suites now). It stubs the File System Access API the same way `export.e2e.mjs`
+already stubs `showSaveFilePicker` — the only honest way to test this
+headlessly — and checks the whole path:
+
+| Assertion | What it would catch |
+| --- | --- |
+| the app says where the book actually lives | the disclosure quietly disappearing |
+| choosing a file writes the book straight away | "backup on" and "a backup exists" drifting apart |
+| what it wrote is a zip, named for the book, over 500 bytes | a truncated or empty write |
+| leaving the tab backs up the new writing | the `visibilitychange` path silently detaching |
+| the newer backup is bigger than the first | a rewrite that doesn't include the new writing |
+| an unchanged book is not rewritten | rezipping a book of images on every tick |
+| deleting the project leaves no backup target behind | the Phase 149 leak, in a third database |
+| and never touches the file it had been writing | deletion reaching a file that isn't the app's |
+| a nearly-full device is flagged before anything fails | the warning arriving after the failure |
+
+The visibility-write assertion was proved by removing the listener and
+watching it fail (`2 write(s)` → `1 write(s)`, and the size comparison going
+flat at `1613 -> 1613`). The nearly-full path stubs
+`navigator.storage.estimate` at 95%, because filling a real browser profile
+inside a suite is neither quick nor kind to the machine running it.
+
+One harness correction worth recording: the post-deletion check originally
+compared write counts across a `page.goto`, which resets the in-page counter,
+so it could only ever fail. It now asserts that no write happens *during the
+deletion* — which is the actual claim.
+
+### What this does not do
+
+It is one file on one computer, written by one browser. It is not sync, not
+off-site, and not versioned — restoring means opening the project file, which
+loads as a new project. That is Phase G's territory and this deliberately
+doesn't pretend otherwise. What it removes is the case where there is nothing
+to restore *from*.
+
+## Phase 159 — does the PDF put the ink where the screen said it would?
+
+Export has been checked end to end since Phase 145: a valid `%PDF`, real
+embedded TrueType, subsetted fonts, and — since Phase 157 — a cover in the
+book. Every one of those is a fact about the *file*. None of them could tell
+you whether the page inside it looks like the page the author was editing,
+which is the only claim this product cannot afford to get wrong.
+
+It turned out it didn't.
+
+### What the measurement found
+
+There is no PDF rasteriser in this environment, and adding one to compare
+screenshots would have compared two text renderers' antialiasing as much as
+their layout. So the comparison is geometric instead, which is both exact and
+closer to the actual question: `scripts/e2e/pdfGeometry.mjs` parses the
+exported PDF's own content streams for every text-drawing position, and the
+suite compares those against the same lines' `getClientRects()` in the DOM.
+
+Laid side by side, the body of a page looked like this (px from the trim's top
+edge, PDF baseline vs DOM line-box top):
+
+```
+    4  |  298.2 |  299.6 |   -1.4 | "The library kept its own hou…"
+    5  |  321.1 |  326.0 |   -4.9 |
+   ...                       -4.9  (eleven more lines)
+   12  |  505.9 |  510.7 |   -4.8 |
+   13  |  537.6 |  551.1 |  -13.5 | "Miss Vale had worked there f…"   <- paragraph break
+   14  |  564.0 |  577.5 |  -13.5 |
+```
+
+A PDF baseline sits a fixed distance below a DOM line box's top; that constant
+is a convention, and subtracting it is fair. The constant **changing** is the
+defect. At every paragraph boundary it jumped by 8.7px, because the gap after
+a paragraph was `pb-3.5` (14px) on screen and `ctx.cursorY -= 4` (4pt, 5.3px)
+in print. Every block type was the same shape of mistake: heading 32/10px on
+screen against 20/6pt, list 16px against 10pt, image 20px against 10pt, quote
+24/24px against 8/10pt.
+
+This is not cosmetic. `HeightMeasurer` measures the *screen* layout and
+pagination assigns blocks to pages from those heights, so the exporter was
+laying the same blocks onto the same pages with systematically tighter
+spacing: the right words on the right page, the wrong rhythm, and a strip of
+unexplained white space at the foot of every full page. Over a twenty-
+paragraph chapter it compounds to about an inch and three quarters.
+
+### The fix
+
+`src/blocks/blockSpacing.ts` — one table, in CSS pixels, read by both
+renderers: the component as an inline style (rather than a Tailwind `pb-*`
+class, which an exporter cannot see) and `drawPdf` via `PX_TO_PT`. Converting
+the class to an inline style changes nothing computed, so measured heights and
+pagination are untouched; it just makes the pairing literal instead of a
+coincidence maintained by hand.
+
+Five block types are converted — paragraph, heading, list, image, quote —
+because those are the ones the new suite actually exercises. The other nine
+keep their hand-chosen numbers and are listed in `docs/ROADMAP.md`; a shared
+table claiming types nobody measured would be back to guessing.
+
+Body-line drift after the fix: **0.19px over 21 lines** on one page, **0.05px
+over 6** on another. Before it, 17.27px.
+
+### The suite
+
+`scripts/e2e/pdfFidelity.e2e.mjs`, registered in `test:e2e` (twelve suites
+now). It builds a book with three long paragraphs and a figure, exports a real
+PDF through the real UI, and checks:
+
+| Assertion | Measured how |
+| --- | --- |
+| a PDF page for every page on screen | mounted page elements vs `getPages()` |
+| the media box is trim plus bleed on all four sides | `MediaBox` vs the page element's size |
+| a drawn line for every line of body text | modal font size in the PDF, modal line-box height in the DOM |
+| the text column starts in the same place | min `Tm` x vs min DOM `left`, bleed included |
+| **every line lands in the same place, to within a pixel** | spread of the per-line offsets |
+| the image is the same size, at the same left edge | accumulated `cm` matrices vs the `<img>` rect |
+
+Three harness details worth keeping:
+
+- **Lazy mounting.** No single moment has the whole book in the DOM, so the
+  suite reads it from the top and from the bottom and merges by page id in
+  first-seen order.
+- **Compare like with like.** A page also carries a running head, a folio, a
+  chapter title and sometimes a drop cap, each with its own relationship
+  between a DOM box top and a PDF baseline. Mixing them in would measure that
+  convention rather than the layout, so both sides are filtered to body text —
+  the modal font size in the PDF, the modal line-box height in the DOM.
+- **pdf-lib does not emit one tidy matrix before `Do`.** An image placement is
+  the product of four separate `cm` operators; a regex reading the nearest one
+  finds `1 0 0 1 0 0` and concludes the image is a point at the origin. It
+  took two wrong readings — that, and a font-size regex that didn't allow the
+  hyphens in a subset font name (`/SourceSerif4-Medium-7572533686`), which
+  silently made every font size `0` and every "body line" comparison
+  meaningless — before the numbers meant anything. Both are the same lesson
+  this project keeps relearning: a measurement that returns a plausible number
+  is not the same as a measurement that is right.
+
+The drift assertion was proved by putting the old 4pt paragraph gap back:
+`drift 17.27px` and a failure, against `drift 0.19px` and a pass.
+
+### Found, not fixed
+
+The chapter opener composes differently in the two renderers — `exportPdf.ts`
+steps a baseline down in points, the screen lays out boxes with CSS padding —
+so on a chapter-start page the first block lands about 29px higher in print.
+It is constant rather than accumulating, and it is logged in the roadmap with
+the measurement rather than absorbed into a wider tolerance here: a tolerance
+loose enough to hide it would be loose enough to hide the next one.
+
+And what still isn't proven: that either rendering matches what a printer
+produces. That needs a real print-on-demand preflight, which is now its own
+roadmap item.
+
+## Phase 160 — three small ones, and a document that had gone false
+
+The three remaining Phase B items from the walkthroughs, all of them small,
+and one of them the reason a previous answer about this app's own state was
+wrong. Each premise was re-measured before anything was changed, because two
+of the three turned out not to be quite what the walkthrough reported.
+
+### 1. A phone can import a manuscript — it just said it couldn't
+
+Mobile's empty state read *"Start your first chapter to begin writing on the
+go, or import a manuscript on desktop"* while the More tab, three taps away,
+offered **Import a manuscript — EPUB, DOCX, Markdown, TXT or HTML**. Only one
+of the two could be true.
+
+Measured rather than argued: a `.docx` fixture pushed through the importer on
+a 390×844 touch context produced `["The Keeper of Hours", "A Second Door"]` —
+two real chapters, correctly split on Heading 1. The importer works; the copy
+was wrong. `mobileBlocks.e2e.mjs` now does that import as its opening act, so
+the capability is asserted rather than the sentence: if importing ever breaks
+on a phone, the suite says so, and the copy can follow.
+
+### 2. Coming back to Chapters now brings the canvas with you
+
+Edit a cover in the Structure tab, switch back to Chapters, and the canvas
+stayed parked on the cover — the tab that is supposed to be about chapters
+showing none of them.
+
+The walkthrough had called this "no route back to the text but scrolling",
+and that was overstated: clicking a chapter row has always scrolled the
+canvas, and the rows are right there. The real defect is smaller and still
+real, so the fix is correspondingly narrow. Switching to Chapters requests a
+scroll to the selected chapter **only when a structural page is currently
+selected** — that is, only when you were just working on front matter.
+Someone who ducks into Structure while reading page 40 and comes straight
+back is not yanked to the top of the chapter.
+
+### 3. `docs/VIRTUAL_EDITOR.md`'s taxonomy table had gone false
+
+The table claimed `typography`, `accessibility`, `print` and `commercial` had
+no checker at all and always rendered "Not yet analysed", and that
+"proofreading is real today; the rest of the taxonomy is designed". That
+stopped being true somewhere around Phases 25–40 and nobody came back to it.
+
+It is not a harmless staleness. Asked what the Virtual Editor was missing,
+this project answered by reading that file and got it wrong — a doc that
+drifts doesn't merely fail to help, it actively misinforms the next decision.
+(The same sentence was also shipping in the product until Phase 157 removed
+it from `VirtualEditorWorkspace`.)
+
+The middle column is now the real list, read out of
+`src/virtualEditor/checkers/`: **forty rules across twelve categories**, from
+`Double spaces` and `Unmatched brackets` through `Inner margin below KDP
+gutter minimum`, `Cover element text contrast`, `Chapter length outlier` and
+`Missing ISBN`. Two other passages elsewhere in the file repeated the same
+false claim and are corrected with it. A tile reads "Not yet analysed" today
+only when no checker in that category was *applicable* to the run —
+`publishingStandards` and `layout` need `ctx.pages`, so a review fired before
+the renderer has paginated leaves those two blank. That is the honest-by-
+construction behaviour `ScoreCard.tsx` exists for, and now the only case.
+
+### Verification
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| the empty state does not send a phone user to a desktop | `mobileBlocks` | the old sentence is still on screen |
+| a phone offers the manuscript importer | `mobileBlocks` | no `.docx`-accepting input |
+| a .docx imported on a phone becomes real chapters | `mobileBlocks` | 0 chapters |
+| switching back to Chapters shows the chapter | `structure` | still on `page-spage_…,page-flow-1` |
+
+The Chapters assertion needed tightening before it meant anything: as first
+written it checked that *some* `page-flow-` page was visible, and the TOC is a
+flow page that sits in the same spread as the cover — so it passed against
+the unfixed build. It now looks for `[data-chapter-start]` in the viewport.
+That is the seventh time in this project a new assertion has been wrong before
+the code was, and the seventh time the cause was a locator loose enough to
+find something else that happens to be correct.
+
+## Phase 161 — four things a third walkthrough found
+
+The first walkthrough (Phase 156) covered writing and the editor's furniture.
+The second (157) covered the first hour of a new book. This one deliberately
+went where neither had: a real `.docx` import, Project Settings, theme
+switching, search, notes, version history, backups, templates, focus and
+reading modes, export, and deletion. 23 desktop screenshots, 12 mobile, no
+runtime errors in either — and four defects, one of them the worst kind.
+
+### 1. The mobile import sheet never closed
+
+Importing a manuscript on a phone worked. The sheet you did it from stayed
+open afterwards, over its own modal overlay, with no confirmation of any
+kind. Everything behind it — the tab bar included — was untappable until you
+found the ✕. The walkthrough's next *seven* steps all timed out on that
+overlay, which is exactly what a user would read as the app having frozen.
+
+Root cause was a missing seam rather than a bug in either half:
+`ImportManuscriptButton` had no way to tell a caller it had finished, so the
+sheet could not know. Desktop mounts the same button inside the empty-state
+workspace, where there is no sheet to close and nothing to notice — which is
+why this survived every previous pass.
+
+It now takes an `onImported` callback, fired after the assets load and before
+the `finally`, so it can never announce a failure as a success.
+`MobileMoreView` closes the sheet and hands the shell back to **Write**,
+where the chapters that just arrived actually are.
+
+### 2. Distraction-free writing opened on the contents page
+
+You ask for a page to write on and get the table of contents, because the
+canvas simply stayed wherever it was. `FocusModeLayout` now requests a scroll
+to the selected chapter (or the first) once per entry — the same
+"land where the work is" rule as Phases 156 and 157, applied to the one
+surface whose entire purpose is to put you in front of your writing.
+
+### 3. A version saved without a name printed its time twice
+
+```
+9/6/2026, 9:26:49 AM   [Manual]
+9/6/2026, 9:26:49 AM
+```
+
+`versionStore.createSnapshot` defaulted the *label* to a formatted timestamp,
+and the row prints the timestamp underneath the label. Autosaves were worse:
+"Autosave — 9/6/2026…" above "9/6/2026…", with the `auto` badge beside it
+saying the same thing a third time. The store now stores an empty label when
+the user gave none, and the row decides what to show: the name if there is
+one, otherwise the time, once.
+
+### 4. One dialog, two shells, two wordings
+
+Desktop passed `formatLabel="the PDF"`, mobile passed `"PDF"`, so the same
+sentence read *"You can export the PDF anyway"* on one and *"You can export
+PDF anyway"* on the other. The dialog takes the `format` now and names it
+itself — the same fix as `blockSpacing.ts` in Phase 159 and
+`readProjectFileSource` in Phase 158: when two call sites can disagree, take
+the decision away from the call sites.
+
+### Verification
+
+Six assertions across three suites, each proved to fail against the old
+behaviour before being kept:
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| the import sheet closes once the manuscript is in | `mobileBlocks` | a dialog is still open |
+| and the phone lands on the chapters it just imported | `mobileBlocks` | still on the More list (`EXPORT`) |
+| the tab bar is usable immediately afterwards | `mobileBlocks` | tap times out on the overlay |
+| distraction-free writing opens on the chapter | `structure` | opener off screen |
+| an unnamed version shows its time once, not twice | `structure` | `2` timestamps in the row |
+| the readiness dialog names the format grammatically | `export` | "You can export PDF anyway" |
+
+Two corrections to the walkthrough that produced these, both worth recording
+because both were mine:
+
+- **PDF export looked broken and wasn't.** The desktop walk polled
+  `window.__saved.length > 0` for the export, but the backups step earlier in
+  the same walk had already written a `.bookstudio` through the same stub, so
+  the poll returned instantly and reported the wrong file. Isolated and
+  re-run with and without focus mode, export produces a 227 KB PDF every
+  time. A measurement that shares state with an earlier step is not a
+  measurement.
+- **A unit test guarded the behaviour being removed.** `smoke-test.ts`
+  asserted that an unlabelled autosave defaults to an `"Autosave — <time>"`
+  label — the very default that produced the duplicate. Updated to assert
+  the new contract (no label stored; the row decides), plus a second check
+  that an explicit label is still kept verbatim, since that is the half
+  worth protecting.
+- **The first proof run was invalid**, twice, in the same way as Phase 159's:
+  reverting a fix by deleting a call left an unused parameter, `tsc` failed,
+  `dist` kept the *fixed* build, and every assertion passed. A proof that
+  depends on a build has to check the build succeeded.
+
+## Phase 162 — the exporter stops guessing how tall a block is
+
+Stage 1 of the delivery plan, first two pieces: bring the nine unmeasured
+block types into the fidelity net, and stop the chapter opener drifting.
+Both turned into the same fix, and the fidelity suite found a third defect
+nobody was looking for.
+
+### Measured heights, not hand-chosen constants
+
+Phase 159 corrected the spacing of five block types by hand and left nine
+carrying numbers nobody had measured. Doing the same nine times would have
+been nine chances to get it wrong, and a fifteenth block type would arrive
+with the problem intact.
+
+So the measurement travels instead. `ExportableLayout` now carries
+`blockHeights` — `HeightMeasurer`'s output, the same numbers `paginate` used
+to decide what fits where — and `exportPdf`'s `drawBlock` settles each block
+at exactly that height:
+
+```ts
+if (measuredHeightPx && measuredHeightPx > 0) {
+  ctx.cursorY = Math.min(ctx.cursorY, topY - measuredHeightPx * PX_TO_PT)
+}
+```
+
+`Math.min` is the whole safety argument: the cursor can be pushed further
+down to reach the measured height, never pulled back up, so a block whose
+PDF drawing genuinely needs more room keeps it rather than having the next
+block drawn on top of it — and the suite reports the disagreement instead of
+absorbing it.
+
+Result on a book carrying every block type: **21.32px of drift per page
+became 0.09px**.
+
+### The chapter opener, laid out as boxes
+
+`exportPdf` composed the opener from hand-chosen baseline steps — an 11pt
+label and a 30pt title against the screen's 14px and 36px — and came out
+~29px shorter overall, enough to fit an extra line of body text onto every
+chapter's first page in print. `chapterOpenerMetrics.ts` now holds those
+numbers and all three renderers read them: `Page.tsx` draws it,
+`HeightMeasurer` measures a copy for pagination, `exportPdf` prints it. The
+comment in `HeightMeasurer` warning that its markup "must mirror Page.tsx's
+exactly or the two heights will silently drift apart" is now structurally
+true rather than a request.
+
+### And a pagination bug the suite found on its own
+
+With the block heights threaded through, one page still drifted — 5.8px,
+appearing exactly where a callout sat. The callout was not the problem; the
+*measurement* of it was. `HeightMeasurer` reads
+`getBoundingClientRect().height`, which **excludes margins**, and callout and
+case-study cards spaced themselves with `my-2`. So both were reported 16px
+shorter than they render, `paginate` reserved too little room for them, and
+the exporter — now faithfully honouring the measured height — reproduced the
+error precisely.
+
+That is a real bug in the layout engine, not in the PDF: a page with several
+callouts was always at risk of assigning more content than fits. Both cards
+now take their outer space as transparent padding on a wrapper, which is
+inside `getBoundingClientRect()`. Same appearance, measurable.
+
+### What the suite learned in the process
+
+Three harness corrections, each caught by a measurement that looked
+plausible and wasn't:
+
+- **Filtering by line-box height dropped drop-cap lines on one side only.** A
+  floated capital stretches its line's box to 68px, so the DOM list lost a
+  line the PDF list kept, and every comparison below it shifted by one —
+  reported as 161px of drift that did not exist.
+- **Filtering by font size instead brought that line back with a distorted
+  top**, because a float moves where the rect starts. Both filters are now
+  used together, and the drop-cap line is excluded on purpose and reported.
+- **Nearest-neighbour matching mispairs** when the constant baseline offset
+  is larger than half the leading. The suite now searches the small range of
+  index shifts and keeps the alignment whose offsets agree best — reporting
+  the shift, which is 1 on a chapter-opener page and 0 everywhere else.
+
+The suite also gained a second book: a seeded manuscript carrying callout,
+table, checklist, faq, statistics, timeline, pull-quote and case-study
+between paragraphs, written straight into `contentStore` rather than clicked
+in through the inserter — it is layout being measured, and nine menu
+journeys would be nine ways for the fixture to drift.
+
+Every page of both books now agrees to within half a pixel:
+
+| Book | Page | Drift |
+| --- | --- | --- |
+| plain | 4 | 0.19px over 21 lines |
+| every block | 3 (chapter opener) | 0.10px over 10 lines |
+| every block | 4 | 0.09px over 10 lines |
+| every block | 5 | 0.13px over 15 lines |
+| every block | 6 | 0.43px over 10 lines |
+
+### Still open
+
+`gallery` is the one block type the rich fixture doesn't carry — it needs
+real assets, which the seeded-manuscript approach can't provide. And the
+line-level text flow work (Stage 1's third piece) is untouched: paragraphs
+still move to the next page as whole blocks.
+
+## Phase 163 — the third piece of Stage 1, measured and not half-shipped
+
+Stage 1 of the delivery plan had three pieces. Phase 162 shipped the first
+two. The third is line-level text flow — letting a paragraph split across a
+page boundary instead of moving to the next page whole.
+
+It is not built, and this entry is the account of why, with the numbers that
+decision rests on.
+
+### What it would buy, measured
+
+`pdfFidelity.e2e.mjs` now reports, on every run, how much of each full page
+block-level flow leaves empty:
+
+```
+INFO — plain:       block-level flow leaves 19% of a full page unused
+INFO — every block: block-level flow leaves 9%, 29%, 6%, 7% (mean 13%)
+```
+
+Six to twenty-nine per cent of a page, mean 13–19%. On a 300-page novel that
+is around 40 pages of paper. This was worth measuring rather than asserting:
+the previous note in "Known simplifications" said only that line-level flow
+"would be the natural next step if tighter page-fill is wanted", which is
+true and tells nobody whether to do it.
+
+Getting that number honestly took three corrections of its own — the first
+measurement came out at **-4%**, because the last "line" on a page is the
+folio, which sits in the bottom margin below the content box, and because
+the flow container is deliberately larger than the text column (Phase 89's
+overlay buffer) so its padding had to come off too.
+
+### What it would cost
+
+`docs/LINE_LEVEL_FLOW_PLAN.md` has the full design. The short version is
+four problems, of which two are ordinary work (per-line measurement; a slice
+model in `paginate` and `drawWrappedLines`) and two are not:
+
+- **The canvas is the editor, not a preview.** A sliced paragraph has to
+  render across two pages and stay one editable field. `contenteditable`
+  fights a clip window, `data-block-id` would appear twice (breaking
+  scroll-to-block, the block toolbar, note anchors and the fidelity suite),
+  live spellcheck rewrites innerHTML and maps caret offsets through it, and
+  every keystroke changes where the split falls — which repaginates, which
+  remounts the spread, which is precisely the Phase 139 caret-loss sequence,
+  now firing on every character typed near a page break.
+- **Two independent wrappers would have to agree line for line.** The screen
+  wraps with the browser, the PDF with `textWrap.ts`. They currently agree —
+  Phases 159–162 proved it to within half a pixel — but today a
+  disagreement costs *spacing*. After a split it costs *content*: a line
+  dropped or printed twice at a page boundary.
+
+That asymmetry is the whole argument. Block-level flow fails gracefully; the
+worst case is white space. Line-level flow fails loudly, in a printed book,
+on the page nobody proofreads because it looked right on screen.
+
+### The decision
+
+Not started. The plan proposes four milestones and recommends beginning with
+per-line measurement plus a per-block wrapping assertion — which is worth
+building whether or not the rest ever follows, because it turns "the two
+wrappers agree" from an observation about whole pages into an enforced
+invariant.
+
+Shipping a partial version of the other three would have looked like
+progress and put a content error in someone's printed book. `CLAUDE.md` asks
+for working milestones; this is what that rule looks like when the honest
+answer is "not yet".
+
+## Phase 164 — the Book Graph draws under `npm run dev` again
+
+Open since Phase 108 (2026-08-02) and recorded in `docs/ROADMAP.md` as "a
+Vite dev module-worker quirk". It was not Vite's. It was ours, and the
+roadmap entry had been steering every future reader away from the cause.
+
+### What was actually wrong
+
+`BookGraphView` held its layout Web Worker in
+`useState(() => new LayoutWorker())` and terminated it from an effect
+cleanup. `main.tsx` wraps the app in React's `StrictMode`, which in
+development simulates an unmount: it runs every effect, then every cleanup,
+then every effect again. So the cleanup terminated the worker — and
+`useState` never re-runs its initialiser, so nothing ever built another one.
+Every layout request after that went into a dead port. Production builds
+don't double-invoke, which is why the same code was fine in `dist` and the
+symptom looked environmental.
+
+Instrumenting `Worker.prototype` in the running dev app printed the order in
+four lines:
+
+```
+construct …/graphLayout.worker.ts
+construct …/graphLayout.worker.ts
+out ["requestId","nodes","edges","pinned"]
+terminate
+out ["requestId","nodes","edges","pinned"]
+```
+
+Post, terminate, post. No `error` event, no `messageerror`, no response —
+which is exactly the "posts a request but nothing comes back" the roadmap
+described.
+
+### The fix
+
+The worker moved into a ref, created lazily:
+
+```ts
+const workerRef = useRef<Worker | null>(null)
+const acquireLayoutWorker = () => (workerRef.current ??= new LayoutWorker())
+useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null }, [])
+```
+
+Nulling the ref on cleanup is the whole difference: the next request builds
+a fresh worker. That is also what a real unmount/remount of the view has
+always needed, so this is a correctness fix and not a StrictMode
+workaround. The layout effect now takes the worker from
+`acquireLayoutWorker()`, registers its listener *before* posting, and no
+longer carries the worker in its dependency array.
+
+### The guard — the first suite that runs the dev server
+
+`scripts/e2e/graph.e2e.mjs` boots `vite` itself rather than serving `dist`,
+because serving `dist` passes against the broken code. It is the only check
+in the repo that exercises the StrictMode double-mount at all, which is a
+whole class of bug — anything a cleanup destroys permanently — that a
+production build structurally cannot show.
+
+Four assertions: nodes are drawn at all, they carry distinct positions (so
+the worker's `positions` map really came back rather than everything
+stacking at the origin), toggling a kind filter re-runs the layout on a
+still-live worker, and no runtime errors. Proved against the old code
+first — 3 of the 4 fail, and only the "no runtime errors" one passes, which
+is the point: the failure was always silent.
+
+`BookGraphView`'s node `<g>` gained `data-graph-node={node.id}` as the
+suite's hook, since every other part of that view renders whether or not the
+layout answered.
+
+## Phase 165 — the Book Graph can add a chapter
+
+Open since Phase 135, where the "Add" button shipped able to create all
+eight Layer 0 kinds and an Idea, and deliberately not a chapter. The roadmap
+recorded it as needing "a decision, not a patch". This is the decision.
+
+### The decision
+
+Open it — the boundary being defended was the wrong one.
+
+Phase 135 reasoned that the Book Graph is a Layer 0 view and a chapter is
+Layer 2 (Content) data, so creating one would be a layer mutating another
+layer's data. That conflates two boundaries. The one the architecture draws
+is between *stores*: `docs/SYSTEM_ARCHITECTURE.md` says stores are "never
+cross-imported for mutation", and `types/layer0.ts` says "no Layer 2 code
+may import this file". Both are untouched here — `layer0Store` still never
+sees `contentStore`, and nothing in Layer 2 has learned Layer 0 exists.
+
+What a *view* may call was never that rule, and could not have been:
+`Sidebar`, `MobileWriteView` and `MobileFocusWriteView` all call
+`addChapterWithHistory` from `editorActions`, the single audited write path
+that exists precisely so views don't reach into stores. The graph now calls
+the same function the sidebar does.
+
+The cost of the old reading was concrete: the one screen built for deciding
+a book's shape could show you the spine, show you the gap in it, and then
+make you leave for Write mode to fill it. The graph already renders
+chapters, orders them and links them to Layer 0 entities. Adding one is a
+smaller reach than any of that.
+
+### What shipped
+
+- `AddableNodeKind` gained `'chapter'`, first in the picker — it is the
+  book's spine, and the only kind there that is part of the manuscript
+  rather than notes about it.
+- `create()` routes chapters to `addChapterWithHistory(projectId,
+  lastChapterId, title)` and takes the id *it* returns, since that function
+  mints its own and seeds the chapter's first empty paragraph.
+- A new chapter is **not** pinned. Every other kind is placed where the view
+  was centred and pinned there; a chapter's position comes from the
+  chapter-order edges, so pinning one would kink the spine visibly.
+  `handleNodeCreated` now takes the kind and skips placement for chapters;
+  the placement logic moved to `placeNewNode`.
+- The dialog's copy changed from "Chapters are added in Write mode, where
+  the manuscript lives" to "A chapter joins the book itself; everything else
+  is planning around it."
+
+Verified in the running dev app: adding "The Long Road Home" from the canvas
+put it in the manuscript as chapter 2, drew it on the spine with the
+chapter-order arrow, selected it, and offered "Open in editor" in the side
+panel. Four assertions in `scripts/e2e/graph.e2e.mjs` cover it, proved
+against the old build first (where the suite times out looking for a
+Chapter button that isn't there — that suite now turns a thrown locator
+error into an ordinary failure line rather than an unhandled rejection).
+
+## Phase 166 — the Book Graph minimap, on the terms Phase 102 set
+
+Deferred in Phase 102 with a condition attached: build it "if a genuinely
+huge project ever makes 'reset view' an unsatisfying answer". That
+reasoning was sound and is still sound — the canvas's `viewBox` auto-fits
+every node, so at 100% zoom the whole graph is on screen and an overview of
+it would be an overview of what you are already looking at.
+
+What the condition missed is that the same phase shipped zoom controls.
+Past 100% the canvas *is* a window onto something larger than itself,
+regardless of how big the project is, and the only ways back were to zoom
+out (losing the detail you zoomed in for) or to drag blindly. So the
+minimap is mounted only above 100% zoom. At or below it, nothing new
+appears on the canvas and "Reset view" remains the answer. The deferral's
+condition is honoured rather than overruled.
+
+### What shipped
+
+- `src/layout/planning/graphMinimapGeometry.ts` — the two mappings between a
+  node's graph coordinates and the pixel it lands on (the `viewBox`'s
+  `xMidYMid meet` fit, then the CSS `translate/scale`), forwards to draw the
+  viewport rectangle and backwards to turn a click into a pan, plus
+  `clampCentreToBounds`. Pure, so it is unit-tested: twelve assertions in
+  `scripts/smoke-test.ts`, including the round trip that the whole
+  interaction rests on — centre on a point, read back the view's centre,
+  get the same point.
+- `src/layout/planning/GraphMinimap.tsx` — a 148×104 overview in the
+  canvas's bottom-right corner: every visible node as a dot (the book hub
+  and the selection in the accent colour), the current viewport as a
+  rectangle, click or drag anywhere to centre the canvas there.
+
+Two details worth keeping:
+
+**The rectangle is computed, not measured.** `getScreenCTM()` would have
+been less arithmetic, but a ref read during render is a frame stale, and a
+viewport rectangle that lags the canvas by a frame is exactly the jitter
+that makes a minimap feel broken while you drag.
+
+**Panning is clamped to the graph.** Without it, clicking a corner of the
+minimap is a legal move that shows you empty space beside the graph —
+technically correct and useless, which is the failure a minimap exists to
+prevent. An axis where the viewport is already wider than the graph has
+nothing to slide along, so it centres instead.
+
+Dot radii are given in graph units against a 148px box, so they are derived
+from the pixel size actually wanted rather than fixed — otherwise a large
+graph draws smudges and a small one draws blobs.
+
+`BookGraphView`'s doc comment moved the minimap out of its "deliberately not
+built" list, which now holds only inline editing.
+
+Six assertions in `scripts/e2e/graph.e2e.mjs`: absent at 100%, present once
+zoomed, clicking it pans the canvas, a corner click still leaves part of the
+graph on screen (the clamp), and resetting the view puts it away again.
+
+## Phase 167 — verse is its own block type
+
+Open since Phase 153. The roadmap said EPUB import turned verse into "one
+paragraph each, which keeps the line structure but loses the semantic
+distinction (the Content layer has no verse block)". That understated it:
+the line breaks survived *by accident*, one block per line, and nothing in
+the app knew they were the poet's. Justified prose spacing, prose block
+gaps, and — with line-level flow now designed — a future re-wrapper that
+would treat each line as a paragraph free to be re-flowed.
+
+### `VerseBlock`
+
+```ts
+export interface VerseBlock {
+  id: string
+  type: 'verse'
+  lines: string[]
+}
+```
+
+Plain-text lines, matching `ListBlock.items`. An **empty entry is a stanza
+break**, which is how the form already writes itself down. No `attribution`
+field, deliberately: `QuoteBlock` and `PullQuoteBlock` both have one and
+either is the right block for an attributed excerpt, while verse inside a
+chapter is the author's own — a field that is almost always empty is a
+field that gets filled in wrongly.
+
+### Recognising verse
+
+`verseLinesFrom` in `parser/html.ts` is shared by both importers, because
+poetry has no single markup in the wild. It handles the four shapes real
+books ship:
+
+- `epub:type="z3998:verse"` / `z3998:poem` — the EPUB structural semantic.
+- `class="poem" | "verse" | "stanza" | "linegroup" | "lg"` — publisher
+  convention, including the TEI-inherited `lg`.
+- `<pre>` — the plain-HTML author saying "these breaks matter".
+- Nested line groups, where each inner group is a stanza and becomes an
+  empty entry between them.
+
+It is deliberately conservative: an element with no verse marker is never
+guessed at, because promoting prose to verse would strip its justification
+and indent it for no reason the author asked for.
+
+Two ordering details matter. In `parseHtmlDocument` the verse check runs
+*before* the tag switch, because `<blockquote class="poem">` is the single
+commonest shape in real books and reading it as a quote loses every line
+break at once. In `parser/epub.ts`'s flattener it runs before the block-tag
+test, for the same reason in reverse: a poem's container is usually a plain
+`<div>`, which the flattener walked straight past.
+
+### Setting it
+
+`blocks/types/verse.tsx` exists to keep the author's line breaks: never
+justified, a 28px block indent so a reader can see at a glance that these
+are not prose, and a 20px hanging indent so a run-over line reads as a
+continuation rather than as a new line of the poem. That last one is the
+single most important thing to get right about setting verse — a wrapped
+line that looks like a fresh line changes the poem.
+
+Editing works per line, with Enter splitting and Backspace-at-start
+merging, entirely inside the block: the whole edit is one `onCommit` of a
+new `lines` array, so unlike list items it needs nothing from
+`editorActions`.
+
+### Two things the fidelity suite caught
+
+Verse went into the "every block" fixture with a stanza break and a
+deliberately over-long line, and page 7 came back **7.88px adrift**.
+
+1. The stanza break was `0.75em` on screen and `0.75 × lineHeight` in print.
+   `em` is the font size, not the line box, so the two differed by the line
+   height — 7.2px at 16px type, which is almost exactly the drift measured.
+2. The hanging indent meant the first line of a wrapped verse line has 20px
+   more room than the ones under it. The exporter had no way to say that, so
+   it wrapped everything at the narrower width and a line that fits on
+   screen could gain a line in print — a poem with an extra line in it.
+   `wrapRuns` gained `firstLineWidth` for this.
+
+After both: **0.08px**.
+
+### Everywhere else it had to be registered
+
+Registry, `BLOCK_SPACING` (18/18, set from one table on both sides from the
+first day rather than joining the nine types that still carry hand-chosen
+numbers), the block inserter (`defaultContent.ts`, including
+`TEXT_FIRST_BLOCK_TYPES` so a new one takes the caret), the Inspector's Type
+tab, the mobile block summary, spellcheck spans (one per line, so a fix
+lands on the line it belongs to), and EPUB/HTML export.
+
+The EPUB export writes `epub:type="z3998:verse"`, which its own importer
+reads back — asserted as a round trip, because an export that drifted into
+markup our importer flattens would turn someone's poems into prose the next
+time they opened their own book. `blockToXhtml` gained an
+`epubSemantics` option so the standalone HTML book doesn't carry a
+namespaced attribute no reader is looking for.

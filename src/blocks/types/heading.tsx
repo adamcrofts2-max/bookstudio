@@ -10,9 +10,10 @@ import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 function HeadingRender(props: BlockRenderProps) {
-  const { block, theme, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled } = props
+  const { block, theme, selected, onSelect, editable, onCommit, onSplit, autoEdit, onAutoEditHandled } = props
 
   const primary = useEditableField({
     mode: 'text',
@@ -20,6 +21,9 @@ function HeadingRender(props: BlockRenderProps) {
     onCommit: (value) => {
       if (block.type === 'heading') onCommit?.({ text: value })
     },
+    // Enter at the end of a heading starts the paragraph beneath it rather
+    // than dropping the caret — see `splitHeadingIntoParagraphWithHistory`.
+    onSplit: onSplit && block.type === 'heading' ? onSplit : undefined,
   })
 
   useEffect(() => {
@@ -47,9 +51,12 @@ function HeadingRender(props: BlockRenderProps) {
       className={cn(
         'outline-offset-4 transition-[outline-color] duration-150',
         outlineClass(!!selected, primary.isEditing),
-        'cursor-pointer pt-8 pb-2.5',
+        'cursor-pointer',
       )}
       style={{
+        // Paired with `drawHeadingPdf` below — `blocks/blockSpacing.ts`.
+        paddingTop: BLOCK_SPACING.heading.before,
+        paddingBottom: BLOCK_SPACING.heading.after,
         fontFamily: theme.fonts.heading,
         fontWeight: theme.typography.headingWeight,
         fontSize: block.level === 2 ? '1.5em' : '1.2em',
@@ -66,12 +73,12 @@ function drawHeadingPdf(ctx: DrawCtx, block: ContentBlock) {
   if (block.type !== 'heading') return
   const { theme } = ctx
   const ink = hexToPdfColor(theme.page.ink, ctx.colorMode)
-  ctx.cursorY -= 20
+  ctx.cursorY -= BLOCK_SPACING.heading.before * PX_TO_PT
   const sizePt = (block.level === 2 ? theme.typography.bodySize * 1.5 : theme.typography.bodySize * 1.2) * PX_TO_PT
   const font = pickFont(ctx.fonts, theme.fonts.heading, theme.typography.headingWeight)
   const lines = wrapRuns([{ text: block.text, bold: false }], font, font, sizePt, ctx.contentWidthPt)
   drawWrappedLines(ctx, lines, sizePt, sizePt * 1.25, ink, font, font)
-  ctx.cursorY -= 6
+  ctx.cursorY -= BLOCK_SPACING.heading.after * PX_TO_PT
 }
 
 export const headingBlockType: BlockTypeDefinition = {

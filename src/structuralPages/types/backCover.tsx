@@ -124,7 +124,7 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         />
       )}
       <StructuralImageDropZone
-        hasImage={!!imageUrl}
+        // audit-copy-ok: StructuralImageDropZone hides this label on touch
         label="Drop a back-cover image here"
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />

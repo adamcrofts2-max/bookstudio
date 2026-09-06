@@ -1,9 +1,11 @@
-import { Plus, ImagePlus, Sparkles } from 'lucide-react'
+import { Plus, ImagePlus, Images, Sparkles } from 'lucide-react'
 
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { INSERTABLE_BLOCK_TYPES, type InsertableBlockType } from '@/blocks/defaultContent'
-import { useImageUpload } from '@/hooks/useImageUpload'
+import { useRef } from 'react'
+import { useImageUpload, useImagesUpload } from '@/hooks/useImageUpload'
+import { UploadError } from '@/components/common/UploadError'
 
 interface InsertBlockButtonProps {
   projectId: string
@@ -14,6 +16,11 @@ interface InsertBlockButtonProps {
    * block even exists, unlike every other type's blank starting point).
    * Phase 51. */
   onInsertImage: (assetId: string) => void
+  /** Inserts a `GalleryBlock` from a multi-photo pick. Same reason as
+   * `onInsertImage` for being its own callback, plus one of its own: until
+   * this existed, `gallery` was a block type the app could render, export
+   * and inspect but that no code path anywhere could ever create. */
+  onInsertGallery: (assetIds: string[]) => void
   /** Opens `AiDraftInsertDialog.tsx` scoped to this exact gap — a separate
    * callback rather than a new `InsertableBlockType`, since a pasted AI
    * draft can expand into several blocks at once, not one blank block of a
@@ -44,19 +51,47 @@ interface InsertBlockButtonProps {
  * which already documented this exact future UI as its reason for existing.
  * See docs/ROADMAP.md Phase B.
  *
- * "Image" sits above the rest, separated, and opens a file picker
- * (`useImageUpload`, Phase 51) rather than inserting a blank block — the
- * same click-to-upload flow the Cover designer and placeholder-to-real-
- * image conversion also use.
+ * "Image" and "Photo gallery" sit above the rest, separated, and open a
+ * file picker (`useImageUpload`/`useImagesUpload`) rather than inserting a
+ * blank block — the same click-to-upload flow the Cover designer and
+ * placeholder-to-real-image conversion also use. Neither is an
+ * `InsertableBlockType`: both need real asset ids before a valid block
+ * exists at all.
  */
-export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
-  const { openPicker, inputProps } = useImageUpload(projectId, onInsertImage)
+export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsertGallery, onInsertAiDraft, emptyChapter }: InsertBlockButtonProps) {
+  const { openPicker, error: uploadError, inputProps } = useImageUpload(projectId, onInsertImage)
+  const { openPicker: openGalleryPicker, error: galleryError, inputProps: galleryInputProps } = useImagesUpload(projectId, onInsertGallery)
+
+  /**
+   * The chosen type, inserted once the menu has finished closing.
+   *
+   * Inserting inside `onClick` put the caret in the new block and Radix then
+   * took it back while tearing down the menu's focus scope — so a paragraph
+   * inserted mid-document was created, focused for a moment, and abandoned,
+   * and everything typed next went to the document body. Deferring to
+   * `onCloseAutoFocus` removes the race instead of competing with it. Same
+   * fix as the mobile "+" menu.
+   */
+  const pendingInsertRef = useRef<InsertableBlockType | null>(null)
 
   const menu = (
-    <DropdownMenuContent align="center">
+    <DropdownMenuContent
+      align="center"
+      onCloseAutoFocus={(e) => {
+        const type = pendingInsertRef.current
+        pendingInsertRef.current = null
+        if (!type) return
+        e.preventDefault()
+        onInsert(type)
+      }}
+    >
       <DropdownMenuItem onClick={openPicker} className="gap-2">
         <ImagePlus className="size-3.5" />
         Image
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={openGalleryPicker} className="gap-2">
+        <Images className="size-3.5" />
+        Photo gallery
       </DropdownMenuItem>
       <DropdownMenuItem onClick={onInsertAiDraft} className="gap-2">
         <Sparkles className="size-3.5" />
@@ -68,7 +103,13 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
         if (!def) return null
         const Icon = def.icon
         return (
-          <DropdownMenuItem key={type} onClick={() => onInsert(type)} className="gap-2">
+          <DropdownMenuItem
+            key={type}
+            onClick={() => {
+              pendingInsertRef.current = type
+            }}
+            className="gap-2"
+          >
             {Icon && <Icon className="size-3.5" />}
             {def.label ?? type}
           </DropdownMenuItem>
@@ -93,6 +134,8 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
           {menu}
         </DropdownMenu>
         <input {...inputProps} />
+        <input {...galleryInputProps} />
+        <UploadError message={uploadError ?? galleryError} />
       </div>
     )
   }
@@ -127,6 +170,8 @@ export function InsertBlockButton({ projectId, onInsert, onInsertImage, onInsert
         {menu}
       </DropdownMenu>
       <input {...inputProps} />
+      <input {...galleryInputProps} />
+      <UploadError message={uploadError ?? galleryError} />
     </div>
   )
 }

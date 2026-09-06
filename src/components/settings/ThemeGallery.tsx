@@ -48,7 +48,7 @@ function ThemePreviewCard({
       )}
     >
       {(onEdit || onDelete) && (
-        <div className="absolute right-1.5 top-1.5 z-10 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <div className="absolute right-1.5 top-1.5 z-10 flex gap-1 transition-opacity can-hover:opacity-0 can-hover:group-hover:opacity-100">
           {onEdit && (
             <button
               type="button"

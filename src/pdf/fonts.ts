@@ -36,7 +36,53 @@ export interface ThemeFontSet {
   custom: Record<CustomCoverFontId, FontWeightSet>
 }
 
+/**
+ * Embeds one font file.
+ *
+ * **The URL must point at a `.ttf`/`.otf`, never a `.woff2`.** The two
+ * interior families used to be loaded from the same `.woff2` files the
+ * stylesheet uses, and `embedFont` accepted them without complaint — it
+ * wrote the WOFF2 bytes straight into the PDF as the font program. A PDF
+ * `FontFile2` must be a TrueType font program; WOFF2 is a web transport
+ * container that no PDF reader can parse. So every book this app has ever
+ * exported declared `/BaseFont /Inter-Regular` and then handed the reader
+ * something it could not open, and readers silently substitute a lookalike
+ * rather than complain. The result was a WYSIWYG break in the app's flagship
+ * output that produced no error anywhere: on screen the real Inter, in the
+ * PDF whatever the reader felt like.
+ *
+ * Found 2026-09-05 by inspecting the bytes of a real exported PDF while
+ * measuring its size — never by an error, because there was never an error.
+ * `public/fonts/*.ttf` are the decompressed twins of the `.woff2` files
+ * beside them, produced with fontTools; the stylesheet still uses the woff2
+ * for on-screen text, where small transfers matter and the browser
+ * understands the container.
+ */
+/**
+ * One embed per file per document.
+ *
+ * Several families deliberately point two weights at the same file — Source
+ * Serif 4 ships no 700, so `bold` reuses the 600 — and without this each one
+ * embedded the same bytes again under a second name. A `WeakMap` keyed on
+ * the document so nothing leaks between exports, and so two exports never
+ * share a `PDFFont` that belongs to a different `PDFDocument`.
+ */
+const embedCache = new WeakMap<PDFDocument, Map<string, Promise<PDFFont>>>()
+
 async function embed(doc: PDFDocument, url: string): Promise<PDFFont> {
+  let perDoc = embedCache.get(doc)
+  if (!perDoc) {
+    perDoc = new Map()
+    embedCache.set(doc, perDoc)
+  }
+  const cached = perDoc.get(url)
+  if (cached) return cached
+  const pending = embedUncached(doc, url)
+  perDoc.set(url, pending)
+  return pending
+}
+
+async function embedUncached(doc: PDFDocument, url: string): Promise<PDFFont> {
   const bytes = await fetch(url).then((r) => r.arrayBuffer())
   // Investigated real subsetting here (Phase 109, 2026-08-02) — see
   // docs/STATUS.md's Phase 109 entry for the full story. Short version:
@@ -52,6 +98,34 @@ async function embed(doc: PDFDocument, url: string): Promise<PDFFont> {
   // file, so `subset: true` is deliberately NOT enabled — do not flip this
   // on without a fixed fontkit release or a different subsetting approach.
   return doc.embedFont(bytes)
+}
+
+/**
+ * Embeds a font, falling back to a standard PDF face if that font cannot be
+ * embedded at all.
+ *
+ * Every cover font in `loadThemeFonts` is embedded on every export, whether
+ * the book uses it or not, so without this a single unembeddable file takes
+ * down PDF export for every user and every book — which is exactly what
+ * happened: `@pdf-lib/fontkit` throws `RangeError: Trying to access beyond
+ * buffer length` while writing Bebas Neue's glyph data, and since that
+ * rejection propagated out of `loadThemeFonts`, `exportBookToPdf` threw
+ * before producing a single page. The font file itself is structurally
+ * sound (its `loca` table matches `head.indexToLocFormat` and `maxp
+ * .numGlyphs`, and no glyph offset runs past `glyf`), so this is a fontkit
+ * defect on this particular font rather than a corrupt download.
+ *
+ * Failing soft is the right trade here: a cover set in a fallback face is a
+ * visible, fixable cosmetic problem, while a hard failure loses the whole
+ * export. The failure is logged rather than swallowed silently.
+ */
+async function embedOrFallback(doc: PDFDocument, url: string, fallback: 'sans' | 'serif'): Promise<PDFFont> {
+  try {
+    return await embed(doc, url)
+  } catch (error) {
+    console.error(`Font failed to embed, falling back to a standard face: ${url}`, error)
+    return doc.embedFont(fallback === 'serif' ? StandardFonts.TimesRoman : StandardFonts.Helvetica)
+  }
 }
 
 /**
@@ -85,93 +159,167 @@ async function loadFamily(
   },
   italicFallback: 'sans' | 'serif',
 ): Promise<FontWeightSet> {
-  const regular = await embed(doc, files.regular)
-  const medium = files.medium ? await embed(doc, files.medium) : regular
-  const semiBold = files.semiBold ? await embed(doc, files.semiBold) : medium
-  const bold = files.bold ? await embed(doc, files.bold) : semiBold
+  const regular = await embedOrFallback(doc, files.regular, italicFallback)
+  const medium = files.medium ? await embedOrFallback(doc, files.medium, italicFallback) : regular
+  const semiBold = files.semiBold ? await embedOrFallback(doc, files.semiBold, italicFallback) : medium
+  const bold = files.bold ? await embedOrFallback(doc, files.bold, italicFallback) : semiBold
   const italic = files.italic
-    ? await embed(doc, files.italic)
+    ? await embedOrFallback(doc, files.italic, italicFallback)
     : await doc.embedFont(italicFallback === 'serif' ? StandardFonts.TimesRomanItalic : StandardFonts.HelveticaOblique)
   const boldItalic = files.boldItalic
-    ? await embed(doc, files.boldItalic)
+    ? await embedOrFallback(doc, files.boldItalic, italicFallback)
     : files.italic
       ? italic
       : await doc.embedFont(italicFallback === 'serif' ? StandardFonts.TimesRomanBoldItalic : StandardFonts.HelveticaBoldOblique)
   return { regular, medium, semiBold, bold, italic, boldItalic }
 }
 
-/** Loads and embeds every font this app can draw text with — the two
- * interior families (Inter, Source Serif 4) plus the seven Phase 50
- * cover-only families in `public/fonts/custom/`. All are self-hosted
- * static files, no network fetch. */
-export async function loadThemeFonts(doc: PDFDocument): Promise<ThemeFontSet> {
-  const [inter, serif, anton, bebasNeue, oswald, playfairDisplay, dmSerifDisplay, abrilFatface, fraunces] = await Promise.all([
+/**
+ * A family built entirely from the standard-14 faces every PDF reader
+ * already has — zero embedded bytes. Used for the cover families a
+ * particular book does not reference, which is almost all of them for
+ * almost every book.
+ */
+async function standardFamily(doc: PDFDocument, kind: 'sans' | 'serif'): Promise<FontWeightSet> {
+  const [regular, bold, italic, boldItalic] = await Promise.all(
+    kind === 'serif'
+      ? [
+          doc.embedFont(StandardFonts.TimesRoman),
+          doc.embedFont(StandardFonts.TimesRomanBold),
+          doc.embedFont(StandardFonts.TimesRomanItalic),
+          doc.embedFont(StandardFonts.TimesRomanBoldItalic),
+        ]
+      : [
+          doc.embedFont(StandardFonts.Helvetica),
+          doc.embedFont(StandardFonts.HelveticaBold),
+          doc.embedFont(StandardFonts.HelveticaOblique),
+          doc.embedFont(StandardFonts.HelveticaBoldOblique),
+        ],
+  )
+  return { regular, medium: regular, semiBold: bold, bold, italic, boldItalic }
+}
+
+/**
+ * Which of the cover-only families a set of CSS font-family strings needs,
+ * using the exact same matchers `resolveFamily` draws with — so "what gets
+ * embedded" and "what gets asked for" can never drift apart.
+ */
+export function neededCoverFonts(cssFamilies: Iterable<string>): Set<CustomCoverFontId> {
+  const needed = new Set<CustomCoverFontId>()
+  for (const family of cssFamilies) {
+    for (const [pattern, id] of CUSTOM_FAMILY_MATCHERS) {
+      if (pattern.test(family)) needed.add(id)
+    }
+  }
+  return needed
+}
+
+/**
+ * Embeds the fonts this particular book draws with.
+ *
+ * It used to embed every font the app can draw with — eight families,
+ * nineteen files — on every export, used or not. Measured on a
+ * one-paragraph book: 19 embedded fonts, 1.11 MB, **80% of a 1.39 MB PDF**,
+ * for a document that uses two typefaces. Every book carried the other six
+ * display families as dead weight, in a file people email to printers.
+ *
+ * `docs/ROADMAP.md` had this filed as "real font subsetting", blocked on
+ * `@pdf-lib/fontkit`'s subsetting encoder being genuinely unreliable (see
+ * `embed`'s comment below, and Phase 109). That diagnosis was correct and
+ * still stands — but subsetting was never the biggest lever here. Not
+ * embedding a font at all beats embedding a smaller version of one nobody
+ * asked for.
+ *
+ * `usedFamilies` is the set of CSS font-family strings this document will
+ * actually draw with — the theme's own heading/body, plus every cover
+ * `fontChoice` stored on the project's structural pages. Anything not in it
+ * resolves to a standard-14 face, which costs no bytes. The two interior
+ * families are always embedded: every book has body text.
+ */
+export async function loadThemeFonts(doc: PDFDocument, usedFamilies?: Iterable<string>): Promise<ThemeFontSet> {
+  // `undefined` embeds everything, exactly as before — the safe default for
+  // any caller that cannot enumerate what it will draw with.
+  const needed = usedFamilies ? neededCoverFonts(usedFamilies) : null
+  const wants = (id: CustomCoverFontId) => needed === null || needed.has(id)
+
+  const [inter, serif, anton, oswald, playfairDisplay, dmSerifDisplay, abrilFatface, fraunces] = await Promise.all([
     loadFamily(
       doc,
       {
-        regular: '/fonts/inter-400.woff2',
-        medium: '/fonts/inter-500.woff2',
-        semiBold: '/fonts/inter-600.woff2',
-        bold: '/fonts/inter-700.woff2',
+        regular: '/fonts/inter-400.ttf',
+        medium: '/fonts/inter-500.ttf',
+        semiBold: '/fonts/inter-600.ttf',
+        bold: '/fonts/inter-700.ttf',
       },
       'sans',
     ),
     loadFamily(
       doc,
       {
-        regular: '/fonts/source-serif-4-400.woff2',
-        medium: '/fonts/source-serif-4-500.woff2',
-        semiBold: '/fonts/source-serif-4-600.woff2',
+        regular: '/fonts/source-serif-4-400.ttf',
+        medium: '/fonts/source-serif-4-500.ttf',
+        semiBold: '/fonts/source-serif-4-600.ttf',
         // Source Serif 4 only ships 400/500/600 here — 700 requests fall
         // back to 600 via `semiBold`, same as before Phase 50.
-        bold: '/fonts/source-serif-4-600.woff2',
+        bold: '/fonts/source-serif-4-600.ttf',
       },
       'serif',
     ),
-    loadFamily(doc, { regular: '/fonts/custom/Anton/Anton-Regular.ttf' }, 'sans'),
-    loadFamily(doc, { regular: '/fonts/custom/Bebas_Neue/BebasNeue-Regular.ttf' }, 'sans'),
-    loadFamily(
-      doc,
-      {
-        regular: '/fonts/custom/Oswald/static/Oswald-Regular.ttf',
-        medium: '/fonts/custom/Oswald/static/Oswald-Medium.ttf',
-        semiBold: '/fonts/custom/Oswald/static/Oswald-SemiBold.ttf',
-        bold: '/fonts/custom/Oswald/static/Oswald-Bold.ttf',
-      },
-      'sans',
-    ),
-    loadFamily(
-      doc,
-      {
-        regular: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Regular.ttf',
-        medium: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Medium.ttf',
-        semiBold: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-SemiBold.ttf',
-        bold: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Bold.ttf',
-        italic: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Italic.ttf',
-        boldItalic: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-BoldItalic.ttf',
-      },
-      'serif',
-    ),
-    loadFamily(
-      doc,
-      {
-        regular: '/fonts/custom/DM_Serif_Display/DMSerifDisplay-Regular.ttf',
-        italic: '/fonts/custom/DM_Serif_Display/DMSerifDisplay-Italic.ttf',
-      },
-      'serif',
-    ),
-    loadFamily(doc, { regular: '/fonts/custom/Abril_Fatface/AbrilFatface-Regular.ttf' }, 'serif'),
-    loadFamily(
-      doc,
-      {
-        regular: '/fonts/custom/Fraunces/static/Fraunces_72pt-Regular.ttf',
-        semiBold: '/fonts/custom/Fraunces/static/Fraunces_72pt-SemiBold.ttf',
-        bold: '/fonts/custom/Fraunces/static/Fraunces_72pt-Bold.ttf',
-        italic: '/fonts/custom/Fraunces/static/Fraunces_72pt-Italic.ttf',
-        boldItalic: '/fonts/custom/Fraunces/static/Fraunces_72pt-BoldItalic.ttf',
-      },
-      'serif',
-    ),
+    wants('anton')
+      ? loadFamily(doc, { regular: '/fonts/custom/Anton/Anton-Regular.ttf' }, 'sans')
+      : standardFamily(doc, 'sans'),
+    wants('oswald')
+      ? loadFamily(
+          doc,
+          {
+            regular: '/fonts/custom/Oswald/static/Oswald-Regular.ttf',
+            medium: '/fonts/custom/Oswald/static/Oswald-Medium.ttf',
+            semiBold: '/fonts/custom/Oswald/static/Oswald-SemiBold.ttf',
+            bold: '/fonts/custom/Oswald/static/Oswald-Bold.ttf',
+          },
+          'sans',
+        )
+      : standardFamily(doc, 'sans'),
+    wants('playfair-display')
+      ? loadFamily(
+          doc,
+          {
+            regular: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Regular.ttf',
+            medium: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Medium.ttf',
+            semiBold: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-SemiBold.ttf',
+            bold: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Bold.ttf',
+            italic: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-Italic.ttf',
+            boldItalic: '/fonts/custom/Playfair_Display/static/PlayfairDisplay-BoldItalic.ttf',
+          },
+          'serif',
+        )
+      : standardFamily(doc, 'serif'),
+    wants('dm-serif-display')
+      ? loadFamily(
+          doc,
+          {
+            regular: '/fonts/custom/DM_Serif_Display/DMSerifDisplay-Regular.ttf',
+            italic: '/fonts/custom/DM_Serif_Display/DMSerifDisplay-Italic.ttf',
+          },
+          'serif',
+        )
+      : standardFamily(doc, 'serif'),
+    wants('abril-fatface')
+      ? loadFamily(doc, { regular: '/fonts/custom/Abril_Fatface/AbrilFatface-Regular.ttf' }, 'serif')
+      : standardFamily(doc, 'serif'),
+    wants('fraunces')
+      ? loadFamily(
+          doc,
+          {
+            regular: '/fonts/custom/Fraunces/static/Fraunces_72pt-Regular.ttf',
+            semiBold: '/fonts/custom/Fraunces/static/Fraunces_72pt-SemiBold.ttf',
+            bold: '/fonts/custom/Fraunces/static/Fraunces_72pt-Bold.ttf',
+            italic: '/fonts/custom/Fraunces/static/Fraunces_72pt-Italic.ttf',
+            boldItalic: '/fonts/custom/Fraunces/static/Fraunces_72pt-BoldItalic.ttf',
+          },
+          'serif',
+        )
+      : standardFamily(doc, 'serif'),
   ])
 
   return {
@@ -179,7 +327,32 @@ export async function loadThemeFonts(doc: PDFDocument): Promise<ThemeFontSet> {
     serif,
     custom: {
       anton,
-      'bebas-neue': bebasNeue,
+      /**
+       * Bebas Neue is deliberately NOT embedded, and resolves to Anton — the
+       * closest working condensed display sans.
+       *
+       * `@pdf-lib/fontkit` throws `RangeError: Trying to access beyond buffer
+       * length` from `TTFGlyph._getCBox` while serialising this typeface's
+       * glyph metrics. The failure surfaces at `doc.save()`, not at
+       * `embedFont`, so it cannot be caught per-font at load time — and
+       * because every cover font here is embedded on every export whether the
+       * book uses it or not, that one font took down PDF export for every
+       * user and every book (caught by `scripts/smoke-test.ts`'s export
+       * integration test).
+       *
+       * Not a corrupt download: the file's `loca` table matches
+       * `head.indexToLocFormat` and `maxp.numGlyphs`, no glyph offset runs
+       * past `glyf`, and a freshly-downloaded copy from Google Fonts crashes
+       * identically. It is a fontkit defect on this face, so re-downloading
+       * the file will not fix it — do not "restore" this font without first
+       * confirming a fixed fontkit release against a real exported PDF.
+       *
+       * The id is kept in `CustomCoverFontId` rather than removed: a project
+       * saved with this choice still loads and simply renders in Anton, which
+       * is this codebase's standing "default in code, never migrate persisted
+       * data" convention.
+       */
+      'bebas-neue': anton,
       oswald,
       'playfair-display': playfairDisplay,
       'dm-serif-display': dmSerifDisplay,

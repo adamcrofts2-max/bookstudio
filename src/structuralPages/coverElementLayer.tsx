@@ -840,6 +840,8 @@ function RotateHandleDot({
 }) {
   return (
     <div
+      // audit-copy-ok: cover element handles only render on a selected,
+      // non-decorative page, and mobile's page preview is always decorative
       title="Drag to rotate — hold Shift to snap to 15°"
       className="absolute -top-16 left-1/2 z-20 flex size-6 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white bg-[var(--color-accent)] shadow-[var(--shadow-sm)] active:cursor-grabbing"
       onPointerDown={onPointerDown}

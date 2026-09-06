@@ -11,11 +11,21 @@ interface ImportManuscriptButtonProps {
   projectId: string
   label?: string
   variant?: 'primary' | 'outline' | 'secondary'
+  /**
+   * Called once the manuscript is in the store. Added Phase 161: without
+   * it a caller has no way to know the import finished, which is exactly
+   * how `MobileMoreView`'s import sheet ended up sitting open over a modal
+   * overlay after a *successful* import — no confirmation, nothing behind
+   * it tappable, indistinguishable from the app having frozen. On desktop
+   * this button lives in the empty-state workspace with no sheet to close,
+   * which is why the gap went unnoticed for so long.
+   */
+  onImported?: () => void
 }
 
 /** File-picker driven manuscript import — the entry point into the
  * Content layer (`src/parser`, `contentStore`). */
-export function ImportManuscriptButton({ projectId, label = 'Import Manuscript', variant = 'primary' }: ImportManuscriptButtonProps) {
+export function ImportManuscriptButton({ projectId, label = 'Import Manuscript', variant = 'primary', onImported }: ImportManuscriptButtonProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const setManuscript = useContentStore((s) => s.setManuscript)
   const loadAssets = useAssetStore((s) => s.loadAssets)
@@ -29,6 +39,9 @@ export function ImportManuscriptButton({ projectId, label = 'Import Manuscript',
       const manuscript = await importManuscript(file, projectId)
       setManuscript(projectId, manuscript)
       await loadAssets(projectId)
+      // After the assets, so a caller that navigates away can't race the
+      // asset load; before `finally`, so it never fires on a failure.
+      onImported?.()
     } catch (err) {
       // Every parser's own error extends `ManuscriptImportError` and carries a
       // specific, actionable reason (unsupported format; an EPUB with no

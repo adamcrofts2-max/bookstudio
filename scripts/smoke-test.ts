@@ -76,6 +76,32 @@ check('paginate: all chapter starts on odd (recto) page numbers', chapterStarts.
 const allBlockIds = pages.flatMap((p) => p.blocks.map((b) => b.id))
 const expectedBlockIds = bigChapters.flatMap((c) => c.blocks.map((b) => b.id))
 check('paginate: no blocks lost or duplicated', allBlockIds.length === expectedBlockIds.length && new Set(allBlockIds).size === allBlockIds.length)
+
+// --- Page identity is stable across runs (Phase 139) ---
+// The whole writing experience rested on this: `LazySpread` keys its pages
+// by `page.id`, so a fresh random id per run made React tear down and
+// rebuild every page — destroying the focused element and the caret in it.
+{
+  const runA = paginate(bigChapters, () => 60, contentHeight, 100)
+  const runB = paginate(bigChapters, () => 60, contentHeight, 100)
+  check(
+    'paginate: identical input produces identical page ids',
+    runA.pages.length === runB.pages.length && runA.pages.every((page, i) => page.id === runB.pages[i].id),
+  )
+  check('paginate: page ids are unique within a run', new Set(runA.pages.map((x) => x.id)).size === runA.pages.length)
+
+  // Editing a chapter must not renumber the pages before the edit — that is
+  // what lets the page holding the caret keep its React identity while its
+  // contents reflow.
+  const edited = bigChapters.map((c, i) =>
+    i === bigChapters.length - 1 ? { ...c, blocks: [...c.blocks, { id: 'extra-block', type: 'paragraph' as const, html: 'More.' }] } : c,
+  )
+  const runC = paginate(edited, () => 60, contentHeight, 100)
+  const sharedPrefix = Math.min(runA.pages.length, runC.pages.length)
+  let stable = 0
+  for (let i = 0; i < sharedPrefix; i++) if (runA.pages[i].id === runC.pages[i].id) stable++
+  check('paginate: adding a block keeps earlier page ids stable', stable === sharedPrefix)
+}
 check('paginate: block order preserved within manuscript', JSON.stringify(allBlockIds) === JSON.stringify(expectedBlockIds))
 // verify no page overflows content height
 const overflow = pages.some((p) => {
@@ -114,12 +140,30 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const originalFetch = globalThis.fetch
-// @ts-expect-error -- test shim: serve /fonts/*.woff2 from the local public/ dir
+/**
+ * Serves anything under `public/` straight from disk, the way the dev server
+ * and the deployed site both do.
+ *
+ * Covers absolute same-origin URLs as well as root-relative ones: production
+ * code resolves asset paths against `document.baseURI` (so the app keeps
+ * working when served from a sub-path), which means requests arrive here as
+ * `http://localhost/...` rather than `/...`.
+ *
+ * Deliberately broader than the fonts-only shim it replaces. The spell-check
+ * dictionaries live under `public/dictionaries/`, and without them every
+ * spelling-dependent checker silently reported "not analysed" — which is how
+ * a genuine assertion about category scores came to fail without anyone
+ * noticing the dictionary had never loaded.
+ */
+// @ts-expect-error -- test shim
 globalThis.fetch = async (url: string) => {
-  if (typeof url === 'string' && url.startsWith('/fonts/')) {
-    const filePath = path.join(__dirname, '..', 'public', url)
-    const buf = fs.readFileSync(filePath)
-    return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+  const requestPath = typeof url === 'string' ? url.replace(/^https?:\/\/[^/]+/, '') : ''
+  if (requestPath.startsWith('/')) {
+    const filePath = path.join(__dirname, '..', 'public', requestPath)
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const buf = fs.readFileSync(filePath)
+      return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+    }
   }
   return originalFetch(url)
 }
@@ -541,14 +585,27 @@ check(
   'VE pipeline: copyEditing now scores a real 100 (registered checker, zero findings with no styleGuide passed) instead of null',
   dirtyReport.categoryScores.copyEditing !== null && dirtyReport.categoryScores.copyEditing?.score === 100,
 )
-const analysedDirtyScores = [
-  dirtyReport.categoryScores.proofreading,
-  dirtyReport.categoryScores.consistency,
-  dirtyReport.categoryScores.readability,
-  dirtyReport.categoryScores.copyEditing,
-].filter((c): c is NonNullable<typeof c> => c !== null)
+// Derived from the report itself rather than a hardcoded category list.
+// The previous version named the four categories that had checkers when it
+// was written; four more (developmental, typography, accessibility,
+// commercial) were registered afterwards, so the assertion quietly went stale
+// and started failing — unnoticed, because the suite was already red further
+// down. Reading whatever the pipeline actually analysed keeps this honest as
+// new checkers are added, which is the whole point of the assertion.
+const analysedDirtyScores = Object.values(dirtyReport.categoryScores).filter(
+  (c): c is NonNullable<typeof c> => c !== null,
+)
 check(
-  'VE pipeline: overall score equals the mean of every analysed category (proofreading + consistency + readability + copyEditing), not just proofreading alone',
+  'VE pipeline: at least the four long-standing categories are analysed',
+  [
+    dirtyReport.categoryScores.proofreading,
+    dirtyReport.categoryScores.consistency,
+    dirtyReport.categoryScores.readability,
+    dirtyReport.categoryScores.copyEditing,
+  ].every((c) => c !== null),
+)
+check(
+  'VE pipeline: overall score equals the mean of every analysed category, not just proofreading alone',
   dirtyReport.overallScore === Math.round(analysedDirtyScores.reduce((sum, c) => sum + c.score, 0) / analysedDirtyScores.length),
 )
 
@@ -586,12 +643,24 @@ function makeFixAllTestManuscript(): Manuscript {
   }
 }
 
+/**
+ * `virtualEditorStore.runReview` defers `runPipeline` by one tick
+ * (`window.setTimeout(…, 0)`) so the "Reviewing…" state paints before the
+ * synchronous pipeline blocks the main thread. These tests therefore have to
+ * let that tick run before asserting on the report — reading it synchronously
+ * finds no report at all, which is what silently broke this suite: the
+ * assertions below failed, and a later line dereferenced the missing report
+ * and killed the whole run before anything after it could execute.
+ */
+const flushReview = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 // fixCategory: scoped correctly (a category with no matching findings is a
 // no-op; the matching category applies every fixable 'new' finding in it
 // and leaves the unfixable one alone).
 const fixCategoryProjectId = 've-fixcategory-test-project'
 useContentStoreForFixAll.getState().setManuscript(fixCategoryProjectId, makeFixAllTestManuscript())
 useVirtualEditorStore.getState().runReview(fixCategoryProjectId, useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!)
+await flushReview()
 
 useVirtualEditorStore.getState().fixCategory(fixCategoryProjectId, 'readability')
 const afterWrongCategoryFix = useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!
@@ -630,6 +699,7 @@ check('fixCategory: unfixable finding stays new (never touched)', (fixCategorySt
 const fixAllProjectId = 've-fixall-test-project'
 useContentStoreForFixAll.getState().setManuscript(fixAllProjectId, makeFixAllTestManuscript())
 useVirtualEditorStore.getState().runReview(fixAllProjectId, useContentStoreForFixAll.getState().getManuscript(fixAllProjectId)!)
+await flushReview()
 
 const fixAllReportBefore = useVirtualEditorStore.getState().reportsByProject[fixAllProjectId]!
 const repeatedWordFindingForFixAll = fixAllReportBefore.findings.find((f) => f.issueType === 'repeated-word')!
@@ -669,6 +739,7 @@ useVirtualEditorStore.getState().runReview(
   styleGuideReviewManuscript,
   { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'title-case' },
 )
+await flushReview()
 const styleGuideReport = useVirtualEditorStore.getState().reportsByProject[styleGuideReviewProjectId]!
 check(
   'runReview: a styleGuide passed through runReview reaches headingCapitalisationChecker via runPipeline',
@@ -678,6 +749,7 @@ check(
 const noStyleGuideReviewProjectId = 've-no-styleguide-review-project'
 useContentStoreForFixAll.getState().setManuscript(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
 useVirtualEditorStore.getState().runReview(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
+await flushReview()
 const noStyleGuideReport = useVirtualEditorStore.getState().reportsByProject[noStyleGuideReviewProjectId]!
 check(
   'runReview: with no styleGuide argument, headingCapitalisationChecker stays silent (no false-positive plumbing bug)',
@@ -1023,12 +1095,14 @@ check(
 const veReviewPagesProjectId = 've-pages-review-project'
 useContentStoreForFixAll.getState().setManuscript(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT)
 useVirtualEditorStore.getState().runReview(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT, undefined, sparsePages)
+await flushReview()
 const veReviewPagesReport = useVirtualEditorStore.getState().reportsByProject[veReviewPagesProjectId]!
 check('runReview: an optional pages argument reaches the pipeline and produces a real publishingStandards score', veReviewPagesReport.categoryScores.publishingStandards !== null)
 
 const veNoPagesReviewProjectId = 've-no-pages-review-project'
 useContentStoreForFixAll.getState().setManuscript(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
 useVirtualEditorStore.getState().runReview(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
+await flushReview()
 const veNoPagesReviewReport = useVirtualEditorStore.getState().reportsByProject[veNoPagesReviewProjectId]!
 check('runReview: without a pages argument, publishingStandards stays null (genuinely optional, no silent default)', veNoPagesReviewReport.categoryScores.publishingStandards === null)
 
@@ -1593,9 +1667,19 @@ check(
 await useVersionStore.getState().createSnapshot(vhProjectId, 'auto')
 await useVersionStore.getState().listSnapshots(vhProjectId)
 const vhSnapshotsAfterAuto = useVersionStore.getState().getSnapshots(vhProjectId)
+// Phase 161 changed this contract deliberately. The label used to default
+// to a formatted timestamp ("Autosave — 9/6/2026, 9:26:49 AM"), and
+// `VersionHistoryDialog` prints the timestamp *underneath* the label — so
+// every unnamed version showed the same time twice, with the kind badge
+// beside it saying "auto" a third time. An unnamed snapshot now stores no
+// label at all, and what to show in its place is the row's decision.
 check(
-  'createSnapshot (auto, no label given): defaults to an "Autosave — <timestamp>" label',
-  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label.startsWith('Autosave — ')),
+  'createSnapshot (auto, no label given): stores no label, leaving the display to decide',
+  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label === ''),
+)
+check(
+  'createSnapshot: an explicit label is still kept verbatim',
+  vhSnapshotsAfterAuto.some((s) => s.label === 'My named save'),
 )
 
 // listSnapshots: newest-first ordering — write two snapshots directly via
@@ -2458,7 +2542,13 @@ check(
   </body></html>`
 
   const c2 = `<html><body><section><h2>The Parables</h2><p>The second vision.</p>
-  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul></section></body></html>`
+  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul>
+  <blockquote class="poem">Roll on, thou deep and dark blue Ocean&#8212;roll!<br/>Ten thousand fleets sweep over thee in vain;</blockquote>
+  <div epub:type="z3998:verse"><div class="stanza"><p>First stanza, first line.</p><p>First stanza, second line.</p></div>
+  <div class="stanza"><p>Second stanza.</p></div></div>
+  <pre>  A line kept as typed
+  And another</pre>
+  </section></body></html>`
 
   const epubBytes = await buildZip([
     { name: 'mimetype', data: enc('application/epub+zip') },
@@ -2481,18 +2571,75 @@ check(
 
   const c1Text = epubChapters[0].blocks.map((b) => (b.type === 'paragraph' ? b.html : '')).join('\n')
   check('epub: flattens nested containers instead of dropping their text', c1Text.includes('words of the blessing'))
-  // Regression: verse lives in bare <div class="line"> elements, which are not
-  // block tags. An importer that only walks known block tags drops every line
-  // of poetry in the book while appearing to work.
-  check('epub: preserves verse lines held in non-block containers', c1Text.includes('the eternal God will tread'))
+
+  // Verse lives in bare <div class="line"> elements inside a marked line
+  // group — not block tags, so an importer that only walks known block tags
+  // drops every line of poetry in the book while appearing to work.
+  //
+  // Phase 167 changed what "preserved" means here. Until then these three
+  // lines arrived as three separate paragraphs: the breaks survived by
+  // accident (one block each) and the fact that they were the poet's did
+  // not, so re-flowing or exporting could justify them like prose. They are
+  // now one `verse` block whose `lines` are the poet's lines.
+  const c1Verse = epubChapters[0].blocks.find((b) => b.type === 'verse')
+  check('epub: verse arrives as a verse block, not as paragraphs', c1Verse?.type === 'verse')
   check(
-    'epub: keeps each verse line as its own block rather than merging them',
-    epubChapters[0].blocks.filter((b) => b.type === 'paragraph' && /eternal God|His camp|of heavens/.test(b.html)).length === 3,
+    'epub: every line of the poem survives, in order',
+    c1Verse?.type === 'verse' &&
+      c1Verse.lines.length === 3 &&
+      c1Verse.lines[0].includes('the eternal God will tread') &&
+      c1Verse.lines[2].includes('of heavens'),
   )
-  check('epub: preserves textual-critical brackets verbatim', c1Text.includes('⌜of heavens⌝') && c1Text.includes('[And appear from His camp]'))
+  check(
+    'epub: preserves textual-critical brackets verbatim',
+    c1Verse?.type === 'verse' && c1Verse.lines[1] === '[And appear from His camp]' && c1Verse.lines[2].includes('⌜of heavens⌝'),
+  )
+  check(
+    'epub: no stray paragraph is left behind by the verse container',
+    !/eternal God|His camp|of heavens/.test(c1Text),
+  )
 
   const c2Types = epubChapters[1].blocks.map((b) => b.type)
   check('epub: converts blockquote and list blocks', c2Types.includes('quote') && c2Types.includes('list'))
+
+  // The other three shapes poetry actually ships as.
+  const c2Verse = epubChapters[1].blocks.filter((b) => b.type === 'verse')
+  check('epub: recognises all three remaining verse shapes', c2Verse.length === 3)
+  check(
+    'epub: a <blockquote class="poem"> is verse, not a quote',
+    c2Verse[0]?.type === 'verse' && c2Verse[0].lines.length === 2 && c2Verse[0].lines[0].startsWith('Roll on'),
+  )
+  check(
+    'epub: a nested line group becomes a stanza break',
+    c2Verse[1]?.type === 'verse' && c2Verse[1].lines.join('|') === 'First stanza, first line.|First stanza, second line.||Second stanza.',
+  )
+  check(
+    'epub: <pre> keeps its lines',
+    c2Verse[2]?.type === 'verse' && c2Verse[2].lines.length === 2 && c2Verse[2].lines[0] === 'A line kept as typed',
+  )
+
+  // The round trip: what this app *writes* for verse must be what it reads
+  // back as verse. Without it the export could drift into markup our own
+  // importer flattens, and nothing would notice until someone re-opened
+  // their own book and found the poems turned into prose.
+  {
+    const { blockToXhtml } = await import('../src/epub/blockToXhtml')
+    const { parseHtmlDocument } = await import('../src/parser/html')
+    const original = {
+      id: 'v1',
+      type: 'verse' as const,
+      lines: ['Roll on, thou deep and dark blue Ocean—roll!', 'Ten thousand fleets sweep over thee in vain;', '', 'A new stanza.'],
+    }
+    const xhtml = blockToXhtml(original, () => '', { epubSemantics: true })
+    check('verse export: carries the EPUB structural semantic', xhtml.includes('epub:type="z3998:verse"'))
+    check('verse export: the HTML book gets no namespaced attribute', !blockToXhtml(original, () => '').includes('epub:type'))
+    const [roundTripped] = parseHtmlDocument(`<h1>Poem</h1>${xhtml}`, 'F')[0].blocks
+    check('verse round trip: comes back as a verse block', roundTripped?.type === 'verse')
+    check(
+      'verse round trip: every line and the stanza break survive',
+      roundTripped?.type === 'verse' && roundTripped.lines.join('|') === original.lines.join('|'),
+    )
+  }
 
   // A non-EPUB file must fail with a message safe to show the user, not a
   // stack trace from the ZIP reader.
@@ -2502,6 +2649,172 @@ check(
     await parseEpub(new File([enc('not a zip at all') as unknown as BlobPart], 'x.epub'), 'F', 'p')
   } catch (err) { epubError = err }
   check('epub: a non-EPUB file raises a user-safe ManuscriptImportError', epubError instanceof ManuscriptImportError)
+}
+
+// --- Mobile shell detection (Phase 126) ---
+{
+  const { MOBILE_QUERY } = await import('../src/hooks/useIsMobile')
+
+  /** Evaluates the real media query against a device, so this asserts the
+   * shipped rule rather than restating it. Supports only the three features
+   * the query actually uses. */
+  const matches = (query: string, device: { width: number; height: number; coarsePointer: boolean }): boolean =>
+    query.split(',').some((clause) =>
+      clause.split(' and ').every((term) => {
+        const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(term)
+        if (maxWidth) return device.width <= Number(maxWidth[1])
+        const maxHeight = /\(max-height:\s*(\d+)px\)/.exec(term)
+        if (maxHeight) return device.height <= Number(maxHeight[1])
+        const pointer = /\(pointer:\s*(\w+)\)/.exec(term)
+        if (pointer) return pointer[1] === (device.coarsePointer ? 'coarse' : 'fine')
+        return false
+      }),
+    )
+
+  const phonePortrait = { width: 390, height: 844, coarsePointer: true }
+  const phoneLandscape = { width: 844, height: 390, coarsePointer: true }
+  const tabletPortrait = { width: 820, height: 1180, coarsePointer: true }
+  const shortDesktopWindow = { width: 1280, height: 420, coarsePointer: false }
+  const desktop = { width: 1440, height: 900, coarsePointer: false }
+
+  check('mobile detection: phone in portrait gets the mobile shell', matches(MOBILE_QUERY, phonePortrait))
+  // Regression: a phone rotated to landscape is ~844x390, which clears the
+  // 640px width test. Before this rule it was handed the three-column desktop
+  // shell inside 390px of height — toolbar clipped, page canvas a sliver.
+  check('mobile detection: phone in LANDSCAPE gets the mobile shell', matches(MOBILE_QUERY, phoneLandscape))
+  check('mobile detection: tablet in portrait keeps the desktop shell', !matches(MOBILE_QUERY, tabletPortrait))
+  // A short desktop window is short because the user made it so, and still
+  // has a mouse — `pointer: coarse` is what keeps it on the desktop shell.
+  check('mobile detection: a short desktop window keeps the desktop shell', !matches(MOBILE_QUERY, shortDesktopWindow))
+  check('mobile detection: a normal desktop keeps the desktop shell', !matches(MOBILE_QUERY, desktop))
+}
+
+// --- Mobile book preview scaling (Phase 127) ---
+{
+  const { computePreviewScale } = await import('../src/layout/mobile/previewScale')
+
+  // A 6x9in trim is ~680px wide at this app's scale — far wider than a phone,
+  // so the real page is rendered full-size and CSS-scaled rather than
+  // reflowed. Reflowing would change where pages break and show a different
+  // book from the one that prints.
+  const PAGE_W = 680
+
+  const phone = computePreviewScale(390, PAGE_W)
+  check('preview scale: a page is scaled down to fit a phone', phone > 0 && phone < 1)
+  check('preview scale: the scaled page fits inside the container', phone * PAGE_W <= 390)
+
+  // Never scale up: on a wide viewport the page sits at true size.
+  check('preview scale: never magnifies past 100% on a wide viewport', computePreviewScale(1400, PAGE_W) === 1)
+  check('preview scale: exactly 1 when the page just fits', computePreviewScale(PAGE_W + 32, PAGE_W) === 1)
+
+  // Before the container has been measured there is no meaningful scale; the
+  // view shows its loading state rather than a zero-sized page.
+  check('preview scale: unmeasured container yields 0', computePreviewScale(0, PAGE_W) === 0)
+  check('preview scale: a container narrower than the padding yields 0', computePreviewScale(20, PAGE_W) === 0)
+  check('preview scale: guards a zero page width', computePreviewScale(390, 0) === 0)
+
+  // Larger trims scale down further — the rule is proportional, not a constant.
+  check('preview scale: a larger trim scales down further', computePreviewScale(390, 900) < computePreviewScale(390, 680))
+}
+
+// --- Book Graph node placement (Phase 135) ---
+{
+  const { findFreeGraphPosition, MIN_NODE_SEPARATION } = await import('../src/layout/planning/graphPlacement')
+
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y)
+
+  // Empty canvas: the candidate is already free, so it is used unchanged.
+  const empty = findFreeGraphPosition({ x: 10, y: 20 }, [])
+  check('graph placement: an unobstructed candidate is used as-is', empty.x === 10 && empty.y === 20)
+
+  // A node far away is not an obstacle.
+  const clear = findFreeGraphPosition({ x: 0, y: 0 }, [{ x: 900, y: 900 }])
+  check('graph placement: a distant node does not displace the candidate', clear.x === 0 && clear.y === 0)
+
+  // The real bug this exists for: "centre of the view" on a fresh graph is
+  // exactly where the Book hub sits, which drew the new node underneath it.
+  const hub = { x: 0, y: 0 }
+  const nudged = findFreeGraphPosition({ x: 0, y: 0 }, [hub])
+  check('graph placement: a candidate on top of an existing node is moved off it', near(nudged, hub) >= MIN_NODE_SEPARATION)
+
+  // Deterministic — the same inputs must not wander between calls.
+  const again = findFreeGraphPosition({ x: 0, y: 0 }, [hub])
+  check('graph placement: placement is deterministic', again.x === nudged.x && again.y === nudged.y)
+
+  // Clears every obstacle, not just the first one it collided with.
+  const crowd = [
+    { x: 0, y: 0 },
+    { x: 0, y: -MIN_NODE_SEPARATION },
+    { x: MIN_NODE_SEPARATION, y: 0 },
+    { x: 0, y: MIN_NODE_SEPARATION },
+    { x: -MIN_NODE_SEPARATION, y: 0 },
+  ]
+  const free = findFreeGraphPosition({ x: 0, y: 0 }, crowd)
+  check(
+    'graph placement: the result clears every existing node, not just the first',
+    crowd.every((c) => near(free, c) >= MIN_NODE_SEPARATION),
+  )
+
+  // A second add from the same spot must not stack on the first.
+  const first = findFreeGraphPosition({ x: 50, y: 50 }, [hub])
+  const second = findFreeGraphPosition({ x: 50, y: 50 }, [hub, first])
+  check('graph placement: a second node added from the same spot does not stack', near(second, first) >= MIN_NODE_SEPARATION)
+}
+
+// --- Image import partial failure (Phase 137) ---
+{
+  // `importFiles` needs a DOM (Image decoding, object URLs, IndexedDB), so
+  // what is unit-tested here is the contract its callers depend on: the shape
+  // that lets one bad file be reported without discarding the good ones.
+  // The end-to-end behaviour is covered by the browser suite.
+  const { EMPTY_ASSETS } = await import('../src/store/assetStore')
+  check('asset store: EMPTY_ASSETS is a stable frozen-style constant', Array.isArray(EMPTY_ASSETS) && EMPTY_ASSETS.length === 0)
+
+  // The identity matters: Zustand v5 selectors returning a fresh [] each call
+  // never settle and trip React's "Maximum update depth exceeded".
+  const { EMPTY_ASSETS: again } = await import('../src/store/assetStore')
+  check('asset store: EMPTY_ASSETS keeps one identity across imports', again === EMPTY_ASSETS)
+}
+
+// --- Book Graph minimap geometry (Phase 166) ---
+{
+  const { visibleGraphRect, transformToCentreOn, clampCentreToBounds } = await import(
+    '../src/layout/planning/graphMinimapGeometry'
+  )
+  const bounds = { minX: -200, minY: -150, width: 400, height: 300 }
+  const canvas = { width: 600, height: 400 }
+
+  // At 1x with no pan, the canvas's own viewBox already fits everything, so
+  // the visible rect is the whole graph in the axis that fits tightest.
+  // That identity is the reason the minimap stays hidden at 100%.
+  const atRest = visibleGraphRect(bounds, canvas, { x: 0, y: 0, k: 1 })
+  check('minimap: at 1x the visible rect is centred on the graph', Math.abs(atRest.minX + atRest.width / 2 - 0) < 0.001 && Math.abs(atRest.minY + atRest.height / 2 + 0) < 0.001)
+  check('minimap: at 1x the visible rect covers the whole graph', atRest.width >= bounds.width - 0.001 && atRest.height >= bounds.height - 0.001)
+
+  // Zooming in halves what you can see, in both axes.
+  const zoomed = visibleGraphRect(bounds, canvas, { x: 0, y: 0, k: 2 })
+  check('minimap: 2x zoom halves the visible width', Math.abs(zoomed.width - atRest.width / 2) < 0.001)
+  check('minimap: 2x zoom halves the visible height', Math.abs(zoomed.height - atRest.height / 2) < 0.001)
+
+  // The round trip that the whole interaction rests on: ask for the pan that
+  // centres on a point, then read back where the view is centred.
+  for (const target of [{ x: 120, y: -80 }, { x: -190, y: 140 }, { x: 0, y: 0 }]) {
+    const t = { ...transformToCentreOn(target, bounds, canvas, 2.5), k: 2.5 }
+    const view = visibleGraphRect(bounds, canvas, t)
+    const centre = { x: view.minX + view.width / 2, y: view.minY + view.height / 2 }
+    check(
+      `minimap: centring on (${target.x}, ${target.y}) puts it in the middle of the view`,
+      Math.abs(centre.x - target.x) < 0.001 && Math.abs(centre.y - target.y) < 0.001,
+    )
+  }
+
+  // Clamping: a corner click lands on the nearest part of the graph, and an
+  // axis with nothing to slide along centres instead.
+  const small = { minX: -200, minY: -150, width: 100, height: 80 }
+  const clamped = clampCentreToBounds({ x: -1000, y: 1000 }, bounds, small)
+  check('minimap: a click outside the graph clamps back inside it', clamped.x === bounds.minX + small.width / 2 && clamped.y === bounds.minY + bounds.height - small.height / 2)
+  const wider = clampCentreToBounds({ x: 1000, y: 0 }, bounds, { ...bounds, width: 900, height: 900 })
+  check('minimap: an axis with nothing to slide along centres', wider.x === 0 && wider.y === 0)
 }
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)

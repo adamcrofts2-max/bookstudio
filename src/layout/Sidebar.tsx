@@ -11,6 +11,7 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { useDragStore } from '@/store/dragStore'
 import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
+import { UploadError } from '@/components/common/UploadError'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import type { StructuralPage, StructuralPageCategory, StructuralPageType } from '@/types/structuralPage'
 import { Button } from '@/components/ui/button'
@@ -162,9 +163,24 @@ interface StructuralSectionProps {
 }
 
 function StructuralSection({ title, category, pages, addableTypes, projectId, selectedStructuralPageId }: StructuralSectionProps) {
+  const selectStructuralPage = useSelectionStore((s) => s.selectStructuralPage)
+  const requestScrollToPage = useSelectionStore((s) => s.requestScrollToPage)
+  const setInspectorTab = useUiStore((s) => s.setInspectorTab)
+
   const handleAdd = (type: StructuralPageType) => {
     const lastId = pages.length > 0 ? pages[pages.length - 1].id : null
-    insertPageWithHistory(projectId, category, type, lastId)
+    const newId = insertPageWithHistory(projectId, category, type, lastId)
+    // A page is added because it needs filling in, so land on it: same
+    // select + scroll + open-the-Page-tab that clicking an existing row
+    // does (`StructuralPageRow.handleClick` above), and the same thing
+    // `MobilePagesView` already did on a phone. Without this the canvas
+    // stayed wherever it happened to be — usually blank space several
+    // spreads away — and the new page was somewhere you had to go and
+    // find (seen while walking the built app, Phase 156).
+    if (!newId) return
+    selectStructuralPage(newId)
+    requestScrollToPage(newId)
+    setInspectorTab('page')
   }
 
   return (
@@ -254,6 +270,7 @@ export function Sidebar({ project }: SidebarProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const loadAssets = useAssetStore((s) => s.loadAssets)
   const importFiles = useAssetStore((s) => s.importFiles)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const startDraggingAsset = useDragStore((s) => s.startDraggingAsset)
   const stopDraggingAsset = useDragStore((s) => s.stopDraggingAsset)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -281,7 +298,30 @@ export function Sidebar({ project }: SidebarProps) {
         </Button>
       </div>
 
-      <Tabs defaultValue="chapters" className="flex min-h-0 flex-1 flex-col px-3">
+      <Tabs
+        defaultValue="chapters"
+        onValueChange={(value) => {
+          // Coming back to Chapters *from having been working on front or
+          // back matter* means the canvas is parked on a cover or a
+          // copyright page, several spreads from the manuscript, and the
+          // tab that is supposed to be about chapters shows none of them
+          // (seen while walking the built app, Phase 157). Landing on the
+          // text is what the tab means.
+          //
+          // Gated on a structural page actually being selected rather than
+          // firing on every tab change: someone who ducks into Structure
+          // while reading page 40 and comes straight back should not be
+          // yanked to the top of the chapter. Clicking a chapter row has
+          // always scrolled the canvas — this is the same request, made on
+          // the only occasion it isn't already true.
+          if (value !== 'chapters') return
+          const { selectedStructuralPageId, selectedChapterId } = useSelectionStore.getState()
+          if (!selectedStructuralPageId) return
+          const target = selectedChapterId ?? manuscript?.chapters[0]?.id
+          if (target) requestScrollToChapter(target)
+        }}
+        className="flex min-h-0 flex-1 flex-col px-3"
+      >
         {/* Same tight density Inspector.tsx already uses for its own
            5-tab row (px-1.5 text-xs) — this row went from 3 tabs to 4 when
            Search was added, and at the original px-3 text-sm sizing all 4
@@ -457,14 +497,27 @@ export function Sidebar({ project }: SidebarProps) {
             className="hidden"
             onChange={(e) => {
               const files = Array.from(e.target.files ?? [])
-              if (files.length) importFiles(project.id, files)
               e.target.value = ''
+              if (!files.length) return
+              setUploadError(null)
+              void importFiles(project.id, files).then(({ failed }) => {
+                // Partial success is normal here: this picker takes many
+                // files, and one unreadable photo no longer discards the
+                // rest, so the message names how many were skipped.
+                if (failed.length === 0) return
+                setUploadError(
+                  failed.length === 1
+                    ? `${failed[0].name}: ${failed[0].reason}`
+                    : `${failed.length} files couldn't be added.`,
+                )
+              })
             }}
           />
           <Button variant="secondary" size="sm" className="mb-2 gap-1.5" onClick={() => fileInputRef.current?.click()}>
             <ImagePlus className="size-3.5" />
             Add Images
           </Button>
+          <UploadError message={uploadError} />
           <ScrollArea className="h-full flex-1">
             {assets.length === 0 ? (
               <EmptyState icon={ImageIcon} title="No images yet" description="Add illustrations for your book." className="py-10" />
@@ -490,7 +543,7 @@ export function Sidebar({ project }: SidebarProps) {
                       type="button"
                       onClick={() => removeAssetWithHistory(project.id, asset.id)}
                       aria-label={`Delete ${asset.name}`}
-                      className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+                      className="absolute right-1 top-1 rounded-full bg-black/50 p-1 text-white transition-opacity duration-150 can-hover:opacity-0 can-hover:group-hover:opacity-100"
                     >
                       <Trash2 className="size-3" />
                     </button>

@@ -38,7 +38,7 @@ function AboutTheAuthorRender({ page, theme, selected, onSelect, onCommit }: Str
     >
       {!imageUrl && (
         <StructuralImageDropZone
-          hasImage={false}
+          // audit-copy-ok: StructuralImageDropZone hides this label on touch
           label="Drop an author photo here"
           onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
         />
@@ -47,7 +47,7 @@ function AboutTheAuthorRender({ page, theme, selected, onSelect, onCommit }: Str
         <div className="group/photo relative shrink-0" style={{ width: `${PHOTO_SIZE_EM}em`, height: `${PHOTO_SIZE_EM}em` }}>
           <img src={imageUrl} alt="" className="h-full w-full rounded-full object-cover" />
           <div className="absolute inset-0 overflow-hidden rounded-full opacity-0 transition-opacity group-hover/photo:opacity-100">
-            <StructuralImageDropZone hasImage label="Replace photo" onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })} />
+            <StructuralImageDropZone label="Replace photo" onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })} />
           </div>
         </div>
       )}

@@ -6,8 +6,10 @@ import type { ContentBlock } from '@/types/content'
 import type { ProjectSettings } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import { loadThemeFonts, pickFont, type ThemeFontSet } from '@/pdf/fonts'
+import { collectUsedFontFamilies } from '@/pdf/usedFonts'
 import { hexToPdfColor, pdfBlack, type PdfColorMode } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
+import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
@@ -30,6 +32,11 @@ export interface DrawCtx {
    */
   projectId: string
   structuralPages: StructuralPage[]
+  /** The book's title, for structural pages that fall back to it when their
+   * own title field is empty — see `StructuralPageRenderProps.bookTitle`.
+   * Both sides carry it so an untitled Cover prints exactly what the screen
+   * shows. Ignored by every `ContentBlock` `drawPdf`. */
+  bookTitle: string
   /** Colour space every `hexToPdfColor`/`pdfBlack`/`pdfWhite` call in this
    * export should use — resolved once from `ProjectSettings.colorProfile`
    * (`?? 'rgb'`) at the top of `exportBookToPdf` and threaded through every
@@ -46,10 +53,39 @@ export interface DrawCtx {
  * see `BlockTypeDefinition.drawPdf` in `src/blocks/registry.ts` and
  * docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 1.
  */
-async function drawBlock(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
+/**
+ * Draws one block and then makes it occupy exactly the height the screen
+ * measured for it.
+ *
+ * Every `drawPdf` composes its own spacing out of hand-chosen point values.
+ * Phase 159 measured five of them against the DOM and found all five
+ * disagreed — a paragraph's trailing gap was 14px on screen and 4pt in
+ * print — which matters because `HeightMeasurer` measures the *screen* and
+ * pagination assigns blocks to pages from those heights. The exporter was
+ * laying the same blocks onto the same pages with different spacing: right
+ * words, right page, wrong rhythm, and a strip of unexplained white at the
+ * foot of every full page.
+ *
+ * Correcting the constants type by type only ever fixes the types someone
+ * remembered to measure — nine still carried unmeasured numbers after Phase
+ * 159, and a fifteenth block type would arrive with the same problem. So
+ * the measured height comes through `ExportableLayout.blockHeights` and is
+ * applied here, once, for every type.
+ *
+ * `Math.min` matters: the cursor may be pushed further down to reach the
+ * measured height, never pulled back up. A block whose PDF drawing genuinely
+ * needs more room than the screen gave it keeps that room rather than
+ * having the next block drawn on top of it — and `pdfFidelity.e2e.mjs` will
+ * report the disagreement rather than it being silently absorbed.
+ */
+async function drawBlock(ctx: DrawCtx, block: ContentBlock, dropCap: boolean, measuredHeightPx?: number) {
   const def = getBlockTypeDefinition(block.type)
   if (!def) return
+  const topY = ctx.cursorY
   await def.drawPdf(ctx, block, dropCap)
+  if (measuredHeightPx && measuredHeightPx > 0) {
+    ctx.cursorY = Math.min(ctx.cursorY, topY - measuredHeightPx * PX_TO_PT)
+  }
 }
 
 function drawCropMarks(page: PDFPage, mediaWidth: number, mediaHeight: number, bleedPt: number, colorMode: PdfColorMode) {
@@ -86,13 +122,16 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
   doc.setProducer('Book Studio')
   doc.setCreator('Book Studio')
 
-  const fonts = await loadThemeFonts(doc)
   // Structural pages (Cover/Title Page/Copyright/Blank — see
   // docs/MODULAR_PAGE_SYSTEM_PLAN.md, Milestone 2) live in their own store,
   // not in `layout`; `layout.pages` only carries each one's id
   // (`structuralPageId`) via `composeBookPages`, so the full objects are
   // read once here, outside the loop.
   const structuralPages = useStructuralPageStore.getState().byProject[projectId] ?? EMPTY_STRUCTURAL_PAGES
+
+  // Read before embedding, not after: which fonts this book draws with
+  // decides which ones are worth putting in the file at all.
+  const fonts = await loadThemeFonts(doc, collectUsedFontFamilies(theme, structuralPages))
   // See `ProjectSettings.colorProfile`'s doc comment — `undefined` (every
   // project persisted before this setting existed) is `'rgb'`, unchanged
   // behaviour from before this feature existed.
@@ -133,6 +172,7 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
           cursorY: mediaHeight - bleedPt - marginTopPt,
           projectId,
           structuralPages,
+          bookTitle,
           colorMode,
         }
         await def.drawPdf(ctx, structuralPage, theme, pageBox)
@@ -145,7 +185,7 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
     const contentTop = mediaHeight - bleedPt - marginTopPt
     const contentBottom = bleedPt + marginBottomPt
 
-    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages, colorMode }
+    const ctx: DrawCtx = { page: pdfPage, fonts, theme, contentX: marginLeft, contentWidthPt, cursorY: contentTop, projectId, structuralPages, bookTitle, colorMode }
 
     if (page.kind === 'toc') {
       const headingFont = pickFont(fonts, theme.fonts.heading, 600)
@@ -161,23 +201,52 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
         ctx.cursorY -= 22
       }
     } else if (page.kind === 'chapter-start') {
+      // The opener is laid out here as boxes, the way the screen lays it
+      // out, rather than as a sequence of hand-chosen baseline steps —
+      // `chapterOpenerMetrics.ts` holds the numbers all three renderers
+      // read. It used to print an 11pt label and a 30pt title against the
+      // screen's 14px and 36px, and stood ~29px shorter overall, which was
+      // enough to fit an extra line of body text onto every chapter's
+      // first page in print (measured Phase 162).
       ctx.cursorY -= theme.chapterOpener.topSpacer * PX_TO_PT
+      const openerTop = ctx.cursorY
       if (theme.chapterOpener.numberLabel !== 'none') {
         const font = pickFont(fonts, theme.fonts.heading, 500)
         const idx = toc.findIndex((t) => t.chapterId === page.chapterId)
         const label = theme.chapterOpener.numberLabel === 'word' ? `Chapter ${idx + 1}` : `${idx + 1}`
-        pdfPage.drawText(label, { x: ctx.contentX, y: ctx.cursorY, size: 11, font, color: hexToPdfColor(theme.page.accent, colorMode) })
-        ctx.cursorY -= 22
+        ctx.cursorY -= CHAPTER_OPENER.label.lineHeightPx * PX_TO_PT
+        pdfPage.drawText(label, {
+          x: ctx.contentX,
+          y: ctx.cursorY,
+          size: CHAPTER_OPENER.label.fontPx * PX_TO_PT,
+          font,
+          color: hexToPdfColor(theme.page.accent, colorMode),
+        })
+        ctx.cursorY -= CHAPTER_OPENER.label.afterPx * PX_TO_PT
       }
       const titleFont = pickFont(fonts, theme.fonts.heading, theme.typography.headingWeight)
-      pdfPage.drawText(page.chapterTitle ?? '', { x: ctx.contentX, y: ctx.cursorY, size: 30, font: titleFont, color: hexToPdfColor(theme.page.ink, colorMode) })
-      ctx.cursorY -= 40
+      ctx.cursorY -= CHAPTER_OPENER.title.lineHeightPx * PX_TO_PT
+      pdfPage.drawText(page.chapterTitle ?? '', {
+        x: ctx.contentX,
+        y: ctx.cursorY,
+        size: CHAPTER_OPENER.title.fontPx * PX_TO_PT,
+        font: titleFont,
+        color: hexToPdfColor(theme.page.ink, colorMode),
+      })
+      ctx.cursorY -= CHAPTER_OPENER.title.afterPx * PX_TO_PT
+      // And, exactly as for a block, settle on the height the screen
+      // actually measured for this opener — a wrapping title is taller than
+      // one line, and `paginate` reserved the real number.
+      const openerHeightPx = layout.blockHeights?.[`opener:${page.chapterId}`]
+      if (openerHeightPx && openerHeightPx > 0) {
+        ctx.cursorY = Math.min(ctx.cursorY, openerTop - openerHeightPx * PX_TO_PT)
+      }
       for (const block of page.blocks) {
         const isDropCap = block.type === 'paragraph' && theme.typography.dropCap && block === page.blocks.find((b) => b.type === 'paragraph')
-        await drawBlock(ctx, block, isDropCap)
+        await drawBlock(ctx, block, isDropCap, layout.blockHeights?.[block.id])
       }
     } else if (page.kind === 'content') {
-      for (const block of page.blocks) await drawBlock(ctx, block, false)
+      for (const block of page.blocks) await drawBlock(ctx, block, false, layout.blockHeights?.[block.id])
     }
 
     if (ctx.cursorY < contentBottom) {

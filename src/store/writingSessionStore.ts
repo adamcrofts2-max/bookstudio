@@ -39,6 +39,10 @@ interface WritingSessionStoreState {
 }
 
 interface WritingSessionStoreActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getState: (projectId: string) => WritingSessionState
   setDailyGoal: (projectId: string, goal: number) => void
   /** Feeds the current live manuscript total in — called from
@@ -58,6 +62,13 @@ export const useWritingSessionStore = create<WritingSessionStoreState & WritingS
   persist(
     (set, get) => ({
       byProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextByProject = { ...state.byProject }
+          delete nextByProject[projectId]
+          return { byProject: nextByProject }
+        }),
 
       getState: (projectId) => get().byProject[projectId] ?? EMPTY_WRITING_SESSION_STATE,
 

@@ -28,6 +28,10 @@ interface Layer0StoreState {
 }
 
 interface Layer0StoreActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getBible: (projectId: string) => Layer0Bible
   /** Low-level "insert this exact object" primitive — same naming/shape
    * convention as `notesStore.addNote`, so `editorActions.ts`'s history
@@ -93,6 +97,13 @@ export const useLayer0Store = create<Layer0Store>()(
   persist(
     (set, get) => ({
       byProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextByProject = { ...state.byProject }
+          delete nextByProject[projectId]
+          return { byProject: nextByProject }
+        }),
 
       getBible: (projectId) => {
         const bible = get().byProject[projectId] ?? EMPTY_LAYER0_BIBLE

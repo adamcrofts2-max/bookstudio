@@ -2,10 +2,22 @@
  * Live, dictionary-backed spell-check underlining for the on-canvas
  * paragraph editor (Phase 116, 2026-08-03, user: "yes it should have live
  * spell check" — confirmed scope: only the paragraph currently being
- * edited gets underlines, updating as you type; every *other* paragraph on
- * the page stays plain until you click into it. That's a deliberately
- * smaller, safer change than scanning the whole manuscript continuously —
- * see docs/STATUS.md's Phase 116 entry for the full reasoning).
+ * edited gets underlines, updating as you type).
+ *
+ * Phase 143 widened that scope, because the original was the wrong call and
+ * the user reported the result: scoping underlines to the focused paragraph
+ * meant only ever ONE misspelling was visible, in the paragraph under the
+ * cursor, and the moment you stopped writing there were none at all
+ * (measured: 1 underline while editing, 0 after blur). A spell-checker you
+ * can only see one word of at a time isn't one. Every editable paragraph
+ * now decorates itself, so mistakes stay visible while you write past them,
+ * exactly as they do in any other writing tool.
+ *
+ * Decoration never reaches stored content: `parser/html.ts`'s
+ * `sanitiseInline` — which every commit path goes through — keeps only an
+ * allow-list of inline tags and unwraps everything else, so a `<span
+ * class="book-spell-error">` cannot be written into the manuscript even if
+ * a commit happened to fire while one was present.
  *
  * Reuses the exact same nspell dictionary and false-positive rules
  * (`virtualEditor/spellcheckWords.ts`, `virtualEditor/spellcheckDictionary
@@ -27,15 +39,16 @@
 import { useEffect, useRef } from 'react'
 
 import { useProjectStore } from '@/store/projectStore'
+import { useUiStore } from '@/store/uiStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
 import type { NSpell } from 'nspell'
 import { WORD_PATTERN, looksLikeAcronym, collectLayer0Names } from '@/virtualEditor/spellcheckWords'
-import { getCaretTextOffset, placeCaretAtTextOffset } from '@/blocks/caretOffset'
+import { getSelectionTextRange, selectTextRange, textOffsetOfNode } from '@/blocks/caretOffset'
 
 const SPELL_ERROR_CLASS = 'book-spell-error'
 const SPELL_ERROR_SELECTOR = `span.${SPELL_ERROR_CLASS}`
-const DEBOUNCE_MS = 500
+const DEBOUNCE_MS = 350
 
 /** Reverses any previous `wrapMisspelledWords` pass — merges every
  * `.book-spell-error` span's text back into its surrounding text, then
@@ -111,12 +124,30 @@ function wrapMisspelledWords(el: HTMLElement, speller: NSpell, ignoreWords: Set<
  * subscribed to reactively, since neither plausibly changes mid-keystroke
  * and re-reading a Zustand snapshot is cheap.
  */
-export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, active: boolean, projectId: string | undefined) {
+export function useLiveSpellcheck(
+  elRef: React.RefObject<HTMLElement | null>,
+  active: boolean,
+  projectId: string | undefined,
+  /** The field's current text. Passing it re-scans when the content changes
+   * from outside this field — which is what a paragraph the user is *not*
+   * editing needs, since it has no `input` events of its own to react to. */
+  contentKey?: string,
+  /** Called when the reader clicks a flagged word, with its plain-text
+   * offsets in this field. The owning block uses it to start editing and
+   * restore the selection — see `selectFlaggedWord` below. */
+  onFlaggedWordClick?: (start: number, end: number) => void,
+) {
   const timerRef = useRef<number | undefined>(undefined)
+  // Held in a ref so callers can pass an inline arrow without re-running the
+  // effect (and re-decorating the whole field) on every render.
+  const onFlaggedWordClickRef = useRef(onFlaggedWordClick)
+  onFlaggedWordClickRef.current = onFlaggedWordClick
+  const decoratingRef = useRef(false)
+  const enabled = useUiStore((s) => s.spellcheckWhileWriting)
 
   useEffect(() => {
     const el = elRef.current
-    if (!active || !el || !projectId) return
+    if (!active || !enabled || !el || !projectId) return
 
     const variant = useProjectStore.getState().getProject(projectId)?.settings.styleGuide?.englishVariant ?? 'british'
 
@@ -127,10 +158,23 @@ export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, ac
       const speller = getSpeller(variant)
       if (!speller) return
       const ignoreWords = collectLayer0Names(useLayer0Store.getState().getBible(projectId))
-      const caretOffset = getCaretTextOffset(el)
-      unwrapMisspelledWords(el)
-      wrapMisspelledWords(el, speller, ignoreWords)
-      if (caretOffset !== null) placeCaretAtTextOffset(el, caretOffset)
+      // The whole selection, not just a caret. A rescan rebuilds this
+      // element's nodes, and restoring only a caret meant that selecting a
+      // misspelled word and pausing for the debounce silently threw the
+      // selection away — taking the toolbar that offers to fix it with it.
+      const selectionRange = getSelectionTextRange(el)
+      decoratingRef.current = true
+      try {
+        unwrapMisspelledWords(el)
+        wrapMisspelledWords(el, speller, ignoreWords)
+      } finally {
+        // Cleared after the observer has drained this task's records, so our
+        // own wrap/unwrap never schedules another pass.
+        queueMicrotask(() => {
+          decoratingRef.current = false
+        })
+      }
+      if (selectionRange) selectTextRange(el, selectionRange.start, selectionRange.end)
     }
 
     const scheduleRescan = () => {
@@ -151,11 +195,56 @@ export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, ac
       })
     }
 
-    el.addEventListener('input', scheduleRescan)
+    // Clicking (or tapping) a flagged word selects exactly that word, which
+    // is what makes the underline actionable: a single-word selection is
+    // already what `FloatingFormatToolbar` shows its Fix-spelling list for.
+    // Without this the red line was information with no next step — you had
+    // to select the word by hand to do anything about it.
+    const selectFlaggedWord = (event: Event) => {
+      const target = event.target
+      if (!(target instanceof HTMLElement)) return
+      const span = target.closest(SPELL_ERROR_SELECTOR)
+      if (!span) return
+      const start = textOffsetOfNode(el, span)
+      const end = start + (span.textContent?.length ?? 0)
+      selectTextRange(el, start, end)
+      // Selecting the word is only half of it. `FloatingFormatToolbar` is
+      // mounted with `active={isEditing}`, and underlines appear on every
+      // paragraph rather than only the one being edited — so on a paragraph
+      // the user has not clicked into, the word would be selected and the
+      // suggestions still unreachable. The owning block is told, so it can
+      // enter edit mode and re-apply this exact selection once the field is
+      // editable (the switch reassigns `innerHTML`, which destroys any
+      // selection made before it).
+      onFlaggedWordClickRef.current?.(start, end)
+    }
+
+    // A MutationObserver rather than just an `input` listener.
+    //
+    // The underlines are DOM that React knows nothing about, and a field
+    // that isn't being edited renders through `dangerouslySetInnerHTML` — so
+    // any later render replaces the element's contents and silently strips
+    // every underline. That is why widening the scope wasn't enough on its
+    // own: decoration was applied correctly and then wiped by the next
+    // render, leaving a paragraph the user had finished with looking clean
+    // no matter how it was spelled (measured: 1 underline while editing, 0
+    // immediately after blur).
+    //
+    // Observing the element instead makes the decoration self-healing — it
+    // comes back whenever anything replaces the content, whoever did it —
+    // and covers typing too, so no separate `input` listener is needed.
+    const observer = new MutationObserver(() => {
+      if (decoratingRef.current) return // our own wrap/unwrap, not a real change
+      scheduleRescan()
+    })
+    observer.observe(el, { childList: true, subtree: true, characterData: true })
+
+    el.addEventListener('click', selectFlaggedWord)
     return () => {
       cancelled = true
+      observer.disconnect()
       window.clearTimeout(timerRef.current)
-      el.removeEventListener('input', scheduleRescan)
+      el.removeEventListener('click', selectFlaggedWord)
       // Clear any underlines left over from this editing session — the
       // field is either about to blur (commit reverts to plain
       // `dangerouslySetInnerHTML`, so stale spans would never be seen
@@ -164,5 +253,5 @@ export function useLiveSpellcheck(elRef: React.RefObject<HTMLElement | null>, ac
       // editing session.
       if (el.isConnected) unwrapMisspelledWords(el)
     }
-  }, [active, elRef, projectId])
+  }, [active, enabled, elRef, projectId, contentKey])
 }

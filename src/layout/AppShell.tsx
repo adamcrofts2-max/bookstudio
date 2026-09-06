@@ -5,6 +5,7 @@ import { Inspector } from '@/layout/Inspector'
 import { FocusModeLayout } from '@/layout/FocusModeLayout'
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts'
 import { useAutosaveSnapshots } from '@/hooks/useAutosaveSnapshots'
+import { useAutoBackup } from '@/hooks/useAutoBackup'
 import { useUiStore } from '@/store/uiStore'
 import type { Project } from '@/types'
 
@@ -25,6 +26,9 @@ interface AppShellProps {
 export function AppShell({ project }: AppShellProps) {
   useKeyboardShortcuts(project.id)
   useAutosaveSnapshots(project.id)
+  // Same mount point, same rhythm, different destination: a snapshot goes
+  // to IndexedDB, a backup goes to a real file outside the browser.
+  useAutoBackup(project)
   const focusMode = useUiStore((s) => s.focusMode)
 
   if (focusMode !== 'none') {

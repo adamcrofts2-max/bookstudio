@@ -177,9 +177,19 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               <Sparkles className="size-5 text-accent" />
               Virtual Editor
             </h1>
+            {/* Was: "Proofreading is real today; the rest of the taxonomy is
+             * designed and lands incrementally — see docs/VIRTUAL_EDITOR.md."
+             * Two problems, both found by reading the screen as a user
+             * (Phase 157): it pointed an author at a Markdown file inside a
+             * repository they don't have, and it had quietly gone false —
+             * `src/virtualEditor/checkers/` now holds a real checker for
+             * every one of the twelve categories, not just proofreading.
+             * A tile with no applicable checker still says "Not yet
+             * analysed" on its own, which is where that caveat belongs. */}
             <p className="max-w-[60ch] text-sm text-text-secondary">
-              Reviews the whole project like a publishing team would. Proofreading is real today; the rest of the
-              taxonomy is designed and lands incrementally — see <span className="font-medium">docs/VIRTUAL_EDITOR.md</span>.
+              Reads the whole book the way a publishing team would — proofreading, grammar, consistency,
+              readability, layout, typography and print readiness — and lists what it finds, with a one-click
+              fix wherever the correction is unambiguous. Nothing is rewritten without you.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -207,13 +217,13 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             {!layout && (
               <p className="max-w-[36ch] text-right text-xs text-text-secondary">
                 Layout and Publishing Quality checks need the manuscript view to have rendered at least once this
-                session — open the Chapters view, then come back and re-run the review.
+                session — open your manuscript, then come back and re-run the review.
               </p>
             )}
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <section className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {SCORE_TILES.map((tile) => {
             const categoryEntry = tile.key === 'overall' ? undefined : report?.categoryScores[tile.key]
             const score = tile.key === 'overall' ? (report?.overallScore ?? null) : (categoryEntry?.score ?? null)
