@@ -72,6 +72,20 @@ daily use of everything built so far.)*
       `renderBlocksWithDropZones` returned nothing) — a first-time author had no way
       to write their first paragraph. Found via live UX audit, fixed with a visible
       "Start writing" prompt for the empty-chapter case. Phase 77 (2026-08-02).
+- [x] Importing a manuscript on a phone closes its own sheet — fixed
+      2026-09-06 (Phase 161). It stayed open over a modal overlay after a
+      successful import, with no confirmation and nothing behind it tappable.
+      `ImportManuscriptButton` now reports success, and mobile lands the user
+      on Write with the chapters that just arrived.
+- [x] Distraction-free writing opens on the chapter — fixed 2026-09-06 (Phase
+      161). It opened on whatever the canvas last showed, which for a fresh
+      import is the contents page.
+- [x] Version history rows no longer print their timestamp twice — fixed
+      2026-09-06 (Phase 161). The store defaulted the label to a formatted
+      time and the row prints the time below the label.
+- [x] The export-readiness dialog names the format itself — fixed 2026-09-06
+      (Phase 161). Desktop and mobile each passed their own wording, and one
+      read "You can export PDF anyway".
 - [ ] Drag-to-reorder for all blocks — deprioritised in favour of the move-up/down
       buttons above, which solve the same need with less risk (full drag-and-drop
       across `LazySpread`'s lazily-mounted spreads is a materially bigger change)

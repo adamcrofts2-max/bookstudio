@@ -54,6 +54,12 @@ import type { Project } from '@/types'
 
 interface MobileMoreViewProps {
   project: Project
+  /**
+   * Switches the shell's bottom-tab selection. Used after a manuscript
+   * import lands, so the user ends up looking at the chapters they just
+   * brought in rather than at the More list they started from (Phase 161).
+   */
+  onNavigate?: (tab: 'write' | 'preview' | 'review' | 'develop' | 'more') => void
 }
 
 /**
@@ -119,7 +125,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
   )
 }
 
-export function MobileMoreView({ project }: MobileMoreViewProps) {
+export function MobileMoreView({ project, onNavigate }: MobileMoreViewProps) {
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
   const setFocusMode = useUiStore((s) => s.setFocusMode)
   const spellcheckWhileWriting = useUiStore((s) => s.spellcheckWhileWriting)
@@ -186,7 +192,6 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
     runFormat(format)
   }
 
-  const formatLabel = pendingExportFormat === 'pdf' ? 'PDF' : pendingExportFormat === 'epub' ? 'EPUB' : 'HTML'
 
   // Pushed screens rather than sheets: each of these is a full working
   // surface (a page editor with a cover canvas, an image grid, a find-and-
@@ -349,7 +354,7 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
         open={readinessOpen}
         onOpenChange={setReadinessOpen}
         findings={readinessFindings}
-        formatLabel={formatLabel}
+        format={pendingExportFormat ?? 'pdf'}
         onExportAnyway={() => {
           if (pendingExportFormat) runFormat(pendingExportFormat)
           setPendingExportFormat(null)
@@ -382,7 +387,13 @@ export function MobileMoreView({ project }: MobileMoreViewProps) {
             <p className="text-center text-sm text-text-secondary">
               Importing replaces this project's chapters. Your phone's file picker will open.
             </p>
-            <ImportManuscriptButton projectId={project.id} />
+            <ImportManuscriptButton
+              projectId={project.id}
+              onImported={() => {
+                setImportOpen(false)
+                onNavigate?.('write')
+              }}
+            />
             <p className="flex items-center gap-1.5 text-xs text-text-muted">
               <FileText className="size-3.5" />
               .epub · .docx · .md · .txt · .html

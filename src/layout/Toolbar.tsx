@@ -446,7 +446,7 @@ export function Toolbar({ project }: ToolbarProps) {
         open={readinessOpen}
         onOpenChange={setReadinessOpen}
         findings={readinessFindings}
-        formatLabel={pendingExportFormat === 'epub' ? 'the EPUB' : pendingExportFormat === 'html' ? 'the HTML' : 'the PDF'}
+        format={pendingExportFormat ?? 'pdf'}
         onExportAnyway={handleExportAnyway}
       />
     </header>

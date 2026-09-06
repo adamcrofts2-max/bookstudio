@@ -1667,9 +1667,19 @@ check(
 await useVersionStore.getState().createSnapshot(vhProjectId, 'auto')
 await useVersionStore.getState().listSnapshots(vhProjectId)
 const vhSnapshotsAfterAuto = useVersionStore.getState().getSnapshots(vhProjectId)
+// Phase 161 changed this contract deliberately. The label used to default
+// to a formatted timestamp ("Autosave — 9/6/2026, 9:26:49 AM"), and
+// `VersionHistoryDialog` prints the timestamp *underneath* the label — so
+// every unnamed version showed the same time twice, with the kind badge
+// beside it saying "auto" a third time. An unnamed snapshot now stores no
+// label at all, and what to show in its place is the row's decision.
 check(
-  'createSnapshot (auto, no label given): defaults to an "Autosave — <timestamp>" label',
-  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label.startsWith('Autosave — ')),
+  'createSnapshot (auto, no label given): stores no label, leaving the display to decide',
+  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label === ''),
+)
+check(
+  'createSnapshot: an explicit label is still kept verbatim',
+  vhSnapshotsAfterAuto.some((s) => s.label === 'My named save'),
 )
 
 // listSnapshots: newest-first ordering — write two snapshots directly via

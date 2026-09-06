@@ -11127,3 +11127,97 @@ the unfixed build. It now looks for `[data-chapter-start]` in the viewport.
 That is the seventh time in this project a new assertion has been wrong before
 the code was, and the seventh time the cause was a locator loose enough to
 find something else that happens to be correct.
+
+## Phase 161 — four things a third walkthrough found
+
+The first walkthrough (Phase 156) covered writing and the editor's furniture.
+The second (157) covered the first hour of a new book. This one deliberately
+went where neither had: a real `.docx` import, Project Settings, theme
+switching, search, notes, version history, backups, templates, focus and
+reading modes, export, and deletion. 23 desktop screenshots, 12 mobile, no
+runtime errors in either — and four defects, one of them the worst kind.
+
+### 1. The mobile import sheet never closed
+
+Importing a manuscript on a phone worked. The sheet you did it from stayed
+open afterwards, over its own modal overlay, with no confirmation of any
+kind. Everything behind it — the tab bar included — was untappable until you
+found the ✕. The walkthrough's next *seven* steps all timed out on that
+overlay, which is exactly what a user would read as the app having frozen.
+
+Root cause was a missing seam rather than a bug in either half:
+`ImportManuscriptButton` had no way to tell a caller it had finished, so the
+sheet could not know. Desktop mounts the same button inside the empty-state
+workspace, where there is no sheet to close and nothing to notice — which is
+why this survived every previous pass.
+
+It now takes an `onImported` callback, fired after the assets load and before
+the `finally`, so it can never announce a failure as a success.
+`MobileMoreView` closes the sheet and hands the shell back to **Write**,
+where the chapters that just arrived actually are.
+
+### 2. Distraction-free writing opened on the contents page
+
+You ask for a page to write on and get the table of contents, because the
+canvas simply stayed wherever it was. `FocusModeLayout` now requests a scroll
+to the selected chapter (or the first) once per entry — the same
+"land where the work is" rule as Phases 156 and 157, applied to the one
+surface whose entire purpose is to put you in front of your writing.
+
+### 3. A version saved without a name printed its time twice
+
+```
+9/6/2026, 9:26:49 AM   [Manual]
+9/6/2026, 9:26:49 AM
+```
+
+`versionStore.createSnapshot` defaulted the *label* to a formatted timestamp,
+and the row prints the timestamp underneath the label. Autosaves were worse:
+"Autosave — 9/6/2026…" above "9/6/2026…", with the `auto` badge beside it
+saying the same thing a third time. The store now stores an empty label when
+the user gave none, and the row decides what to show: the name if there is
+one, otherwise the time, once.
+
+### 4. One dialog, two shells, two wordings
+
+Desktop passed `formatLabel="the PDF"`, mobile passed `"PDF"`, so the same
+sentence read *"You can export the PDF anyway"* on one and *"You can export
+PDF anyway"* on the other. The dialog takes the `format` now and names it
+itself — the same fix as `blockSpacing.ts` in Phase 159 and
+`readProjectFileSource` in Phase 158: when two call sites can disagree, take
+the decision away from the call sites.
+
+### Verification
+
+Six assertions across three suites, each proved to fail against the old
+behaviour before being kept:
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| the import sheet closes once the manuscript is in | `mobileBlocks` | a dialog is still open |
+| and the phone lands on the chapters it just imported | `mobileBlocks` | still on the More list (`EXPORT`) |
+| the tab bar is usable immediately afterwards | `mobileBlocks` | tap times out on the overlay |
+| distraction-free writing opens on the chapter | `structure` | opener off screen |
+| an unnamed version shows its time once, not twice | `structure` | `2` timestamps in the row |
+| the readiness dialog names the format grammatically | `export` | "You can export PDF anyway" |
+
+Two corrections to the walkthrough that produced these, both worth recording
+because both were mine:
+
+- **PDF export looked broken and wasn't.** The desktop walk polled
+  `window.__saved.length > 0` for the export, but the backups step earlier in
+  the same walk had already written a `.bookstudio` through the same stub, so
+  the poll returned instantly and reported the wrong file. Isolated and
+  re-run with and without focus mode, export produces a 227 KB PDF every
+  time. A measurement that shares state with an earlier step is not a
+  measurement.
+- **A unit test guarded the behaviour being removed.** `smoke-test.ts`
+  asserted that an unlabelled autosave defaults to an `"Autosave — <time>"`
+  label — the very default that produced the duplicate. Updated to assert
+  the new contract (no label stored; the row decides), plus a second check
+  that an explicit label is still kept verbatim, since that is the half
+  worth protecting.
+- **The first proof run was invalid**, twice, in the same way as Phase 159's:
+  reverting a fix by deleting a call left an unused parameter, `tsc` failed,
+  `dist` kept the *fixed* build, and every assertion passed. A proof that
+  depends on a build has to check the build succeeded.

@@ -68,7 +68,12 @@ export const useVersionStore = create<VersionStoreState & VersionStoreActions>()
       id: generateId('snapshot'),
       projectId,
       createdAt: new Date().toISOString(),
-      label: label?.trim() || (kind === 'auto' ? `Autosave — ${new Date().toLocaleString()}` : new Date().toLocaleString()),
+      // Empty when the user didn't name it. The label used to default to a
+      // formatted timestamp, and `VersionHistoryDialog` prints the
+      // timestamp underneath the label — so every unnamed version showed
+      // the same time twice, one line above the other (Phase 161). What to
+      // show when there is no label is the row's business, not the store's.
+      label: label?.trim() ?? '',
       kind,
       manuscript,
       settings: project.settings,

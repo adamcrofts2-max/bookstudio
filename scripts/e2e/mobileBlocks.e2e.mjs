@@ -83,6 +83,27 @@ async function main() {
     })
     check(`a .docx imported on a phone becomes real chapters (${importedTitles.join(' | ')})`, importedTitles.length === 2)
 
+    // Phase 161: and the sheet gets out of the way. It used to stay open
+    // over its own modal overlay after a *successful* import — no
+    // confirmation, nothing behind it tappable, indistinguishable from the
+    // app having frozen. Caught by a walkthrough whose next seven steps all
+    // timed out on that overlay.
+    const sheetStillOpen = await page.evaluate(() => !!document.querySelector('[role="dialog"]'))
+    check('the import sheet closes once the manuscript is in', sheetStillOpen === false)
+    const landedOn = await page.evaluate(() => document.body.innerText.slice(0, 120))
+    check(
+      `and the phone lands on the chapters it just imported (${landedOn.split('\n').filter(Boolean)[1] ?? ''})`,
+      /The Keeper of Hours/.test(landedOn),
+    )
+    const tabBarReachable = await page
+      .getByText('Preview', { exact: true })
+      .first()
+      .tap({ timeout: 5000 })
+      .then(() => true)
+      .catch(() => false)
+    check('the tab bar is usable immediately afterwards', tabBarReachable === true)
+    await page.waitForTimeout(1500)
+
     await page.goto(server.url)
     await page.waitForTimeout(900)
     await newProjectWithChapter(page, { mobile: true })

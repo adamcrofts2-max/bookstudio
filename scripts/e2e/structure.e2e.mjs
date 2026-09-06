@@ -356,6 +356,46 @@ async function main() {
     await page.getByRole('button', { name: /virtual editor/i }).first().click()
     await page.waitForTimeout(1500)
 
+    // ---- Phase 161: two small screens that were telling small lies ----
+    // Distraction-free writing opened on whatever the canvas last showed —
+    // for a freshly imported book, the table of contents. You ask for a
+    // page to write on; you should get the chapter.
+    await page.getByRole('button', { name: 'More' }).first().click()
+    await page.waitForTimeout(400)
+    await page.getByRole('menuitem', { name: /distraction/i }).first().click()
+    await page.waitForTimeout(3000)
+    const openerInFocus = await page.evaluate(() => {
+      const opener = document.querySelector('[data-chapter-start]')
+      if (!opener) return false
+      const r = opener.getBoundingClientRect()
+      return r.bottom > 0 && r.top < window.innerHeight
+    })
+    check('distraction-free writing opens on the chapter, not the contents page', openerInFocus === true)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(1500)
+
+    // A version saved without a name printed its timestamp as the heading
+    // *and* again underneath it, because the store defaulted the label to a
+    // formatted time and the row prints the time below the label.
+    await page.getByRole('button', { name: 'More' }).first().click()
+    await page.waitForTimeout(400)
+    await page.getByRole('menuitem', { name: /version history/i }).click()
+    await page.waitForTimeout(1000)
+    const saveVersion = page.getByRole('button', { name: /save a version now/i }).first()
+    if (await saveVersion.count()) {
+      await saveVersion.click()
+      await page.waitForTimeout(1800)
+    }
+    const versionRowLines = await page.evaluate(() => {
+      const rows = [...(document.querySelector('[role="dialog"]')?.querySelectorAll('.flex-1') ?? [])]
+      return rows.map((row) => (row.textContent ?? '').trim()).filter(Boolean)
+    })
+    const timestampsInFirstRow = (versionRowLines[0] ?? '').match(/\d{1,2}:\d{2}:\d{2}/g)?.length ?? 0
+    check(`an unnamed version shows its time once, not twice (${timestampsInFirstRow})`, timestampsInFirstRow === 1)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+
+
     // ---- manuscript import (.docx) ----
     // The most-used way a real manuscript enters this app, and it had no
     // coverage of any kind — which mattered the day `@xmldom/xmldom`

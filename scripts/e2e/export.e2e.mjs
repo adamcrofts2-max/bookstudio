@@ -123,6 +123,15 @@ async function exportVia(page, itemPattern, timeoutMs = 60000) {
 
   const anyway = page.getByRole('button', { name: /export anyway/i })
   if (await anyway.count()) {
+    // Phase 161: the two shells each passed their own wording for the
+    // format, and one of them read "You can export PDF anyway". The dialog
+    // names the format itself now, so there is a single string to be right
+    // — checked here because this is the suite that actually reaches it.
+    const readiness = await page.evaluate(() => document.querySelector('[role="dialog"]')?.textContent ?? '')
+    check(
+      `the readiness dialog names the format grammatically (${readiness.match(/You can export [^—]*/)?.[0]?.trim() ?? 'not found'})`,
+      /export the (PDF|EPUB|web page) anyway/i.test(readiness),
+    )
     await anyway.click()
     await page.waitForTimeout(400)
   }

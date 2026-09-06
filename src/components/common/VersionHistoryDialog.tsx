@@ -109,12 +109,20 @@ export function VersionHistoryDialog({ projectId, open, onOpenChange }: VersionH
                 >
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="truncate text-sm font-medium text-text-primary">{snapshot.label}</p>
+                      {/* An unnamed version is identified by when it was
+                         taken, so the time becomes the heading and there is
+                         nothing left to repeat underneath. A named one keeps
+                         its name as the heading with the time below it. */}
+                      <p className="truncate text-sm font-medium text-text-primary">
+                        {snapshot.label.trim() || new Date(snapshot.createdAt).toLocaleString()}
+                      </p>
                       <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize', KIND_STYLE[snapshot.kind])}>
                         {snapshot.kind}
                       </span>
                     </div>
-                    <p className="text-xs text-text-muted">{new Date(snapshot.createdAt).toLocaleString()}</p>
+                    {snapshot.label.trim() && (
+                      <p className="text-xs text-text-muted">{new Date(snapshot.createdAt).toLocaleString()}</p>
+                    )}
                   </div>
                   <Button variant="outline" size="sm" onClick={() => handleRestore(snapshot)} disabled={busy}>
                     Restore
@@ -122,7 +130,7 @@ export function VersionHistoryDialog({ projectId, open, onOpenChange }: VersionH
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Delete saved version "${snapshot.label}"`}
+                    aria-label={`Delete saved version "${snapshot.label.trim() || new Date(snapshot.createdAt).toLocaleString()}"`}
                     onClick={() => handleDelete(snapshot)}
                     disabled={busy}
                   >

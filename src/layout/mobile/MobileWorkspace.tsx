@@ -135,7 +135,7 @@ export function MobileWorkspace({ project }: MobileWorkspaceProps) {
         {tab === 'preview' && <MobilePreviewView project={project} />}
         {tab === 'review' && <MobileReviewView project={project} />}
         {tab === 'develop' && <MobileDevelopView project={project} />}
-        {tab === 'more' && <MobileMoreView project={project} />}
+        {tab === 'more' && <MobileMoreView project={project} onNavigate={setTab} />}
       </div>
 
       <nav className="flex shrink-0 items-center border-t border-border bg-panel pb-[env(safe-area-inset-bottom)]">
