@@ -83,8 +83,48 @@ try {
   const after = await page.evaluate(() => document.querySelectorAll('[data-graph-node]').length)
   check('filtering re-runs the layout on a live worker', after < before)
 
+  // Chapter creation from the canvas (Phase 165). The graph is where a
+  // book's shape is decided, and until now the one thing it could not add
+  // was a chapter — see `AddGraphNodeDialog`'s doc comment for why that
+  // boundary was the wrong one.
+  await page.getByRole('button', { name: /^ideas \(/i }).first().click()
+  await page.waitForTimeout(600)
+  await page.getByRole('button', { name: /^add$/i }).first().click()
+  await page.waitForTimeout(500)
+  await page.getByRole('button', { name: /^chapter$/i }).first().click()
+  await page.waitForTimeout(300)
+  await page.locator('#add-node-primary').fill('The Long Road Home')
+  await page.getByRole('button', { name: /^create|^add/i }).last().click()
+  await page.waitForTimeout(1800)
+
+  const titles = await page.evaluate(() => {
+    const byProject = JSON.parse(localStorage.getItem('book-studio.content')).state.byProject
+    return Object.values(byProject)[0].chapters.map((c) => c.title)
+  })
+  check('the graph adds a real chapter to the manuscript', titles.includes('The Long Road Home'))
+  check('it is appended after the existing chapters', titles[titles.length - 1] === 'The Long Road Home')
+
+  const drawn = await page.locator('[data-graph-node]').count()
+  check('the new chapter appears on the graph', drawn >= 3)
+  // Chapters take their position from the layout rather than being pinned
+  // where the view happened to be centred, so the spine stays a line.
+  const pinnedChapters = await page.evaluate(() => {
+    const content = JSON.parse(localStorage.getItem('book-studio.content')).state.byProject
+    const [projectId, manuscript] = Object.entries(content)[0]
+    const chapterIds = new Set(manuscript.chapters.map((c) => c.id))
+    const raw = localStorage.getItem('book-studio.graph-layout')
+    const saved = raw ? (JSON.parse(raw).state.byProject[projectId] ?? {}) : {}
+    return Object.keys(saved).filter((id) => chapterIds.has(id))
+  })
+  check('the new chapter is not pinned off the spine', pinnedChapters.length === 0)
+
   check('no runtime errors on the graph', pageErrors.length === 0)
   if (pageErrors.length) console.log(pageErrors.join('\n'))
+} catch (error) {
+  // A missing control throws out of a locator rather than failing an
+  // assertion, and a suite that dies with an unhandled rejection reports
+  // nothing useful. Turn it into an ordinary failure line.
+  check(`the suite ran to completion (${String(error).split('\n')[0]})`, false)
 } finally {
   await browser.close()
   server.close()

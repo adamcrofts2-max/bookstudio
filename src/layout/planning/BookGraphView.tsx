@@ -13,7 +13,7 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
-import { AddGraphNodeDialog } from '@/layout/planning/AddGraphNodeDialog'
+import { AddGraphNodeDialog, type AddableNodeKind } from '@/layout/planning/AddGraphNodeDialog'
 import { findFreeGraphPosition } from '@/layout/planning/graphPlacement'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
 import type { Layout } from '@/layout/planning/graphLayoutEngine'
@@ -658,7 +658,32 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
    * new node wherever its physics settle — frequently off-screen — so the
    * user adds something and cannot find it. Pinning is exactly what a manual
    * drag already does, so a placed node behaves like a dragged one. */
-  function handleNodeCreated(nodeId: string, relationshipLabel: string) {
+  function handleNodeCreated(nodeId: string, kind: AddableNodeKind, relationshipLabel: string) {
+    // A chapter is the one kind that has a place of its own: the spine runs
+    // Book -> chapter 1 -> chapter 2 -> …, and the force layout draws it
+    // from the chapter-order edges. Pinning a new chapter wherever the view
+    // happened to be centred would drag it off that line and leave the
+    // spine visibly kinked, so chapters are left to the layout. Everything
+    // else is free-floating and gets pinned where it was dropped.
+    if (kind !== 'chapter') placeNewNode(nodeId)
+
+    if (relationshipLabel && selectedNodeId) {
+      const now = new Date().toISOString()
+      addLayer0EntityWithHistory(
+        projectId,
+        'relationships',
+        { id: generateId('rel'), aId: selectedNodeId, bId: nodeId, label: relationshipLabel, createdAt: now, updatedAt: now } as never,
+        'Add relationship',
+      )
+    }
+
+    // Select what was just added, so the side panel immediately describes it
+    // and a second add chains off it — the same "keep going" behaviour
+    // `submitPendingConnection` deliberately keeps for connections.
+    setSelectedNodeId(nodeId)
+  }
+
+  function placeNewNode(nodeId: string) {
     const anchorPos = selectedNodeId ? layout.positions.get(selectedNodeId) : undefined
     let candidate: { x: number; y: number }
     if (anchorPos) {
@@ -679,21 +704,6 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
     const taken = [...layout.positions.entries()].filter(([id]) => id !== nodeId).map(([, p]) => p)
     const position = findFreeGraphPosition(candidate, taken)
     setSavedPosition(projectId, nodeId, position)
-
-    if (relationshipLabel && selectedNodeId) {
-      const now = new Date().toISOString()
-      addLayer0EntityWithHistory(
-        projectId,
-        'relationships',
-        { id: generateId('rel'), aId: selectedNodeId, bId: nodeId, label: relationshipLabel, createdAt: now, updatedAt: now } as never,
-        'Add relationship',
-      )
-    }
-
-    // Select what was just added, so the side panel immediately describes it
-    // and a second add chains off it — the same "keep going" behaviour
-    // `submitPendingConnection` deliberately keeps for connections.
-    setSelectedNodeId(nodeId)
   }
 
   useEffect(() => {
@@ -1612,6 +1622,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
         projectId={projectId}
         bookForm={bookForm}
         timelineEventCount={bible.timelineEvents.length}
+        lastChapterId={chapters.length ? chapters[chapters.length - 1].id : null}
         // The Book hub is a synthetic node with no Layer 0 id, so it can't be
         // one end of a relationship — offer the link only for real nodes.
         connectTo={selectedNode && selectedNode.id !== BOOK_NODE_ID ? { id: selectedNode.id, label: selectedNode.label } : null}

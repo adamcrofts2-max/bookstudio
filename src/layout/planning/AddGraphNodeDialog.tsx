@@ -8,27 +8,41 @@ import { Textarea } from '@/components/ui/textarea'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { GRAPH_NODE_ICONS } from '@/layout/planning/graphIcons'
 import { LAYER0_FORM_CONFIG } from '@/layout/planning/layer0FormConfig'
-import { addIdeaWithHistory, addLayer0EntityWithHistory } from '@/store/editorActions'
+import { addChapterWithHistory, addIdeaWithHistory, addLayer0EntityWithHistory } from '@/store/editorActions'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_TO_COLLECTION, getLayer0KindLabel, type Layer0EntityKind } from '@/types/layer0'
 import { generateId } from '@/utils'
 import type { BookForm } from '@/types'
 
-/** Every kind this dialog can create. Deliberately NOT `GraphNodeKind`:
+/** Every kind this dialog can create. Still not `GraphNodeKind`: `book` is
+ * the synthetic hub node, one per project, and there is nothing to create.
  *
- * - `chapter` is Layer 2 (Content) data. `types/layer0.ts`'s own doc comment
- *   states the one-way boundary — Layer 0 is upstream of Content and nothing
- *   here is manuscript text — and `CLAUDE.md` forbids one layer mutating
- *   another's data. The Book Graph is a Layer 0 planning view, so it reads
- *   chapters and never writes them; chapters are added in Write mode, where
- *   the manuscript actually lives.
- * - `book` is the synthetic hub node, one per project. There is nothing to
- *   create.
+ * `chapter` was excluded too until Phase 165, on the reading that the Book
+ * Graph is a Layer 0 view and chapters are Layer 2 (Content) data. That
+ * conflated two different boundaries. The one the architecture actually
+ * draws is between *stores*: `docs/SYSTEM_ARCHITECTURE.md` says stores are
+ * "never cross-imported for mutation", and `types/layer0.ts` says "no Layer
+ * 2 code may import this file". Both still hold — `layer0Store` does not
+ * touch `contentStore`, and nothing in Layer 2 has learned about Layer 0.
+ * What a *view* may call was never the rule, and could not be: `Sidebar`,
+ * `MobileWriteView` and `MobileFocusWriteView` all reach for
+ * `addChapterWithHistory` from `editorActions`, which is the single audited
+ * write path for Content and exists precisely so views don't poke stores
+ * directly.
+ *
+ * Keeping the graph read-only about chapters cost the user the obvious move
+ * in the one screen built for deciding a book's shape: you are looking at
+ * the spine, you can see the gap, and the only way to fill it was to leave
+ * for Write mode and come back. The graph already shows chapters, orders
+ * them and links them to Layer 0 entities; adding one is less of a reach
+ * than any of that.
  *
  * Everything else is a single-required-field create, which is what makes a
  * quick-add on a canvas honest rather than a half-filled record. */
-export type AddableNodeKind = Layer0EntityKind | 'idea'
+export type AddableNodeKind = Layer0EntityKind | 'idea' | 'chapter'
 
-const ADDABLE_NODE_KINDS: AddableNodeKind[] = [...LAYER0_ENTITY_KINDS, 'idea']
+// Chapter first: it is the book's spine, and the only kind here that is
+// part of the manuscript rather than notes about it.
+const ADDABLE_NODE_KINDS: AddableNodeKind[] = ['chapter', ...LAYER0_ENTITY_KINDS, 'idea']
 
 /** The one kind whose type requires a second field (`GlossaryTerm.definition`
  * is not optional). Everything else is valid from its primary field alone, so
@@ -47,10 +61,14 @@ interface AddGraphNodeDialogProps {
    * is the whole reason to add from the graph rather than from a list: you
    * are already looking at what the new thing relates to. */
   connectTo?: { id: string; label: string } | null
-  /** Called with the new node's id and the relationship label (empty for no
-   * link) so the caller can pin its position and create the edge — placement
-   * and edge creation both need graph state this dialog doesn't own. */
-  onCreate: (nodeId: string, relationshipLabel: string) => void
+  /** The last chapter in the book, or `null` for a book with none — a new
+   * chapter is appended after it, matching every other add-chapter path. */
+  lastChapterId: string | null
+  /** Called with the new node's id, its kind and the relationship label
+   * (empty for no link) so the caller can place it and create the edge —
+   * placement and edge creation both need graph state this dialog doesn't
+   * own, and a chapter is placed differently from everything else. */
+  onCreate: (nodeId: string, kind: AddableNodeKind, relationshipLabel: string) => void
 }
 
 export function AddGraphNodeDialog({
@@ -60,6 +78,7 @@ export function AddGraphNodeDialog({
   bookForm,
   timelineEventCount,
   connectTo,
+  lastChapterId,
   onCreate,
 }: AddGraphNodeDialogProps) {
   const [kind, setKind] = useState<AddableNodeKind | null>(null)
@@ -78,7 +97,9 @@ export function AddGraphNodeDialog({
   }, [open])
 
   function labelFor(k: AddableNodeKind): string {
-    return k === 'idea' ? 'Idea' : getLayer0KindLabel(k, bookForm).singular
+    if (k === 'idea') return 'Idea'
+    if (k === 'chapter') return 'Chapter'
+    return getLayer0KindLabel(k, bookForm).singular
   }
 
   const extraKey = kind ? EXTRA_REQUIRED_KEY[kind] : undefined
@@ -87,10 +108,15 @@ export function AddGraphNodeDialog({
   function create() {
     if (!kind || !canCreate) return
     const now = new Date().toISOString()
-    const id = generateId(kind)
+    let id = generateId(kind)
     const value = primary.trim()
 
-    if (kind === 'idea') {
+    if (kind === 'chapter') {
+      // `addChapterWithHistory` mints its own id (it also creates the
+      // chapter's first empty paragraph), so take the one it returns rather
+      // than the one generated above.
+      id = addChapterWithHistory(projectId, lastChapterId, value)
+    } else if (kind === 'idea') {
       addIdeaWithHistory(projectId, { id, text: value, createdAt: now, updatedAt: now, status: 'new' }, 'Add idea')
     } else {
       const config = LAYER0_FORM_CONFIG[kind]
@@ -111,12 +137,13 @@ export function AddGraphNodeDialog({
       )
     }
 
-    onCreate(id, connectTo ? relationship.trim() : '')
+    onCreate(id, kind, connectTo ? relationship.trim() : '')
     onOpenChange(false)
   }
 
-  const primaryField = kind && kind !== 'idea' ? LAYER0_FORM_CONFIG[kind].fields.find((f) => f.key === LAYER0_FORM_CONFIG[kind].primaryKey) : undefined
-  const extraField = kind && kind !== 'idea' && extraKey ? LAYER0_FORM_CONFIG[kind].fields.find((f) => f.key === extraKey) : undefined
+  const isLayer0 = !!kind && kind !== 'idea' && kind !== 'chapter'
+  const primaryField = isLayer0 ? LAYER0_FORM_CONFIG[kind as Layer0EntityKind].fields.find((f) => f.key === LAYER0_FORM_CONFIG[kind as Layer0EntityKind].primaryKey) : undefined
+  const extraField = isLayer0 && extraKey ? LAYER0_FORM_CONFIG[kind as Layer0EntityKind].fields.find((f) => f.key === extraKey) : undefined
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -125,10 +152,12 @@ export function AddGraphNodeDialog({
           <DialogTitle>{kind ? `New ${labelFor(kind).toLowerCase()}` : 'Add to the graph'}</DialogTitle>
           <DialogDescription>
             {kind
-              ? connectTo
-                ? `It will be placed next to “${connectTo.label}”.`
-                : 'It will be placed in the middle of the view.'
-              : 'Pick what you want to add. Chapters are added in Write mode, where the manuscript lives.'}
+              ? kind === 'chapter'
+                ? 'It is added to the end of the book and takes its place on the spine.'
+                : connectTo
+                  ? `It will be placed next to “${connectTo.label}”.`
+                  : 'It will be placed in the middle of the view.'
+              : 'Pick what you want to add. A chapter joins the book itself; everything else is planning around it.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -155,13 +184,15 @@ export function AddGraphNodeDialog({
         ) : (
           <div className="space-y-4">
             <div className="space-y-1.5">
-              <Label htmlFor="add-node-primary">{kind === 'idea' ? 'Idea' : (primaryField?.label ?? 'Name')}</Label>
+              <Label htmlFor="add-node-primary">
+                {kind === 'idea' ? 'Idea' : kind === 'chapter' ? 'Chapter title' : (primaryField?.label ?? 'Name')}
+              </Label>
               <Input
                 id="add-node-primary"
                 autoFocus
                 value={primary}
                 onChange={(e) => setPrimary(e.target.value)}
-                placeholder={kind === 'idea' ? 'What if…' : (primaryField?.placeholder ?? '')}
+                placeholder={kind === 'idea' ? 'What if…' : kind === 'chapter' ? 'e.g. The Long Road Home' : (primaryField?.placeholder ?? '')}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !extraKey && canCreate) create()
                 }}

@@ -11460,3 +11460,58 @@ is the point: the failure was always silent.
 `BookGraphView`'s node `<g>` gained `data-graph-node={node.id}` as the
 suite's hook, since every other part of that view renders whether or not the
 layout answered.
+
+## Phase 165 — the Book Graph can add a chapter
+
+Open since Phase 135, where the "Add" button shipped able to create all
+eight Layer 0 kinds and an Idea, and deliberately not a chapter. The roadmap
+recorded it as needing "a decision, not a patch". This is the decision.
+
+### The decision
+
+Open it — the boundary being defended was the wrong one.
+
+Phase 135 reasoned that the Book Graph is a Layer 0 view and a chapter is
+Layer 2 (Content) data, so creating one would be a layer mutating another
+layer's data. That conflates two boundaries. The one the architecture draws
+is between *stores*: `docs/SYSTEM_ARCHITECTURE.md` says stores are "never
+cross-imported for mutation", and `types/layer0.ts` says "no Layer 2 code
+may import this file". Both are untouched here — `layer0Store` still never
+sees `contentStore`, and nothing in Layer 2 has learned Layer 0 exists.
+
+What a *view* may call was never that rule, and could not have been:
+`Sidebar`, `MobileWriteView` and `MobileFocusWriteView` all call
+`addChapterWithHistory` from `editorActions`, the single audited write path
+that exists precisely so views don't reach into stores. The graph now calls
+the same function the sidebar does.
+
+The cost of the old reading was concrete: the one screen built for deciding
+a book's shape could show you the spine, show you the gap in it, and then
+make you leave for Write mode to fill it. The graph already renders
+chapters, orders them and links them to Layer 0 entities. Adding one is a
+smaller reach than any of that.
+
+### What shipped
+
+- `AddableNodeKind` gained `'chapter'`, first in the picker — it is the
+  book's spine, and the only kind there that is part of the manuscript
+  rather than notes about it.
+- `create()` routes chapters to `addChapterWithHistory(projectId,
+  lastChapterId, title)` and takes the id *it* returns, since that function
+  mints its own and seeds the chapter's first empty paragraph.
+- A new chapter is **not** pinned. Every other kind is placed where the view
+  was centred and pinned there; a chapter's position comes from the
+  chapter-order edges, so pinning one would kink the spine visibly.
+  `handleNodeCreated` now takes the kind and skips placement for chapters;
+  the placement logic moved to `placeNewNode`.
+- The dialog's copy changed from "Chapters are added in Write mode, where
+  the manuscript lives" to "A chapter joins the book itself; everything else
+  is planning around it."
+
+Verified in the running dev app: adding "The Long Road Home" from the canvas
+put it in the manuscript as chapter 2, drew it on the spine with the
+chapter-order arrow, selected it, and offered "Open in editor" in the side
+panel. Four assertions in `scripts/e2e/graph.e2e.mjs` cover it, proved
+against the old build first (where the suite times out looking for a
+Chapter button that isn't there — that suite now turns a thrown locator
+error into an ordinary failure line rather than an unhandled rejection).

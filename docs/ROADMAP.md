@@ -1588,8 +1588,13 @@ Book Studio today and an actual multi-device Canva-style product.)*
       an Idea, places it clear of existing nodes and pins it there, and
       optionally links it to the selected node in the same step. Chapters are
       deliberately excluded — Layer 2 data, added in Write mode
-- [ ] Let the graph create a chapter too, if the Layer 0 -> Layer 2 boundary
-      is ever deliberately opened (needs a decision, not a patch)
+- [x] Let the graph create a chapter too — decided and shipped 2026-09-06
+      (Phase 165). The boundary Phase 135 defended was the wrong one: the
+      architecture's rule is that *stores* are never cross-imported for
+      mutation, not that a view may not call an action. `Sidebar` and both
+      mobile write views already call `addChapterWithHistory`; the graph now
+      calls the same one. A new chapter is appended to the book and left
+      unpinned so the spine stays a line
 - [x] Front/back matter on mobile — shipped 2026-09-04 (Phase 136). More ->
       Book pages adds, reorders, duplicates, deletes and edits every
       structural page type, including setting a cover image from the camera
