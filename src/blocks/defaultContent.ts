@@ -37,6 +37,7 @@ export const TEXT_FIRST_BLOCK_TYPES = new Set<string>([
   'callout',
   'case-study',
   'list',
+  'verse',
 ])
 
 /** Where the caret goes for a freshly inserted block — `list` starts on its
@@ -49,6 +50,7 @@ export const INSERTABLE_BLOCK_TYPES: InsertableBlockType[] = [
   'paragraph',
   'heading',
   'quote',
+  'verse',
   'pull-quote',
   'list',
   'table',
@@ -86,6 +88,10 @@ export function createDefaultBlock(type: InsertableBlockType): ContentBlock {
       return { id, type, text: '' }
     case 'pull-quote':
       return { id, type, text: '' }
+    case 'verse':
+      // One empty line, so the block has something to type into — the same
+      // reasoning as `list`'s single empty item.
+      return { id, type, lines: [''] }
     case 'list':
       return { id, type, ordered: false, items: [''] }
     case 'table':

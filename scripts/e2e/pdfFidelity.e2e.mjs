@@ -472,6 +472,20 @@ async function main() {
         para(),
         { id: id('case'), type: 'case-study', title: 'The reading room', text: sentence },
         para(),
+        {
+          id: id('verse'),
+          type: 'verse',
+          // Includes a stanza break and a line long enough to run over, the
+          // two cases where screen and print could disagree about how tall
+          // verse is.
+          lines: [
+            'The keeper walked the upper floor,',
+            'and counted every door she knew,',
+            '',
+            'and one she did not, which is the line that runs on past the measure and has to wrap somewhere.',
+          ],
+        },
+        para(),
       ]
       parsed.state.byProject[projectId] = {
         chapters: [{ id: 'seed-chapter', title: 'Every Block', blocks }],
@@ -482,7 +496,7 @@ async function main() {
       localStorage.setItem('book-studio.content', JSON.stringify(parsed))
       return blocks.filter((b) => b.type !== 'paragraph').map((b) => b.type)
     })
-    check(`the rich fixture seeded every remaining block type (${(seeded ?? []).join(', ')})`, (seeded ?? []).length === 8)
+    check(`the rich fixture seeded every remaining block type (${(seeded ?? []).join(', ')})`, (seeded ?? []).length === 9)
     await page.reload()
     await page.waitForTimeout(4000)
 

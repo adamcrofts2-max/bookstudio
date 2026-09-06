@@ -53,6 +53,14 @@ export const BLOCK_SPACING = {
    */
   callout: { before: 8, after: 8 },
   caseStudy: { before: 8, after: 8 },
+  /**
+   * `verse.tsx` (Phase 167) — set from the same numbers on both sides from
+   * the day it shipped, rather than being added to the list of nine that
+   * still carry hand-chosen values in their own `drawPdf`. Verse sits apart
+   * from the prose around it, like a quote, but reads as part of the same
+   * passage, so the space is a little tighter than a quote's.
+   */
+  verse: { before: 18, after: 18 },
 } as const
 
 export type SpacedBlockType = keyof typeof BLOCK_SPACING

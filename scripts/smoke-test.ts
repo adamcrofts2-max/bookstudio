@@ -2542,7 +2542,13 @@ check(
   </body></html>`
 
   const c2 = `<html><body><section><h2>The Parables</h2><p>The second vision.</p>
-  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul></section></body></html>`
+  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul>
+  <blockquote class="poem">Roll on, thou deep and dark blue Ocean&#8212;roll!<br/>Ten thousand fleets sweep over thee in vain;</blockquote>
+  <div epub:type="z3998:verse"><div class="stanza"><p>First stanza, first line.</p><p>First stanza, second line.</p></div>
+  <div class="stanza"><p>Second stanza.</p></div></div>
+  <pre>  A line kept as typed
+  And another</pre>
+  </section></body></html>`
 
   const epubBytes = await buildZip([
     { name: 'mimetype', data: enc('application/epub+zip') },
@@ -2565,18 +2571,75 @@ check(
 
   const c1Text = epubChapters[0].blocks.map((b) => (b.type === 'paragraph' ? b.html : '')).join('\n')
   check('epub: flattens nested containers instead of dropping their text', c1Text.includes('words of the blessing'))
-  // Regression: verse lives in bare <div class="line"> elements, which are not
-  // block tags. An importer that only walks known block tags drops every line
-  // of poetry in the book while appearing to work.
-  check('epub: preserves verse lines held in non-block containers', c1Text.includes('the eternal God will tread'))
+
+  // Verse lives in bare <div class="line"> elements inside a marked line
+  // group — not block tags, so an importer that only walks known block tags
+  // drops every line of poetry in the book while appearing to work.
+  //
+  // Phase 167 changed what "preserved" means here. Until then these three
+  // lines arrived as three separate paragraphs: the breaks survived by
+  // accident (one block each) and the fact that they were the poet's did
+  // not, so re-flowing or exporting could justify them like prose. They are
+  // now one `verse` block whose `lines` are the poet's lines.
+  const c1Verse = epubChapters[0].blocks.find((b) => b.type === 'verse')
+  check('epub: verse arrives as a verse block, not as paragraphs', c1Verse?.type === 'verse')
   check(
-    'epub: keeps each verse line as its own block rather than merging them',
-    epubChapters[0].blocks.filter((b) => b.type === 'paragraph' && /eternal God|His camp|of heavens/.test(b.html)).length === 3,
+    'epub: every line of the poem survives, in order',
+    c1Verse?.type === 'verse' &&
+      c1Verse.lines.length === 3 &&
+      c1Verse.lines[0].includes('the eternal God will tread') &&
+      c1Verse.lines[2].includes('of heavens'),
   )
-  check('epub: preserves textual-critical brackets verbatim', c1Text.includes('⌜of heavens⌝') && c1Text.includes('[And appear from His camp]'))
+  check(
+    'epub: preserves textual-critical brackets verbatim',
+    c1Verse?.type === 'verse' && c1Verse.lines[1] === '[And appear from His camp]' && c1Verse.lines[2].includes('⌜of heavens⌝'),
+  )
+  check(
+    'epub: no stray paragraph is left behind by the verse container',
+    !/eternal God|His camp|of heavens/.test(c1Text),
+  )
 
   const c2Types = epubChapters[1].blocks.map((b) => b.type)
   check('epub: converts blockquote and list blocks', c2Types.includes('quote') && c2Types.includes('list'))
+
+  // The other three shapes poetry actually ships as.
+  const c2Verse = epubChapters[1].blocks.filter((b) => b.type === 'verse')
+  check('epub: recognises all three remaining verse shapes', c2Verse.length === 3)
+  check(
+    'epub: a <blockquote class="poem"> is verse, not a quote',
+    c2Verse[0]?.type === 'verse' && c2Verse[0].lines.length === 2 && c2Verse[0].lines[0].startsWith('Roll on'),
+  )
+  check(
+    'epub: a nested line group becomes a stanza break',
+    c2Verse[1]?.type === 'verse' && c2Verse[1].lines.join('|') === 'First stanza, first line.|First stanza, second line.||Second stanza.',
+  )
+  check(
+    'epub: <pre> keeps its lines',
+    c2Verse[2]?.type === 'verse' && c2Verse[2].lines.length === 2 && c2Verse[2].lines[0] === 'A line kept as typed',
+  )
+
+  // The round trip: what this app *writes* for verse must be what it reads
+  // back as verse. Without it the export could drift into markup our own
+  // importer flattens, and nothing would notice until someone re-opened
+  // their own book and found the poems turned into prose.
+  {
+    const { blockToXhtml } = await import('../src/epub/blockToXhtml')
+    const { parseHtmlDocument } = await import('../src/parser/html')
+    const original = {
+      id: 'v1',
+      type: 'verse' as const,
+      lines: ['Roll on, thou deep and dark blue Ocean—roll!', 'Ten thousand fleets sweep over thee in vain;', '', 'A new stanza.'],
+    }
+    const xhtml = blockToXhtml(original, () => '', { epubSemantics: true })
+    check('verse export: carries the EPUB structural semantic', xhtml.includes('epub:type="z3998:verse"'))
+    check('verse export: the HTML book gets no namespaced attribute', !blockToXhtml(original, () => '').includes('epub:type'))
+    const [roundTripped] = parseHtmlDocument(`<h1>Poem</h1>${xhtml}`, 'F')[0].blocks
+    check('verse round trip: comes back as a verse block', roundTripped?.type === 'verse')
+    check(
+      'verse round trip: every line and the stanza break survive',
+      roundTripped?.type === 'verse' && roundTripped.lines.join('|') === original.lines.join('|'),
+    )
+  }
 
   // A non-EPUB file must fail with a message safe to show the user, not a
   // stack trace from the ZIP reader.

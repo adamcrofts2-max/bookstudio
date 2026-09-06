@@ -42,6 +42,7 @@ const BLOCK_LABELS: Record<ContentBlock['type'], string> = {
   faq: 'FAQ',
   statistics: 'Statistics',
   checklist: 'Checklist',
+  verse: 'Verse',
   placeholder: 'Placeholder',
 }
 
@@ -352,6 +353,8 @@ function blockPlainText(block: ContentBlock): string {
       return block.text
     case 'callout':
       return block.text
+    case 'verse':
+      return block.lines.join(' ')
     case 'case-study':
       return `${block.title} ${block.text}`.trim()
     case 'timeline':

@@ -8,6 +8,7 @@ import type { BlockContentProps } from '@/renderer/BlockContent'
 import { headingBlockType } from '@/blocks/types/heading'
 import { paragraphBlockType } from '@/blocks/types/paragraph'
 import { quoteBlockType } from '@/blocks/types/quote'
+import { verseBlockType } from '@/blocks/types/verse'
 import { listBlockType } from '@/blocks/types/list'
 import { tableBlockType } from '@/blocks/types/table'
 import { imageBlockType } from '@/blocks/types/image'
@@ -68,6 +69,7 @@ const BLOCK_REGISTRY: Record<ContentBlockType, BlockTypeDefinition> = {
   heading: headingBlockType,
   paragraph: paragraphBlockType,
   quote: quoteBlockType,
+  verse: verseBlockType,
   list: listBlockType,
   table: tableBlockType,
   image: imageBlockType,

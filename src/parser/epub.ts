@@ -3,7 +3,7 @@ import type { ImageAsset } from '@/types/asset'
 import { generateId } from '@/utils'
 import { putAsset } from '@/store/assetDb'
 import { readZip } from '@/epub/zipReader'
-import { parseHtmlDocument } from '@/parser/html'
+import { parseHtmlDocument, verseLinesFrom } from '@/parser/html'
 import { ManuscriptImportError } from '@/parser/errors'
 
 /**
@@ -85,6 +85,17 @@ function flattenForImport(xhtml: string, doc: Document): string {
   const blocks: Element[] = []
   const walk = (node: Element) => {
     for (const child of Array.from(node.children)) {
+      // Verse first, and before the block-tag test: a poem's container is
+      // usually a plain `<div>` (walked straight past, emitting one
+      // paragraph per line and losing the fact that the breaks were the
+      // poet's) or a `<blockquote class="poem">` (kept whole, then read as
+      // a quote, losing the breaks outright). Either way the poem was the
+      // one thing in the book that could not survive import. Kept whole
+      // here so `parseHtmlDocument` can recognise it — see `verseLinesFrom`.
+      if (verseLinesFrom(child)) {
+        blocks.push(child)
+        continue
+      }
       if (BLOCK_TAGS.has(child.tagName)) {
         // A container that also holds block children (a <p> wrapping an
         // <img>, say) is kept whole — the existing parser already handles
@@ -93,11 +104,12 @@ function flattenForImport(xhtml: string, doc: Document): string {
         continue
       }
       // A non-block element whose children are all inline is a line of text
-      // in a container the spec doesn't name — most importantly a verse line
-      // (`<div class="line">`), which is how poetry is marked up throughout
-      // real EPUBs. Walking past these silently drops every line of verse in
-      // the book, so they are emitted as their own paragraph each, one per
-      // line, which is what preserves the shape of the poetry.
+      // in a container the spec doesn't name. Walking past these silently
+      // drops the text, so each is emitted as its own paragraph. Verse whose
+      // container *is* marked is handled above and never reaches here; this
+      // remains the fallback for line-like markup with nothing to identify
+      // it, where one paragraph per line at least keeps the words and the
+      // breaks.
       if (isTextLeaf(child)) {
         if ((child.textContent ?? '').trim() !== '') blocks.push(child)
         continue
@@ -126,9 +138,15 @@ function flattenForImport(xhtml: string, doc: Document): string {
       out.body.appendChild(heading)
       continue
     }
-    // A text-leaf that isn't already a recognised block (a verse line) is
-    // re-tagged as a paragraph, keeping its inline markup so emphasis and
-    // links survive `sanitiseInline`.
+    // A verse container passes through untouched — re-tagging it as a
+    // paragraph is exactly the loss this is here to prevent.
+    if (verseLinesFrom(clone)) {
+      out.body.appendChild(out.importNode(clone, true))
+      continue
+    }
+    // A text-leaf that isn't already a recognised block (a stray line in a
+    // container the spec doesn't name) is re-tagged as a paragraph, keeping
+    // its inline markup so emphasis and links survive `sanitiseInline`.
     if (!BLOCK_TAGS.has(clone.tagName)) {
       const paragraph = out.createElement('p')
       paragraph.innerHTML = clone.innerHTML

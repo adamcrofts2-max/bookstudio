@@ -83,6 +83,8 @@ function MobileReadOnlyCard({ block }: { block: ContentBlock }) {
     switch (block.type) {
       case 'list':
         return block.items.length > 0 ? block.items.join(' · ') : '(empty list)'
+      case 'verse':
+        return block.lines.filter((l) => l.trim() !== '').join(' / ') || '(empty verse)'
       case 'table':
         return `Table · ${block.header.length} columns, ${block.rows.length} rows`
       case 'timeline':

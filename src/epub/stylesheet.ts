@@ -76,6 +76,12 @@ div.bs-statistics { display: flex; flex-wrap: wrap; gap: 1.5em; margin: 1.5em 0;
 div.bs-stat { text-align: center; }
 span.bs-stat-value { display: block; font-size: 1.6em; font-weight: 700; color: ${theme.page.accent}; }
 span.bs-stat-label { font-size: 0.8em; color: ${theme.page.mutedInk}; }
+/* Verse keeps the author's line breaks: never justified, and a run-over
+   line hangs further in so it can't be mistaken for a new line. */
+div.bs-verse { margin: 1.1em 0; padding-left: 1.75em; }
+div.bs-verse p.bs-line { margin: 0; text-align: left; text-indent: -1.25em; padding-left: 1.25em; }
+div.bs-verse p.bs-stanza-break { margin: 0; height: 0.75em; }
+
 ul.bs-checklist { list-style: none; padding-left: 0; }
 ul.bs-checklist li::before { content: "\\2610\\00A0"; }
 ul.bs-checklist li.bs-checked::before { content: "\\2611\\00A0"; }

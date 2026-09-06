@@ -11570,3 +11570,100 @@ built" list, which now holds only inline editing.
 Six assertions in `scripts/e2e/graph.e2e.mjs`: absent at 100%, present once
 zoomed, clicking it pans the canvas, a corner click still leaves part of the
 graph on screen (the clamp), and resetting the view puts it away again.
+
+## Phase 167 — verse is its own block type
+
+Open since Phase 153. The roadmap said EPUB import turned verse into "one
+paragraph each, which keeps the line structure but loses the semantic
+distinction (the Content layer has no verse block)". That understated it:
+the line breaks survived *by accident*, one block per line, and nothing in
+the app knew they were the poet's. Justified prose spacing, prose block
+gaps, and — with line-level flow now designed — a future re-wrapper that
+would treat each line as a paragraph free to be re-flowed.
+
+### `VerseBlock`
+
+```ts
+export interface VerseBlock {
+  id: string
+  type: 'verse'
+  lines: string[]
+}
+```
+
+Plain-text lines, matching `ListBlock.items`. An **empty entry is a stanza
+break**, which is how the form already writes itself down. No `attribution`
+field, deliberately: `QuoteBlock` and `PullQuoteBlock` both have one and
+either is the right block for an attributed excerpt, while verse inside a
+chapter is the author's own — a field that is almost always empty is a
+field that gets filled in wrongly.
+
+### Recognising verse
+
+`verseLinesFrom` in `parser/html.ts` is shared by both importers, because
+poetry has no single markup in the wild. It handles the four shapes real
+books ship:
+
+- `epub:type="z3998:verse"` / `z3998:poem` — the EPUB structural semantic.
+- `class="poem" | "verse" | "stanza" | "linegroup" | "lg"` — publisher
+  convention, including the TEI-inherited `lg`.
+- `<pre>` — the plain-HTML author saying "these breaks matter".
+- Nested line groups, where each inner group is a stanza and becomes an
+  empty entry between them.
+
+It is deliberately conservative: an element with no verse marker is never
+guessed at, because promoting prose to verse would strip its justification
+and indent it for no reason the author asked for.
+
+Two ordering details matter. In `parseHtmlDocument` the verse check runs
+*before* the tag switch, because `<blockquote class="poem">` is the single
+commonest shape in real books and reading it as a quote loses every line
+break at once. In `parser/epub.ts`'s flattener it runs before the block-tag
+test, for the same reason in reverse: a poem's container is usually a plain
+`<div>`, which the flattener walked straight past.
+
+### Setting it
+
+`blocks/types/verse.tsx` exists to keep the author's line breaks: never
+justified, a 28px block indent so a reader can see at a glance that these
+are not prose, and a 20px hanging indent so a run-over line reads as a
+continuation rather than as a new line of the poem. That last one is the
+single most important thing to get right about setting verse — a wrapped
+line that looks like a fresh line changes the poem.
+
+Editing works per line, with Enter splitting and Backspace-at-start
+merging, entirely inside the block: the whole edit is one `onCommit` of a
+new `lines` array, so unlike list items it needs nothing from
+`editorActions`.
+
+### Two things the fidelity suite caught
+
+Verse went into the "every block" fixture with a stanza break and a
+deliberately over-long line, and page 7 came back **7.88px adrift**.
+
+1. The stanza break was `0.75em` on screen and `0.75 × lineHeight` in print.
+   `em` is the font size, not the line box, so the two differed by the line
+   height — 7.2px at 16px type, which is almost exactly the drift measured.
+2. The hanging indent meant the first line of a wrapped verse line has 20px
+   more room than the ones under it. The exporter had no way to say that, so
+   it wrapped everything at the narrower width and a line that fits on
+   screen could gain a line in print — a poem with an extra line in it.
+   `wrapRuns` gained `firstLineWidth` for this.
+
+After both: **0.08px**.
+
+### Everywhere else it had to be registered
+
+Registry, `BLOCK_SPACING` (18/18, set from one table on both sides from the
+first day rather than joining the nine types that still carry hand-chosen
+numbers), the block inserter (`defaultContent.ts`, including
+`TEXT_FIRST_BLOCK_TYPES` so a new one takes the caret), the Inspector's Type
+tab, the mobile block summary, spellcheck spans (one per line, so a fix
+lands on the line it belongs to), and EPUB/HTML export.
+
+The EPUB export writes `epub:type="z3998:verse"`, which its own importer
+reads back — asserted as a round trip, because an export that drifted into
+markup our importer flattens would turn someone's poems into prose the next
+time they opened their own book. `blockToXhtml` gained an
+`epubSemantics` option so the standalone HTML book doesn't carry a
+namespaced attribute no reader is looking for.

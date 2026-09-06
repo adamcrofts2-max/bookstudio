@@ -66,6 +66,15 @@ export interface WrapRunsOptions {
    * same mechanism a typeset book's justified text actually uses.
    */
   justify?: boolean
+  /**
+   * Width available to the **first** line only, when it differs from
+   * `maxWidth` — a hanging indent, where the first line starts further left
+   * than the ones that run over from it (`verse.tsx`, Phase 167). Without
+   * this the exporter has to wrap everything at the narrower width, so a
+   * line that fits on screen can wrap in print and a poem gains a line it
+   * does not have.
+   */
+  firstLineWidth?: number
 }
 
 function fontFor(word: Word, regularFont: FontLike, boldFont: FontLike, options?: WrapRunsOptions): FontLike {
@@ -96,9 +105,11 @@ export function wrapRuns(
   let current: LineFragment[] = []
   let x = 0
 
+  const widthForLine = () => (lines.length === 0 ? (options?.firstLineWidth ?? maxWidth) : maxWidth)
+
   const pushLine = (isParagraphEnd: boolean) => {
     if (options?.justify && !isParagraphEnd && current.length > 1) {
-      const extraSpace = Math.max(0, maxWidth - x)
+      const extraSpace = Math.max(0, widthForLine() - x)
       const gaps = current.length - 1
       const extraPerGap = extraSpace / gaps
       current.forEach((fragment, i) => {
@@ -116,7 +127,7 @@ export function wrapRuns(
     const needsSpace = current.length > 0
     const widthWithSpace = wordWidth + (needsSpace ? spaceWidth : 0)
 
-    if (x + widthWithSpace > maxWidth && current.length > 0) {
+    if (x + widthWithSpace > widthForLine() && current.length > 0) {
       pushLine(false)
     }
     const startX = x + (current.length > 0 ? spaceWidth : 0)

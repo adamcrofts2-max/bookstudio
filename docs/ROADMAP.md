@@ -677,9 +677,15 @@ daily use of everything built so far.)*
       promotion exist to handle. Also asserts the **round trip**: importing
       this app's own EPUB export, which is the reason `parser/epub.ts` was
       written and had never been tested in that direction. Both clean
-- [ ] EPUB import: preserve verse as a distinct block type — verse lines are
-      currently imported as one paragraph each, which keeps the line structure
-      but loses the semantic distinction (the Content layer has no verse block)
+- [x] EPUB import: preserve verse as a distinct block type — shipped
+      2026-09-06 (Phase 167). The Content layer has a `verse` block now, and
+      `verseLinesFrom` recognises the four shapes poetry actually ships as
+      (`epub:type="z3998:verse"`, a `poem`/`verse`/`stanza`/`linegroup`/`lg`
+      class, `<pre>`, and nested line groups as stanzas). Set unjustified with
+      a hanging indent so a run-over line can't be mistaken for a new line;
+      exported with the same semantic and asserted as a round trip. The PDF
+      fidelity suite caught two real geometry bugs on the way in (7.88px →
+      0.08px)
 - [x] EPUB import: footnotes are reattached to the chapter that cites them —
       shipped 2026-09-05 (Phase 153). A notes file is detected by how much of
       its text sits inside note elements (not by its filename — `notes.xhtml`
@@ -2021,7 +2027,7 @@ a gap to close later.)*
       under the bottom tab bar; a tap on the lower part of the graph hit a nav
       button. Reported as the graph "crashing" on touch
 - [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
-      checklist) — currently read-only cards on mobile; would need small
+      checklist/verse) — currently read-only cards on mobile; would need small
       per-type mini-forms, not a plain contentEditable field.
 - [x] Mobile Develop mode — shipped 2026-09-03 (Phase 129): `MobileDevelopView`
       renders desktop's `PlanningShell` information architecture as a
