@@ -518,8 +518,30 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
   // worker (loading its module, running top-level init) costs more than the
   // computation itself does at small graph sizes, which would make the
   // common case slower to "fix" the rare large-graph case.
-  const [layoutWorker] = useState(() => new LayoutWorker())
-  useEffect(() => () => layoutWorker.terminate(), [layoutWorker])
+  //
+  // The instance is held in a ref and created *lazily*, not in
+  // `useState(() => new LayoutWorker())`, because a terminated worker can
+  // never be revived and `useState` never re-runs its initialiser. Under
+  // React's StrictMode (which `main.tsx` enables, so: every `npm run dev`
+  // session) the mount is simulated twice — effects run, all cleanups run,
+  // then effects run again — so the cleanup below terminated the one and
+  // only worker and every later request was posted into a dead port. The
+  // graph therefore drew nothing at all locally while working perfectly in
+  // a production build, which is what made this look like a Vite
+  // dev-server quirk for six weeks; it was ours. Instrumenting
+  // `Worker.prototype` in the running dev app showed the order exactly:
+  // post, terminate, post. Nulling the ref on cleanup means the next
+  // request builds a fresh worker, which is also what a real unmount /
+  // remount of this view has always needed.
+  const workerRef = useRef<Worker | null>(null)
+  const acquireLayoutWorker = () => (workerRef.current ??= new LayoutWorker())
+  useEffect(
+    () => () => {
+      workerRef.current?.terminate()
+      workerRef.current = null
+    },
+    [],
+  )
 
   const [layout, setLayout] = useState<Layout>(() => ({
     positions: new Map(),
@@ -542,16 +564,19 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
 
   const layoutRequestIdRef = useRef(0)
   useEffect(() => {
+    const worker = acquireLayoutWorker()
     const requestId = ++layoutRequestIdRef.current
-    layoutWorker.postMessage({ requestId, nodes: visibleNodes, edges: visibleEdges, pinned: pinnedPositions })
     const handleMessage = (event: MessageEvent<{ requestId: number; positions: Map<string, { x: number; y: number }>; bounds: Layout['bounds'] }>) => {
       if (event.data.requestId !== layoutRequestIdRef.current) return
       setLayout({ positions: event.data.positions, bounds: event.data.bounds })
     }
-    layoutWorker.addEventListener('message', handleMessage)
-    return () => layoutWorker.removeEventListener('message', handleMessage)
+    // Listen before posting: the response can only arrive on a later task,
+    // but ordering the two this way means there is no window at all.
+    worker.addEventListener('message', handleMessage)
+    worker.postMessage({ requestId, nodes: visibleNodes, edges: visibleEdges, pinned: pinnedPositions })
+    return () => worker.removeEventListener('message', handleMessage)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [depKey, layoutWorker])
+  }, [depKey])
 
   // Every node id directly reachable from `selectedNodeId` in one hop — the
   // "direct connections" the design review asked for. `null` when nothing
@@ -1421,6 +1446,10 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
               return (
                 <g
                   key={node.id}
+                  // The one stable hook `scripts/e2e/graph.e2e.mjs` has for
+                  // "a node was actually drawn" — every other part of this
+                  // view renders whether or not the layout worker answered.
+                  data-graph-node={node.id}
                   transform={`translate(${p.x} ${p.y})`}
                   {...dragHandlers}
                   onClick={isBook ? () => handleNodeClick(node) : undefined}

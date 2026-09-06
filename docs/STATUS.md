@@ -11391,3 +11391,72 @@ Shipping a partial version of the other three would have looked like
 progress and put a content error in someone's printed book. `CLAUDE.md` asks
 for working milestones; this is what that rule looks like when the honest
 answer is "not yet".
+
+## Phase 164 — the Book Graph draws under `npm run dev` again
+
+Open since Phase 108 (2026-08-02) and recorded in `docs/ROADMAP.md` as "a
+Vite dev module-worker quirk". It was not Vite's. It was ours, and the
+roadmap entry had been steering every future reader away from the cause.
+
+### What was actually wrong
+
+`BookGraphView` held its layout Web Worker in
+`useState(() => new LayoutWorker())` and terminated it from an effect
+cleanup. `main.tsx` wraps the app in React's `StrictMode`, which in
+development simulates an unmount: it runs every effect, then every cleanup,
+then every effect again. So the cleanup terminated the worker — and
+`useState` never re-runs its initialiser, so nothing ever built another one.
+Every layout request after that went into a dead port. Production builds
+don't double-invoke, which is why the same code was fine in `dist` and the
+symptom looked environmental.
+
+Instrumenting `Worker.prototype` in the running dev app printed the order in
+four lines:
+
+```
+construct …/graphLayout.worker.ts
+construct …/graphLayout.worker.ts
+out ["requestId","nodes","edges","pinned"]
+terminate
+out ["requestId","nodes","edges","pinned"]
+```
+
+Post, terminate, post. No `error` event, no `messageerror`, no response —
+which is exactly the "posts a request but nothing comes back" the roadmap
+described.
+
+### The fix
+
+The worker moved into a ref, created lazily:
+
+```ts
+const workerRef = useRef<Worker | null>(null)
+const acquireLayoutWorker = () => (workerRef.current ??= new LayoutWorker())
+useEffect(() => () => { workerRef.current?.terminate(); workerRef.current = null }, [])
+```
+
+Nulling the ref on cleanup is the whole difference: the next request builds
+a fresh worker. That is also what a real unmount/remount of the view has
+always needed, so this is a correctness fix and not a StrictMode
+workaround. The layout effect now takes the worker from
+`acquireLayoutWorker()`, registers its listener *before* posting, and no
+longer carries the worker in its dependency array.
+
+### The guard — the first suite that runs the dev server
+
+`scripts/e2e/graph.e2e.mjs` boots `vite` itself rather than serving `dist`,
+because serving `dist` passes against the broken code. It is the only check
+in the repo that exercises the StrictMode double-mount at all, which is a
+whole class of bug — anything a cleanup destroys permanently — that a
+production build structurally cannot show.
+
+Four assertions: nodes are drawn at all, they carry distinct positions (so
+the worker's `positions` map really came back rather than everything
+stacking at the origin), toggling a kind filter re-runs the layout on a
+still-live worker, and no runtime errors. Proved against the old code
+first — 3 of the 4 fail, and only the "no runtime errors" one passes, which
+is the point: the failure was always silent.
+
+`BookGraphView`'s node `<g>` gained `data-graph-node={node.id}` as the
+suite's hook, since every other part of that view renders whether or not the
+layout answered.

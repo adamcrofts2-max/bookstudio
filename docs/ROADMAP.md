@@ -1993,13 +1993,15 @@ a gap to close later.)*
       `setPointerCapture`. Only the container needed loosening, via a new
       `compact` prop. Touch drag verified to move a node by the same
       displacement as mouse
-- [ ] Book Graph renders no nodes under the Vite **dev server** (`npm run dev`)
-      — the layout Web Worker loads and the request is posted, but no response
-      ever arrives, so `layout.positions` stays empty and every node is
-      skipped. NOT a production defect: the same code in a production build
-      renders and drags correctly, and the layout engine itself returns
-      correct positions in 3ms when called directly. A Vite dev module-worker
-      quirk; it makes the graph impossible to develop locally, so worth fixing
+- [x] Book Graph renders no nodes under the Vite **dev server** — fixed
+      2026-09-06 (Phase 164). Not a Vite quirk, as this item had claimed since
+      Phase 108: the layout worker lived in `useState` and was terminated by
+      an effect cleanup, so React's StrictMode simulated unmount killed it
+      permanently (`useState` never re-runs its initialiser) and every later
+      request went into a dead port. Held in a lazily-created ref now.
+      Guarded by `scripts/e2e/graph.e2e.mjs`, the only suite that runs the dev
+      server — serving `dist` passes against the broken code, because
+      production builds don't double-invoke
 - [x] Book Graph full-screen mode — shipped 2026-09-03 (Phase 131). Reported
       from a real phone: the canvas was collapsed to a strip barely taller than
       its own zoom controls. Two fixes — the canvas now has a real minimum
