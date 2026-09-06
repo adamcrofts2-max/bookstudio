@@ -42,6 +42,7 @@ import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
+import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 import { generateId } from '@/utils'
 import { cn } from '@/lib/utils'
 
@@ -662,8 +663,17 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
             <div className="group/title relative">
               {getChapterNumberLabel(theme, chapterIndex) !== null && (
                 <p
-                  className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
-                  style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
+                  className="font-medium uppercase"
+                  style={{
+                    // `chapterOpenerMetrics.ts` — shared with HeightMeasurer
+                    // and the PDF exporter, which all have to agree.
+                    fontSize: CHAPTER_OPENER.label.fontPx,
+                    lineHeight: `${CHAPTER_OPENER.label.lineHeightPx}px`,
+                    paddingBottom: CHAPTER_OPENER.label.afterPx,
+                    letterSpacing: `${CHAPTER_OPENER.label.letterSpacingEm}em`,
+                    color: theme.page.accent,
+                    fontFamily: theme.fonts.heading,
+                  }}
                 >
                   {getChapterNumberLabel(theme, chapterIndex)}
                 </p>
@@ -689,8 +699,15 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               ) : (
                 <h1
                   onDoubleClick={startRenameTitle}
-                  className="cursor-pointer pb-10 text-4xl"
-                  style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+                  className="cursor-pointer"
+                  style={{
+                    fontSize: CHAPTER_OPENER.title.fontPx,
+                    lineHeight: `${CHAPTER_OPENER.title.lineHeightPx}px`,
+                    paddingBottom: CHAPTER_OPENER.title.afterPx,
+                    fontFamily: theme.fonts.heading,
+                    fontWeight: theme.typography.headingWeight,
+                    color: theme.page.ink,
+                  }}
                 >
                   {page.chapterTitle}
                 </h1>

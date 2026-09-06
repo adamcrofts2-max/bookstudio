@@ -9,6 +9,20 @@ export interface ExportableLayout {
   toc: TocEntry[]
   pageBox: PageBox
   theme: ResolvedBookTheme
+  /**
+   * Every block's real rendered height on screen, in CSS px, keyed by block
+   * id — `HeightMeasurer`'s output, the same numbers `paginate` used to
+   * decide what fits on which page.
+   *
+   * Added Phase 162 so the PDF can flow blocks by the heights the author
+   * was actually looking at. Each block type's `drawPdf` composes its own
+   * spacing from hand-chosen point values, and Phase 159 found those
+   * disagreed with the screen for every type it measured. Fixing them one
+   * by one only works for types somebody remembered to measure; passing the
+   * measured height through makes the flow agree by construction, for the
+   * fourteen types that exist and any added later.
+   */
+  blockHeights: Record<string, number>
 }
 
 interface ExportStoreState {

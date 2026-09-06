@@ -95,8 +95,8 @@ export function useBookLayout(project: Project): BookLayout {
   // exported file identical to the preview.
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
-  }, [pages, toc, pageBox, theme, project.id, setExportLayout])
+    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {} })
+  }, [pages, toc, pageBox, theme, heights, project.id, setExportLayout])
 
   const measurer = (
     <HeightMeasurer

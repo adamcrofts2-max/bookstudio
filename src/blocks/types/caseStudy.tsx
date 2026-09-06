@@ -11,6 +11,7 @@ import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 /** Heading + body paragraph(s) in a boxed/bordered treatment, set apart from
  * regular flowing body text — reuses `splitParagraphs` (shared with the
@@ -48,12 +49,14 @@ function CaseStudyRender(props: BlockRenderProps) {
   const paragraphs = splitParagraphs(block.text)
 
   return (
+    // Transparent padding rather than a margin — see `blockSpacing.ts`.
+    <div style={{ paddingTop: BLOCK_SPACING.caseStudy.before, paddingBottom: BLOCK_SPACING.caseStudy.after }}>
     <div
       onClick={!title.isEditing && !text.isEditing ? onSelect : undefined}
       className={cn(
         'outline-offset-4 transition-[outline-color] duration-150',
         outlineClass(!!selected, title.isEditing || text.isEditing),
-        'my-2 cursor-pointer rounded-[var(--radius-card)] border px-6 py-5',
+        'cursor-pointer rounded-[var(--radius-card)] border px-6 py-5',
       )}
       style={{ borderColor: theme.page.ruleColor }}
     >
@@ -101,6 +104,7 @@ function CaseStudyRender(props: BlockRenderProps) {
           ? (paragraphs.length > 0 ? paragraphs : ['Case study details…']).map((p, i) => <p key={i}>{p}</p>)
           : null}
       </div>
+    </div>
     </div>
   )
 }

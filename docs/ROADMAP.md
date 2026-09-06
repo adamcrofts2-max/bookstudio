@@ -1835,22 +1835,23 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] A real print-on-demand preflight — send an exported PDF to KDP or Lulu
       and act on what comes back. Phase 159 proves the PDF agrees with the
       screen; nothing yet proves either agrees with a printer.
-- [ ] The chapter opener composes differently in the two renderers: the label
-      and title are drawn in `exportPdf.ts` by stepping a baseline down in
-      points, while the screen lays them out as boxes with CSS padding. Net
-      effect measured in Phase 159: on a chapter-start page the first block
-      lands about 29px higher in print than on screen. Constant, not
-      accumulating (unlike the block gaps that phase fixed), and scoped out of
-      `pdfFidelity.e2e.mjs`'s image-position check rather than hidden inside a
-      loose tolerance.
-- [ ] Nine block types still carry hand-chosen `cursorY -=` gaps in their own
-      `drawPdf` (callout, caseStudy, checklist, faq, gallery, pullQuote,
-      statistics, table, timeline) rather than reading `blocks/blockSpacing.ts`.
-      Phase 159 converted the five a book is mostly made of — paragraph,
-      heading, list, image, quote — because those are the ones the fidelity
-      suite actually exercises, and a shared table claiming types nobody
-      measured would be back to guessing. Each of the nine needs the same
-      treatment plus a page in the suite's test book to prove it.
+
+- [x] Every block type flows at the height the screen measured — shipped
+      2026-09-06 (Phase 162). Rather than correcting nine more hand-chosen
+      constants, `ExportableLayout` now carries `HeightMeasurer`'s own
+      `blockHeights` and `drawBlock` settles each block at exactly that
+      height, so present and future types agree by construction. Drift on a
+      book carrying every block type: 21.32px per page before, 0.09px after.
+- [x] The chapter opener no longer drifts — shipped 2026-09-06 (Phase 162).
+      `chapterOpenerMetrics.ts` is read by all three renderers.
+- [x] Callout and case-study cards are measured correctly — shipped
+      2026-09-06 (Phase 162). Both spaced themselves with `my-2`, and
+      `getBoundingClientRect().height` excludes margins, so `paginate`
+      reserved 16px too little for each. Found by the fidelity suite, and a
+      real layout-engine bug rather than a PDF one.
+- [ ] The `gallery` block is the one type the fidelity suite's rich fixture
+      can't carry — it needs real image assets, which a seeded manuscript
+      can't provide. Needs an asset-seeding path before it can be measured.
 - [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
 - [x] `LazySpread` unmounts spreads that scroll far away — shipped
       2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew

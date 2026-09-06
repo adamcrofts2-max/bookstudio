@@ -11221,3 +11221,105 @@ because both were mine:
   reverting a fix by deleting a call left an unused parameter, `tsc` failed,
   `dist` kept the *fixed* build, and every assertion passed. A proof that
   depends on a build has to check the build succeeded.
+
+## Phase 162 — the exporter stops guessing how tall a block is
+
+Stage 1 of the delivery plan, first two pieces: bring the nine unmeasured
+block types into the fidelity net, and stop the chapter opener drifting.
+Both turned into the same fix, and the fidelity suite found a third defect
+nobody was looking for.
+
+### Measured heights, not hand-chosen constants
+
+Phase 159 corrected the spacing of five block types by hand and left nine
+carrying numbers nobody had measured. Doing the same nine times would have
+been nine chances to get it wrong, and a fifteenth block type would arrive
+with the problem intact.
+
+So the measurement travels instead. `ExportableLayout` now carries
+`blockHeights` — `HeightMeasurer`'s output, the same numbers `paginate` used
+to decide what fits where — and `exportPdf`'s `drawBlock` settles each block
+at exactly that height:
+
+```ts
+if (measuredHeightPx && measuredHeightPx > 0) {
+  ctx.cursorY = Math.min(ctx.cursorY, topY - measuredHeightPx * PX_TO_PT)
+}
+```
+
+`Math.min` is the whole safety argument: the cursor can be pushed further
+down to reach the measured height, never pulled back up, so a block whose
+PDF drawing genuinely needs more room keeps it rather than having the next
+block drawn on top of it — and the suite reports the disagreement instead of
+absorbing it.
+
+Result on a book carrying every block type: **21.32px of drift per page
+became 0.09px**.
+
+### The chapter opener, laid out as boxes
+
+`exportPdf` composed the opener from hand-chosen baseline steps — an 11pt
+label and a 30pt title against the screen's 14px and 36px — and came out
+~29px shorter overall, enough to fit an extra line of body text onto every
+chapter's first page in print. `chapterOpenerMetrics.ts` now holds those
+numbers and all three renderers read them: `Page.tsx` draws it,
+`HeightMeasurer` measures a copy for pagination, `exportPdf` prints it. The
+comment in `HeightMeasurer` warning that its markup "must mirror Page.tsx's
+exactly or the two heights will silently drift apart" is now structurally
+true rather than a request.
+
+### And a pagination bug the suite found on its own
+
+With the block heights threaded through, one page still drifted — 5.8px,
+appearing exactly where a callout sat. The callout was not the problem; the
+*measurement* of it was. `HeightMeasurer` reads
+`getBoundingClientRect().height`, which **excludes margins**, and callout and
+case-study cards spaced themselves with `my-2`. So both were reported 16px
+shorter than they render, `paginate` reserved too little room for them, and
+the exporter — now faithfully honouring the measured height — reproduced the
+error precisely.
+
+That is a real bug in the layout engine, not in the PDF: a page with several
+callouts was always at risk of assigning more content than fits. Both cards
+now take their outer space as transparent padding on a wrapper, which is
+inside `getBoundingClientRect()`. Same appearance, measurable.
+
+### What the suite learned in the process
+
+Three harness corrections, each caught by a measurement that looked
+plausible and wasn't:
+
+- **Filtering by line-box height dropped drop-cap lines on one side only.** A
+  floated capital stretches its line's box to 68px, so the DOM list lost a
+  line the PDF list kept, and every comparison below it shifted by one —
+  reported as 161px of drift that did not exist.
+- **Filtering by font size instead brought that line back with a distorted
+  top**, because a float moves where the rect starts. Both filters are now
+  used together, and the drop-cap line is excluded on purpose and reported.
+- **Nearest-neighbour matching mispairs** when the constant baseline offset
+  is larger than half the leading. The suite now searches the small range of
+  index shifts and keeps the alignment whose offsets agree best — reporting
+  the shift, which is 1 on a chapter-opener page and 0 everywhere else.
+
+The suite also gained a second book: a seeded manuscript carrying callout,
+table, checklist, faq, statistics, timeline, pull-quote and case-study
+between paragraphs, written straight into `contentStore` rather than clicked
+in through the inserter — it is layout being measured, and nine menu
+journeys would be nine ways for the fixture to drift.
+
+Every page of both books now agrees to within half a pixel:
+
+| Book | Page | Drift |
+| --- | --- | --- |
+| plain | 4 | 0.19px over 21 lines |
+| every block | 3 (chapter opener) | 0.10px over 10 lines |
+| every block | 4 | 0.09px over 10 lines |
+| every block | 5 | 0.13px over 15 lines |
+| every block | 6 | 0.43px over 10 lines |
+
+### Still open
+
+`gallery` is the one block type the rich fixture doesn't carry — it needs
+real assets, which the seeded-manuscript approach can't provide. And the
+line-level text flow work (Stage 1's third piece) is untouched: paragraphs
+still move to the next page as whole blocks.

@@ -1,4 +1,5 @@
 import { memo, useLayoutEffect, useRef } from 'react'
+import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 
 import type { Chapter } from '@/types/content'
 import type { ResolvedBookTheme } from '@/theme/presets'
@@ -89,15 +90,31 @@ function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, 
           <div key={`opener-${chapter.id}`} ref={(el) => { if (el) refs.current.set(`opener:${chapter.id}`, el) }}>
             {getChapterNumberLabel(theme, chapterIndex) !== null && (
               <p
-                className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
-                style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
+                className="font-medium uppercase"
+                style={{
+                  // `chapterOpenerMetrics.ts` — shared with Page.tsx and the
+                  // PDF exporter, which all have to agree.
+                  fontSize: CHAPTER_OPENER.label.fontPx,
+                  lineHeight: `${CHAPTER_OPENER.label.lineHeightPx}px`,
+                  paddingBottom: CHAPTER_OPENER.label.afterPx,
+                  letterSpacing: `${CHAPTER_OPENER.label.letterSpacingEm}em`,
+                  color: theme.page.accent,
+                  fontFamily: theme.fonts.heading,
+                }}
               >
                 {getChapterNumberLabel(theme, chapterIndex)}
               </p>
             )}
             <h1
-              className="pb-10 text-4xl"
-              style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+              className=""
+              style={{
+                fontSize: CHAPTER_OPENER.title.fontPx,
+                lineHeight: `${CHAPTER_OPENER.title.lineHeightPx}px`,
+                paddingBottom: CHAPTER_OPENER.title.afterPx,
+                fontFamily: theme.fonts.heading,
+                fontWeight: theme.typography.headingWeight,
+                color: theme.page.ink,
+              }}
             >
               {chapter.title}
             </h1>

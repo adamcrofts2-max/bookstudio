@@ -208,8 +208,8 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
 
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
-  }, [pages, toc, pageBox, theme, project.id, setExportLayout])
+    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {} })
+  }, [pages, toc, pageBox, theme, heights, project.id, setExportLayout])
 
   // Sidebar's chapter nav can't just scrollIntoView `[data-chapter-start]`
   // directly: LazySpread doesn't mount a spread's real pages until it's

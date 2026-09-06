@@ -40,6 +40,19 @@ export const BLOCK_SPACING = {
   image: { before: 0, after: 20 },
   /** `quote.tsx` — symmetrical, hence `py-6` on screen. */
   quote: { before: 24, after: 24 },
+  /**
+   * `callout.tsx` and `caseStudy.tsx` are cards: their spacing has to sit
+   * *outside* the coloured box, which is why both used `my-2` — and why
+   * both were mis-measured. `HeightMeasurer` reads
+   * `getBoundingClientRect().height`, which excludes margins, so a callout
+   * was reported 16px shorter than it renders and `paginate` reserved too
+   * little room for it (Phase 162, found by the PDF fidelity suite: text
+   * after a callout sat 5.8px higher in print than on screen). The space
+   * is now transparent padding on a wrapper around the card — same
+   * appearance, but part of the measured height.
+   */
+  callout: { before: 8, after: 8 },
+  caseStudy: { before: 8, after: 8 },
 } as const
 
 export type SpacedBlockType = keyof typeof BLOCK_SPACING
