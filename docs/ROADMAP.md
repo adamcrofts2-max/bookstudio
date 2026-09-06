@@ -1474,12 +1474,14 @@ daily use of everything built so far.)*
       interaction-model reasoning, including what was deliberately *not*
       built (a minimap) and why, lives in `BookGraphView.tsx`'s own doc
       comment.
-- [ ] Book Graph minimap — deliberately deferred in Phase 102 (see
-      `BookGraphView.tsx`'s doc comment): "Reset view" already auto-fits
-      every visible node via the SVG's dynamic `viewBox`, which covers a
-      minimap's actual job at the node counts this app targets today.
-      Revisit if a real project's graph ever gets large enough that "reset
-      view" stops being a satisfying answer.
+- [x] Book Graph minimap — shipped 2026-09-06 (Phase 166), on Phase 102's own
+      terms rather than against them. "Reset view" really does cover a
+      minimap's job at 100% zoom, because the `viewBox` auto-fits every node —
+      so the minimap is mounted only *above* 100%, where the canvas is a
+      window onto something bigger than itself whatever the project's size.
+      Click or drag it to centre the canvas, clamped so a corner click can
+      never land on empty space. Geometry is a pure module with twelve unit
+      assertions; six more in `scripts/e2e/graph.e2e.mjs`
 - [x] Book Graph: per-node colour + size, chapter-connection parity, node
       search, entity role subtitle (Phase 103, 2026-08-02, user: "change
       colour of individual nodes and make individual nodes larger and

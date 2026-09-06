@@ -2713,5 +2713,46 @@ check(
   check('asset store: EMPTY_ASSETS keeps one identity across imports', again === EMPTY_ASSETS)
 }
 
+// --- Book Graph minimap geometry (Phase 166) ---
+{
+  const { visibleGraphRect, transformToCentreOn, clampCentreToBounds } = await import(
+    '../src/layout/planning/graphMinimapGeometry'
+  )
+  const bounds = { minX: -200, minY: -150, width: 400, height: 300 }
+  const canvas = { width: 600, height: 400 }
+
+  // At 1x with no pan, the canvas's own viewBox already fits everything, so
+  // the visible rect is the whole graph in the axis that fits tightest.
+  // That identity is the reason the minimap stays hidden at 100%.
+  const atRest = visibleGraphRect(bounds, canvas, { x: 0, y: 0, k: 1 })
+  check('minimap: at 1x the visible rect is centred on the graph', Math.abs(atRest.minX + atRest.width / 2 - 0) < 0.001 && Math.abs(atRest.minY + atRest.height / 2 + 0) < 0.001)
+  check('minimap: at 1x the visible rect covers the whole graph', atRest.width >= bounds.width - 0.001 && atRest.height >= bounds.height - 0.001)
+
+  // Zooming in halves what you can see, in both axes.
+  const zoomed = visibleGraphRect(bounds, canvas, { x: 0, y: 0, k: 2 })
+  check('minimap: 2x zoom halves the visible width', Math.abs(zoomed.width - atRest.width / 2) < 0.001)
+  check('minimap: 2x zoom halves the visible height', Math.abs(zoomed.height - atRest.height / 2) < 0.001)
+
+  // The round trip that the whole interaction rests on: ask for the pan that
+  // centres on a point, then read back where the view is centred.
+  for (const target of [{ x: 120, y: -80 }, { x: -190, y: 140 }, { x: 0, y: 0 }]) {
+    const t = { ...transformToCentreOn(target, bounds, canvas, 2.5), k: 2.5 }
+    const view = visibleGraphRect(bounds, canvas, t)
+    const centre = { x: view.minX + view.width / 2, y: view.minY + view.height / 2 }
+    check(
+      `minimap: centring on (${target.x}, ${target.y}) puts it in the middle of the view`,
+      Math.abs(centre.x - target.x) < 0.001 && Math.abs(centre.y - target.y) < 0.001,
+    )
+  }
+
+  // Clamping: a corner click lands on the nearest part of the graph, and an
+  // axis with nothing to slide along centres instead.
+  const small = { minX: -200, minY: -150, width: 100, height: 80 }
+  const clamped = clampCentreToBounds({ x: -1000, y: 1000 }, bounds, small)
+  check('minimap: a click outside the graph clamps back inside it', clamped.x === bounds.minX + small.width / 2 && clamped.y === bounds.minY + bounds.height - small.height / 2)
+  const wider = clampCentreToBounds({ x: 1000, y: 0 }, bounds, { ...bounds, width: 900, height: 900 })
+  check('minimap: an axis with nothing to slide along centres', wider.x === 0 && wider.y === 0)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

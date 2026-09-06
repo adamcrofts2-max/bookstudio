@@ -11515,3 +11515,58 @@ panel. Four assertions in `scripts/e2e/graph.e2e.mjs` cover it, proved
 against the old build first (where the suite times out looking for a
 Chapter button that isn't there — that suite now turns a thrown locator
 error into an ordinary failure line rather than an unhandled rejection).
+
+## Phase 166 — the Book Graph minimap, on the terms Phase 102 set
+
+Deferred in Phase 102 with a condition attached: build it "if a genuinely
+huge project ever makes 'reset view' an unsatisfying answer". That
+reasoning was sound and is still sound — the canvas's `viewBox` auto-fits
+every node, so at 100% zoom the whole graph is on screen and an overview of
+it would be an overview of what you are already looking at.
+
+What the condition missed is that the same phase shipped zoom controls.
+Past 100% the canvas *is* a window onto something larger than itself,
+regardless of how big the project is, and the only ways back were to zoom
+out (losing the detail you zoomed in for) or to drag blindly. So the
+minimap is mounted only above 100% zoom. At or below it, nothing new
+appears on the canvas and "Reset view" remains the answer. The deferral's
+condition is honoured rather than overruled.
+
+### What shipped
+
+- `src/layout/planning/graphMinimapGeometry.ts` — the two mappings between a
+  node's graph coordinates and the pixel it lands on (the `viewBox`'s
+  `xMidYMid meet` fit, then the CSS `translate/scale`), forwards to draw the
+  viewport rectangle and backwards to turn a click into a pan, plus
+  `clampCentreToBounds`. Pure, so it is unit-tested: twelve assertions in
+  `scripts/smoke-test.ts`, including the round trip that the whole
+  interaction rests on — centre on a point, read back the view's centre,
+  get the same point.
+- `src/layout/planning/GraphMinimap.tsx` — a 148×104 overview in the
+  canvas's bottom-right corner: every visible node as a dot (the book hub
+  and the selection in the accent colour), the current viewport as a
+  rectangle, click or drag anywhere to centre the canvas there.
+
+Two details worth keeping:
+
+**The rectangle is computed, not measured.** `getScreenCTM()` would have
+been less arithmetic, but a ref read during render is a frame stale, and a
+viewport rectangle that lags the canvas by a frame is exactly the jitter
+that makes a minimap feel broken while you drag.
+
+**Panning is clamped to the graph.** Without it, clicking a corner of the
+minimap is a legal move that shows you empty space beside the graph —
+technically correct and useless, which is the failure a minimap exists to
+prevent. An axis where the viewport is already wider than the graph has
+nothing to slide along, so it centres instead.
+
+Dot radii are given in graph units against a 148px box, so they are derived
+from the pixel size actually wanted rather than fixed — otherwise a large
+graph draws smudges and a small one draws blobs.
+
+`BookGraphView`'s doc comment moved the minimap out of its "deliberately not
+built" list, which now holds only inline editing.
+
+Six assertions in `scripts/e2e/graph.e2e.mjs`: absent at 100%, present once
+zoomed, clicking it pans the canvas, a corner click still leaves part of the
+graph on screen (the clamp), and resetting the view puts it away again.

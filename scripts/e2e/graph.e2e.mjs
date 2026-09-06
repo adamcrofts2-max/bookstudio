@@ -118,6 +118,43 @@ try {
   })
   check('the new chapter is not pinned off the spine', pinnedChapters.length === 0)
 
+  // The minimap (Phase 166) — present only when it has something to say.
+  const minimap = page.locator('svg[aria-label*="overview"]')
+  check('no minimap at 100% zoom, where the canvas already fits everything', (await minimap.count()) === 0)
+
+  for (let i = 0; i < 6; i++) {
+    await page.getByRole('button', { name: /zoom in/i }).first().click()
+    await page.waitForTimeout(120)
+  }
+  await page.waitForTimeout(500)
+  check('the minimap appears once zoomed past 100%', (await minimap.count()) === 1)
+
+  const canvasTransform = () =>
+    page.evaluate(() => document.querySelector('[data-graph-node]')?.closest('svg')?.style.transform ?? '')
+  const beforePan = await canvasTransform()
+  const box = await minimap.boundingBox()
+  await page.mouse.click(box.x + 12, box.y + 12)
+  await page.waitForTimeout(600)
+  check('clicking the minimap pans the canvas', (await canvasTransform()) !== beforePan)
+
+  // Clamped, so a click in the corner lands on the nearest part of the graph
+  // rather than on empty space beside it.
+  const nodesOnScreen = await page.evaluate(() => {
+    const canvas = document.querySelector('[data-graph-node]')?.closest('svg')?.getBoundingClientRect()
+    if (!canvas) return 0
+    let visible = 0
+    for (const g of document.querySelectorAll('[data-graph-node]')) {
+      const b = g.getBoundingClientRect()
+      if (b.right > canvas.left && b.left < canvas.right && b.bottom > canvas.top && b.top < canvas.bottom) visible++
+    }
+    return visible
+  })
+  check('panning to a corner still shows part of the graph', nodesOnScreen > 0)
+
+  await page.getByRole('button', { name: /reset pan and zoom|reset view/i }).first().click()
+  await page.waitForTimeout(500)
+  check('resetting the view puts the minimap away again', (await minimap.count()) === 0)
+
   check('no runtime errors on the graph', pageErrors.length === 0)
   if (pageErrors.length) console.log(pageErrors.join('\n'))
 } catch (error) {

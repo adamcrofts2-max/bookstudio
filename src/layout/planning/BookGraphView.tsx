@@ -15,6 +15,8 @@ import { Input } from '@/components/ui/input'
 import { IdeaDetailDialog } from '@/layout/planning/IdeaDetailDialog'
 import { AddGraphNodeDialog, type AddableNodeKind } from '@/layout/planning/AddGraphNodeDialog'
 import { findFreeGraphPosition } from '@/layout/planning/graphPlacement'
+import { GraphMinimap, type MinimapNode } from '@/layout/planning/GraphMinimap'
+import { clampCentreToBounds, transformToCentreOn, visibleGraphRect } from '@/layout/planning/graphMinimapGeometry'
 import { GRAPH_NODE_ICONS, type GraphNodeKind } from '@/layout/planning/graphIcons'
 import type { Layout } from '@/layout/planning/graphLayoutEngine'
 import LayoutWorker from '@/layout/planning/graphLayout.worker?worker'
@@ -193,16 +195,19 @@ function screenToSvgPoint(svg: SVGSVGElement, clientX: number, clientY: number):
  *   click-to-connect (a labeled relationship previously required leaving the
  *   graph for the entity's own edit dialog, which is backwards for a tool
  *   whose entire premise is "connect things visually").
- * - *Deliberately not built* — a minimap (the mockup shows one). Reasonable
- *   at real scale, but this graph's `viewBox` already auto-fits every node
- *   into view any time the pan/zoom is reset (see "Reset view" below), which
- *   covers the minimap's actual job — "where am I relative to everything" —
- *   for the sizes this app targets (tens, not thousands, of nodes). Flagged
- *   in `docs/ROADMAP.md` as a real candidate if a genuinely huge project ever
- *   makes "reset view" an unsatisfying answer, rather than built speculatively
- *   now. Likewise no inline editing inside the graph itself (title, notes,
- *   fields) — the panel shows and links out, it never becomes a second copy
- *   of `EntityListPanel`'s form; one editing surface per field stays true.
+ * - *Built later, on the original terms* — a minimap (the mockup shows one).
+ *   Phase 102 deferred it because this graph's `viewBox` auto-fits every node
+ *   any time the pan/zoom is reset (see "Reset view" below), which covers a
+ *   minimap's actual job — "where am I relative to everything" — at the sizes
+ *   this app targets. That is still true at 100%, so `GraphMinimap` (Phase
+ *   166) is mounted only *above* 100%, where the zoom controls that shipped
+ *   in the same phase turn the canvas into a window onto something larger
+ *   than itself and "reset view" costs you the detail you zoomed in for.
+ *   Below that there is no extra furniture on the canvas at all.
+ * - *Deliberately not built* — inline editing inside the graph itself (title,
+ *   notes, fields). The panel shows and links out; it never becomes a second
+ *   copy of `EntityListPanel`'s form, so one editing surface per field stays
+ *   true.
  *
  * Every node is an icon-in-a-circle badge (`graphIcons.ts`'s per-kind icon)
  * — kind is legible from the icon alone, colour stays reserved for the
@@ -706,6 +711,21 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
     setSavedPosition(projectId, nodeId, position)
   }
 
+  // The minimap needs the canvas's pixel size to work out which part of the
+  // graph is on screen, and the canvas is sized by CSS (flex in full screen,
+  // a fixed height otherwise), so measure it rather than deriving it.
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) => {
+      const box = entry.contentRect
+      setCanvasSize({ width: box.width, height: box.height })
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
@@ -739,6 +759,30 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [pendingConnection, connectSourceId, connectMode, selectedNodeId])
+
+  // Only above 100% is the canvas a window onto something bigger than
+  // itself: the `viewBox` auto-fits every node, so at 1x the whole graph is
+  // already on screen and an overview would overview what you can see. That
+  // is exactly why Phase 102 deferred a minimap, and it is still true — so
+  // the minimap appears when, and only when, zooming in makes it true no
+  // longer.
+  const showMinimap = transform.k > 1 && canvasSize.width > 0
+  const minimapNodes = useMemo<MinimapNode[]>(
+    () =>
+      visibleNodes.flatMap((node) => {
+        const position = layout.positions.get(node.id)
+        if (!position) return []
+        return [
+          {
+            id: node.id,
+            x: position.x,
+            y: position.y,
+            emphasis: node.id === selectedNodeId ? 'selected' : node.kind === 'book' ? 'hub' : 'normal',
+          } as MinimapNode,
+        ]
+      }),
+    [visibleNodes, layout.positions, selectedNodeId],
+  )
 
   const resetView = () => setTransform({ x: 0, y: 0, k: 1 })
   const resetLayout = () => clearSavedPositions(projectId)
@@ -1498,6 +1542,22 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
               )
             })}
           </svg>
+
+          {showMinimap && (
+            <GraphMinimap
+              bounds={layout.bounds}
+              canvas={canvasSize}
+              transform={transform}
+              nodes={minimapNodes}
+              onCentreOn={(point) =>
+                setTransform((t) => {
+                  const visible = visibleGraphRect(layout.bounds, canvasSize, t)
+                  const centre = clampCentreToBounds(point, layout.bounds, visible)
+                  return { ...t, ...transformToCentreOn(centre, layout.bounds, canvasSize, t.k) }
+                })
+              }
+            />
+          )}
 
           <div className="absolute left-2 top-2 flex items-center gap-1">
             <button
