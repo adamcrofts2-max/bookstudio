@@ -298,7 +298,30 @@ export function Sidebar({ project }: SidebarProps) {
         </Button>
       </div>
 
-      <Tabs defaultValue="chapters" className="flex min-h-0 flex-1 flex-col px-3">
+      <Tabs
+        defaultValue="chapters"
+        onValueChange={(value) => {
+          // Coming back to Chapters *from having been working on front or
+          // back matter* means the canvas is parked on a cover or a
+          // copyright page, several spreads from the manuscript, and the
+          // tab that is supposed to be about chapters shows none of them
+          // (seen while walking the built app, Phase 157). Landing on the
+          // text is what the tab means.
+          //
+          // Gated on a structural page actually being selected rather than
+          // firing on every tab change: someone who ducks into Structure
+          // while reading page 40 and comes straight back should not be
+          // yanked to the top of the chapter. Clicking a chapter row has
+          // always scrolled the canvas — this is the same request, made on
+          // the only occasion it isn't already true.
+          if (value !== 'chapters') return
+          const { selectedStructuralPageId, selectedChapterId } = useSelectionStore.getState()
+          if (!selectedStructuralPageId) return
+          const target = selectedChapterId ?? manuscript?.chapters[0]?.id
+          if (target) requestScrollToChapter(target)
+        }}
+        className="flex min-h-0 flex-1 flex-col px-3"
+      >
         {/* Same tight density Inspector.tsx already uses for its own
            5-tab row (px-1.5 text-xs) — this row went from 3 tabs to 4 when
            Search was added, and at the original px-3 text-sm sizing all 4

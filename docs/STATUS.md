@@ -11050,3 +11050,80 @@ loose enough to hide it would be loose enough to hide the next one.
 And what still isn't proven: that either rendering matches what a printer
 produces. That needs a real print-on-demand preflight, which is now its own
 roadmap item.
+
+## Phase 160 — three small ones, and a document that had gone false
+
+The three remaining Phase B items from the walkthroughs, all of them small,
+and one of them the reason a previous answer about this app's own state was
+wrong. Each premise was re-measured before anything was changed, because two
+of the three turned out not to be quite what the walkthrough reported.
+
+### 1. A phone can import a manuscript — it just said it couldn't
+
+Mobile's empty state read *"Start your first chapter to begin writing on the
+go, or import a manuscript on desktop"* while the More tab, three taps away,
+offered **Import a manuscript — EPUB, DOCX, Markdown, TXT or HTML**. Only one
+of the two could be true.
+
+Measured rather than argued: a `.docx` fixture pushed through the importer on
+a 390×844 touch context produced `["The Keeper of Hours", "A Second Door"]` —
+two real chapters, correctly split on Heading 1. The importer works; the copy
+was wrong. `mobileBlocks.e2e.mjs` now does that import as its opening act, so
+the capability is asserted rather than the sentence: if importing ever breaks
+on a phone, the suite says so, and the copy can follow.
+
+### 2. Coming back to Chapters now brings the canvas with you
+
+Edit a cover in the Structure tab, switch back to Chapters, and the canvas
+stayed parked on the cover — the tab that is supposed to be about chapters
+showing none of them.
+
+The walkthrough had called this "no route back to the text but scrolling",
+and that was overstated: clicking a chapter row has always scrolled the
+canvas, and the rows are right there. The real defect is smaller and still
+real, so the fix is correspondingly narrow. Switching to Chapters requests a
+scroll to the selected chapter **only when a structural page is currently
+selected** — that is, only when you were just working on front matter.
+Someone who ducks into Structure while reading page 40 and comes straight
+back is not yanked to the top of the chapter.
+
+### 3. `docs/VIRTUAL_EDITOR.md`'s taxonomy table had gone false
+
+The table claimed `typography`, `accessibility`, `print` and `commercial` had
+no checker at all and always rendered "Not yet analysed", and that
+"proofreading is real today; the rest of the taxonomy is designed". That
+stopped being true somewhere around Phases 25–40 and nobody came back to it.
+
+It is not a harmless staleness. Asked what the Virtual Editor was missing,
+this project answered by reading that file and got it wrong — a doc that
+drifts doesn't merely fail to help, it actively misinforms the next decision.
+(The same sentence was also shipping in the product until Phase 157 removed
+it from `VirtualEditorWorkspace`.)
+
+The middle column is now the real list, read out of
+`src/virtualEditor/checkers/`: **forty rules across twelve categories**, from
+`Double spaces` and `Unmatched brackets` through `Inner margin below KDP
+gutter minimum`, `Cover element text contrast`, `Chapter length outlier` and
+`Missing ISBN`. Two other passages elsewhere in the file repeated the same
+false claim and are corrected with it. A tile reads "Not yet analysed" today
+only when no checker in that category was *applicable* to the run —
+`publishingStandards` and `layout` need `ctx.pages`, so a review fired before
+the renderer has paginated leaves those two blank. That is the honest-by-
+construction behaviour `ScoreCard.tsx` exists for, and now the only case.
+
+### Verification
+
+| Assertion | Suite | Fails without the fix as |
+| --- | --- | --- |
+| the empty state does not send a phone user to a desktop | `mobileBlocks` | the old sentence is still on screen |
+| a phone offers the manuscript importer | `mobileBlocks` | no `.docx`-accepting input |
+| a .docx imported on a phone becomes real chapters | `mobileBlocks` | 0 chapters |
+| switching back to Chapters shows the chapter | `structure` | still on `page-spage_…,page-flow-1` |
+
+The Chapters assertion needed tightening before it meant anything: as first
+written it checked that *some* `page-flow-` page was visible, and the TOC is a
+flow page that sits in the same spread as the cover — so it passed against
+the unfixed build. It now looks for `[data-chapter-start]` in the viewport.
+That is the seventh time in this project a new assertion has been wrong before
+the code was, and the seventh time the cause was a locator loose enough to
+find something else that happens to be correct.

@@ -75,6 +75,13 @@ async function main() {
     await page.waitForTimeout(600)
     const seeded = await pages(page)
 
+    // Phase 160: coming back to Chapters after working on front matter used
+    // to leave the canvas parked on the cover — the tab about chapters
+    // showing none of them. Clicking a chapter row has always scrolled the
+    // canvas; this is the same request, made on the one occasion it isn't
+    // already true. Asserted further down, once a Cover exists to be
+    // parked on.
+
     // Phase 157: the Page tab's margins row was labelled "Margins (in)"
     // above a millimetre value. Everything in `ProjectSettings.margins` is
     // mm, so the label was simply wrong — the kind of thing only reading
@@ -176,6 +183,40 @@ async function main() {
     // progress it must not be on screen at all.
     const dropPill = await page.evaluate(() => document.body.innerText.includes('Drop a cover image here'))
     check('no drop-image pill sits on top of the cover', dropPill === false)
+
+    // Phase 160: and now the canvas comes back with you.
+    const onCoverBefore = await page.evaluate(() => {
+      const visible = [...document.querySelectorAll('[id^="page-"]')].filter((el) => {
+        const r = el.getBoundingClientRect()
+        return r.bottom > 100 && r.top < window.innerHeight
+      })
+      return visible.map((el) => el.id)
+    })
+    await page.getByRole('tab', { name: /^chapters$/i }).first().click()
+    await page.waitForTimeout(2000)
+    // The chapter opener specifically, not merely "a flow page" — the TOC
+    // is a flow page too and sits in the same spread as the cover, so the
+    // looser version of this check passed against the unfixed build.
+    const chapterOpenerVisible = await page.evaluate(() => {
+      const opener = document.querySelector('[data-chapter-start]')
+      if (!opener) return false
+      const r = opener.getBoundingClientRect()
+      return r.bottom > 100 && r.top < window.innerHeight
+    })
+    const onChaptersAfter = await page.evaluate(() =>
+      [...document.querySelectorAll('[id^="page-"]')]
+        .filter((el) => {
+          const r = el.getBoundingClientRect()
+          return r.bottom > 100 && r.top < window.innerHeight
+        })
+        .map((el) => el.id),
+    )
+    check(
+      `switching back to Chapters shows the chapter, not the front matter (${onCoverBefore.join(',')} -> ${onChaptersAfter.join(',')})`,
+      chapterOpenerVisible === true,
+    )
+    await page.getByRole('tab', { name: /^structure$/i }).first().click()
+    await page.waitForTimeout(800)
 
     await page.getByRole('button', { name: /^duplicate dedication$/i }).first().click()
     await page.waitForTimeout(900)

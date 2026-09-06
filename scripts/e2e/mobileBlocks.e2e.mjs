@@ -9,6 +9,8 @@
  * actually lands, on a real touch viewport, because a control that opens and
  * saves nothing is the exact failure this project keeps finding.
  */
+import { readFile } from 'node:fs/promises'
+
 import { loadChromium, serveDist, check, failureCount, newProjectWithChapter } from './runner.mjs'
 
 const PNG_1x1 = Buffer.from(
@@ -45,6 +47,44 @@ async function main() {
   try {
     await page.goto(server.url)
     await page.waitForTimeout(800)
+
+    // ---- a manuscript can arrive on a phone ----
+    // The empty state told people to "import a manuscript on desktop" while
+    // the More tab offered the importer three taps away; the app was
+    // contradicting itself, and only one of the two could be true. It's
+    // this one (Phase 160). Importing is the assertion — the copy follows
+    // from it, not the other way round.
+    await page.getByRole('button', { name: /new project/i }).first().tap()
+    await page.waitForTimeout(600)
+    await page.locator('#new-project-idea').fill('Imported on a phone')
+    await page.getByRole('button', { name: /^create/i }).last().tap()
+    await page.waitForTimeout(2500)
+    const emptyState = await page.evaluate(() => document.body.innerText)
+    check('the empty state does not send a phone user to a desktop', !/import a manuscript on desktop/i.test(emptyState))
+
+    await page.getByText('More', { exact: true }).first().tap()
+    await page.waitForTimeout(1800)
+    await page.getByText('Import a manuscript', { exact: true }).first().tap()
+    await page.waitForTimeout(1200)
+    const importInput = page.locator('input[type="file"][accept*=".docx"]').first()
+    check('a phone offers the manuscript importer', (await importInput.count()) > 0)
+    if (await importInput.count()) {
+      await importInput.setInputFiles({
+        name: 'manuscript.docx',
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        buffer: await readFile('scripts/fixtures/manuscript.docx'),
+      })
+      await page.waitForTimeout(3500)
+    }
+    const importedTitles = await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      const raw = localStorage.getItem('book-studio.content')
+      return raw && id ? (JSON.parse(raw).state.byProject[id]?.chapters ?? []).map((c) => c.title) : []
+    })
+    check(`a .docx imported on a phone becomes real chapters (${importedTitles.join(' | ')})`, importedTitles.length === 2)
+
+    await page.goto(server.url)
+    await page.waitForTimeout(900)
     await newProjectWithChapter(page, { mobile: true })
 
     await page.getByRole('button', { name: 'Add block' }).tap()

@@ -424,7 +424,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
       <EmptyState
         icon={BookText}
         title="No chapters yet"
-        description="Start your first chapter to begin writing on the go, or import a manuscript on desktop."
+        description="Start your first chapter to begin writing on the go, or bring in a manuscript from More → Import."
         action={
           <Button type="button" size="sm" className="gap-1.5" onClick={handleAddChapter}>
             <Plus className="size-3.5" />

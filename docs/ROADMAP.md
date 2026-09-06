@@ -592,15 +592,27 @@ daily use of everything built so far.)*
 - [x] The Page tab's margins row states real units — shipped 2026-09-05 (Phase
       157). It was labelled "(in)" over a millimetre value, and showed only
       the inner margin.
-- [ ] `docs/VIRTUAL_EDITOR.md`'s issue-type taxonomy table is stale — it says
+- [x] `docs/VIRTUAL_EDITOR.md`'s issue-type taxonomy table corrected — done
+      2026-09-06 (Phase 160). It claimed four categories had no checker at all;
+      the real list, read out of `src/virtualEditor/checkers/`, is forty rules
+      across all twelve. Two other passages in the same file repeated the
+      claim and were corrected with it. Original entry said:
       typography, accessibility, print readiness and commercial quality have
       no checker and always render "Not yet analysed". All twelve categories
       have had a real checker since Phase 25-ish; the table has not caught up,
       and it misled a review of the app's own state (Phase 157).
-- [ ] Mobile contradicts itself about importing: the empty state says "import
+- [x] Mobile no longer contradicts itself about importing — fixed 2026-09-06
+      (Phase 160). Importing a .docx on a phone was measured first: it
+      produces two correctly split chapters, so the empty state's copy was
+      simply wrong, and `mobileBlocks.e2e.mjs` now asserts the capability.
+      Original entry said: the empty state says "import
       a manuscript on desktop" while the More tab offers "Import a manuscript
       — EPUB, DOCX, Markdown, TXT or HTML" (found Phase 157).
-- [ ] Switching the sidebar from Structure back to Chapters leaves the canvas
+- [x] Switching back to Chapters brings the canvas with you — fixed 2026-09-06
+      (Phase 160), gated on a structural page being selected so nobody reading
+      page 40 gets yanked to the top of a chapter. The original report ("no
+      route back but scrolling") was overstated — clicking a chapter row has
+      always scrolled. Original entry said: leaves the canvas
       wherever it was — usually on the cover — with no route back to the text
       but scrolling (found Phase 157). Same family as Phase 156's "land on the
       page you just added".
