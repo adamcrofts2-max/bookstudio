@@ -11323,3 +11323,71 @@ Every page of both books now agrees to within half a pixel:
 real assets, which the seeded-manuscript approach can't provide. And the
 line-level text flow work (Stage 1's third piece) is untouched: paragraphs
 still move to the next page as whole blocks.
+
+## Phase 163 — the third piece of Stage 1, measured and not half-shipped
+
+Stage 1 of the delivery plan had three pieces. Phase 162 shipped the first
+two. The third is line-level text flow — letting a paragraph split across a
+page boundary instead of moving to the next page whole.
+
+It is not built, and this entry is the account of why, with the numbers that
+decision rests on.
+
+### What it would buy, measured
+
+`pdfFidelity.e2e.mjs` now reports, on every run, how much of each full page
+block-level flow leaves empty:
+
+```
+INFO — plain:       block-level flow leaves 19% of a full page unused
+INFO — every block: block-level flow leaves 9%, 29%, 6%, 7% (mean 13%)
+```
+
+Six to twenty-nine per cent of a page, mean 13–19%. On a 300-page novel that
+is around 40 pages of paper. This was worth measuring rather than asserting:
+the previous note in "Known simplifications" said only that line-level flow
+"would be the natural next step if tighter page-fill is wanted", which is
+true and tells nobody whether to do it.
+
+Getting that number honestly took three corrections of its own — the first
+measurement came out at **-4%**, because the last "line" on a page is the
+folio, which sits in the bottom margin below the content box, and because
+the flow container is deliberately larger than the text column (Phase 89's
+overlay buffer) so its padding had to come off too.
+
+### What it would cost
+
+`docs/LINE_LEVEL_FLOW_PLAN.md` has the full design. The short version is
+four problems, of which two are ordinary work (per-line measurement; a slice
+model in `paginate` and `drawWrappedLines`) and two are not:
+
+- **The canvas is the editor, not a preview.** A sliced paragraph has to
+  render across two pages and stay one editable field. `contenteditable`
+  fights a clip window, `data-block-id` would appear twice (breaking
+  scroll-to-block, the block toolbar, note anchors and the fidelity suite),
+  live spellcheck rewrites innerHTML and maps caret offsets through it, and
+  every keystroke changes where the split falls — which repaginates, which
+  remounts the spread, which is precisely the Phase 139 caret-loss sequence,
+  now firing on every character typed near a page break.
+- **Two independent wrappers would have to agree line for line.** The screen
+  wraps with the browser, the PDF with `textWrap.ts`. They currently agree —
+  Phases 159–162 proved it to within half a pixel — but today a
+  disagreement costs *spacing*. After a split it costs *content*: a line
+  dropped or printed twice at a page boundary.
+
+That asymmetry is the whole argument. Block-level flow fails gracefully; the
+worst case is white space. Line-level flow fails loudly, in a printed book,
+on the page nobody proofreads because it looked right on screen.
+
+### The decision
+
+Not started. The plan proposes four milestones and recommends beginning with
+per-line measurement plus a per-block wrapping assertion — which is worth
+building whether or not the rest ever follows, because it turns "the two
+wrappers agree" from an observation about whole pages into an enforced
+invariant.
+
+Shipping a partial version of the other three would have looked like
+progress and put a content error in someone's printed book. `CLAUDE.md` asks
+for working milestones; this is what that rule looks like when the honest
+answer is "not yet".

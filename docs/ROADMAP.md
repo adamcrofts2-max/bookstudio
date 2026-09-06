@@ -1852,7 +1852,15 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] The `gallery` block is the one type the fidelity suite's rich fixture
       can't carry — it needs real image assets, which a seeded manuscript
       can't provide. Needs an asset-seeding path before it can be measured.
-- [ ] Line-level text flow (paragraphs currently move to the next page as a whole block)
+- [ ] Line-level text flow (paragraphs currently move to the next page as a
+      whole block). **Designed 2026-09-06 — see `docs/LINE_LEVEL_FLOW_PLAN.md`
+      before starting.** Measured benefit: block-level flow leaves 6–29% of a
+      full page unused (mean 13–19%), reported by `pdfFidelity.e2e.mjs` on
+      every run — roughly 40 pages on a 300-page novel. Measured cost: four
+      milestones, of which the third is a rewrite of how the editable canvas
+      relates to pages. The plan recommends starting with per-line
+      measurement, which pays for itself as verification whether or not the
+      rest is ever built.
 - [x] `LazySpread` unmounts spreads that scroll far away — shipped
       2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew
       monotonically for as long as the app stayed open. Two margins now

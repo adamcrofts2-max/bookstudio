@@ -100,7 +100,30 @@ const READ_APP_PAGES = () => {
       const r = img.getBoundingClientRect()
       return { top: r.top - pageRect.top, left: r.left - pageRect.left, width: r.width, height: r.height }
     })
-    pages.push({ id: el.id, width: pageRect.width, height: pageRect.height, lines, images })
+    // The content box itself, so the suite can also report how much of each
+    // page block-level flow leaves empty — the thing line-level flow would
+    // recover, quantified rather than assumed.
+    const flow = [...el.querySelectorAll('div')].find((d) => {
+      const cs = getComputedStyle(d)
+      return cs.position === 'absolute' && cs.overflow === 'hidden' && d.querySelector('[data-block-id]')
+    })
+    // The container is deliberately larger than the text column — Phase 89
+    // pulled its clip box outward and gave the pixels back as padding so
+    // hover overlays aren't clipped — so its own padding has to come off
+    // again to get the real content box.
+    const flowRect = flow?.getBoundingClientRect()
+    const flowStyle = flow ? getComputedStyle(flow) : null
+    const padTop = flowStyle ? parseFloat(flowStyle.paddingTop) || 0 : 0
+    const padBottom = flowStyle ? parseFloat(flowStyle.paddingBottom) || 0 : 0
+    pages.push({
+      id: el.id,
+      width: pageRect.width,
+      height: pageRect.height,
+      contentTop: flowRect ? flowRect.top - pageRect.top + padTop : null,
+      contentBottom: flowRect ? flowRect.bottom - pageRect.top - padBottom : null,
+      lines,
+      images,
+    })
   }
   return pages
 }
@@ -334,6 +357,29 @@ async function main() {
         )
       }
       check(`${label}: a full page of type was compared (${compared})`, compared > 0)
+
+    // Reported, not asserted: how much of a full page block-level flow
+    // leaves unused, because a paragraph moves to the next page whole. This
+    // is the number line-level text flow would recover, and it belongs next
+    // to the fidelity measurements rather than in an argument about them.
+    const slack = []
+    for (const app of appPages) {
+      if (app.contentBottom === null || app.lines.length < 8) continue
+      // The last line *of body text* — `app.lines` also holds the running
+      // head and the folio, and the folio sits in the bottom margin, below
+      // the content box entirely.
+      const pageBodyFontPx = modal(app.lines.map((l) => Math.round(l.fontSizePx * 10) / 10))
+      const bodyOnPage = app.lines.filter((l) => Math.abs(l.fontSizePx - pageBodyFontPx) < 0.5)
+      if (bodyOnPage.length === 0) continue
+      const lastLine = bodyOnPage[bodyOnPage.length - 1]
+      const used = lastLine.bottom - (app.contentTop ?? 0)
+      const available = app.contentBottom - (app.contentTop ?? 0)
+      if (available > 0) slack.push(Math.round(((available - used) / available) * 100))
+    }
+    if (slack.length > 0) {
+      const mean = Math.round(slack.reduce((a, b) => a + b, 0) / slack.length)
+      console.log(`INFO — ${label}: block-level flow leaves ${slack.join('%, ')}% of a full page unused (mean ${mean}%)`)
+    }
 
       // ---- and the images ----
       const withImage = appPages.findIndex((p) => p.images.length > 0)
