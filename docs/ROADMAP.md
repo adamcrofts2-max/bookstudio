@@ -1862,9 +1862,19 @@ Book Studio today and an actual multi-device Canva-style product.)*
       `getBoundingClientRect().height` excludes margins, so `paginate`
       reserved 16px too little for each. Found by the fidelity suite, and a
       real layout-engine bug rather than a PDF one.
-- [ ] The `gallery` block is the one type the fidelity suite's rich fixture
-      can't carry — it needs real image assets, which a seeded manuscript
-      can't provide. Needs an asset-seeding path before it can be measured.
+- [x] The `gallery` block is measured — shipped 2026-09-06 (Phase 168).
+      `scripts/e2e/pngFixture.mjs` builds real PNGs of any shape, imported
+      through the app's own asset library, so the fixture can seed a gallery.
+      It found a real bug on the first run: on screen a cell is a square
+      `object-cover` crop, in print each image was drawn at its natural
+      aspect ratio, so a tall photograph printed 278pt against a 159pt
+      square and its page carried 119pt more than had been measured for it.
+      `blobToPng` crops to a centred square now, and the suite checks every
+      image on a page rather than only the first
+- [ ] The EPUB/HTML export renders a gallery as a stack of full-aspect
+      images, where screen and PDF show a two-column grid of square crops.
+      Defensible for a reflowable format, but it is a divergence the user
+      can see and it has never been a deliberate decision — needs one
 - [ ] Line-level text flow (paragraphs currently move to the next page as a
       whole block). **Designed 2026-09-06 — see `docs/LINE_LEVEL_FLOW_PLAN.md`
       before starting.** Measured benefit: block-level flow leaves 6–29% of a

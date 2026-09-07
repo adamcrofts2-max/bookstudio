@@ -11667,3 +11667,58 @@ markup our importer flattens would turn someone's poems into prose the next
 time they opened their own book. `blockToXhtml` gained an
 `epubSemantics` option so the standalone HTML book doesn't carry a
 namespaced attribute no reader is looking for.
+
+## Phase 168 — the gallery block gets measured, and turns out to have been wrong
+
+The last block type the PDF fidelity fixture could not carry. The roadmap
+recorded why: a gallery holds asset *ids*, so seeding one means seeding real
+images, and "a seeded manuscript can't provide" those.
+
+### The asset-seeding path
+
+`scripts/e2e/pngFixture.mjs` builds a real PNG of any size and colour from
+PNG's chunk framing plus `zlib` — a dozen lines, no dependency. Every suite
+here had shared one 1×1 PNG constant since Phase 39, which proves an image
+round-trips but is the same square every time, so nothing depending on an
+image's *shape* was ever exercised. The fixture now imports two plates of
+deliberately different aspect ratios (80×40 and 40×70) through the app's own
+asset-library input — the real import path, decode and all, rather than
+IndexedDB written by hand — and reads their ids back out of IndexedDB to
+seed a `gallery` block.
+
+### What it found immediately
+
+On screen a gallery cell is `aspect-square … object-cover`: a centred square
+crop in a two-column grid. In print, `drawGalleryPdf` drew each image at its
+natural aspect ratio and made each row as tall as its tallest photograph.
+
+The tall plate showed as a 159pt square and printed 278pt tall.
+
+That is not only a cosmetic difference. `HeightMeasurer` measures the
+screen, `paginate` assigns blocks to pages from those heights, and Phase
+162's clamp only ever pushes the cursor *down* — so the page a gallery
+landed on carried 119pt more than had been measured for it, for every
+non-square photograph in the book.
+
+### The fix
+
+`blobToPng` gained `squareCover`, which crops to a centred square before
+rasterising — the pixel-level equivalent of `object-cover` with the default
+`object-position: 50% 50%`. pdf-lib cannot crop an embedded image, and
+drawing a whole image into a square box would squash it, so the crop belongs
+exactly where `grayscale` already lives and for the same reason.
+
+`drawGalleryPdf` then draws every cell as a square of the column width, so a
+row's height no longer depends on which photograph happened to be tallest,
+and the inter-row gap is drawn *between* rows rather than after the last —
+matching `gap-2` on screen.
+
+Size and position now agree to 0.1px (159.1×159.1pt both sides; 383.0px vs
+382.9px down the page).
+
+### And a sharper assertion
+
+The suite compared the page's first image against the PDF's first placement.
+A gallery puts two on a page, so the second cell would have gone unchecked.
+It now asserts that every image the browser drew has a placement, in order,
+at the same size.

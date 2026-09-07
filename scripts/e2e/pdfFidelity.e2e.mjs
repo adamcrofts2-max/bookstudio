@@ -29,6 +29,7 @@
  */
 import { loadChromium, serveDist, check, failureCount, newProjectWithChapter } from './runner.mjs'
 import { readPdfGeometry, textPositions, imagePlacements } from './pdfGeometry.mjs'
+import { makePng } from './pngFixture.mjs'
 
 /** A real 1x1 PNG — the smallest thing that still exercises the whole
  * embed-and-place path. */
@@ -397,6 +398,20 @@ async function main() {
           console.log('   pdf image y/height:', pdfImage?.y?.toFixed(1), pdfImage?.height?.toFixed(1))
         }
         check(`${label}: the image is on the same page (${placements.length} placement(s))`, placements.length > 0)
+        // A gallery puts more than one image on the page, and comparing only
+        // the first would have missed the second cell entirely. Every image
+        // the browser drew must have a placement of the same size, in the
+        // order they were drawn.
+        check(
+          `${label}: every image on the page was drawn (${appPages[withImage].images.length} on screen, ${placements.length} drawn)`,
+          placements.length === appPages[withImage].images.length,
+        )
+        const mismatched = appPages[withImage].images.filter((img, i) => {
+          const drawn = placements[i]
+          if (!drawn) return true
+          return Math.abs(drawn.width - img.width * PX_TO_PT) >= 1.5 || Math.abs(drawn.height - img.height * PX_TO_PT) >= 1.5
+        })
+        check(`${label}: every image is the size it is on screen (${mismatched.length} wrong)`, mismatched.length === 0)
         if (pdfImage) {
           check(
             `the image is the same size (${pdfImage.width.toFixed(1)}x${pdfImage.height.toFixed(1)}pt vs ${(appImage.width * PX_TO_PT).toFixed(1)}x${(appImage.height * PX_TO_PT).toFixed(1)}pt)`,
@@ -444,7 +459,40 @@ async function main() {
     // into `contentStore`'s persisted state rather than clicked in through
     // the inserter: it is layout being measured here, not insertion, and
     // nine menu journeys would be nine ways for the fixture to drift.
-    const seeded = await page.evaluate(() => {
+    // The gallery block was the one type this fixture could not carry: it
+    // holds asset *ids*, so seeding it means seeding real images first
+    // (`docs/ROADMAP.md`, Phase 168). They go in through the app's own
+    // asset-library import — the real path, decode and all — rather than
+    // being written into IndexedDB by hand, and they are deliberately two
+    // different shapes so the row-height maths has something to get wrong.
+    await page.getByRole('tab', { name: /assets/i }).first().click()
+    await page.waitForTimeout(500)
+    const libraryInput = page.locator('input[type="file"][accept="image/*"][multiple]').first()
+    await libraryInput.setInputFiles([
+      { name: 'plate-wide.png', mimeType: 'image/png', buffer: makePng(80, 40, [126, 96, 60]) },
+      { name: 'plate-tall.png', mimeType: 'image/png', buffer: makePng(40, 70, [60, 84, 96]) },
+    ])
+    await page.waitForTimeout(2500)
+    const galleryAssetIds = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const request = indexedDB.open('book-studio-assets')
+          request.onsuccess = () => {
+            const all = request.result.transaction('assets').objectStore('assets').getAll()
+            all.onsuccess = () =>
+              resolve(
+                all.result
+                  .filter((asset) => asset.name.startsWith('plate-'))
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((asset) => asset.id),
+              )
+          }
+          request.onerror = () => resolve([])
+        }),
+    )
+    check(`the gallery fixture has two real image assets (${galleryAssetIds.length})`, galleryAssetIds.length === 2)
+
+    const seeded = await page.evaluate((assetIds) => {
       const projectId = location.pathname.split('/project/')[1]?.split('/')[0]
       const raw = localStorage.getItem('book-studio.content')
       if (!raw || !projectId) return null
@@ -486,6 +534,8 @@ async function main() {
           ],
         },
         para(),
+        { id: id('gallery'), type: 'gallery', assetIds, caption: 'Two plates from the 1874 rebuilding.' },
+        para(),
       ]
       parsed.state.byProject[projectId] = {
         chapters: [{ id: 'seed-chapter', title: 'Every Block', blocks }],
@@ -495,8 +545,8 @@ async function main() {
       parsed.state.revisionByProject = { ...(parsed.state.revisionByProject ?? {}), [projectId]: 1 }
       localStorage.setItem('book-studio.content', JSON.stringify(parsed))
       return blocks.filter((b) => b.type !== 'paragraph').map((b) => b.type)
-    })
-    check(`the rich fixture seeded every remaining block type (${(seeded ?? []).join(', ')})`, (seeded ?? []).length === 9)
+    }, galleryAssetIds)
+    check(`the rich fixture seeded every remaining block type (${(seeded ?? []).join(', ')})`, (seeded ?? []).length === 10)
     await page.reload()
     await page.waitForTimeout(4000)
 
