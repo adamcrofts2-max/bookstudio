@@ -1641,10 +1641,15 @@ Book Studio today and an actual multi-device Canva-style product.)*
       insertable on a phone since Phase 146 and never captionable, which left
       that half-finished in a way a printed book notices. Covered by
       `scripts/e2e/mobileBlocks.e2e.mjs`
-- [ ] Mobile: per-block typography overrides — the remaining third of the
-      old item. Deliberately not built with the other two: a phone is where
-      prose gets written, not where a single paragraph's leading gets
-      tuned, and every control added to that screen costs something
+- [x] Per-block typography overrides — shipped 2026-09-06 (Phase 171), on
+      **both** shells. This item was mis-filed as a mobile gap: the feature
+      did not exist on desktop either. An override is Theme-layer data keyed
+      by block id (`blockStyleStore`), never a field on the block, because
+      the Content layer holds no styling. Discrete steps (±10% size, ±8%
+      leading) so both shells offer the same control, and one
+      `themeForBlock` is read by the screen, the height measurer and the
+      exporter alike, so they cannot disagree. Proved by the fidelity suite:
+      stub the exporter's half out and page 4 drifts 9.39px
 - [x] Mobile distraction-free writing — shipped 2026-09-04 (Phase 140), and
       the earlier "probably correct to leave out" call was wrong: a phone
       being single-column is not the same as being distraction-free. Takes

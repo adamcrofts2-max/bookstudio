@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react'
 import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
+import { themeForBlock } from '@/theme/blockTheme'
+import { EMPTY_BLOCK_STYLES, useBlockStyleStore } from '@/store/blockStyleStore'
 import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
 import { Trash2 } from 'lucide-react'
 import { BlockContent } from '@/renderer/BlockContent'
@@ -146,6 +148,7 @@ interface PageProps {
 
 
 export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bookTitle, language = 'en', decorative = false }: PageProps) {
+  const blockStyles = useBlockStyleStore((s) => s.byProject[projectId]) ?? EMPTY_BLOCK_STYLES
   const select = useSelectionStore((s) => s.select)
   const clearSelection = useSelectionStore((s) => s.clear)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
@@ -237,7 +240,11 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
       <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group/block relative">
         <BlockContent
           block={block}
-          theme={theme}
+          // The book's theme, or that block's own departure from it
+          // (Phase 171). Resolved here rather than inside `BlockContent`
+          // so `HeightMeasurer` and `exportPdf` can resolve the same way
+          // and cannot disagree about what an override means.
+          theme={themeForBlock(theme, blockStyles[block.id])}
           dropCap={dropCapBlockIds.has(block.id)}
           selected={isSelected}
           onSelect={decorative ? undefined : () => chapterId && handleSelect(chapterId, block)}

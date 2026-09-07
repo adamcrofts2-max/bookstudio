@@ -121,8 +121,10 @@ async function main() {
     // ---- a note on a paragraph ----
     await page.getByRole('button', { name: /block actions/i }).first().tap()
     await page.waitForTimeout(400)
-    const notesItem = page.getByRole('menuitem', { name: /^notes/i })
-    check('a paragraph offers Notes', (await notesItem.count()) > 0)
+    // "Type & notes" since Phase 171 — a paragraph's sheet carries its
+    // typographic override as well as its notes.
+    const notesItem = page.getByRole('menuitem', { name: /notes/i })
+    check('a paragraph offers its notes', (await notesItem.count()) > 0)
     await notesItem.first().click()
     await page.waitForTimeout(700)
 
@@ -266,6 +268,32 @@ async function main() {
     check('a checklist item can be ticked on a phone', checklist?.items?.[0]?.checked === true)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(600)
+
+    // ---- per-block typography, on the same steps desktop offers (Phase 171) ----
+    await cardFor('^list').tap()
+    await page.waitForTimeout(800)
+    await page.getByRole('button', { name: /^smaller$/i }).tap()
+    await page.waitForTimeout(600)
+    await page.getByRole('button', { name: /^looser$/i }).tap()
+    await page.waitForTimeout(700)
+    const styles = () =>
+      page.evaluate(() => {
+        const id = location.pathname.split('/project/')[1]?.split('/')[0]
+        const raw = localStorage.getItem('book-studio.block-styles')
+        return raw ? (JSON.parse(raw).state.byProject[id] ?? {}) : {}
+      })
+    let saved = await styles()
+    check(`a block can be set smaller on a phone (${saved['sb-list']?.sizeScale})`, saved['sb-list']?.sizeScale === 0.9)
+    check(`and looser (${saved['sb-list']?.leadingScale})`, saved['sb-list']?.leadingScale === 1.08)
+
+    // Back to the theme, and the record goes with it — a block following
+    // the theme must not be stored as a customised one.
+    await page.getByRole('button', { name: /reset/i }).tap()
+    await page.waitForTimeout(700)
+    saved = await styles()
+    check('resetting to the theme removes the override entirely', saved['sb-list'] === undefined)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(500)
 
     check(`no page errors throughout (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
   } finally {

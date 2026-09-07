@@ -14,6 +14,7 @@ import { LazySpread } from '@/renderer/LazySpread'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
 import { useExportStore } from '@/store/exportStore'
 import { useContentStore } from '@/store/contentStore'
+import { EMPTY_BLOCK_STYLES, useBlockStyleStore } from '@/store/blockStyleStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 
@@ -96,7 +97,15 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
   const contentRevision = useContentStore((s) => s.revisionByProject[project.id] ?? 0)
 
   const [heights, setHeights] = useState<Record<string, number> | null>(null)
-  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}-${contentRevision}`
+  const blockStyles = useBlockStyleStore((s) => s.byProject[project.id]) ?? EMPTY_BLOCK_STYLES
+  // A per-block override changes how tall that block renders, so it has to
+  // reach `measureKey` or the layout would keep the heights measured under
+  // the old one (Phase 171) — the same reason `contentRevision` is here.
+  const blockStyleKey = Object.entries(blockStyles)
+    .map(([id, o]) => `${id}:${o.sizeScale ?? 1}:${o.leadingScale ?? 1}`)
+    .sort()
+    .join(',')
+  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}-${contentRevision}-${blockStyleKey}`
 
   const { pages: paginatedPages, toc } = useMemo(() => {
     if (!heights) return { pages: [] as LaidOutPage[], toc: [] }
@@ -208,7 +217,7 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
 
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {} })
+    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {}, blockStyles })
   }, [pages, toc, pageBox, theme, heights, project.id, setExportLayout])
 
   // Sidebar's chapter nav can't just scrollIntoView `[data-chapter-start]`
@@ -292,6 +301,7 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
         contentWidthPx={pageBox.contentWidthPx}
         theme={theme}
         dropCapBlockIds={dropCapBlockIds}
+        blockStyles={blockStyles}
         measureKey={measureKey}
         onMeasured={setHeights}
       />

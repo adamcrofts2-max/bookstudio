@@ -15,6 +15,7 @@ import {
 } from '@/store/editorActions'
 import type { ContentBlock } from '@/types/content'
 import { MobileStructuredEditor, isStructuredEditable } from '@/layout/mobile/MobileStructuredEditor'
+import { BlockTypographyControls } from '@/components/common/BlockTypographyControls'
 import { getBlockTypeDefinition } from '@/blocks/registry'
 import { cn } from '@/lib/utils'
 
@@ -143,8 +144,15 @@ export function MobileBlockSheet({ projectId, chapterId, block, open, onOpenChan
             </div>
           )}
 
+          {block && block.type !== 'image' && block.type !== 'gallery' && (
+            <div className="flex flex-col gap-3">
+              <Label>Typography</Label>
+              <BlockTypographyControls projectId={projectId} blockId={block.id} />
+            </div>
+          )}
+
           <div className="flex flex-col gap-3">
-            {(isImage || structured) && <Label>Notes</Label>}
+            <Label>Notes</Label>
             {blockNotes.length === 0 ? (
               <p className="text-[13px] text-text-secondary">
                 No notes on this block yet. Notes stay with the book and never appear in the printed page.

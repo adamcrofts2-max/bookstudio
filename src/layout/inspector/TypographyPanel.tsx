@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/common/EmptyState'
+import { BlockTypographyControls } from '@/components/common/BlockTypographyControls'
 import { useContentStore } from '@/store/contentStore'
 import { useProjectStore } from '@/store/projectStore'
 import { editBlock, splitParagraphWithHistory, mergeParagraphWithPreviousHistory } from '@/store/editorActions'
@@ -462,6 +463,14 @@ export function TypographyPanel({ projectId }: TypographyPanelProps) {
       {block.type === 'quote' && block.attribution && (
         <p className="text-sm text-text-secondary">Attributed to {block.attribution}</p>
       )}
+
+      {/* A block's own typographic departure from the book (Phase 171).
+          Below the block's own controls, because the common case is
+          reading what this block *is*, not retuning it. Images and
+          galleries never reach here — see the guard above — which is
+          right: neither carries type. */}
+      <Separator />
+      <BlockTypographyControls projectId={projectId} blockId={block.id} />
 
       {block.type === 'placeholder' && (
         <>

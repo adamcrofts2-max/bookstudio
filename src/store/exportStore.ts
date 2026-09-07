@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 
 import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
+import type { BlockTypographyOverride } from '@/types/blockStyle'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
 
@@ -23,6 +24,13 @@ export interface ExportableLayout {
    * fourteen types that exist and any added later.
    */
   blockHeights: Record<string, number>
+  /**
+   * Per-block typographic overrides (Phase 171), mirrored here for the same
+   * reason `blockHeights` is: the exporter must draw from exactly what the
+   * screen laid out, and reading a store directly would let the two drift
+   * the moment anything published a layout from stale state.
+   */
+  blockStyles: Record<string, BlockTypographyOverride>
 }
 
 interface ExportStoreState {

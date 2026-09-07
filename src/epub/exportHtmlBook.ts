@@ -2,6 +2,7 @@ import type { Manuscript } from '@/types/content'
 import type { Project } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import { resolveTheme } from '@/theme/presets'
+import { useBlockStyleStore } from '@/store/blockStyleStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
 import { blockToXhtml } from '@/epub/blockToXhtml'
@@ -46,6 +47,10 @@ export async function exportBookToHtml(
   bookTitle: string,
 ): Promise<Blob> {
   const theme = resolveTheme(project.settings.themeId)
+  // Per-block typographic overrides travel into the reflowable formats
+  // too (Phase 171) — read here rather than threaded through every caller,
+  // the same way the theme itself is resolved from the project.
+  const blockStyles = useBlockStyleStore.getState().getOverrides(project.id)
   const language = project.settings.language || 'en'
 
   const imageDataUris = new Map<string, string>()
@@ -66,7 +71,7 @@ export async function exportBookToHtml(
     if (body) sections.push(`<section class="bs-page">${body}</section>`)
   }
   for (const chapter of manuscript.chapters) {
-    const bodyBlocks = chapter.blocks.map((block) => blockToXhtml(block, imageSrc)).join('\n')
+    const bodyBlocks = chapter.blocks.map((block) => blockToXhtml(block, imageSrc, { style: blockStyles[block.id] })).join('\n')
     sections.push(`<section class="bs-chapter" id="${chapter.id}"><h1>${escapeXmlText(chapter.title)}</h1>${bodyBlocks}</section>`)
   }
   for (const page of backMatter) {

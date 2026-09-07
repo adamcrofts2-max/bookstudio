@@ -3,6 +3,8 @@ import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 
 import type { Chapter } from '@/types/content'
 import type { ResolvedBookTheme } from '@/theme/presets'
+import { themeForBlock } from '@/theme/blockTheme'
+import type { BlockTypographyOverride } from '@/types/blockStyle'
 import { BlockContent } from '@/renderer/BlockContent'
 import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
 
@@ -11,6 +13,15 @@ interface HeightMeasurerProps {
   contentWidthPx: number
   theme: ResolvedBookTheme
   dropCapBlockIds: Set<string>
+  /**
+   * Per-block typographic overrides (Phase 171), so a block with one is
+   * measured at the size it will be drawn at. Passed rather than read from
+   * the store here, because this component is memoised on props and a
+   * measurement that silently ignored a prop change would be worse than no
+   * memo at all — `measureKey` carries a signature of these for the same
+   * reason it carries the content revision.
+   */
+  blockStyles: Record<string, BlockTypographyOverride>
   /** Recomputed whenever any of these change; identity-stable between. */
   measureKey: string
   /**
@@ -28,7 +39,7 @@ interface HeightMeasurerProps {
  * instead of guessing — the same `BlockContent` component used for real
  * pages is used here, so measurement and final render can never disagree.
  */
-function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, measureKey, onMeasured }: HeightMeasurerProps) {
+function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, blockStyles, measureKey, onMeasured }: HeightMeasurerProps) {
   const refs = useRef(new Map<string, HTMLDivElement>())
 
   useLayoutEffect(() => {
@@ -121,7 +132,12 @@ function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, 
           </div>
           {chapter.blocks.map((block) => (
             <div key={block.id} ref={(el) => { if (el) refs.current.set(block.id, el) }}>
-              <BlockContent block={block} theme={theme} dropCap={dropCapBlockIds.has(block.id)} />
+              {/* The same per-block theme `Page.tsx` renders with, so a
+                  block with an override is *measured* at the size it will
+                  actually be drawn — otherwise pagination would reserve the
+                  theme's height for it and the page would over- or
+                  under-fill (Phase 171). */}
+              <BlockContent block={block} theme={themeForBlock(theme, blockStyles[block.id])} dropCap={dropCapBlockIds.has(block.id)} />
             </div>
           ))}
         </div>

@@ -11841,3 +11841,79 @@ reordered and switched to numbered; a table cell edited by its column name
 and a row added at the table's width; an FAQ answer saved and an entry
 added; verse keeping every line and its stanza break; a checklist item
 ticked; and the cards inviting an edit rather than refusing one.
+
+## Phase 171 — per-block typography, on both shells
+
+`docs/ROADMAP.md` carried this as a *mobile* item: "per-block typography
+overrides — the remaining third of the old item… a phone is where prose gets
+written, not where a single paragraph's leading gets tuned, and every
+control added to that screen costs something."
+
+The first half of that is still right, and it is why these controls sit
+below a block's own content in the mobile sheet rather than above it. The
+mistake in the framing was the filing: **the feature did not exist on
+desktop either.** The Inspector's Type tab offered a heading's level, a
+placeholder's kind, and read-only summaries. There was no override anywhere
+to bring to mobile.
+
+### Where it lives, and why not on the block
+
+`types/content.ts` opens with "No styling ever lives here — presentation is
+entirely the responsibility of the Theme (Layer 3) and Layout Engine (Layer
+4)", and `CLAUDE.md` makes that non-negotiable. So an override is
+Theme-layer data keyed *by* a block id, in `store/blockStyleStore.ts` —
+exactly the shape `notesStore` uses to attach notes to blocks without the
+manuscript ever learning notes exist. The manuscript is untouched by a
+styling change, which is asserted directly.
+
+Discrete steps, not free numbers: Smaller / Theme / Larger (±10%) and
+Tighter / Theme / Looser (±8%). A book's typography is a system, and "94.5%
+of the body size" is not a decision anyone can defend on the next page. It
+also means the two shells offer literally the same control —
+`BlockTypographyControls` is one component rendered by both — so a book
+edited on a phone and finished on a laptop has no values one of them cannot
+name.
+
+Setting a block back to the theme **deletes** its record rather than storing
+1×, so "has an override" and "differs from the theme" can never drift apart.
+
+### One mechanism, three renderers
+
+`themeForBlock(theme, override)` returns a `ResolvedBookTheme`. That is the
+whole implementation, and it is what keeps screen, measurement and print
+from being able to disagree:
+
+- `Page.tsx` renders the block with it,
+- `HeightMeasurer.tsx` measures the block with it — so pagination reserves
+  the right height, and `measureKey` carries a signature of the overrides
+  for the same reason it carries the content revision,
+- `exportPdf.ts` draws the block with a `DrawCtx` carrying it.
+
+No block type, no `drawPdf`, no wrap measurement had to learn that
+overrides exist. It returns the *same object* when there is nothing to
+apply, so a book with no overrides — every book, so far — sees no identity
+change at all.
+
+EPUB and the HTML book get a relative `font-size: 0.9em` and a unitless
+`line-height`, never absolute values: the override means "a tenth smaller
+than the surrounding text", which stays true at any reading size an
+e-reader is set to.
+
+### Proved, not assumed
+
+Two overridden paragraphs went into the PDF fidelity fixture. Nothing
+asserts them directly — they don't need to. Everything after an overridden
+block shifts by exactly whatever the two renderers disagree about, so the
+ordinary drift assertions carry it: with the exporter's override honoured,
+five pages agree to within 0.43px; with it stubbed out, page 4 drifts
+9.39px and page 3 draws eleven lines where the screen has five.
+
+That fixture also exposed a flaw in the suite itself. `offsets.length > 4 &&
+drift < 1.5` conflated "not enough data" with "wrong", and reported a page
+whose real drift was **0.03px** as a failure because it had four comparable
+lines instead of five. Too few lines is now a `SKIP`; "a full page of type
+was compared" is what stops a run of skips passing for a clean result.
+
+Sixteen unit assertions cover the store and `themeForBlock` (including the
+identity guarantee and that the manuscript is untouched); three more in the
+mobile suite cover setting and resetting one from a phone.

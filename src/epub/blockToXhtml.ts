@@ -1,4 +1,6 @@
 import type { ContentBlock } from '@/types/content'
+import type { BlockTypographyOverride } from '@/types/blockStyle'
+import { isDefaultOverride } from '@/types/blockStyle'
 import { escapeXmlText, escapeXmlAttr } from '@/epub/xhtmlEscape'
 
 /**
@@ -37,6 +39,14 @@ export interface BlockToXhtmlOptions {
    * is looking for it. Only `verse` uses it today.
    */
   epubSemantics?: boolean
+  /**
+   * This block's typographic override (Phase 171), applied as a relative
+   * inline style. Relative (`em`, unitless line-height) rather than
+   * absolute, because an e-reader's own type size has to keep winning — the
+   * override says "a tenth smaller than the surrounding text", which stays
+   * true at any reading size, where "14px" would not.
+   */
+  style?: BlockTypographyOverride
 }
 
 export function blockToXhtml(
@@ -44,8 +54,17 @@ export function blockToXhtml(
   imageSrc: (assetId: string) => string,
   options: BlockToXhtmlOptions = {},
 ): string {
-  const html = blockToXhtmlContent(block, imageSrc, options)
+  const inner = blockToXhtmlContent(block, imageSrc, options)
+  const html = inner && !isDefaultOverride(options.style) ? wrapWithStyle(inner, options.style!) : inner
   return block.breakAfter && html ? `${html}<div class="bs-page-break"></div>` : html
+}
+
+function wrapWithStyle(html: string, style: BlockTypographyOverride): string {
+  const declarations: string[] = []
+  if (style.sizeScale && style.sizeScale !== 1) declarations.push(`font-size: ${style.sizeScale}em`)
+  if (style.leadingScale && style.leadingScale !== 1) declarations.push(`line-height: ${(1.5 * style.leadingScale).toFixed(3)}`)
+  if (declarations.length === 0) return html
+  return `<div class="bs-block-style" style="${declarations.join('; ')};">${html}</div>`
 }
 
 function blockToXhtmlContent(

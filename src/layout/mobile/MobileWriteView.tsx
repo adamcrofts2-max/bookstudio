@@ -680,7 +680,13 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                         Move down
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setSheetBlock(block)}>
-                        {block.type === 'image' ? 'Caption & size' : isStructuredEditable(block) ? 'Edit & notes' : 'Notes'}
+                        {block.type === 'image'
+                          ? 'Caption & size'
+                          : isStructuredEditable(block)
+                            ? 'Edit, type & notes'
+                            : block.type === 'gallery'
+                              ? 'Notes'
+                              : 'Type & notes'}
                         {notes.some((n) => n.blockId === block.id && !n.resolved) ? ' •' : ''}
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => deleteBlockWithHistory(projectId, activeChapter.id, block.id)} className="text-danger">

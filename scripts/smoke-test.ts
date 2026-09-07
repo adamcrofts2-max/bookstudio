@@ -2879,5 +2879,62 @@ check(
   check('minimap: an axis with nothing to slide along centres', wider.x === 0 && wider.y === 0)
 }
 
+// --- Per-block typography overrides (Phase 171) ---
+{
+  const { themeForBlock } = await import('../src/theme/blockTheme')
+  const { isDefaultOverride } = await import('../src/types/blockStyle')
+  const { useBlockStyleStore } = await import('../src/store/blockStyleStore')
+  const { resolveTheme } = await import('../src/theme/presets')
+
+  const theme = resolveTheme('classic-novel')
+
+  // The identity guarantee the renderers rely on: no override means the
+  // very same object, so React and `useMemo` see no change for the
+  // overwhelmingly common case of a book with none.
+  check('themeForBlock: returns the same theme when there is no override', themeForBlock(theme, undefined) === theme)
+  check('themeForBlock: returns the same theme for an override equal to the theme', themeForBlock(theme, { sizeScale: 1, leadingScale: 1 }) === theme)
+
+  const smaller = themeForBlock(theme, { sizeScale: 0.9 })
+  check('themeForBlock: scales the body size', Math.abs(smaller.typography.bodySize - theme.typography.bodySize * 0.9) < 1e-9)
+  check('themeForBlock: leaves the leading alone when only size is set', smaller.typography.lineHeight === theme.typography.lineHeight)
+  const looser = themeForBlock(theme, { leadingScale: 1.08 })
+  check('themeForBlock: scales the leading', Math.abs(looser.typography.lineHeight - theme.typography.lineHeight * 1.08) < 1e-9)
+  check('themeForBlock: never touches anything but typography', looser.fonts === theme.fonts && looser.page === theme.page)
+
+  check('isDefaultOverride: an absent override is the theme', isDefaultOverride(undefined))
+  check('isDefaultOverride: 1x is the theme', isDefaultOverride({ sizeScale: 1, leadingScale: 1 }))
+  check('isDefaultOverride: anything else is not', !isDefaultOverride({ sizeScale: 0.9 }))
+
+  const store = useBlockStyleStore.getState()
+  store.setOverride('proj-a', 'blk-1', { sizeScale: 0.9, leadingScale: 1 })
+  check('blockStyleStore: stores an override', useBlockStyleStore.getState().getOverride('proj-a', 'blk-1')?.sizeScale === 0.9)
+
+  // Setting a block back to the theme deletes the record rather than
+  // storing 1x — "has an override" and "differs from the theme" must never
+  // drift apart, or the Inspector shows a block as customised when it isn't.
+  useBlockStyleStore.getState().setOverride('proj-a', 'blk-1', { sizeScale: 1, leadingScale: 1 })
+  check('blockStyleStore: returning to the theme clears the record', useBlockStyleStore.getState().getOverride('proj-a', 'blk-1') === undefined)
+
+  useBlockStyleStore.getState().setOverride('proj-a', 'blk-2', { leadingScale: 1.08 })
+  useBlockStyleStore.getState().clearOverride('proj-a', 'blk-2')
+  check('blockStyleStore: an override can be cleared', useBlockStyleStore.getState().getOverride('proj-a', 'blk-2') === undefined)
+  check('blockStyleStore: an empty project hands back one stable object', useBlockStyleStore.getState().getOverrides('proj-none') === useBlockStyleStore.getState().getOverrides('proj-none'))
+
+  // The manuscript is untouched by a styling change — the whole reason this
+  // is Theme-layer data keyed by block id rather than a field on the block.
+  const { useContentStore } = await import('../src/store/contentStore')
+  const before = JSON.stringify(useContentStore.getState().byProject)
+  useBlockStyleStore.getState().setOverride('proj-a', 'blk-3', { sizeScale: 1.1 })
+  check('a typographic override never touches the manuscript', JSON.stringify(useContentStore.getState().byProject) === before)
+
+  // And the EPUB carries it as a *relative* size, so an e-reader's own type
+  // size keeps winning.
+  const { blockToXhtml } = await import('../src/epub/blockToXhtml')
+  const para = { id: 'p1', type: 'paragraph' as const, html: 'A paragraph.' }
+  const styled = blockToXhtml(para, () => '', { style: { sizeScale: 0.9 } })
+  check('EPUB: an overridden block carries a relative font size', styled.includes('font-size: 0.9em'))
+  check('EPUB: an unoverridden block is wrapped in nothing at all', blockToXhtml(para, () => '') === '<p>A paragraph.</p>')
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

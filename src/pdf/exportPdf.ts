@@ -11,6 +11,8 @@ import { hexToPdfColor, pdfBlack, type PdfColorMode } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 import { getBlockTypeDefinition } from '@/blocks/registry'
+import { themeForBlock } from '@/theme/blockTheme'
+import type { BlockTypographyOverride } from '@/types/blockStyle'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 
@@ -78,11 +80,24 @@ export interface DrawCtx {
  * having the next block drawn on top of it — and `pdfFidelity.e2e.mjs` will
  * report the disagreement rather than it being silently absorbed.
  */
-async function drawBlock(ctx: DrawCtx, block: ContentBlock, dropCap: boolean, measuredHeightPx?: number) {
+async function drawBlock(
+  ctx: DrawCtx,
+  block: ContentBlock,
+  dropCap: boolean,
+  measuredHeightPx?: number,
+  style?: BlockTypographyOverride,
+) {
   const def = getBlockTypeDefinition(block.type)
   if (!def) return
   const topY = ctx.cursorY
-  await def.drawPdf(ctx, block, dropCap)
+  // A block with a typographic override is drawn with a theme of its own —
+  // the same object `Page.tsx` renders it with and `HeightMeasurer`
+  // measured it with, so no `drawPdf` implementation has to know overrides
+  // exist and none of the three can disagree about what one means
+  // (Phase 171).
+  const blockCtx = style ? { ...ctx, theme: themeForBlock(ctx.theme, style) } : ctx
+  await def.drawPdf(blockCtx, block, dropCap)
+  ctx.cursorY = blockCtx.cursorY
   if (measuredHeightPx && measuredHeightPx > 0) {
     ctx.cursorY = Math.min(ctx.cursorY, topY - measuredHeightPx * PX_TO_PT)
   }
@@ -243,10 +258,10 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
       }
       for (const block of page.blocks) {
         const isDropCap = block.type === 'paragraph' && theme.typography.dropCap && block === page.blocks.find((b) => b.type === 'paragraph')
-        await drawBlock(ctx, block, isDropCap, layout.blockHeights?.[block.id])
+        await drawBlock(ctx, block, isDropCap, layout.blockHeights?.[block.id], layout.blockStyles?.[block.id])
       }
     } else if (page.kind === 'content') {
-      for (const block of page.blocks) await drawBlock(ctx, block, false, layout.blockHeights?.[block.id])
+      for (const block of page.blocks) await drawBlock(ctx, block, false, layout.blockHeights?.[block.id], layout.blockStyles?.[block.id])
     }
 
     if (ctx.cursorY < contentBottom) {
