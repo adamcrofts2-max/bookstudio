@@ -2042,9 +2042,15 @@ a gap to close later.)*
       past its declared height (782px inside a 600px viewport) so it was drawn
       under the bottom tab bar; a tap on the lower part of the graph hit a nav
       button. Reported as the graph "crashing" on touch
-- [ ] Structured-block mobile editing (list/table/timeline/faq/statistics/
-      checklist/verse) — currently read-only cards on mobile; would need small
-      per-type mini-forms, not a plain contentEditable field.
+- [x] Structured-block mobile editing (list/table/timeline/faq/statistics/
+      checklist/verse) — shipped 2026-09-06 (Phase 170). `MobileStructuredEditor`
+      is one shared rows editor plus two special cases, not seven forms:
+      verse is a textarea (its lines are the author's and a blank line is a
+      stanza break), and a table is rows of fields labelled by their column
+      headings rather than a grid nobody can type into on a 390px screen.
+      Caught a real bug — a blur commit and a button commit in one gesture,
+      where the handler's render-time copy of the block threw the typed text
+      away; the editor reads the live block from the store now
 - [x] Mobile Develop mode — shipped 2026-09-03 (Phase 129): `MobileDevelopView`
       renders desktop's `PlanningShell` information architecture as a
       drill-down — a category list (Ideas + all eight Layer 0 kinds + Outline

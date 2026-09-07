@@ -35,6 +35,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { EmptyState } from '@/components/common/EmptyState'
 import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
 import { MobileBlockSheet } from '@/layout/mobile/MobileBlockSheet'
+import { isStructuredEditable } from '@/layout/mobile/MobileStructuredEditor'
 import { EMPTY_NOTES, useNotesStore } from '@/store/notesStore'
 
 interface MobileWriteViewProps {
@@ -42,13 +43,18 @@ interface MobileWriteViewProps {
 }
 
 
-/** Read-only preview card for block types too structured for a plain-text
- * mobile field (list/table/timeline/faq/statistics/checklist) or with no
- * inline text at all (image/gallery/placeholder). Editing these stays a
- * desktop-only affordance for now — see `docs/STATUS.md`'s mobile-mode
- * entry for the reasoning: a phone-keyboard mini-form for a table or FAQ
- * list is real scope, deliberately deferred rather than half-built. */
-function MobileReadOnlyCard({ block }: { block: ContentBlock }) {
+/**
+ * Preview card for block types too structured for a plain-text mobile field
+ * (list/table/verse/timeline/faq/statistics/checklist) or with no inline
+ * text at all (image/gallery/placeholder).
+ *
+ * The structured ones stopped being read-only in Phase 170: tapping the
+ * card opens `MobileStructuredEditor` in the block sheet. Images and
+ * galleries still say "Edit on a larger screen", which is now a true
+ * statement about repositioning a focal point rather than a blanket one
+ * about every block a phone couldn't draw a form for.
+ */
+function MobileReadOnlyCard({ block, onEdit }: { block: ContentBlock; onEdit?: () => void }) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
 
   if (block.type === 'image') {
@@ -102,11 +108,21 @@ function MobileReadOnlyCard({ block }: { block: ContentBlock }) {
     }
   })()
 
+  const editable = isStructuredEditable(block)
   return (
-    <div className="rounded-[var(--radius-card)] border border-dashed border-border bg-panel p-3">
+    <div
+      role={editable ? 'button' : undefined}
+      tabIndex={editable ? 0 : undefined}
+      onClick={editable ? onEdit : undefined}
+      onKeyDown={editable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEdit?.() } } : undefined}
+      className={cn(
+        'rounded-[var(--radius-card)] border border-dashed border-border bg-panel p-3',
+        editable && 'cursor-pointer text-left transition-colors active:bg-hover',
+      )}
+    >
       <p className="text-xs font-medium uppercase tracking-[0.06em] text-text-muted">{block.type.replace('-', ' ')}</p>
       <p className="mt-1 line-clamp-3 text-sm text-text-secondary">{summary}</p>
-      <p className="mt-1.5 text-xs text-text-muted">Edit on a larger screen</p>
+      <p className="mt-1.5 text-xs text-text-muted">{editable ? 'Tap to edit' : 'Edit on a larger screen'}</p>
     </div>
   )
 }
@@ -118,6 +134,7 @@ function MobileBlockCard({
   chapterId,
   block,
   previousBlock,
+  onEditStructured,
 }: {
   projectId: string
   chapterId: string
@@ -125,6 +142,9 @@ function MobileBlockCard({
   /** Backspace-at-start only joins paragraph into paragraph, mirroring the
    * desktop canvas's identical scope check. */
   previousBlock?: ContentBlock
+  /** Opens the block sheet on this block — how a structured block is edited
+   * on a phone (Phase 170). */
+  onEditStructured?: () => void
 }) {
   const commit = (updates: Partial<ContentBlock>) => editBlock(projectId, chapterId, block.id, updates)
   const selectForEdit = useSelectionStore((s) => s.selectForEdit)
@@ -218,7 +238,7 @@ function MobileBlockCard({
         </div>
       )
     default:
-      return <MobileReadOnlyCard block={block} />
+      return <MobileReadOnlyCard block={block} onEdit={onEditStructured} />
   }
 }
 
@@ -243,10 +263,13 @@ function MobileBlockCard({
  * `deleteBlockWithHistory` desktop uses; and the "+" menu can insert a real
  * photo straight from the device's camera roll or camera (`assetStore
  * .importFiles` + a plain `ImageBlock`, same shape `Page.tsx`'s desktop
- * asset-drop handler creates). Editing an *existing* structured block
- * (table/FAQ/list/etc., or repositioning an existing image's focal point)
- * stays desktop-only — see `MobileReadOnlyCard`'s own doc comment — that's
- * a deliberately different, larger scope than "write and assemble a book."
+ * asset-drop handler creates).
+ *
+ * Phase 170 closed the last of it for text: an existing structured block —
+ * list, checklist, verse, table, timeline, FAQ, statistics — is editable
+ * here too, through `MobileStructuredEditor` in the block sheet. What is
+ * still desktop-only is the genuinely spatial work: repositioning an
+ * image's focal point, and the fixed-size page canvas itself.
  */
 export function MobileWriteView({ projectId }: MobileWriteViewProps) {
   const manuscript = useContentStore((s) => s.getManuscript(projectId))
@@ -657,7 +680,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                         Move down
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => setSheetBlock(block)}>
-                        {block.type === 'image' ? 'Caption & size' : 'Notes'}
+                        {block.type === 'image' ? 'Caption & size' : isStructuredEditable(block) ? 'Edit & notes' : 'Notes'}
                         {notes.some((n) => n.blockId === block.id && !n.resolved) ? ' •' : ''}
                       </DropdownMenuItem>
                       <DropdownMenuItem onSelect={() => deleteBlockWithHistory(projectId, activeChapter.id, block.id)} className="text-danger">
@@ -671,6 +694,7 @@ export function MobileWriteView({ projectId }: MobileWriteViewProps) {
                   chapterId={activeChapter.id}
                   block={block}
                   previousBlock={i > 0 ? activeChapter.blocks[i - 1] : undefined}
+                  onEditStructured={() => setSheetBlock(block)}
                 />
               </div>
             ))}

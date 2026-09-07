@@ -11790,3 +11790,54 @@ template-scoped ids and keep their names and dimensions, that both reference
 sites are rewritten in each direction, that the applied copies belong to the
 new project under fresh ids, that the bytes survive the round trip, and that
 an unresolvable reference is dropped rather than left dangling.
+
+## Phase 170 — the structured blocks are editable on a phone
+
+Open since Phase 129, where `MobileReadOnlyCard` shipped with "Edit on a
+larger screen" printed on it. The reasoning was sound at the time: a plain
+`contentEditable` cannot express a table's cells or an FAQ's
+question/answer pairs, so the choice was a mini-form per type or nothing,
+and nothing was the honest half-measure to ship first.
+
+What makes it tractable is that six of the seven types are the same shape —
+a list of rows, where a row is one or two short text fields — so
+`MobileStructuredEditor` is one `RowsEditor` (list, checklist, timeline,
+FAQ, statistics) and two special cases, not seven forms. Each row carries
+move-up, move-down and delete; a checklist's row also carries its tick.
+
+**Verse is a textarea, not rows.** Its lines are the author's, they are
+short, and a blank line is a stanza break — exactly what typing into a
+textarea already produces. A row per line would be seven taps to write a
+quatrain.
+
+**A table is rows of labelled fields, not a grid.** A real grid on a 390px
+screen is either unreadably small or horizontally scrolling, and both are
+miserable to type into. The column headings are edited in their own
+section, then each row is a card whose fields carry those headings as their
+labels — the same information, laid out for the device in your hand.
+
+It reuses the sheet `MobileBlockSheet` already opens from a block's own "⋮"
+menu, and the card itself is now a button: "Tap to edit" replaces "Edit on
+a larger screen", which stays only on images and galleries, where it is now
+a true statement about repositioning a focal point rather than a blanket
+one about every block a phone couldn't draw a form for.
+
+### The bug the suite caught
+
+Fields commit on blur; structural changes (add, delete, reorder, tick)
+commit immediately. Both can happen in one gesture — tapping "Add item"
+while a field is focused fires the field's blur commit *and then* the
+button's — and the handler was closing over its render-time copy of the
+block, so it rebuilt the row list from the state before the blur and
+silently threw away what had just been typed. Retyping a list item and
+adding one in the same breath left the retype undone.
+
+The editor now reads the live block out of `contentStore` at commit time
+rather than trusting its prop. Three of the twelve new assertions in
+`scripts/e2e/mobileBlocks.e2e.mjs` fail without it.
+
+Twelve assertions on a real touch viewport: a list item retyped, added,
+reordered and switched to numbered; a table cell edited by its column name
+and a row added at the table's width; an FAQ answer saved and an entry
+added; verse keeping every line and its stanza break; a checklist item
+ticked; and the cards inviting an edit rather than refusing one.

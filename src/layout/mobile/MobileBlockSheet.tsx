@@ -14,6 +14,8 @@ import {
   editBlock,
 } from '@/store/editorActions'
 import type { ContentBlock } from '@/types/content'
+import { MobileStructuredEditor, isStructuredEditable } from '@/layout/mobile/MobileStructuredEditor'
+import { getBlockTypeDefinition } from '@/blocks/registry'
 import { cn } from '@/lib/utils'
 
 /** The same discrete presets the desktop Image panel offers — matching them
@@ -56,6 +58,10 @@ export function MobileBlockSheet({ projectId, chapterId, block, open, onOpenChan
 
   const blockNotes = block ? notes.filter((note) => note.blockId === block.id) : []
   const isImage = block?.type === 'image'
+  // Phase 170: the structured types are editable here too, so the sheet is
+  // named after whatever it is actually showing rather than always "Notes".
+  const structured = !!block && isStructuredEditable(block)
+  const typeLabel = block ? (getBlockTypeDefinition(block.type)?.label ?? 'Block') : 'Notes'
 
   const addNote = () => {
     const text = draft.trim()
@@ -76,10 +82,16 @@ export function MobileBlockSheet({ projectId, chapterId, block, open, onOpenChan
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="max-h-[85dvh]">
         <SheetHeader>
-          <SheetTitle>{isImage ? 'Image' : 'Notes'}</SheetTitle>
+          <SheetTitle>{isImage ? 'Image' : structured ? typeLabel : 'Notes'}</SheetTitle>
         </SheetHeader>
 
         <div className="flex flex-col gap-6 overflow-y-auto px-4 pb-8">
+          {structured && block && (
+            // Keyed by block id so switching blocks remounts the form and
+            // its uncontrolled fields re-read from the new block, rather
+            // than carrying the previous one's text across.
+            <MobileStructuredEditor key={block.id} projectId={projectId} chapterId={chapterId} block={block} />
+          )}
           {isImage && block.type === 'image' && (
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
@@ -132,7 +144,7 @@ export function MobileBlockSheet({ projectId, chapterId, block, open, onOpenChan
           )}
 
           <div className="flex flex-col gap-3">
-            {isImage && <Label>Notes</Label>}
+            {(isImage || structured) && <Label>Notes</Label>}
             {blockNotes.length === 0 ? (
               <p className="text-[13px] text-text-secondary">
                 No notes on this block yet. Notes stay with the book and never appear in the printed page.

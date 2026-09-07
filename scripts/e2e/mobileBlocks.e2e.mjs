@@ -177,6 +177,96 @@ async function main() {
     check(`the alt text is saved (${image?.altText ?? 'none'})`, (image?.altText ?? '').includes('oak shelving'))
     check(`the width preset is saved (${image?.widthPercent})`, image?.widthPercent === 65)
 
+    // ---- structured blocks are editable on a phone (Phase 170) ----
+    // Seeded rather than inserted through the menus: it is the *editing*
+    // being asserted here, and five insertion journeys would be five ways
+    // for the fixture to drift out from under the assertions.
+    await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      const parsed = JSON.parse(localStorage.getItem('book-studio.content'))
+      const manuscript = parsed.state.byProject[id]
+      manuscript.chapters[0].blocks = [
+        { id: 'sb-list', type: 'list', ordered: false, items: ['First', 'Second'] },
+        { id: 'sb-table', type: 'table', header: ['Year', 'Keeper'], rows: [['1874', 'Vale']] },
+        { id: 'sb-faq', type: 'faq', entries: [{ question: 'When does it open?', answer: 'It does not.' }] },
+        { id: 'sb-verse', type: 'verse', lines: ['The keeper walked the upper floor,'] },
+        { id: 'sb-check', type: 'checklist', items: [{ text: 'Count the doors', checked: false }] },
+      ]
+      parsed.state.revisionByProject = { ...(parsed.state.revisionByProject ?? {}), [id]: 2 }
+      localStorage.setItem('book-studio.content', JSON.stringify(parsed))
+    })
+    await page.reload()
+    await page.waitForTimeout(2500)
+
+    const cardFor = (label) => page.locator('div[role="button"]').filter({ hasText: new RegExp(label, 'i') }).first()
+    check('structured cards invite editing rather than refusing it', (await page.getByText('Tap to edit').count()) === 5)
+
+    // A list: edit an item, add one, and reorder.
+    await cardFor('^list').tap()
+    await page.waitForTimeout(800)
+    await page.getByRole('textbox', { name: /list item/i }).first().fill('First, revised')
+    await page.getByRole('button', { name: /add item/i }).tap()
+    await page.waitForTimeout(700)
+    let list = (await blocks(page)).find((b) => b.id === 'sb-list')
+    check(`a list item can be retyped (${list?.items?.[0]})`, list?.items?.[0] === 'First, revised')
+    check(`a list item can be added (${list?.items?.length})`, list?.items?.length === 3)
+    await page.getByRole('button', { name: /move item down/i }).first().tap()
+    await page.waitForTimeout(700)
+    list = (await blocks(page)).find((b) => b.id === 'sb-list')
+    check(`items can be reordered (${(list?.items ?? []).join('|')})`, list?.items?.[1] === 'First, revised')
+    await page.getByRole('button', { name: /numbered/i }).tap()
+    await page.waitForTimeout(600)
+    check('a list can be switched to numbered', (await blocks(page)).find((b) => b.id === 'sb-list')?.ordered === true)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+
+    // A table: one cell, laid out as labelled fields rather than a grid.
+    await cardFor('^table').tap()
+    await page.waitForTimeout(800)
+    await page.getByRole('textbox', { name: /row 1, keeper/i }).fill('Miss Vale')
+    await page.getByRole('button', { name: /add row/i }).tap()
+    await page.waitForTimeout(700)
+    const table = (await blocks(page)).find((b) => b.id === 'sb-table')
+    check(`a table cell is editable by its column name (${table?.rows?.[0]?.[1]})`, table?.rows?.[0]?.[1] === 'Miss Vale')
+    check(`a row can be added, the width of the table (${table?.rows?.length}x${table?.rows?.[1]?.length})`, table?.rows?.length === 2 && table?.rows?.[1]?.length === 2)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+
+    // An FAQ: a two-field row.
+    await cardFor('^faq').tap()
+    await page.waitForTimeout(800)
+    await page.getByRole('textbox', { name: /^answer$/i }).fill('Nine, on the second Tuesday.')
+    await page.getByRole('button', { name: /add question/i }).tap()
+    await page.waitForTimeout(700)
+    const faq = (await blocks(page)).find((b) => b.id === 'sb-faq')
+    check(`an FAQ answer saves (${faq?.entries?.[0]?.answer})`, (faq?.entries?.[0]?.answer ?? '').includes('second Tuesday'))
+    check(`an FAQ entry can be added (${faq?.entries?.length})`, faq?.entries?.length === 2)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+
+    // Verse: one textarea, because its lines are its own.
+    await cardFor('^verse').tap()
+    await page.waitForTimeout(800)
+    await page.locator('#mobile-verse-lines').fill('The keeper walked the upper floor,\nand counted every door she knew,\n\nand one she did not.')
+    await page.getByRole('button', { name: /add note/i }).first().click({ trial: true }).catch(() => {})
+    await page.locator('#mobile-verse-lines').blur()
+    await page.waitForTimeout(800)
+    const verse = (await blocks(page)).find((b) => b.id === 'sb-verse')
+    check(`verse keeps every line (${verse?.lines?.length})`, verse?.lines?.length === 4)
+    check('verse keeps the stanza break as an empty line', verse?.lines?.[2] === '')
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+
+    // A checklist: the tick is the point of it.
+    await cardFor('^checklist').tap()
+    await page.waitForTimeout(800)
+    await page.getByRole('checkbox', { name: /item 1 done/i }).tap()
+    await page.waitForTimeout(700)
+    const checklist = (await blocks(page)).find((b) => b.id === 'sb-check')
+    check('a checklist item can be ticked on a phone', checklist?.items?.[0]?.checked === true)
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(600)
+
     check(`no page errors throughout (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
   } finally {
     await browser.close()
