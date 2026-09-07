@@ -11722,3 +11722,71 @@ The suite compared the page's first image against the PDF's first placement.
 A gallery puts two on a page, so the second cell would have gone unchecked.
 It now asserts that every image the browser drew has a placement, in order,
 at the same size.
+
+## Phase 169 — templates carry their images
+
+Open since Phase E. Templates captured page setup, theme and the whole
+structural-page set, and **stripped every image reference on the way in**,
+because assets are per-project IndexedDB blobs and an id captured in one
+project resolves to nothing in another. So a publisher's mark or a series
+device — the two things a series template most obviously exists to
+repeat — had to be re-imported by hand for every volume.
+
+### Template-scoped asset storage
+
+`store/templateAssetDb.ts` is a separate IndexedDB database
+(`book-studio-template-assets`), not a second index on the project one, for
+two reasons:
+
+- **Ownership.** Project assets are swept when their project is deleted
+  (`projectDelete.e2e.mjs` exists to prove it). A template outlives every
+  project it was ever saved from, so its copy must not be reachable by that
+  sweep.
+- **Direction.** Nothing about a template may depend on a project still
+  existing — the same rule that makes a template bundle its custom theme by
+  value rather than by id.
+
+Blobs, not data URLs on the template: `templateStore` persists to
+`localStorage`, and one cover image would eat most of the budget the whole
+app shares. Only a small `TemplateAsset` metadata record travels there.
+
+### Both directions
+
+`templates/templateAssets.ts` does the copying; the rewriting stays pure and
+unit-testable in `buildTemplate` and `pagesForNewProject`.
+
+- Saving: `captureTemplateAssets` copies each referenced blob into
+  template storage under a new id and returns the map `buildTemplate` uses
+  to rewrite the references.
+- Applying: `materialiseTemplateAssets` copies them back out into the new
+  project's own library under *fresh* ids — not the template's, for the same
+  reason page ids are regenerated: two projects from one template must not
+  share an asset id, or deleting the first would take the second's image
+  with it. The new project's Assets tab then shows them like any other
+  import, and `deleteTemplate` frees the template's copies, which have no
+  other owner.
+
+A reference with no copy behind it is still stripped, exactly as before —
+a template with one fewer image beats one that renders a broken image, and
+a template saved before this phase simply has no `assets` field, which is
+already the right answer.
+
+### A bug it uncovered
+
+`stripImages` cleared `assetId` on cover elements. `CoverImageElement` has
+no such field — it is `imageAssetId`. The excess property was written and
+the real reference travelled untouched, so **every template saved from a
+project with a positioned cover image had been carrying a dangling id into
+the next book since Phase E**. TypeScript allowed it because the value came
+out of an object spread. Found by writing `collectAssetIds` against the real
+type; the test that catches it fails against the old code.
+
+### Covered
+
+Fifteen assertions in `scripts/smoke-test.ts`, which exercise the real
+IndexedDB paths through `fake-indexeddb` rather than mocking them: what
+`collectAssetIds` finds in both hiding places, that captured assets get
+template-scoped ids and keep their names and dimensions, that both reference
+sites are rewritten in each direction, that the applied copies belong to the
+new project under fresh ids, that the bytes survive the round trip, and that
+an unresolvable reference is dropped rather than left dangling.

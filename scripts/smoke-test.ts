@@ -2442,6 +2442,9 @@ check(
     elements: [
       { id: 'el-1', kind: 'text', text: 'THE HIDDEN LIBRARY', x: 0.5, y: 0.9, width: 0.5, height: 0.05 },
       { id: 'el-2', kind: 'rect', x: 0.1, y: 0.1, width: 0.8, height: 0.02 },
+      // A positioned cover image — the second place an asset id hides, and
+      // the one Phase 169 found was never actually being stripped.
+      { id: 'el-3', kind: 'image', imageAssetId: 'asset-mark', x: 0.5, y: 0.2, width: 0.2, height: 0.1 },
     ],
   } as unknown as AnyPage
 
@@ -2488,14 +2491,73 @@ check(
     wocCover.elements.some((e) => e.kind === 'rect'),
   )
 
-  // Assets are per-project IndexedDB blobs; a retained id would resolve to a
-  // missing image in whatever project the template is applied to.
+  // Without an asset map, references are stripped — a project asset id
+  // would resolve to a missing image in whatever project the template is
+  // applied to. This is what every template did before Phase 169.
   check('buildTemplate: strips image asset references in both modes', wcCover.content.imageAssetId === undefined && wocCover.content.imageAssetId === undefined)
+  check(
+    'buildTemplate: strips a positioned cover image too',
+    (wcCover.elements.find((e) => e.kind === 'image') as { imageAssetId?: string } | undefined)?.imageAssetId === undefined,
+  )
 
   // A template is presentation and structure — never a manuscript.
   check('buildTemplate: carries no manuscript', !('manuscript' in withContent) && !('chapters' in withContent))
   check('buildTemplate: records which mode it was saved in', withContent.includesContent === true && withoutContent.includesContent === false)
   check('buildTemplate: carries page setup', withContent.settings.trimSize === '5.5x8.5')
+
+  // --- Carrying images with a template (Phase 169) ---
+  {
+    const { collectAssetIds, captureTemplateAssets, materialiseTemplateAssets } = await import('../src/templates/templateAssets')
+    const { putAsset, getAssetBlob, listAssetsForProject } = await import('../src/store/assetDb')
+
+    check('collectAssetIds: finds both a page image and a positioned cover image', collectAssetIds([coverPage, copyrightPage]).sort().join(',') === 'asset-123,asset-mark')
+
+    // Two real blobs in a source project's library, distinguishable by
+    // their bytes so the copy can be proved to be a copy of the right one.
+    const bytesFor = (id: string) => new Blob([new Uint8Array([1, 2, 3, id.length])], { type: 'image/png' })
+    for (const [id, name] of [['asset-123', 'cover.png'], ['asset-mark', 'mark.png']] as const) {
+      await putAsset(
+        { id, projectId: 'proj-source', name, mimeType: 'image/png', size: 4, width: 10, height: 20, createdAt: '' },
+        bytesFor(id),
+      )
+    }
+
+    const captured = await captureTemplateAssets([coverPage, copyrightPage], 'proj-source')
+    check('captureTemplateAssets: copies every referenced image', captured.assets.length === 2)
+    check('captureTemplateAssets: gives each a template-scoped id', captured.assets.every((a) => a.id !== 'asset-123' && a.id !== 'asset-mark'))
+    check('captureTemplateAssets: keeps the original name and dimensions', captured.assets.some((a) => a.name === 'mark.png' && a.width === 10 && a.height === 20))
+
+    const carried = buildTemplate({ ...base, includeContent: true, assets: captured.assets, assetIdMap: captured.assetIdMap })
+    const carriedCover = carried.structuralPages[0] as unknown as { content: { imageAssetId?: string }; elements: { kind: string; imageAssetId?: string }[] }
+    check("buildTemplate: rewrites a page image to the template's own copy", carriedCover.content.imageAssetId === captured.assetIdMap['asset-123'])
+    check('buildTemplate: rewrites a positioned cover image too', carriedCover.elements.find((e) => e.kind === 'image')?.imageAssetId === captured.assetIdMap['asset-mark'])
+    check('buildTemplate: records the images it carries', (carried.assets ?? []).length === 2)
+
+    // Applying it into a second project must give that project its own
+    // copies under its own ids — sharing an id would mean deleting one
+    // project took the other's image with it.
+    const template = { ...carried, id: 'tpl-carry', schemaVersion: 1, createdAt: '' }
+    const map = await materialiseTemplateAssets(template, 'proj-target')
+    check('materialiseTemplateAssets: copies one asset per template image', Object.keys(map).length === 2)
+    const targetAssets = await listAssetsForProject('proj-target')
+    check('materialiseTemplateAssets: the copies belong to the new project', targetAssets.length === 2 && targetAssets.every((a) => a.projectId === 'proj-target'))
+    check("materialiseTemplateAssets: under fresh ids, not the template's", targetAssets.every((a) => !(a.id in map)))
+
+    const appliedPages = pagesForNewProject(template, map) as unknown as { content: { imageAssetId?: string }; elements?: { kind: string; imageAssetId?: string }[] }[]
+    check("pagesForNewProject: points the page image at the new project's copy", appliedPages[0].content.imageAssetId === map[carriedCover.content.imageAssetId!])
+    check(
+      "pagesForNewProject: points the cover element at the new project's copy",
+      appliedPages[0].elements?.find((e) => e.kind === 'image')?.imageAssetId === map[carriedCover.elements.find((e) => e.kind === 'image')!.imageAssetId!],
+    )
+    const roundTripped = await getAssetBlob(appliedPages[0].content.imageAssetId!)
+    check('the applied image is the same bytes as the original', !!roundTripped && roundTripped.size === 4)
+
+    // And with no map — the template's images unreadable, or an old
+    // template saved before any of this — the reference is dropped rather
+    // than left pointing at a blob the project cannot read.
+    const orphaned = pagesForNewProject(template) as unknown as { content: { imageAssetId?: string } }[]
+    check('pagesForNewProject: drops references it cannot resolve', orphaned[0].content.imageAssetId === undefined)
+  }
 
   const applied = pagesForNewProject({ ...withContent, id: 'tpl-1', schemaVersion: 1, createdAt: '' })
   check('applyTemplate: regenerates page ids', applied[0].id !== 'page-cover' && applied[1].id !== 'page-copyright')

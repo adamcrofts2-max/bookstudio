@@ -18,6 +18,7 @@ import { useTemplateStore } from '@/store/templateStore'
 import { useCustomThemeStore } from '@/store/customThemeStore'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { buildTemplate } from '@/templates/buildTemplate'
+import { captureTemplateAssets, collectAssetIds } from '@/templates/templateAssets'
 import type { Project } from '@/types'
 
 interface SaveAsTemplateDialogProps {
@@ -53,10 +54,31 @@ export function SaveAsTemplateDialog({ project, open, onOpenChange }: SaveAsTemp
     }
   }, [open, project.name])
 
-  const handleSave = () => {
+  const [saving, setSaving] = useState(false)
+  // What the user is about to get: a template carries copies of the images
+  // its pages reference (Phase 169), and saying so is the difference
+  // between "will my publisher's mark come with this" being obvious and
+  // being something you find out next volume.
+  const imageCount = collectAssetIds(structuralPages).length
+
+  const handleSave = async () => {
+    if (saving) return
+    setSaving(true)
     const customTheme = customThemes.find((t) => t.id === project.settings.themeId) ?? null
+    // Copy the pages' images into template-scoped storage first (Phase 169).
+    // A failure here is not worth losing the save over — `buildTemplate`
+    // strips any reference it has no copy of, which is exactly the
+    // behaviour every template had before images were carried at all.
+    let captured: Awaited<ReturnType<typeof captureTemplateAssets>> = { assets: [], assetIdMap: {} }
+    try {
+      captured = await captureTemplateAssets(structuralPages, project.id)
+    } catch {
+      // Fall through with nothing captured.
+    }
     addTemplate(
       buildTemplate({
+        assets: captured.assets,
+        assetIdMap: captured.assetIdMap,
         name: name.trim() || `${project.name} template`,
         description,
         settings: project.settings,
@@ -68,6 +90,7 @@ export function SaveAsTemplateDialog({ project, open, onOpenChange }: SaveAsTemp
       }),
     )
     setSaved(true)
+    setSaving(false)
     onOpenChange(false)
   }
 
@@ -80,8 +103,8 @@ export function SaveAsTemplateDialog({ project, open, onOpenChange }: SaveAsTemp
             Save as template
           </DialogTitle>
           <DialogDescription>
-            Reuse this book's page setup, theme and structural pages for the next volume in the series.
-            The manuscript is never included.
+            Reuse this book's page setup, theme, structural pages and their images for the next
+            volume in the series. The manuscript is never included.
           </DialogDescription>
         </DialogHeader>
 
@@ -123,7 +146,8 @@ export function SaveAsTemplateDialog({ project, open, onOpenChange }: SaveAsTemp
           </div>
 
           <p className="text-xs text-muted-foreground">
-            {structuralPages.length} structural page{structuralPages.length === 1 ? '' : 's'} will be saved.
+            {structuralPages.length} structural page{structuralPages.length === 1 ? '' : 's'} will be saved
+            {imageCount > 0 ? `, with ${imageCount} image${imageCount === 1 ? '' : 's'}` : ''}.
             Cover images aren't included — artwork is per-title, and image assets belong to the project they
             were imported into.
           </p>
@@ -133,8 +157,8 @@ export function SaveAsTemplateDialog({ project, open, onOpenChange }: SaveAsTemp
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={saved}>
-            Save template
+          <Button variant="primary" onClick={() => void handleSave()} disabled={saved || saving}>
+            {saving ? 'Saving…' : 'Save template'}
           </Button>
         </DialogFooter>
       </DialogContent>

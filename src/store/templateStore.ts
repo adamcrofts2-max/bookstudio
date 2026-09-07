@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware'
 
 import type { BookTemplate } from '@/types/bookTemplate'
 import { generateId } from '@/utils/id'
+import { deleteTemplateAssets } from '@/store/templateAssetDb'
 
 /**
  * Book templates — global, persisted, reusable across every project.
@@ -61,6 +62,16 @@ export const useTemplateStore = create<TemplateStoreState & TemplateStoreActions
       },
 
       deleteTemplate: (id) => {
+        // A template's images have no other owner (see
+        // `store/templateAssetDb.ts`), so deleting the template is the only
+        // moment they can be freed. Fire-and-forget: the user's delete has
+        // already happened as far as the UI is concerned, and a failure to
+        // reclaim a few kilobytes must not fail the delete or throw into a
+        // click handler. The same shape `assetStore.removeAsset` uses for
+        // its own blob cleanup.
+        const doomed = get().templates.find((t) => t.id === id)
+        const assetIds = (doomed?.assets ?? []).map((asset) => asset.id)
+        if (assetIds.length > 0) void deleteTemplateAssets(assetIds).catch(() => {})
         set((state) => ({ templates: state.templates.filter((t) => t.id !== id) }))
       },
     }),

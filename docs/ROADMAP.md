@@ -926,10 +926,16 @@ daily use of everything built so far.)*
       action and a "Start from a template" picker in `NewProjectDialog`. A
       keep-text/clear-text toggle at save time decides whether imprint boilerplate
       travels with the template. Never carries the manuscript.
-- [ ] Book templates: carry image assets (publisher mark, series device) with a
-      template — deferred: template image references are stripped today because
-      assets are per-project IndexedDB blobs, so an id captured in one project
-      resolves to nothing in another. Needs template-scoped asset storage
+- [x] Book templates: carry image assets (publisher mark, series device) with a
+      template — shipped 2026-09-06 (Phase 169). `store/templateAssetDb.ts` is
+      the template-scoped storage this needed: a separate IndexedDB database,
+      because a template outlives every project it was saved from and must not
+      be reachable by the project-delete sweep. Images are copied in on save
+      and back out under fresh project ids on apply; a reference with no copy
+      behind it is still stripped. Uncovered a bug open since Phase E — the
+      old code cleared `assetId` on cover elements, a field
+      `CoverImageElement` does not have, so a positioned cover image's real
+      reference had never been stripped at all
 - [x] Book templates: manage saved templates (rename/delete) from a gallery —
       shipped 2026-09-05 (Phase 146). `templateStore` had `renameTemplate` and
       `deleteTemplate` from the day the feature shipped; nothing in the UI ever
