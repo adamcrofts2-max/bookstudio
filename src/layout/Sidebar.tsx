@@ -376,6 +376,7 @@ export function Sidebar({ project }: SidebarProps) {
                         // 2026-08-02): typing a new chapter title produced
                         // "Untitled ChapterThe Lighting" instead of
                         // replacing the placeholder.
+                        aria-label="Chapter title"
                         onFocus={(e) => e.currentTarget.select()}
                         onChange={(e) => setTitleDraft(e.target.value)}
                         onBlur={() => commitRename(chapter.id, chapter.title)}

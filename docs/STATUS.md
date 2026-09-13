@@ -11989,3 +11989,70 @@ drags the handle with a real finger and reads the committed offset back out
 of storage. `structure.e2e.mjs` gained the desktop half: `elementsFromPoint`
 over the same handle must return the handle. Both fail against the old
 build.
+
+## Phase 173 — an accessibility audit, and the 115 findings it opened with
+
+`docs/ROADMAP.md` asked for an "automated accessibility (WCAG) audit beyond
+Radix's built-in semantics". Radix is exactly why it was worth automating
+rather than reading: the primitives get roles, focus order and dialog
+semantics right on their own, so everything left is what *this* project
+wrote — names on icon-only buttons, the contrast of its own colour tokens,
+the size of a tap target on a phone.
+
+### The suite
+
+`npm run test:a11y` walks both shells over the same surfaces
+`npm run test:audit` does — the walk moved into `surfaces.mjs` so there is
+one list of "every screen this app has" rather than two that drift — and
+runs a WCAG 2.2 AA rule set at each stop: language of page, page title,
+unique ids, ARIA references that resolve, alt text, accessible names,
+contrast (1.4.3), target size (2.5.8, mobile only) and heading order.
+
+Hand-written rather than axe-core, because this project has no npm registry
+access and Playwright itself is already resolved from wherever it happens to
+be installed rather than depended on. That costs breadth — a dozen rules,
+not ninety — and buys a rule set where every exclusion was chosen and
+stated. The largest exclusion: **the book canvas is not audited.** A
+rendered page is the author's own typography at print size, and the contrast
+of a theme's muted ink on cream paper is a design decision about a printed
+book, not a UI accessibility failure.
+
+### It opened at 115 findings
+
+110 of them were one thing: the text ramp.
+
+| token | was | measured | now |
+| --- | --- | --- | --- |
+| `--text-muted` (light) | `#8a8a8a` | **2.89:1** on the sidebar | `#6a6a6a` |
+| `--text-secondary` (light) | `#666666` | 4.81:1 | `#4a4a4a` |
+| `--text-muted` (dark) | `#7a7a7a` | 3.70:1 on a panel | `#898989` |
+| `--accent` (light) | `#4f8a5b` | **3.44:1** as text | `#43754d` |
+
+Every caption, subtitle and section heading in the app was below AA.
+Darkening `--text-muted` alone would have collapsed it into
+`--text-secondary`, so the whole light ramp moved down a step and kept its
+three visible levels.
+
+The accent needed deepening because it is not only a fill — it is the
+colour of a selected tab's label, a link, a count. A second "accent, but for
+text" token would have left forty call sites each having to pick the right
+one; one deeper green is a smaller thing to keep true, and white on it
+improves from 4.10:1 to 5.40:1, so the buttons got more legible in the same
+move.
+
+Where the two jobs genuinely differ, they got separate tokens:
+`--success-ink`, `--warning-ink`, `--danger-ink` are for text on a 15%
+tint of themselves. An amber that works as a warning outline is not an amber
+anyone can read at 12px on a pale amber pill — the Virtual Editor's "minor"
+badge measured **2.15:1**.
+
+The remaining five:
+
+- Two controls with no accessible name — the chapter-rename input and the
+  Notes textarea. The textarea *had* a placeholder, which is not a label: it
+  disappears the moment anyone types, which is exactly what a screen reader
+  finds too.
+- Three Book Graph controls at 20×20 and 40×15 against WCAG 2.2's 24×24
+  minimum.
+
+All fixed; the audit is now **A11Y CLEAN** on both shells.

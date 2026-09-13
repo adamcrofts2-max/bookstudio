@@ -7,8 +7,8 @@ import type { Finding, FindingStatus } from '@/virtualEditor/types'
 
 const SEVERITY_STYLE: Record<Finding['severity'], string> = {
   critical: 'bg-danger text-danger-foreground',
-  major: 'bg-danger/15 text-danger',
-  minor: 'bg-warning/15 text-warning',
+  major: 'bg-danger/15 text-danger-ink',
+  minor: 'bg-warning/15 text-warning-ink',
   suggestion: 'bg-background-secondary text-text-secondary',
 }
 

@@ -1928,7 +1928,16 @@ Book Studio today and an actual multi-device Canva-style product.)*
       same unbounded-DOM problem arriving by a different door, and it would
       have quietly undone the fix above for anyone who navigates by clicking
       chapters
-- [ ] Automated accessibility (WCAG) audit beyond Radix's built-in semantics
+- [x] Automated accessibility (WCAG) audit beyond Radix's built-in semantics —
+      shipped 2026-09-06 (Phase 173). `npm run test:a11y` walks both shells
+      over the same surfaces as the runtime audit (one shared list in
+      `surfaces.mjs` now) and checks language, title, unique ids, ARIA
+      references, alt text, accessible names, contrast, target size and
+      heading order. Hand-written, not axe-core — no registry access — so
+      it is a dozen chosen rules rather than ninety, and the book canvas is
+      deliberately exempt. Opened at 115 findings, 110 of them the text
+      ramp: `--text-muted` was 2.89:1 and the accent 3.44:1 as text. Now
+      clean
 - [ ] UI internationalisation / localisation
 
 ## Phase K — Mobile / On-the-go Mode

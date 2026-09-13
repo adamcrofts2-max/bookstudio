@@ -1106,7 +1106,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
                 disabled={perNodeSize <= NODE_SCALE_MIN}
                 aria-label="Smaller"
                 title="Smaller"
-                className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+                className="flex size-6 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
               >
                 <Minus className="size-3" />
               </button>
@@ -1117,7 +1117,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
                 disabled={perNodeSize >= NODE_SCALE_MAX}
                 aria-label="Larger"
                 title="Larger"
-                className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+                className="flex size-6 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
               >
                 <Plus className="size-3" />
               </button>
@@ -1318,7 +1318,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
               disabled={nodeScale <= NODE_SCALE_MIN}
               aria-label="Smaller nodes"
               title="Smaller nodes"
-              className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+              className="flex size-6 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
             >
               <Minus className="size-3" />
             </button>
@@ -1329,7 +1329,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
               disabled={nodeScale >= NODE_SCALE_MAX}
               aria-label="Larger nodes"
               title="Larger nodes"
-              className="flex size-5 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
+              className="flex size-6 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-hover hover:text-text-primary disabled:opacity-30"
             >
               <Plus className="size-3" />
             </button>
@@ -1600,7 +1600,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
                 type="button"
                 onClick={() => setTransform((t) => ({ ...t, k: 1 }))}
                 title="Reset zoom to 100%"
-                className="w-10 text-center text-[10px] tabular-nums text-text-secondary hover:text-text-primary"
+                className="h-6 w-10 text-center text-[10px] tabular-nums text-text-secondary hover:text-text-primary"
               >
                 {Math.round(transform.k * 100)}%
               </button>
@@ -1648,7 +1648,7 @@ export function BookGraphView({ projectId, bookForm, bookTitle, onFocusKind, com
                   type="button"
                   onClick={() => setSearchQuery('')}
                   aria-label="Clear search"
-                  className="absolute right-1.5 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-text-muted hover:text-text-primary"
+                  className="absolute right-1.5 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-text-muted hover:text-text-primary"
                 >
                   <X className="size-3" />
                 </button>
