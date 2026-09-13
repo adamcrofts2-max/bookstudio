@@ -11917,3 +11917,75 @@ was compared" is what stops a run of skips passing for a clean result.
 Sixteen unit assertions cover the store and `themeForBlock` (including the
 identity guarantee and that the manuscript is untouched); three more in the
 mobile suite cover setting and resetting one from a phone.
+
+## Phase 172 — arranging a cover with a finger, and the overlay that was stopping it
+
+`docs/ROADMAP.md`: "Mobile: position cover elements by touch (drag, resize,
+focal point) — still desktop-only. A canvas-interaction design pass, not a
+port."
+
+Right on both counts, and wrong about one thing: it was not desktop-only.
+It was not working anywhere.
+
+### The bug underneath it
+
+`Page.tsx` renders the manuscript flow container for **every** page — an
+`absolute` box inset by the page margins, holding the TOC, the chapter
+opener and the block flow. On a structural page every one of those children
+is gated off, so it rendered as an empty box. An empty box is still a hit
+target, and it comes *after* the structural page in DOM order, so it painted
+on top of the cover and swallowed every pointer event aimed at the cover's
+own controls.
+
+`document.elementsFromPoint` over the "Drag to reposition" handle, on a
+1400px desktop window:
+
+```
+DIV.absolute overflow-hidden   <- the empty flow container
+BUTTON.mx-auto flex w-fit …    <- the handle, underneath it
+DIV.pointer-events-auto
+```
+
+So the handle could be seen, hovered and described in the Inspector's help
+text, and could not be used — on either shell. The fix is to render nothing
+where there is nothing to render: the container is skipped entirely when
+`page.kind === 'structural'`.
+
+### The port half
+
+The cover canvas has been pointer-event driven since it was written, so
+touch needed:
+
+- **`touch-action: none`**, and on an *ancestor* of whatever the finger
+  lands on, not only on the draggable element. The browser resolves the
+  effective value from the hit node up to the nearest scroller, and any
+  ancestor that still allows panning cancels the pointer mid-gesture.
+  Instrumenting the running app showed exactly that — `pointerdown`,
+  then `pointercancel`, and no `pointermove` at all.
+- **Finger-sized handles.** A 12px resize dot is a comfortable mouse target
+  and an impossible finger one; on a coarse pointer it is 24px, and the
+  rotate grip 36px.
+
+### The design half
+
+A cover at a third of the screen is a few millimetres of glass. "Arrange
+the cover" hands the canvas the whole screen — the answer the Book Graph
+already settled on in Phase 131 — and the fitted wrapper stops clipping, so
+the page's own furniture (the safe-zone toggle, "Add element", a selected
+element's toolbar) is reachable rather than cut off at the trim edge.
+
+### Testing a finger properly
+
+`runner.mjs` gained `touchDrag`, which dispatches through Chromium's own
+input pipeline (`Input.dispatchTouchEvent`). Synthetic `PointerEvent`s look
+right and are not: their `pointerId` is not a live pointer, so
+`setPointerCapture` — which every drag in this app calls on pointer-down —
+throws `NotFoundError` and takes the handler with it. A suite built on them
+would report a working drag as broken, and could never catch a
+`touch-action` mistake, which is the specific failure it exists to catch.
+
+`scripts/e2e/mobileCover.e2e.mjs` (new, wired into `npm run test:e2e`)
+drags the handle with a real finger and reads the committed offset back out
+of storage. `structure.e2e.mjs` gained the desktop half: `elementsFromPoint`
+over the same handle must return the handle. Both fail against the old
+build.

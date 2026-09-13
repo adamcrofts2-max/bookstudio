@@ -1704,8 +1704,16 @@ Book Studio today and an actual multi-device Canva-style product.)*
       (Phase 141). Editing a cover was a blind form; it now renders the real
       `Page`, scaled and height-bounded so the cover and the fields are
       visible together
-- [ ] Mobile: position cover elements by touch (drag, resize, focal point) —
-      still desktop-only. A canvas-interaction design pass, not a port
+- [x] Mobile: position cover elements by touch — shipped 2026-09-06
+      (Phase 172). It was not desktop-only: the manuscript flow container is
+      rendered for every page and is an empty, hit-testable box on a
+      structural one, painted over the cover's own controls, so the
+      reposition handle could not be used on either shell.
+      `elementsFromPoint` is how you tell that apart from a missing feature.
+      With that gone, touch needed `touch-action: none` on an *ancestor* of
+      the hit target and finger-sized handles, plus an "Arrange the cover"
+      full-screen mode — a third of a phone screen is a few millimetres of
+      glass. New suite `mobileCover.e2e.mjs` drags with a real CDP touch
 - [x] "Drop an image here" no longer shows on touch — fixed 2026-09-04
       (Phase 141). There is no drag source on a phone and the label is
       pointer-events-none, so mobile Preview was showing an instruction the

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronLeft, ChevronUp, Copy, Plus, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronUp, Copy, Move, Plus, Trash2 } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -171,6 +171,7 @@ export function MobilePagesView({ project, onBack }: MobilePagesViewProps) {
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
 
   const [editing, setEditing] = useState(false)
+  const [arranging, setArranging] = useState(false)
   const [adding, setAdding] = useState<{ category: StructuralPageCategory; types: StructuralPageType[] } | null>(null)
 
   const frontMatter = pages.filter((p) => p.category === 'front-matter').sort((a, b) => a.order - b.order)
@@ -199,12 +200,38 @@ export function MobilePagesView({ project, onBack }: MobilePagesViewProps) {
   // The page editor takes over the whole screen rather than opening a sheet on
   // top of a sheet — `StructuralPagePanel` includes the cover canvas, which
   // needs every pixel a phone has.
+  // Only the two page types that actually carry positioned elements. Every
+  // other structural page is a form; there is nothing on it to arrange.
+  const canArrange = !!editingPage && (editingPage.type === 'cover' || editingPage.type === 'back-cover')
+
+  if (editing && editingPage && arranging && canArrange) {
+    return (
+      <div className="flex h-full flex-col bg-background">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-panel px-3 py-2.5">
+          <p className="text-[15px] font-medium text-text-primary">Arrange</p>
+          <Button size="sm" className="gap-1.5" onClick={() => setArranging(false)}>
+            <Check className="size-3.5" />
+            Done
+          </Button>
+        </div>
+        <StructuralPagePreview project={project} page={editingPage} arranging />
+        <p className="shrink-0 border-t border-border bg-panel px-4 py-2.5 text-center text-xs text-text-secondary">
+          {/* audit-copy-ok: "drag" is literal — this screen exists so a finger can do it (Phase 172), proved by mobileCover.e2e.mjs */}
+          Tap an element to select it, then drag it, drag a corner to resize, or the handle above it to rotate.
+        </p>
+      </div>
+    )
+  }
+
   if (editing && editingPage) {
     return (
       <div className="flex h-full flex-col bg-background">
         <button
           type="button"
-          onClick={() => setEditing(false)}
+          onClick={() => {
+            setArranging(false)
+            setEditing(false)
+          }}
           className="flex shrink-0 items-center gap-1.5 border-b border-border bg-panel px-3 py-3 text-left active:bg-hover"
         >
           <ChevronLeft className="size-4 shrink-0 text-text-muted" />
@@ -212,6 +239,14 @@ export function MobilePagesView({ project, onBack }: MobilePagesViewProps) {
         </button>
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <StructuralPagePreview project={project} page={editingPage} />
+          {canArrange && (
+            <div className="flex justify-center border-b border-border bg-background-secondary px-4 pb-4">
+              <Button variant="secondary" size="sm" className="gap-1.5" onClick={() => setArranging(true)}>
+                <Move className="size-3.5" />
+                Arrange the cover
+              </Button>
+            </div>
+          )}
           <ErrorBoundary
             key={editingPage.id}
             fallback={(error, reset) => (
@@ -315,7 +350,21 @@ export function MobilePagesView({ project, onBack }: MobilePagesViewProps) {
  * deliberately still desktop-only — that is a canvas-interaction design
  * pass, not a port, and half of it would be worse than none.
  */
-function StructuralPagePreview({ project, page }: { project: Project; page: StructuralPage }) {
+function StructuralPagePreview({
+  project,
+  page,
+  /**
+   * Arrange mode (Phase 172): the page takes the whole screen and becomes
+   * interactive, so cover elements can be dragged, resized, rotated and
+   * focal-pointed with a finger. Off, it is the inline, decorative,
+   * third-of-the-screen preview Phase 141 added.
+   */
+  arranging = false,
+}: {
+  project: Project
+  page: StructuralPage
+  arranging?: boolean
+}) {
   const [width, setWidth] = useState(0)
   const [viewportHeight, setViewportHeight] = useState(() => (typeof window === 'undefined' ? 0 : window.innerHeight))
   const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
@@ -332,7 +381,12 @@ function StructuralPagePreview({ project, page }: { project: Project; page: Stru
   // sight, which defeats the point of showing it at all. Bounded by height
   // too, so the page and the form it belongs to are visible together.
   const widthScale = computePreviewScale(width, pageBox.widthPx)
-  const heightScale = viewportHeight > 0 ? (viewportHeight * 0.34) / pageBox.heightPx : widthScale
+  // Arranging gets the whole screen bar the header: a cover element at a
+  // third of the screen is a few millimetres of glass, which is why the
+  // roadmap called this "a canvas-interaction design pass, not a port".
+  // The Book Graph settled the same question the same way in Phase 131.
+  const heightFraction = arranging ? 0.86 : 0.34
+  const heightScale = viewportHeight > 0 ? (viewportHeight * heightFraction) / pageBox.heightPx : widthScale
   const scale = widthScale === 0 ? 0 : Math.min(widthScale, heightScale)
 
   const laidOut: LaidOutPage = {
@@ -350,12 +404,34 @@ function StructuralPagePreview({ project, page }: { project: Project; page: Stru
         const w = el?.clientWidth ?? 0
         if (w && Math.abs(w - width) > 1) setWidth(w)
       }}
-      className="flex justify-center border-b border-border bg-background-secondary px-4 py-5"
+      className={cn(
+        'flex justify-center bg-background-secondary',
+        arranging ? 'min-h-0 flex-1 items-center px-2 py-2' : 'border-b border-border px-4 py-5',
+      )}
     >
       {scale > 0 && (
         // Wrapped in a box of the *scaled* size: a CSS transform alone
         // doesn't affect layout, so without this the form would overlap it.
-        <div style={{ width: pageBox.widthPx * scale, height: pageBox.heightPx * scale }} className="overflow-hidden shadow-[var(--shadow-md)]">
+        <div
+          style={{ width: pageBox.widthPx * scale, height: pageBox.heightPx * scale }}
+          className={cn(
+            'shadow-[var(--shadow-md)]',
+            // `touch-action: none` has to sit on an ancestor of whatever the
+            // finger actually lands on, not only on the draggable element
+            // itself: the browser resolves the effective value from the hit
+            // node up to the nearest scroller, and any ancestor that still
+            // allows panning cancels the pointer mid-gesture. Instrumenting
+            // the running app showed exactly that — `pointerdown` followed
+            // immediately by `pointercancel`, and no `pointermove` at all.
+            // The arrange screen has nothing to scroll, so nothing is lost.
+            arranging && 'touch-none',
+            // Arranging needs the page's own furniture — the safe-zone
+            // toggle, "Add element", a selected element's toolbar — which
+            // sit just outside the trim box and would otherwise be clipped
+            // by the fitted wrapper.
+            arranging ? 'overflow-visible' : 'overflow-hidden',
+          )}
+        >
           <div style={{ width: pageBox.widthPx, height: pageBox.heightPx, transform: `scale(${scale})`, transformOrigin: 'top left' }}>
             <Page
               projectId={project.id}
@@ -365,7 +441,7 @@ function StructuralPagePreview({ project, page }: { project: Project; page: Stru
               dropCapBlockIds={EMPTY_DROP_CAPS}
               bookTitle={project.name}
               language={project.settings.language}
-              decorative
+              decorative={!arranging}
             />
           </div>
         </div>

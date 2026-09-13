@@ -120,3 +120,30 @@ export async function commitEdit(page) {
 
 export const isEditingSomething = (page) =>
   page.evaluate(() => document.activeElement instanceof HTMLElement && document.activeElement.isContentEditable)
+
+/**
+ * A real finger drag, dispatched through Chromium's own input pipeline
+ * (`Input.dispatchTouchEvent`) rather than synthesised in the page.
+ *
+ * Synthetic `PointerEvent`s look right and are not: their `pointerId` is
+ * not a live pointer, so `setPointerCapture` — which every drag in this app
+ * calls on pointer-down — throws `NotFoundError` and takes the handler with
+ * it. A suite built on them would report a drag as broken when it works,
+ * and could never catch a `touch-action` mistake, which is the specific
+ * failure this exists to catch (Phase 172).
+ */
+export async function touchDrag(page, from, to, steps = 14) {
+  const session = await page.context().newCDPSession(page)
+  try {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: from.x, y: from.y, id: 1 }] })
+    for (let i = 1; i <= steps; i++) {
+      await session.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x: from.x + ((to.x - from.x) * i) / steps, y: from.y + ((to.y - from.y) * i) / steps, id: 1 }],
+      })
+    }
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+  } finally {
+    await session.detach()
+  }
+}

@@ -184,6 +184,30 @@ async function main() {
     const dropPill = await page.evaluate(() => document.body.innerText.includes('Drop a cover image here'))
     check('no drop-image pill sits on top of the cover', dropPill === false)
 
+    // Phase 172: nothing must sit on top of a cover's own controls. The
+    // manuscript flow container is `absolute`, inset by the page margins,
+    // and rendered *after* the structural page — so on a Cover it was an
+    // empty box painted over the whole text area, and every pointer event
+    // aimed at "Drag to reposition" or a cover element hit it instead. The
+    // roadmap had this filed as a missing mobile feature; it was a desktop
+    // bug, and `elementsFromPoint` is how you can tell the difference.
+    await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem('book-studio.structuralPages'))
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      const cover = raw.state.byProject[id].find((p) => p.type === 'cover')
+      document.getElementById(`page-${cover.id}`)?.click()
+    })
+    await page.waitForTimeout(1200)
+    const handleStack = await page.evaluate(() => {
+      const button = [...document.querySelectorAll('button')].find((b) => /reposition/i.test(b.getAttribute('aria-label') ?? ''))
+      if (!button) return null
+      const r = button.getBoundingClientRect()
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)
+      return { found: true, hitsHandle: button === top || button.contains(top) }
+    })
+    check('a selected cover shows its reposition handle', handleStack?.found === true)
+    check('nothing is painted on top of the cover’s own controls', handleStack?.hitsHandle === true)
+
     // Phase 160: and now the canvas comes back with you.
     const onCoverBefore = await page.evaluate(() => {
       const visible = [...document.querySelectorAll('[id^="page-"]')].filter((el) => {

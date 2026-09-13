@@ -596,6 +596,23 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
         </div>
       )}
 
+      {/*
+        The manuscript flow container. **Not rendered on a structural page**
+        (Phase 172): every child below is gated on `page.kind` being `toc`,
+        `chapter-start` or `content`, so on a Cover or a Dedication this was
+        an empty box — and an empty box is still a hit target. It is
+        `absolute`, inset only by the page margins, and it comes *after* the
+        structural page in DOM order, so it painted on top of the cover and
+        swallowed every pointer event aimed at the cover's own controls.
+
+        That is why "Drag to reposition" and the cover element layer could
+        not be dragged — and it was never a mobile gap, which is how
+        `docs/ROADMAP.md` had it filed: `document.elementsFromPoint` over the
+        handle on a 1400px desktop window returned this div above the button
+        just the same. Rendering nothing where there is nothing to render
+        costs nothing and is the whole fix.
+      */}
+      {page.kind !== 'structural' && (
       <div
         lang={language}
         className="absolute overflow-hidden"
@@ -740,6 +757,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
         {page.kind === 'content' && renderBlocksWithDropZones(page.blocks)}
       </div>
+      )}
 
       {(page.kind === 'chapter-start' || page.kind === 'content') && page.chapterId && !decorative && page.blocks.length > 0 && (
         <SelectionDevelopMenu projectId={projectId} chapterId={page.chapterId} blockIds={pageBlockIds} />

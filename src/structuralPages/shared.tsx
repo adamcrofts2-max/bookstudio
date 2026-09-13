@@ -198,7 +198,10 @@ export function DraggableCoverField({ position, onLiveMove, onCommitMove, contai
   return (
     <div
       ref={fieldRef}
-      className={cn('pointer-events-auto', pageSelected && 'cursor-move')}
+      // `touch-none` for the same reason the cover element layer needs it:
+      // a browser that takes the gesture for scrolling stops sending
+      // `pointermove`, and the field simply never moves under a finger.
+      className={cn('pointer-events-auto', pageSelected && 'cursor-move touch-none')}
       style={
         position
           ? { position: 'absolute', left: `${position.x * 100}%`, top: `${position.y * 100}%`, transform: 'translate(-50%, -50%)' }
@@ -399,7 +402,7 @@ export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal, horizonta
         horizontal?.onCommitFinal(nextValueX(e.clientX))
       }}
       className={cn(
-        'mx-auto flex w-fit items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm',
+        'mx-auto flex w-fit touch-none items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm',
         horizontal ? 'cursor-move' : 'cursor-ns-resize',
       )}
     >
