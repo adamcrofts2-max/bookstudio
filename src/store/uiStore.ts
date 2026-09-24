@@ -42,6 +42,21 @@ interface UiStoreState {
   inspectorTab: InspectorTab
   viewMode: BookViewMode
   zoom: number
+  /**
+   * `'fit'` scales the canvas so the current spread fits the window;
+   * `'manual'` uses `zoom`. Default `'fit'` — see `useFitZoom.ts` for the
+   * measurements that made a fixed 100% the wrong default (it cut the
+   * left-hand page off on every laptop narrower than about 1700px).
+   */
+  zoomMode: 'fit' | 'manual'
+  /**
+   * The zoom actually applied to the canvas right now. Written by
+   * `BookRenderer` (the only component that knows how wide the canvas is)
+   * and read by the zoom control so it can show what "Fit" currently
+   * works out to. Transient — excluded from persistence below, because a
+   * measurement restored from a previous window size is a lie.
+   */
+  appliedZoom: number
   showThumbnails: boolean
   workspaceMode: WorkspaceMode
   /** Toggleable dashed safe-text-zone guide on the Cover/Back Cover
@@ -86,6 +101,8 @@ interface UiStoreActions {
   setInspectorTab: (tab: InspectorTab) => void
   setViewMode: (mode: BookViewMode) => void
   setZoom: (zoom: number) => void
+  setZoomMode: (mode: 'fit' | 'manual') => void
+  setAppliedZoom: (zoom: number) => void
   toggleThumbnails: () => void
   setWorkspaceMode: (mode: WorkspaceMode) => void
   toggleCoverSafeZone: () => void
@@ -111,6 +128,8 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       inspectorTab: 'page',
       viewMode: 'spread',
       zoom: 1,
+      zoomMode: 'fit',
+      appliedZoom: 1,
       showThumbnails: true,
       workspaceMode: 'manuscript',
       showCoverSafeZone: false,
@@ -138,7 +157,13 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       // only ever re-opens it, never closes it.
       setInspectorTab: (tab) => set({ inspectorTab: tab, inspectorCollapsed: false }),
       setViewMode: (mode) => set({ viewMode: mode }),
-      setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)) }),
+      // Setting a zoom *is* the act of leaving fit mode — there is no
+      // separate "stop fitting" control to forget to press.
+      setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)), zoomMode: 'manual' }),
+      // Leaving fit lands on a true 100% — "actual size" is the only
+      // manual zoom anyone means when they click away from Fit.
+      setZoomMode: (zoomMode) => set(zoomMode === 'manual' ? { zoomMode, zoom: 1 } : { zoomMode }),
+      setAppliedZoom: (appliedZoom) => set((state) => (state.appliedZoom === appliedZoom ? state : { appliedZoom })),
       toggleThumbnails: () => set((state) => ({ showThumbnails: !state.showThumbnails })),
       setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
       toggleCoverSafeZone: () => set((state) => ({ showCoverSafeZone: !state.showCoverSafeZone })),
@@ -154,7 +179,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       version: 1,
       // Neither a dialog's open state nor focus mode should reopen/resume
       // itself after a page reload — same reasoning as `projectSettingsOpen`.
-      partialize: ({ projectSettingsOpen: _projectSettingsOpen, focusMode: _focusMode, ...rest }) => rest,
+      partialize: ({ projectSettingsOpen: _projectSettingsOpen, focusMode: _focusMode, appliedZoom: _appliedZoom, ...rest }) => rest,
     },
   ),
 )

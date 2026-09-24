@@ -348,7 +348,9 @@ export function Sidebar({ project }: SidebarProps) {
               <EmptyState
                 icon={BookOpen}
                 title="No chapters yet"
-                description="Import a manuscript, or add your first chapter to start from scratch."
+                // Writing first, importing second — the same order the canvas
+                // and the mobile shell use (Phase 174).
+                description="Add your first chapter, or import a manuscript you have already written."
                 action={
                   <Button variant="secondary" size="sm" className="gap-1.5" onClick={handleAddChapter}>
                     <Plus className="size-3.5" />

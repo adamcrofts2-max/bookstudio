@@ -1559,6 +1559,23 @@ Book Studio today and an actual multi-device Canva-style product.)*
 - [ ] Press kit / author one-sheet generator
 - [ ] Author landing page generator
 
+- [x] The canvas fits the window — shipped 2026-09-24 (Phase 174). A 6x9
+      spread is 1152px and the canvas is 612-772px on a normal laptop, so at
+      the fixed 100% zoom the left-hand page started at x = -173 and could
+      not be scrolled back (`justify-center` on a scroll container). Fit is
+      the default now, `Fit 56%` is clickable for true 100%, and
+      `canvasFit.e2e.mjs` proves an export from a fitted canvas is still
+      449x665pt
+- [x] The empty project leads with writing — shipped 2026-09-24 (Phase 174).
+      It asked "What's the idea?" and then answered with "Import Manuscript"
+      beside a permanently disabled "Browse Templates". Mobile had always
+      said the opposite; both shells agree now
+- [x] One floating surface per selection — shipped 2026-09-24 (Phase 174).
+      The Develop "+" sat in `FloatingFormatToolbar`'s band and covered "Fix
+      spelling", and with the spelling list open it covered the suggestion
+      itself. Stated once in `selectionPopoverStore.ts` rather than fought
+      out by two components that cannot see each other
+
 ## Phase J — Platform Hardening & Technical Debt
 
 - [x] Repair the test suite — shipped 2026-09-03 (Phase 125). `npm test` had been

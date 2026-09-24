@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import type { Project } from '@/types'
 import type { Manuscript } from '@/types/content'
 import { useUiStore } from '@/store/uiStore'
+import { useFitZoom } from '@/renderer/useFitZoom'
 import { computePageBox } from '@/renderer/pageGeometry'
 import { resolveTheme } from '@/theme/presets'
 import { paginate, type LaidOutPage } from '@/renderer/paginate'
@@ -73,12 +74,29 @@ function groupIntoSpreads(pages: LaidOutPage[]): LaidOutPage[][] {
   return spreads
 }
 
+/** The canvas's own `px-10` — 40px a side, and the spread has to fit
+ * inside what is left. */
+const CANVAS_PADDING_X_PX = 80
+
 export function BookRenderer({ project, manuscript, decorative, hideThumbnails, paginated }: BookRendererProps) {
   const theme = resolveTheme(project.settings.themeId)
   const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
   const viewMode = useUiStore((s) => s.viewMode)
-  const zoom = useUiStore((s) => s.zoom)
+  const manualZoom = useUiStore((s) => s.zoom)
+  const zoomMode = useUiStore((s) => s.zoomMode)
+  const setAppliedZoom = useUiStore((s) => s.setAppliedZoom)
   const showThumbnails = useUiStore((s) => s.showThumbnails) && !hideThumbnails
+
+  // The width the canvas has to hold: one page, or two side by side, plus
+  // the container's own horizontal padding (`px-10`).
+  const spreadWidthPx = pageBox.widthPx * (viewMode === 'spread' ? 2 : 1) + CANVAS_PADDING_X_PX
+  const { ref: fitRef, fitZoom } = useFitZoom(spreadWidthPx)
+  const zoom = zoomMode === 'fit' ? fitZoom : manualZoom
+
+  // Reported upward so the zoom control can show what "Fit" currently is.
+  useEffect(() => {
+    if (zoomMode === 'fit') setAppliedZoom(fitZoom)
+  }, [zoomMode, fitZoom, setAppliedZoom])
 
   const dropCapBlockIds = useMemo(() => {
     const ids = new Set<string>()
@@ -319,7 +337,18 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
         />
       )}
 
-      <div className={cn('flex flex-1 justify-center overflow-auto px-10 py-10', paginated ? 'relative items-center' : 'items-start')}>
+      <div
+        ref={fitRef}
+        className={cn(
+          // `justify-center` with `overflow-auto` is the trap here: when the
+          // content is wider than the box, the overflow spills off the
+          // *start* edge and cannot be scrolled back. `justify-start` plus
+          // `m-auto` on the content centres it when it fits and keeps every
+          // pixel reachable when it doesn't (Phase 174).
+          'flex flex-1 justify-start overflow-auto px-10 py-10 [&>*]:m-auto',
+          paginated ? 'relative items-center' : 'items-start',
+        )}
+      >
         {!heights ? (
           <div className="flex flex-col items-center gap-3 pt-24 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             <Loader2 className="size-5 animate-spin" />

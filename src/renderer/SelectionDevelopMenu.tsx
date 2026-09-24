@@ -12,6 +12,7 @@ import {
 import { getLayer0KindLabel } from '@/types/layer0'
 import type { Idea } from '@/types/idea'
 import { useProjectStore } from '@/store/projectStore'
+import { useSelectionPopoverStore } from '@/renderer/selectionPopoverStore'
 import { addIdeaWithHistory, addLayer0EntityWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
 import { cn } from '@/lib/utils'
@@ -21,6 +22,9 @@ interface SelectionTarget {
   text: string
   top: number
   right: number
+  /** So the button can sit level with the middle of the selection rather
+   * than in the row above it, which `FloatingFormatToolbar` owns. */
+  height: number
 }
 
 interface SelectionDevelopMenuProps {
@@ -72,6 +76,8 @@ const truncate = (text: string, max: number) => (text.length > max ? `${text.sli
 export function SelectionDevelopMenu({ projectId, chapterId, blockIds }: SelectionDevelopMenuProps) {
   const bookForm = useProjectStore((s) => s.projects.find((p) => p.id === projectId)?.bookForm)
   const [target, setTarget] = useState<SelectionTarget | null>(null)
+  // One floating surface per selection — see `selectionPopoverStore.ts`.
+  const formatPopoverOpen = useSelectionPopoverStore((s) => s.open)
   const [open, setOpen] = useState(false)
 
   useEffect(() => {
@@ -108,14 +114,14 @@ export function SelectionDevelopMenu({ projectId, chapterId, blockIds }: Selecti
         setTarget(null)
         return
       }
-      setTarget({ blockId, text, top: box.top, right: box.right })
+      setTarget({ blockId, text, top: box.top, right: box.right, height: box.height })
     }
 
     document.addEventListener('selectionchange', update)
     return () => document.removeEventListener('selectionchange', update)
   }, [blockIds, open])
 
-  if (!target) return null
+  if (!target || formatPopoverOpen) return null
 
   const finish = () => {
     setOpen(false)
@@ -192,7 +198,16 @@ export function SelectionDevelopMenu({ projectId, chapterId, blockIds }: Selecti
   return (
     <div
       className="fixed z-50"
-      style={{ top: target.top - 8, left: target.right + 6, transform: 'translateY(-100%)' }}
+      // Beside the selection, vertically centred on it — **not** above it.
+      // `FloatingFormatToolbar` already owns the band directly above a
+      // selection, and it is centred on the selection's midpoint, so for
+      // anything shorter than about a phrase its right-hand end reached
+      // past `target.right` and this button landed squarely on top of "Fix
+      // spelling". Two floating menus, one covering the other's controls.
+      // Found when the canvas started fitting the window (Phase 174): at a
+      // smaller zoom selections are narrower, so the overlap became the
+      // normal case rather than the rare one.
+      style={{ top: target.top + target.height / 2, left: target.right + 10, transform: 'translateY(-50%)' }}
       onMouseDown={(e) => e.preventDefault()}
     >
       <DropdownMenu open={open} onOpenChange={setOpen}>

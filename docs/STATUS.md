@@ -12056,3 +12056,82 @@ The remaining five:
   minimum.
 
 All fixed; the audit is now **A11Y CLEAN** on both shells.
+
+## Phase 174 — the first five minutes
+
+A walkthrough as a first-time author, on a 1280 and a 1440 window. Three
+things were wrong before a single word was written.
+
+### 1. The page was cut off
+
+A 6×9in page is 576 CSS px at this app's 96dpi page scale, so a two-page
+spread is 1152px. The canvas column is 612px on a 1280 window and 772px on
+a 1440 one, once the sidebar, thumbnail rail and Inspector have taken their
+share. At the fixed 100% zoom the app shipped with, the spread simply
+overflowed — measured: **the left-hand page started at x = −173** on a 1280
+window — and because the scroll container used `justify-center`, the part
+that overflowed could not be scrolled back into view either. The first
+sight of your own book was a page with its left side missing.
+
+`useFitZoom.ts` fits the spread to the canvas and re-fits on any change of
+width — a `ResizeObserver`, not a window listener, because collapsing the
+Inspector or hiding the thumbnails changes the canvas without the window
+moving at all. `zoomMode: 'fit'` is the default; the readout now says
+`Fit 56%` and clicking it gives a true 100%, which still overflows at these
+widths but is now completely reachable (`justify-start` plus `m-auto`).
+
+Fitting is capped at 1: magnifying a page past its printed size is exactly
+the wrong promise for an app whose claim is that the screen matches the
+print.
+
+The spread toggle turns out to be a real answer to a narrow window, and now
+says so: a single page fits at **100% on a 1440** and 81% on a 1280.
+
+### 2. The empty project told you to import a book you hadn't written
+
+New Project asks "What's the idea?". The canvas then answered with **Import
+Manuscript**, next to a permanently `disabled` "Browse Templates" button,
+under the headline "{project name} is ready for a manuscript" — which, since
+the project's name *is* the sentence the user just typed, ran to three
+lines for anyone with a real idea.
+
+The mobile shell had always said the opposite: "Start your first chapter to
+begin writing on the go, or bring in a manuscript from More → Import." Two
+shells, contradictory advice, same state.
+
+Writing leads now on both, importing is the alternative, the book's name is
+a label rather than the subject of a sentence, and the dead button is gone
+— templates are real, so a greyed-out control promising them was worse than
+nothing.
+
+### 3. Two floating toolbars fought over the same selection
+
+Fitting the canvas made selections narrower, and that turned a rare overlap
+into the normal case: `SelectionDevelopMenu`'s "+" sat in the band directly
+above the selection, which is `FloatingFormatToolbar`'s band, and landed on
+top of "Fix spelling". Worse, with the spelling list open the "+" covered
+the suggestion itself — you could read "sentence" and not click it.
+
+Two changes. The "+" moved beside the selection, vertically centred on it,
+out of the toolbar's row. And the rule that was missing got stated once, in
+`selectionPopoverStore.ts`: while the format toolbar has a list open it owns
+the area around the selection, and the Develop button steps back. A
+positioning arms race between two components mounted at different levels —
+one per paragraph, one per page — was never going to converge.
+
+The format toolbar is also clamped to the viewport now, since it centres on
+the selection and half of it could hang off a narrow canvas.
+
+### What the fit broke, and what that proved
+
+`pdfFidelity.e2e.mjs` went from clean to 21 failures, all of the form
+"53.9pt vs 36.2pt" — the ratio being the fit scale. The PDF was unchanged
+and still correct; the suite measures the screen in CSS pixels against the
+PDF in points, a fixed relationship that only holds at 100%. It pins the
+zoom now, which keeps the ruler honest rather than teaching it to divide by
+a number it would have to guess.
+
+That pinning left a gap, so `canvasFit.e2e.mjs` closes it directly: export
+from a canvas sitting at **Fit 43%** and assert the exported page is
+449×665pt. The zoom is a way of looking at the book, and a 6×9in page is
+6×9in whatever size it is shown at.

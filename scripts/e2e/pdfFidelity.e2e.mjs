@@ -152,6 +152,22 @@ async function main() {
   const browser = await chromium.launch()
   const context = await browser.newContext({ viewport: { width: 1500, height: 950 } })
   await context.addInitScript(CAPTURE_SAVES)
+  // Measure at true size. This suite's whole method is to compare where a
+  // line sits on screen, in CSS pixels, against where it is drawn in the
+  // PDF, in points — a fixed 96dpi relationship that only holds while the
+  // canvas is at 100%. Phase 174 made the canvas *fit the window* by
+  // default (it used to cut the left-hand page off on any laptop narrower
+  // than about 1700px), so every on-screen rect now comes back multiplied
+  // by the fit scale. The PDF is unaffected and was still correct; it is
+  // the ruler that changed. Pinning the zoom here keeps the ruler honest
+  // rather than teaching the suite to divide by a number it would have to
+  // guess.
+  await context.addInitScript(() => {
+    localStorage.setItem(
+      'book-studio.ui',
+      JSON.stringify({ state: { zoomMode: 'manual', zoom: 1 }, version: 1 }),
+    )
+  })
   const page = await context.newPage()
   const pageErrors = []
   page.on('pageerror', (e) => pageErrors.push(String(e)))

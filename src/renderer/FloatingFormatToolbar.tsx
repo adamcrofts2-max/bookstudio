@@ -4,6 +4,7 @@ import { Bold, Italic, Link as LinkIcon, Sparkles, SpellCheck2 } from 'lucide-re
 import { cn } from '@/lib/utils'
 import { ensureThesaurusLoading, isThesaurusReady, getSynonyms } from '@/renderer/thesaurusDictionary'
 import { useProjectStore } from '@/store/projectStore'
+import { useSelectionPopoverStore } from '@/renderer/selectionPopoverStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { ensureSpellDictionaryLoading, getSpeller, isSpellDictionaryReady } from '@/virtualEditor/spellcheckDictionary'
 import { looksLikeAcronym, collectLayer0Names } from '@/virtualEditor/spellcheckWords'
@@ -126,11 +127,22 @@ export function WordSuggestionsDropdown({
  * replaces the word the same `execCommand('insertText', ...)` way Synonyms
  * already does.
  */
+/** Half the widest the toolbar gets, so clamping keeps it fully on screen. */
+const TOOLBAR_EDGE_MARGIN_PX = 170
+
 export function FloatingFormatToolbar({ containerRef, active, projectId }: FloatingFormatToolbarProps) {
   const [rect, setRect] = useState<{ top: number; left: number } | null>(null)
   const [selectedWord, setSelectedWord] = useState<string | null>(null)
   const [synonymsOpen, setSynonymsOpen] = useState(false)
   const [spellingOpen, setSpellingOpen] = useState(false)
+
+  // Announce that this toolbar owns the area around the selection while a
+  // list is open — see `selectionPopoverStore.ts`.
+  const setSelectionPopoverOpen = useSelectionPopoverStore((s) => s.setOpen)
+  useEffect(() => {
+    setSelectionPopoverOpen(synonymsOpen || spellingOpen)
+    return () => setSelectionPopoverOpen(false)
+  }, [synonymsOpen, spellingOpen, setSelectionPopoverOpen])
   // Cloned at the moment a dropdown button is clicked, since opening the
   // dropdown (a separate DOM subtree the user then clicks into) can't rely
   // on the browser selection still pointing at the original word by the
@@ -302,7 +314,10 @@ export function FloatingFormatToolbar({ containerRef, active, projectId }: Float
   return (
     <div
       className="fixed z-50 flex -translate-x-1/2 -translate-y-full items-center gap-0.5 rounded-[var(--radius-button)] border border-border bg-background-secondary p-1 shadow-[var(--shadow-md)]"
-      style={{ top: rect.top - 8, left: rect.left }}
+      // Clamped to the viewport: `rect.left` is the selection's midpoint and
+      // this is `-translate-x-1/2`, so a selection near the left edge of a
+      // fitted canvas would otherwise push half the toolbar off screen.
+      style={{ top: rect.top - 8, left: Math.min(Math.max(rect.left, TOOLBAR_EDGE_MARGIN_PX), window.innerWidth - TOOLBAR_EDGE_MARGIN_PX) }}
       onMouseDown={(e) => e.preventDefault()}
     >
       <button
