@@ -12246,3 +12246,41 @@ now say what they are: `data-book-surface`, which `a11yChecks.mjs` exempts
 explicitly. Darkening a theme's muted ink to satisfy a screen rule would
 have changed every printed book to fix a thumbnail. The theme's *name*,
 underneath, is ordinary UI text and is checked like any other.
+
+## Phase 177 — the polish pass
+
+Small things the walkthrough turned up, each on its own too minor to name a
+phase after and together the difference between "a good tool" and "a
+finished one".
+
+**A page taller than the canvas was centred past the top of it.** A newly
+added structural page is scrolled into view with `block: 'center'`, which
+is right for a paragraph and wrong for a 864px cover in a 790px canvas:
+the page arrived with its own "Add cover image" and "Add element" controls
+cut off by the toolbar above. Anything too tall to fit is aligned to its
+top instead.
+
+**The New Project dialog said everything twice.** Its description read
+"What's the idea? You can change everything later." — the same sentence as
+the first field's own label, thirty pixels below it. Under three fields sat
+three explanatory paragraphs, one of which managed to say what the choice
+does, that it is reversible, and where to reverse it, in a dialog that
+already promised everything was reversible. It is about forty pixels
+shorter and says the same things once.
+
+**"Show title — Shown — [on]"** stated one fact three ways, on five rows
+of the cover Inspector. The switch is the state; the label says what it
+governs.
+
+**Eight timestamps, eight formats.** Every `new Date(x).toLocaleString()`
+printed seconds nobody needed — "9/24/2026, 6:44:05 PM" — and each call
+site had arrived at its own format by accident. One `formatTimestamp`
+now, so a saved version, a backup and a review report look like they belong
+to the same application.
+
+**The empty library clung to the top third of the window,** with four
+hundred pixels of nothing beneath it. The page is a flex column now and the
+card takes the height it is given. (Making the page a flex column also
+shrank the header to its content, bunching the logo and the buttons into
+the middle — `mx-auto` on a flex child overrides the default stretch. The
+header is `w-full` now.)

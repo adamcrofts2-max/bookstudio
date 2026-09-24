@@ -451,7 +451,10 @@ async function main() {
       const rows = [...(document.querySelector('[role="dialog"]')?.querySelectorAll('.flex-1') ?? [])]
       return rows.map((row) => (row.textContent ?? '').trim()).filter(Boolean)
     })
-    const timestampsInFirstRow = (versionRowLines[0] ?? '').match(/\d{1,2}:\d{2}:\d{2}/g)?.length ?? 0
+    // `formatTimestamp` (Phase 177) prints "24 Sep 2026, 18:44" — no
+    // seconds, since nobody needed them and the eight call sites each
+    // picked their own format by accident.
+    const timestampsInFirstRow = (versionRowLines[0] ?? '').match(/\d{1,2}:\d{2}/g)?.length ?? 0
     check(`an unnamed version shows its time once, not twice (${timestampsInFirstRow})`, timestampsInFirstRow === 1)
     await page.keyboard.press('Escape')
     await page.waitForTimeout(600)

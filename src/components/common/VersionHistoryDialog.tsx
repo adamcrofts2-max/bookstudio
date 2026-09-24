@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatTimestamp } from '@/utils/format'
 import { History, Save, Trash2 } from 'lucide-react'
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -114,14 +115,14 @@ export function VersionHistoryDialog({ projectId, open, onOpenChange }: VersionH
                          nothing left to repeat underneath. A named one keeps
                          its name as the heading with the time below it. */}
                       <p className="truncate text-sm font-medium text-text-primary">
-                        {snapshot.label.trim() || new Date(snapshot.createdAt).toLocaleString()}
+                        {snapshot.label.trim() || formatTimestamp(snapshot.createdAt)}
                       </p>
                       <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-xs font-medium capitalize', KIND_STYLE[snapshot.kind])}>
                         {snapshot.kind}
                       </span>
                     </div>
                     {snapshot.label.trim() && (
-                      <p className="text-xs text-text-muted">{new Date(snapshot.createdAt).toLocaleString()}</p>
+                      <p className="text-xs text-text-muted">{formatTimestamp(snapshot.createdAt)}</p>
                     )}
                   </div>
                   <Button variant="outline" size="sm" onClick={() => handleRestore(snapshot)} disabled={busy}>
@@ -130,7 +131,7 @@ export function VersionHistoryDialog({ projectId, open, onOpenChange }: VersionH
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Delete saved version "${snapshot.label.trim() || new Date(snapshot.createdAt).toLocaleString()}"`}
+                    aria-label={`Delete saved version "${snapshot.label.trim() || formatTimestamp(snapshot.createdAt)}"`}
                     onClick={() => handleDelete(snapshot)}
                     disabled={busy}
                   >

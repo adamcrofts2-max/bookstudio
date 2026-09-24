@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { formatTimestamp } from '@/utils/format'
 import { HardDrive, Loader2, ShieldCheck, TriangleAlert } from 'lucide-react'
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
@@ -28,7 +29,7 @@ function formatWhen(iso?: string): string {
   const minutes = Math.round((Date.now() - at.getTime()) / 60000)
   if (minutes < 1) return 'just now'
   if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
-  return at.toLocaleString()
+  return formatTimestamp(at)
 }
 
 /**

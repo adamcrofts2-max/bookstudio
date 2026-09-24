@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { formatTimestamp } from '@/utils/format'
 import { AlertTriangle, Check, Copy, Trash2 } from 'lucide-react'
 
 import {
@@ -126,7 +127,7 @@ export function DiagnosticsDialog({ open, onOpenChange }: DiagnosticsDialogProps
                   {error.name}: {error.message}
                 </p>
                 <p className="mt-1 text-xs text-text-muted">
-                  {new Date(error.at).toLocaleString()} · {SOURCE_LABEL[error.source]}
+                  {formatTimestamp(error.at)} · {SOURCE_LABEL[error.source]}
                   {error.area ? ` · ${error.area}` : ''}
                 </p>
               </li>

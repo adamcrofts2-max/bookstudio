@@ -341,12 +341,11 @@ function FieldVisibilitySwitch<T extends CoverTextFieldId | BackCoverTextFieldId
 }) {
   const hidden = isFieldHidden(hiddenFields, field)
   return (
+    // "Show title — Shown — [on]" said the same thing three times over
+    // (Phase 177). The switch is the state; the label says what it governs.
     <div className="flex items-center justify-between gap-4">
       <Label htmlFor={id}>{label}</Label>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-text-secondary">{hidden ? 'Hidden' : 'Shown'}</span>
-        <Switch id={id} checked={!hidden} onCheckedChange={() => onChange(toggleHiddenField(hiddenFields, field))} />
-      </div>
+      <Switch id={id} checked={!hidden} onCheckedChange={() => onChange(toggleHiddenField(hiddenFields, field))} />
     </div>
   )
 }

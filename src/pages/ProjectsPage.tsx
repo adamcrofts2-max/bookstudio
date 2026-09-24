@@ -30,8 +30,15 @@ export function ProjectsPage() {
   })
 
   return (
-      <div className="min-h-dvh bg-background">
-        <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-6 sm:px-8">
+      // A column, so the empty library can take the height it is given
+      // rather than clinging to the top third of a 900px window with four
+      // hundred pixels of nothing under it (Phase 177).
+      <div className="flex min-h-dvh flex-col bg-background">
+        {/* `w-full` because the page is a flex column now: `mx-auto` on a
+            flex child overrides the default stretch and would shrink the
+            header to its own content, bunching the logo and the buttons
+            together in the middle. */}
+        <header className="mx-auto flex w-full max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-6 sm:px-8">
           <Logo withWordmark />
           <div className="flex items-center gap-2">
             <Tooltip>
@@ -64,20 +71,20 @@ export function ProjectsPage() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-5xl px-5 pb-16 sm:px-8">
+        <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 pb-16 sm:px-8">
           {projects.length === 0 ? (
-            <div className="mt-12 rounded-[var(--radius-card)] border border-dashed border-border">
+            <div className="my-8 flex flex-1 items-center justify-center rounded-[var(--radius-card)] border border-dashed border-border">
               <EmptyState
                 icon={BookOpen}
                 title="Your library is empty"
-                description="Create your first project to start designing a beautiful, print-ready book."
+                description="Write a book from a first line, or bring in a manuscript you have already finished — either way it comes out laid out, paginated and print-ready."
                 action={
                   <Button variant="primary" className="mt-2 gap-1.5" onClick={() => setDialogOpen(true)}>
                     <Plus className="size-4" />
                     Create your first book
                   </Button>
                 }
-                className="py-24"
+                className="py-16"
               />
             </div>
           ) : (

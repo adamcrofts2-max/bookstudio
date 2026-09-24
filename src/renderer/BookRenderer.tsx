@@ -285,7 +285,14 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
             : target.type === 'block'
               ? document.querySelector(`[data-block-id="${target.blockId}"]`)
               : document.getElementById(`page-${target.pageId}`)
-        el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' ? 'start' : 'center' })
+        // Centring only makes sense for something that fits. A whole page
+        // taller than the canvas — a structural page at 100%, or anything
+        // at a zoomed-in manual scale — gets centred *past* the top of the
+        // view, so a newly added cover arrived with its own "Add cover
+        // image" and "Add element" controls cut off by the toolbar above it
+        // (Phase 177). Anything too tall is aligned to its top instead.
+        const fits = el ? el.getBoundingClientRect().height <= (el.parentElement?.closest('[class*="overflow-auto"]')?.clientHeight ?? Infinity) : true
+        el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' || !fits ? 'start' : 'center' })
         // Only clear the request if nothing newer has come in while we waited.
         if (scrollRequestRef.current?.requestId === scrollRequest.requestId) consumeScrollRequest()
         // Release the pin once the smooth scroll has had time to land. This

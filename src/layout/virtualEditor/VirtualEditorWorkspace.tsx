@@ -13,7 +13,7 @@ import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { SCORE_TILES } from '@/virtualEditor/scoring'
 import { blockPlainText } from '@/virtualEditor/textExtract'
-import { wordCount } from '@/utils/format'
+import { wordCount, formatTimestamp } from '@/utils/format'
 import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
 import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
@@ -292,7 +292,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             <div className="flex items-center gap-3">
               {report && (
                 <p className="text-xs text-text-secondary">
-                  {activeFindings.length} shown · generated {new Date(report.generatedAt).toLocaleString()}
+                  {activeFindings.length} shown · generated {formatTimestamp(report.generatedAt)}
                 </p>
               )}
               {report && activeFindings.length > 0 && (
@@ -390,7 +390,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                     <p className="text-sm text-text-primary">{revision.summary}</p>
                     <p className="text-xs text-text-secondary">
                       {chapterTitleById.get(revision.chapterId) ?? 'Unknown chapter'} ·{' '}
-                      {new Date(revision.appliedAt).toLocaleString()}
+                      {formatTimestamp(revision.appliedAt)}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => restoreRevision(project.id, revision.id)}>

@@ -163,7 +163,10 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New Project</DialogTitle>
-          <DialogDescription>What's the idea? You can change everything later.</DialogDescription>
+          {/* This used to read "What's the idea? You can change everything
+              later." — the same sentence as the first field's own label,
+              thirty pixels above it (Phase 177). */}
+          <DialogDescription>Everything here can be changed later.</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5">
@@ -179,7 +182,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 if (e.key === 'Enter' && idea.trim()) void handleCreate()
               }}
             />
-            <p className="text-xs text-text-secondary">This becomes your project's title, and its first Idea in Develop.</p>
+            <p className="text-xs text-text-secondary">Becomes the book's title, and its first Idea in Develop.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -204,9 +207,11 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 </button>
               ))}
             </div>
-            <p className="text-xs text-text-secondary">
-              Decides how Develop labels things and which templates it offers — never a data change, and always editable later from Project Settings.
-            </p>
+            {/* The helper text here said what the choice does *and* that it
+                is reversible *and* where to reverse it — three claims for a
+                three-button toggle, under a dialog that already says
+                everything can be changed later. */}
+            <p className="text-xs text-text-secondary">Sets how Develop labels things, and which templates it offers.</p>
           </div>
 
           {templates.length > 0 && (
@@ -249,8 +254,8 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
             </Select>
             <p className="text-xs text-text-secondary">
               {category
-                ? "We'll set a matching trim size and add a few example Develop entries you can edit or delete — nothing is exported until you write it yourself."
-                : 'Pick this now if you know it, or leave it and set it later from Project Settings.'}
+                ? "Sets a matching trim size and a few example Develop entries you can edit or delete."
+                : 'Optional — it only picks a starting trim size and some examples.'}
             </p>
           </div>
         </div>
