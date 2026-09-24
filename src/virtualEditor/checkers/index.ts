@@ -21,6 +21,7 @@ import { COMMERCIAL_QUALITY_CHECKERS } from '@/virtualEditor/checkers/commercial
 import { DEVELOPMENTAL_CHECKERS } from '@/virtualEditor/checkers/developmental'
 import { FIELD_GUIDE_CHECKERS } from '@/virtualEditor/checkers/fieldGuide'
 import { CONTINUITY_CHECKERS } from '@/virtualEditor/checkers/continuity'
+import { completenessCheckers } from '@/virtualEditor/checkers/completeness'
 
 export const ALL_CHECKERS: Checker[] = [
   ...PROOFREADING_CHECKERS,
@@ -36,4 +37,8 @@ export const ALL_CHECKERS: Checker[] = [
   ...DEVELOPMENTAL_CHECKERS,
   ...FIELD_GUIDE_CHECKERS,
   ...CONTINUITY_CHECKERS,
+  // Everything above reads what is there and judges it, which is why a
+  // nearly-empty book used to pass them all. These read what is *not*
+  // there — see `completeness.ts` (Phase 175).
+  ...completenessCheckers,
 ]

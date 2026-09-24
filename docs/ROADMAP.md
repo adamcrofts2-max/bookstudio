@@ -630,11 +630,15 @@ daily use of everything built so far.)*
       wherever it was — usually on the cover — with no route back to the text
       but scrolling (found Phase 157). Same family as Phase 156's "land on the
       page you just added".
-- [ ] The Virtual Editor scores an almost-empty book 99/100: a two-paragraph
-      manuscript with an untitled cover, no author, no ISBN and no back cover
-      returned Print Readiness 100 and Publishing Quality 100, because every
-      checker only fires on content that exists. Deciding whether absence
-      should be a finding is a design question, not a patch (found Phase 157).
+- [x] The Virtual Editor scores an almost-empty book 99/100 — decided and
+      fixed 2026-09-24 (Phase 175). Absence *is* a finding, but only where it
+      is a fact: `checkers/completeness.ts` names a missing cover, title page,
+      copyright page, back cover, author or cover title, and treats a missing
+      ISBN as a suggestion because not every book needs one. It never says
+      "too short" — that is the AI reviewer's job. The same bare book now
+      reports Print Readiness 88 and Commercial Quality 80, and below 400
+      words the Overall tile withholds its number rather than claiming 97 for
+      a book that does not exist yet.
 
 ## Phase C — Editorial Intelligence (Virtual Editor) — In Progress
 

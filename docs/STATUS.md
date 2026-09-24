@@ -12135,3 +12135,67 @@ That pinning left a gap, so `canvasFit.e2e.mjs` closes it directly: export
 from a canvas sitting at **Fit 43%** and assert the exported page is
 449×665pt. The zoom is a way of looking at the book, and a 6×9in page is
 6×9in whatever size it is shown at.
+
+## Phase 175 — a score you can believe
+
+A 27-word manuscript — one paragraph, an untitled cover, no author, no
+copyright page — scored **99/100 overall, with Print Readiness 100 and
+Publishing Quality 100.** Open since Phase 157, filed as "a design
+question, not a patch": *should absence be a finding?*
+
+It should, but only where absence is a fact rather than an opinion.
+
+### Reading what is not there
+
+Every existing checker reads content and judges it, which is precisely why
+a nearly-empty book passed all of them: nothing was wrong because there was
+nothing to be wrong. `checkers/completeness.ts` reads the other way —
+
+| Missing | Category | Severity |
+| --- | --- | --- |
+| Cover | Commercial | major |
+| Title page | Print | major |
+| Copyright page | Print | major |
+| Back cover (once there is a front one) | Commercial | minor |
+| An author's name anywhere | Commercial | major |
+| A cover title of its own, rather than the project's name | Commercial | minor |
+| ISBN on the copyright page | Print | suggestion |
+
+Each names a specific artefact a printed book is expected to carry. None
+says "this book is too short" or "this needs more work" — those are
+judgements the deterministic layer has no business making, and the AI
+reviewer exists to make.
+
+Two details worth keeping. The ISBN is a *suggestion*, not a fault: a
+private edition or a purely digital release legitimately has none. And a
+back cover is only expected once a front cover exists, so a manuscript
+nobody has started designing isn't nagged about its blurb.
+
+The same bare book now reports **Print Readiness 88** and **Commercial
+Quality 80**, with six findings that each say what is missing and why it
+matters.
+
+### And a number needs its sample size
+
+The rest of the problem was presentation. Even with every checker correct,
+"Overall Editorial Score 97" on 27 words is a claim about a whole book that
+does not exist yet — and the mean of eleven categories dilutes exactly the
+signal the new findings provide.
+
+So the dashboard now states what it looked at, and below **400 words**
+(about a page and a half — long enough that a real first chapter clears it,
+short enough that a paragraph typed to try the feature out does not) the
+Overall tile withholds its number entirely:
+
+> **Too little written to judge yet.** These scores cover 27 words across 1
+> chapter — enough to catch what is missing from the book, not enough to
+> say anything about the writing.
+
+The category scores stay, because a missing copyright page is a fact at any
+length. `ScoreCard` grew a `withheldReason`, reusing the same "—" it
+already shows for a category with no checker: the dashboard had an honest
+idiom for "I can't tell you this" and simply wasn't using it where it
+mattered most.
+
+Sixteen unit assertions, including the exact book from the Phase 157 report
+and the complete book that must raise nothing at all.

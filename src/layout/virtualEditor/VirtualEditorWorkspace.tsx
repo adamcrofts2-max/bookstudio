@@ -12,6 +12,8 @@ import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorSto
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { SCORE_TILES } from '@/virtualEditor/scoring'
+import { blockPlainText } from '@/virtualEditor/textExtract'
+import { wordCount } from '@/utils/format'
 import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
 import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
@@ -19,6 +21,15 @@ import { FindingRow, formatCategory } from '@/layout/virtualEditor/FindingRow'
 import { RevisionCompareView } from '@/layout/virtualEditor/RevisionCompareView'
 import type { Revision } from '@/store/virtualEditorStore'
 import type { Project } from '@/types'
+
+/**
+ * Below this, the deterministic checkers can still say what a book is
+ * *missing* — a cover, a copyright page — but nothing they report about the
+ * prose means anything. Roughly a page and a half of a printed book: short
+ * enough that a real first chapter clears it, long enough that a paragraph
+ * typed to try the feature out does not.
+ */
+const ENOUGH_WORDS_TO_JUDGE = 400
 
 interface VirtualEditorWorkspaceProps {
   project: Project
@@ -83,6 +94,13 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   }, [manuscript])
 
   const activeFindings = report?.findings.filter((f) => (findingStatuses?.[f.id] ?? 'new') !== 'ignoredSimilar') ?? []
+
+  // The sample the report is drawn from, stated plainly beside the scores.
+  const reviewedChapters = manuscript?.chapters.length ?? 0
+  const reviewedWords = useMemo(
+    () => (manuscript?.chapters ?? []).reduce((sum, chapter) => sum + wordCount(chapter.blocks.map(blockPlainText).join(' ')), 0),
+    [manuscript],
+  )
 
   const fixableCount = activeFindings.filter(
     (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
@@ -223,12 +241,48 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
           </div>
         </header>
 
+        {report && (
+          // What the score was computed from. A 27-word manuscript used to
+          // return 99/100 with tens of 100s beside it, which is arithmetically
+          // true of the things the checkers looked at and reads as "your book
+          // is finished" (Phase 175). The checkers now notice a missing cover
+          // or copyright page; this line answers the other half, which is
+          // that a number means nothing without its sample size.
+          <p className="text-sm text-text-secondary">
+            {reviewedWords < ENOUGH_WORDS_TO_JUDGE ? (
+              <>
+                <strong className="font-medium text-text-primary">Too little written to judge yet.</strong> These
+                scores cover {reviewedWords.toLocaleString()} {reviewedWords === 1 ? 'word' : 'words'} across{' '}
+                {reviewedChapters} {reviewedChapters === 1 ? 'chapter' : 'chapters'} — enough to catch what is
+                missing from the book, not enough to say anything about the writing.
+              </>
+            ) : (
+              <>
+                Across {reviewedWords.toLocaleString()} words in {reviewedChapters}{' '}
+                {reviewedChapters === 1 ? 'chapter' : 'chapters'}.
+              </>
+            )}
+          </p>
+        )}
+
         <section className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {SCORE_TILES.map((tile) => {
             const categoryEntry = tile.key === 'overall' ? undefined : report?.categoryScores[tile.key]
             const score = tile.key === 'overall' ? (report?.overallScore ?? null) : (categoryEntry?.score ?? null)
             const findingCount = tile.key === 'overall' ? report?.findings.length : categoryEntry?.findingCount
-            return <ScoreCard key={tile.key} tile={tile} score={score} findingCount={findingCount} />
+            return (
+              <ScoreCard
+                key={tile.key}
+                tile={tile}
+                score={score}
+                findingCount={findingCount}
+                withheldReason={
+                  tile.key === 'overall' && report && reviewedWords < ENOUGH_WORDS_TO_JUDGE
+                    ? 'Not enough written to score'
+                    : undefined
+                }
+              />
+            )
           })}
         </section>
 

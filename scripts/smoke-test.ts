@@ -2936,5 +2936,70 @@ check(
   check('EPUB: an unoverridden block is wrapped in nothing at all', blockToXhtml(para, () => '') === '<p>A paragraph.</p>')
 }
 
+// --- Virtual Editor: what a finished book is missing (Phase 175) ---
+{
+  const { bookPartsChecker, bookDetailsChecker } = await import('../src/virtualEditor/checkers/completeness')
+  type AnyPage = import('../src/types/structuralPage').StructuralPage
+
+  const manuscript = {
+    chapters: [{ id: 'ch1', title: 'One', order: 0, blocks: [{ id: 'b1', type: 'paragraph' as const, html: 'A sentence.' }] }],
+  }
+  const page = (type: string, content: Record<string, unknown> = {}) =>
+    ({ id: `page-${type}`, type, category: 'front-matter', order: 0, content }) as unknown as AnyPage
+
+  const ctx = (pages: AnyPage[]) =>
+    ({ manuscript, structuralPages: pages }) as unknown as import('../src/virtualEditor/types').CheckerContext
+
+  // The exact book the roadmap complained about: two paragraphs, nothing
+  // else. Every other checker passes it; these must not.
+  const bare = [...bookPartsChecker.run(ctx([])), ...bookDetailsChecker.run(ctx([]))]
+  const types = bare.map((f) => f.issueType).sort()
+  check(`a book with no front matter is not silently fine (${types.join(', ')})`, bare.length >= 3)
+  check('it notices there is no cover', types.includes('missing-cover'))
+  check('it notices there is no title page', types.includes('missing-title-page'))
+  check('it notices there is no copyright page', types.includes('missing-copyright-page'))
+
+  // Absence is a fact, so these are certain, and every finding explains
+  // itself — the Virtual Editor's own non-negotiable.
+  check('every finding is certain', bare.every((f) => f.confidence === 1))
+  check('every finding says why it matters', bare.every((f) => f.whyItMatters.trim().length > 20))
+  check('every finding is anchored to a real chapter', bare.every((f) => f.location.chapterId === 'ch1'))
+
+  // A complete book raises none of them.
+  const complete = [
+    page('cover', { title: 'The Walled Garden', author: 'M. Vale' }),
+    page('title-page', { title: 'The Walled Garden', author: 'M. Vale' }),
+    page('copyright', { isbn: '978-0-00-000000-0' }),
+    page('back-cover', { text: 'A blurb.' }),
+  ]
+  const clean = [...bookPartsChecker.run(ctx(complete)), ...bookDetailsChecker.run(ctx(complete))]
+  check(`a complete book raises nothing (${clean.map((f) => f.issueType).join(', ') || 'none'})`, clean.length === 0)
+
+  // The narrower cases, one at a time.
+  const noAuthor = bookDetailsChecker.run(ctx([page('cover', { title: 'A Title' }), page('title-page', { title: 'A Title' })]))
+  check('a book that names no author says so', noAuthor.some((f) => f.issueType === 'missing-author'))
+
+  // A cover falls back to the project name when its own title is empty,
+  // which is a good default and a bad thing to print.
+  const fallbackTitle = bookDetailsChecker.run(ctx([page('cover', { author: 'M. Vale' })]))
+  check('a cover still showing the project name is flagged', fallbackTitle.some((f) => f.issueType === 'cover-title-is-a-fallback'))
+
+  const noIsbn = bookDetailsChecker.run(ctx([page('copyright', {})]))
+  const isbnFinding = noIsbn.find((f) => f.issueType === 'missing-isbn')
+  check('a missing ISBN is raised', !!isbnFinding)
+  // Not every book needs one, so it must not be scored like a defect.
+  check('but only as a suggestion', isbnFinding?.severity === 'suggestion')
+
+  // A back cover is only expected once there is a front one.
+  const coverOnly = bookPartsChecker.run(ctx([page('cover', { title: 'A Title' })]))
+  check('a back cover is expected once there is a front one', coverOnly.some((f) => f.issueType === 'missing-back-cover'))
+  check('and not demanded of a book with no cover at all', !bookPartsChecker.run(ctx([])).some((f) => f.issueType === 'missing-back-cover'))
+
+  // Neither can run without the structural pages, and must say so rather
+  // than reporting a clean bill of health it has not earned.
+  const noPages = { manuscript } as unknown as import('../src/virtualEditor/types').CheckerContext
+  check('neither checker claims to have run without front matter to read', !bookPartsChecker.isApplicable?.(noPages) && !bookDetailsChecker.isApplicable?.(noPages))
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)
