@@ -11,6 +11,11 @@ import { CustomThemeEditorDialog } from '@/components/settings/CustomThemeEditor
 interface ThemeGalleryProps {
   value: string
   onChange: (themeId: string) => void
+  /**
+   * Inspector-width rendering: two columns, no description lines. The
+   * dialog keeps the roomier three-column layout it was designed for.
+   */
+  compact?: boolean
 }
 
 /** One theme's real, resolved page/font/typography values rendered as a
@@ -27,12 +32,15 @@ function ThemePreviewCard({
   onSelect,
   onEdit,
   onDelete,
+  compact,
 }: {
   theme: BookTheme
   selected: boolean
   onSelect: () => void
   onEdit?: () => void
   onDelete?: () => void
+  /** Inspector-width: two fixed columns and no description line. */
+  compact?: boolean
 }) {
   const resolved = resolveTheme(theme.id)
   const opener =
@@ -78,31 +86,52 @@ function ThemePreviewCard({
         </div>
       )}
       <button type="button" onClick={onSelect} aria-pressed={selected} className="flex flex-col gap-2 text-left">
-        <div className="aspect-[3/4] w-full overflow-hidden rounded-[var(--radius-image)]" style={{ background: resolved.page.background }}>
-          <div className="flex h-full flex-col justify-center gap-2 px-4">
+        {/* The mock-up's type is sized in `cqw` — percentages of this card's
+            own width — so the same markup reads correctly at the dialog's
+            200px cards and at the Inspector's 130px ones. Fixed `rem` sizes
+            worked at one width and only one: in the 300px Inspector panel
+            they clipped the heading at the top of the card and cut the
+            sample paragraph off mid-word (Phase 176). */}
+        <div
+          // A rendering of the book's own page, not a piece of UI — the
+          // accessibility audit exempts these by this attribute, because the
+          // contrast of a theme's muted ink on its paper is a decision about
+          // a printed book and not a screen (see `a11yChecks.mjs`).
+          data-book-surface
+          aria-hidden
+          className="@container aspect-[3/4] w-full overflow-hidden rounded-[var(--radius-image)]"
+          style={{ background: resolved.page.background }}
+        >
+          <div className="flex h-full flex-col justify-center gap-[2cqw] px-[7cqw]">
             {opener && (
-              <p className="text-[0.55rem] uppercase tracking-widest" style={{ fontFamily: resolved.fonts.heading, color: resolved.page.accent }}>
+              <p
+                className="uppercase tracking-widest"
+                style={{ fontFamily: resolved.fonts.heading, color: resolved.page.accent, fontSize: '4.4cqw' }}
+              >
                 {opener}
               </p>
             )}
             <p
               className="leading-tight"
-              style={{ fontFamily: resolved.fonts.heading, fontWeight: resolved.typography.headingWeight, color: resolved.page.ink, fontSize: '1.05rem' }}
+              style={{ fontFamily: resolved.fonts.heading, fontWeight: resolved.typography.headingWeight, color: resolved.page.ink, fontSize: '8.4cqw' }}
             >
               The Title
             </p>
-            <div className="h-0.5 w-6 rounded-full" style={{ background: resolved.page.accent }} />
+            <div className="h-[0.8cqw] w-[12cqw] rounded-full" style={{ background: resolved.page.accent }} />
             <p
               style={{
                 fontFamily: resolved.fonts.body,
                 color: resolved.page.mutedInk,
-                fontSize: '0.6rem',
+                fontSize: '4.8cqw',
                 lineHeight: resolved.typography.lineHeight,
                 textAlign: resolved.typography.justify ? 'justify' : 'left',
               }}
             >
               {resolved.typography.dropCap && (
-                <span className="mr-0.5 float-left text-2xl leading-[0.8]" style={{ color: resolved.page.ink, fontWeight: resolved.typography.headingWeight }}>
+                <span
+                  className="mr-[1cqw] float-left leading-[0.8]"
+                  style={{ color: resolved.page.ink, fontWeight: resolved.typography.headingWeight, fontSize: '14cqw' }}
+                >
                   T
                 </span>
               )}
@@ -114,7 +143,7 @@ function ThemePreviewCard({
           <p className="text-sm font-medium text-text-primary">{theme.name}</p>
           {selected && <Check className="size-4 shrink-0 text-accent" />}
         </div>
-        <p className="text-xs leading-snug text-text-secondary">{theme.description}</p>
+        {!compact && <p className="text-xs leading-snug text-text-secondary">{theme.description}</p>}
       </button>
     </div>
   )
@@ -122,15 +151,17 @@ function ThemePreviewCard({
 
 /** The gallery's "+ Create custom theme" card — same aspect-ratio slot as a
  * real theme card so it sits naturally in the grid. */
-function CreateThemeCard({ onClick }: { onClick: () => void }) {
+function CreateThemeCard({ onClick, compact }: { onClick: () => void; compact?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className="flex aspect-[3/4] flex-col items-center justify-center gap-2 rounded-[var(--radius-card)] border-2 border-dashed border-border text-text-secondary transition-colors hover:border-accent hover:text-accent"
     >
-      <Plus className="size-6" />
-      <span className="text-sm font-medium">Create custom theme</span>
+      <Plus className={compact ? 'size-5' : 'size-6'} />
+      <span className={cn('font-medium', compact ? 'px-2 text-center text-xs leading-tight' : 'text-sm')}>
+        {compact ? 'Custom theme' : 'Create custom theme'}
+      </span>
     </button>
   )
 }
@@ -149,7 +180,7 @@ function CreateThemeCard({ onClick }: { onClick: () => void }) {
  * a trailing "+ Create custom theme" card that opens
  * `CustomThemeEditorDialog.tsx`.
  */
-export function ThemeGallery({ value, onChange }: ThemeGalleryProps) {
+export function ThemeGallery({ value, onChange, compact }: ThemeGalleryProps) {
   const customThemes = useCustomThemeStore((s) => s.customThemes) ?? EMPTY_CUSTOM_THEMES
   const deleteCustomTheme = useCustomThemeStore((s) => s.deleteCustomTheme)
 
@@ -178,9 +209,13 @@ export function ThemeGallery({ value, onChange }: ThemeGalleryProps) {
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      {/* `sm:grid-cols-3` is a *viewport* breakpoint, so inside the
+          Inspector's 300px panel it would have produced 85px-wide previews
+          of a book page — the one thing this gallery exists to show
+          properly. `compact` pins it to two columns instead (Phase 176). */}
+      <div className={cn('grid gap-3', compact ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-3')}>
         {BUILT_IN_THEMES.map((theme) => (
-          <ThemePreviewCard key={theme.id} theme={theme} selected={theme.id === value} onSelect={() => onChange(theme.id)} />
+          <ThemePreviewCard key={theme.id} theme={theme} selected={theme.id === value} onSelect={() => onChange(theme.id)} compact={compact} />
         ))}
         {customThemes.map((theme) => (
           <ThemePreviewCard
@@ -190,9 +225,10 @@ export function ThemeGallery({ value, onChange }: ThemeGalleryProps) {
             onSelect={() => onChange(theme.id)}
             onEdit={() => openEdit(theme)}
             onDelete={() => handleDelete(theme)}
+            compact={compact}
           />
         ))}
-        <CreateThemeCard onClick={openCreate} />
+        <CreateThemeCard onClick={openCreate} compact={compact} />
       </div>
 
       <CustomThemeEditorDialog

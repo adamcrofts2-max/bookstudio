@@ -89,11 +89,20 @@ function isVisible(el) {
   return r.width > 0 && r.height > 0
 }
 
-/** The book canvas: the author's own typography, previewed at print size.
+/**
+ * The book canvas: the author's own typography, rendered at print size.
  * Its contrast is a design decision about a printed page, not a UI
- * accessibility failure, and its "controls" are the manuscript itself. */
+ * accessibility failure, and its "controls" are the manuscript itself.
+ *
+ * The data-book-surface attribute extends that to the miniature pages the theme
+ * gallery draws (Phase 176). They are pictures of a book page — the same
+ * ink on the same paper — and the only thing anyone needs to *read* there
+ * is the theme's name underneath, which is ordinary UI text and is checked
+ * like any other. Darkening a theme's muted ink to satisfy a screen rule
+ * would change the printed book to fix a thumbnail.
+ */
 function inBookCanvas(el) {
-  return !!el.closest('[id^="page-"], [data-block-id], [data-graph-node]')
+  return !!el.closest('[id^="page-"], [data-block-id], [data-graph-node], [data-book-surface]')
 }
 
 function accessibleName(el) {

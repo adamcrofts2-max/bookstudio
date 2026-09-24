@@ -1580,6 +1580,13 @@ Book Studio today and an actual multi-device Canva-style product.)*
       itself. Stated once in `selectionPopoverStore.ts` rather than fought
       out by two components that cannot see each other
 
+- [x] The Theme tab shows the themes — shipped 2026-09-24 (Phase 176). It
+      was an icon, a name and a "Change theme…" button in a 300x800 panel,
+      in the one tab of a design app that should show the design. The gallery
+      renders there now, in a `compact` two-column mode, with the preview's
+      type sized in `cqw` so the same markup reads at both the dialog's 200px
+      cards and the Inspector's 130px ones
+
 ## Phase J — Platform Hardening & Technical Debt
 
 - [x] Repair the test suite — shipped 2026-09-03 (Phase 125). `npm test` had been

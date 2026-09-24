@@ -208,6 +208,43 @@ async function main() {
     check('a selected cover shows its reposition handle', handleStack?.found === true)
     check('nothing is painted on top of the cover’s own controls', handleStack?.hitsHandle === true)
 
+    // Phase 176: the Theme tab shows the themes, rather than a button that
+    // opens them somewhere else. Choosing a book's typography by opening a
+    // modal over the book is backwards, and a 300x800 panel spending all of
+    // it on one button was the least designed surface in a design app.
+    await page.getByRole('tab', { name: /^Theme$/ }).first().click()
+    await page.waitForTimeout(900)
+    const themeCards = await page.evaluate(() =>
+      [...document.querySelectorAll('button[aria-pressed]')].filter((b) => /The Title/.test(b.textContent ?? '')).length,
+    )
+    check(`the Theme tab shows real theme previews (${themeCards})`, themeCards >= 5)
+    check('and offers a custom one', (await page.getByRole('button', { name: /custom theme/i }).count()) >= 1)
+
+    const themeBefore = await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      return JSON.parse(localStorage.getItem('book-studio.projects')).state.projects.find((p) => p.id === id)?.settings.themeId
+    })
+    // Pick any preview that is not the current one and apply it from here.
+    await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('button[aria-pressed]')].filter((b) => /The Title/.test(b.textContent ?? ''))
+      const other = cards.find((b) => b.getAttribute('aria-pressed') !== 'true')
+      other?.click()
+    })
+    await page.waitForTimeout(1500)
+    const themeAfter = await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      return JSON.parse(localStorage.getItem('book-studio.projects')).state.projects.find((p) => p.id === id)?.settings.themeId
+    })
+    check(`a theme can be applied from the Inspector (${themeBefore} -> ${themeAfter})`, !!themeAfter && themeAfter !== themeBefore)
+    // And the manuscript is untouched by it — the non-negotiable.
+    const chaptersAfterTheme = await page.evaluate(() => {
+      const id = location.pathname.split('/project/')[1]?.split('/')[0]
+      return JSON.parse(localStorage.getItem('book-studio.content')).state.byProject[id]?.chapters?.length ?? 0
+    })
+    check(`switching a theme leaves the manuscript alone (${chaptersAfterTheme} chapters)`, chaptersAfterTheme >= 1)
+    await page.getByRole('tab', { name: /^Page$/ }).first().click()
+    await page.waitForTimeout(600)
+
     // Phase 160: and now the canvas comes back with you.
     const onCoverBefore = await page.evaluate(() => {
       const visible = [...document.querySelectorAll('[id^="page-"]')].filter((el) => {

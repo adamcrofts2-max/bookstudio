@@ -12199,3 +12199,50 @@ mattered most.
 
 Sixteen unit assertions, including the exact book from the Phase 157 report
 and the complete book that must raise nothing at all.
+
+## Phase 176 — the Theme tab shows the themes
+
+The Inspector's Theme tab was an icon, the current theme's name, two lines
+of explanation and a **Change theme…** button — a 300×800 panel spending
+all of it on one button, in the one tab of a design application that should
+be showing the design.
+
+It had been through two versions of the same mistake. First a permanent
+"Theme editing arrives in Phase 4" placeholder, while a real Theme Gallery
+had existed in Project Settings since Phase 43. Then a link to that gallery
+— better, but still an answer of the form "the thing you want is somewhere
+else". Choosing a book's typography by opening a modal *over the book* is
+backwards.
+
+The gallery itself lives there now. The previews sit beside the page they
+apply to, and a click re-renders it instantly.
+
+### Two things had to change for it to fit
+
+**The grid.** `grid-cols-2 sm:grid-cols-3` looks right in a dialog and is
+wrong in a panel: `sm:` is a *viewport* breakpoint, so on any desktop it
+would have produced three 85px-wide previews of a book page inside a 300px
+column — the one thing this gallery exists to show properly. A `compact`
+prop pins it to two columns and drops the description lines.
+
+**The type.** The mock-up's sizes were fixed `rem` values tuned for the
+dialog's ~200px cards. At 130px they clipped the heading off the top and
+cut the sample paragraph off mid-word. They are `cqw` now — percentages of
+the card's own width — so the same markup reads correctly at both sizes and
+at any size between. A container query is the honest tool for "this preview
+should scale with its container"; a second set of hand-tuned numbers would
+have been a third version of the same mistake.
+
+### And the audit had an opinion
+
+The accessibility suite immediately flagged the previews: a theme's muted
+ink on its own paper is 3.25:1. That is the case the audit already exempts
+for the book canvas — the contrast of a printed page is a design decision
+about a book, not a screen — but a miniature page in a gallery isn't
+inside `[id^="page-"]`.
+
+Rather than widen the exemption by guessing at class names, the previews
+now say what they are: `data-book-surface`, which `a11yChecks.mjs` exempts
+explicitly. Darkening a theme's muted ink to satisfy a screen rule would
+have changed every printed book to fix a thumbnail. The theme's *name*,
+underneath, is ordinary UI text and is checked like any other.
