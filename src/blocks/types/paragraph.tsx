@@ -7,7 +7,7 @@ import type { DrawCtx } from '@/pdf/exportPdf'
 import { useEditableField, outlineClass } from '@/blocks/shared'
 import { FloatingFormatToolbar } from '@/renderer/FloatingFormatToolbar'
 import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
-import { pickFont, pickItalicFont } from '@/pdf/fonts'
+import { italicSkew, pickFont, pickItalicFont } from '@/pdf/fonts'
 import { wrapRuns } from '@/pdf/textWrap'
 import { parseInlineRuns } from '@/pdf/htmlRuns'
 import { hexToPdfColor } from '@/pdf/color'
@@ -194,7 +194,7 @@ function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
   // `text-align: justify` — this makes the exported PDF match it instead
   // of silently staying left-aligned (docs/ROADMAP.md Phase D).
   const wrapOptions = { italicFont, boldItalicFont, justify: theme.typography.justify }
-  const drawOptions = { italicFont, boldItalicFont, linkColor: accent }
+  const drawOptions = { italicFont, boldItalicFont, linkColor: accent, italicSkew: italicSkew(ctx.fonts, theme.fonts.body) }
   if (dropCap && runs.length > 0 && runs[0].text.length > 0) {
     // Faux drop cap: draw the first letter oversized, offset the rest of
     // the paragraph's first line to its right. Simplified vs. the CSS
@@ -213,9 +213,11 @@ function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
     const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt - capWidth, { italicFont, boldItalicFont })
     // Shift every fragment right by capWidth for this block's lines.
     for (const line of lines) for (const f of line.fragments) f.x += capWidth
+    ctx.reportLines?.(lines.length)
     drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont, drawOptions)
   } else {
     const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt, wrapOptions)
+    ctx.reportLines?.(lines.length)
     drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont, drawOptions)
   }
   ctx.cursorY -= BLOCK_SPACING.paragraph.after * PX_TO_PT

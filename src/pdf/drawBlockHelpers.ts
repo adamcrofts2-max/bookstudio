@@ -1,4 +1,4 @@
-import type { Color, PDFFont } from 'pdf-lib'
+import type { Color, PDFFont, Rotation } from 'pdf-lib'
 
 import type { DrawCtx } from '@/pdf/exportPdf'
 import type { WrappedLine } from '@/pdf/textWrap'
@@ -22,6 +22,9 @@ export interface DrawWrappedLinesOptions {
    * case, just not by colour too.
    */
   linkColor?: Color
+  /** Slant for italic fragments when the italic "font" is really the
+   * upright face (`italicSkew` in `fonts.ts`). */
+  italicSkew?: Rotation
 }
 
 /** Draws pre-wrapped text lines (see `wrapRuns`) at the current cursor,
@@ -66,6 +69,7 @@ export function drawWrappedLines(
         size: sizePt,
         font,
         color: fragmentColor,
+        ...(fragment.italic && options?.italicSkew ? { ySkew: options.italicSkew } : {}),
       })
       if (fragment.href) {
         ctx.page.drawLine({

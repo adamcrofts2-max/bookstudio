@@ -9,6 +9,7 @@ import type { Project } from '@/types'
  * print-ready PDF via `exportBookToPdf`. */
 export function useExportPdf(project: Project) {
   const layout = useExportStore((s) => s.byProject[project.id])
+  const setLineCheck = useExportStore((s) => s.setLineCheck)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -20,7 +21,9 @@ export function useExportPdf(project: Project) {
     setError(null)
     try {
       const { exportBookToPdf } = await import('@/pdf/exportPdf')
-      const blob = await exportBookToPdf(layout, project.name, project.settings, project.id)
+      const blob = await exportBookToPdf(layout, project.name, project.settings, project.id, {
+        onLineCheck: (check) => setLineCheck(project.id, check),
+      })
       const fileName = `${project.name.replace(/[\\/:*?"<>|]/g, '').trim() || 'book'}.pdf`
       await saveBlob(blob, fileName, 'PDF Document', 'application/pdf', '.pdf')
     } catch (err) {

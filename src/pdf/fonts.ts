@@ -1,4 +1,4 @@
-import { StandardFonts, type PDFDocument, type PDFFont } from 'pdf-lib'
+import { StandardFonts, degrees, type PDFDocument, type PDFFont, type Rotation } from 'pdf-lib'
 
 /** One family's embedded weight/style variants — reused for Inter, Source
  * Serif 4, and each of the seven Phase 50 cover-only families below, so
@@ -14,6 +14,14 @@ interface FontWeightSet {
   bold: PDFFont
   italic: PDFFont
   boldItalic: PDFFont
+  /**
+   * True when the family ships no italic file, so `italic`/`boldItalic`
+   * are the upright faces and must be drawn slanted (`italicSkew`). That
+   * is what the browser does with the same family on screen — a synthetic
+   * oblique of the upright face, with its exact letter widths — so the PDF
+   * wraps italic text onto the same lines the author saw (Phase 181).
+   */
+  syntheticItalic?: boolean
 }
 
 /** The seven cover-only display/serif families dropped into
@@ -163,14 +171,17 @@ async function loadFamily(
   const medium = files.medium ? await embedOrFallback(doc, files.medium, italicFallback) : regular
   const semiBold = files.semiBold ? await embedOrFallback(doc, files.semiBold, italicFallback) : medium
   const bold = files.bold ? await embedOrFallback(doc, files.bold, italicFallback) : semiBold
-  const italic = files.italic
-    ? await embedOrFallback(doc, files.italic, italicFallback)
-    : await doc.embedFont(italicFallback === 'serif' ? StandardFonts.TimesRomanItalic : StandardFonts.HelveticaOblique)
-  const boldItalic = files.boldItalic
-    ? await embedOrFallback(doc, files.boldItalic, italicFallback)
-    : files.italic
-      ? italic
-      : await doc.embedFont(italicFallback === 'serif' ? StandardFonts.TimesRomanBoldItalic : StandardFonts.HelveticaBoldOblique)
+  // A family with no italic file used to borrow Times Italic or Helvetica
+  // Oblique — a different typeface, with different letter widths, so an
+  // italic phrase in a Source Serif book printed in Times and wrapped onto
+  // fewer lines than the screen showed (found by the per-paragraph line
+  // check, Phase 181). The browser slants the upright face instead; so does
+  // the PDF now.
+  if (!files.italic) {
+    return { regular, medium, semiBold, bold, italic: regular, boldItalic: bold, syntheticItalic: true }
+  }
+  const italic = await embedOrFallback(doc, files.italic, italicFallback)
+  const boldItalic = files.boldItalic ? await embedOrFallback(doc, files.boldItalic, italicFallback) : italic
   return { regular, medium, semiBold, bold, italic, boldItalic }
 }
 
@@ -392,6 +403,21 @@ export function pickFont(fonts: ThemeFontSet, cssFontFamily: string, weight: num
   if (weight >= 600) return family.semiBold
   if (weight >= 500) return family.medium
   return family.regular
+}
+
+/**
+ * The slant for italic text in a family with no italic face, or `undefined`
+ * for a family with a real one. 14° is the CSS default for a synthetic
+ * oblique (CSS Fonts 4, `font-style: oblique`).
+ *
+ * Pass it as `drawText`'s **`ySkew`**: pdf-lib's names are the other way
+ * round from the text matrix, and it is `ySkew` that sets the matrix's `c`
+ * term — the forward lean of an italic.
+ */
+export const SYNTHETIC_ITALIC_SKEW: Rotation = degrees(14)
+
+export function italicSkew(fonts: ThemeFontSet, cssFontFamily: string): Rotation | undefined {
+  return resolveFamily(fonts, cssFontFamily).syntheticItalic ? SYNTHETIC_ITALIC_SKEW : undefined
 }
 
 /** Same resolution as `pickFont`, but for italic runs. `weight >= 600` maps

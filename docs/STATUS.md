@@ -12431,3 +12431,65 @@ mouse, a poor target for a thumb. They grow to 40px under
 `[@media(pointer:coarse)]`, the pattern `coverElementLayer.tsx` already uses,
 so desktop is unchanged. The test measures it.
 
+## Phase 181 — line-level flow, milestone 1: measure every line
+
+`docs/LINE_LEVEL_FLOW_PLAN.md` recommended starting with per-line
+measurement because it pays for itself as verification whether or not
+paragraphs are ever split across pages. It did, on its first run.
+
+**Measuring.** `renderer/lineMeasure.ts` reads each paragraph's line boxes
+with `Range.getClientRects()` and groups the fragments by top
+(`groupLineTops`, pure, unit-tested). A fragment much taller than the typical
+one — a drop cap, three lines tall and starting a few pixels above its line —
+decorates a line rather than being one, and is left out; the "typical" height
+is the lower median so a one-line drop-cap paragraph still works.
+`HeightMeasurer` gains `onLinesMeasured` (paragraphs only — the type a page
+break would split), and both layout publishers put the result in
+`exportStore` as `blockLineTops`, next to `blockHeights`. Cost: about 4ms for
+526 paragraphs, measured in the browser on the perf book, alongside a
+re-measure that already renders every block.
+
+**Checking, in the product.** Every PDF export compares each paragraph's
+`wrapRuns` line count with the screen's (`DrawCtx.reportLines`, set per
+block by `drawBlock`) and hands a `PdfLineCheck` — paragraphs compared, and
+each mismatch with its page and both counts — to `useExportPdf`, which keeps
+it in `exportStore.lineChecks`. Nothing shows it to the author yet
+(roadmap).
+
+**Checking, independently.** `pdfFidelity.e2e.mjs` now counts lines per
+paragraph on both sides itself — the DOM by the same grouping rule, the PDF
+by placing each body-size baseline back into screen coordinates and counting
+it into the paragraph whose box it lands in — and asserts they agree. Pages
+the sweep collects are now tagged by `data-block-type`, which `Page.tsx`
+sets beside `data-block-id`. A third book, "hard to wrap", was added: long
+compound words, italic and bold paragraphs, mid-word style changes, dashes,
+quotes, a link, one-line and ten-line paragraphs.
+
+**What it found.**
+
+1. *Italic printed in the wrong typeface.* Source Serif 4 and Inter ship no
+   italic file. The browser draws their italics as the upright face,
+   slanted — same letter widths. `loadFamily` instead embedded Times Italic
+   or Helvetica Oblique: a different, narrower typeface. An italic phrase in
+   a Source Serif book printed in Times, and an all-italic paragraph wrapped
+   onto one line fewer than the screen showed, lifting everything below it
+   by a line (40px of drift on the page). A family with no italic file now
+   uses its upright faces and is drawn slanted 14° (`SYNTHETIC_ITALIC_SKEW`,
+   the CSS default for a synthetic oblique) — in body text, the cover title
+   and the back-cover blurb. pdf-lib's skew option names are swapped
+   relative to the text matrix; the forward lean is its `ySkew`, and the
+   unit test asserts the matrix term, not the name.
+2. *A style change inside a word printed as spaces.* `wrapRuns` split each
+   run into words independently, so `re<em>arrange</em>ment` became three
+   words — drawn "re arrange ment", and breakable at either join. Pieces
+   with no whitespace between them are now one unit: drawn touching, never
+   broken apart, and justification stretches only the gaps between words.
+
+After both: 24 of 24 paragraphs across the three books agree, drop-cap
+paragraphs included, and every page's drift is back under a pixel.
+
+**Known, not fixed.** A drop-cap paragraph's PDF lines are all wrapped at the
+narrowed width, where the screen narrows only the lines beside the capital.
+It agrees on every fixture (there is slack in each line), and the line check
+will now report the case where it doesn't.
+

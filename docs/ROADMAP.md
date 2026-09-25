@@ -1947,9 +1947,28 @@ Book Studio today and an actual multi-device Canva-style product.)*
       full page unused (mean 13–19%), reported by `pdfFidelity.e2e.mjs` on
       every run — roughly 40 pages on a 300-page novel. Measured cost: four
       milestones, of which the third is a rewrite of how the editable canvas
-      relates to pages. The plan recommends starting with per-line
-      measurement, which pays for itself as verification whether or not the
-      rest is ever built.
+      relates to pages. Milestone 1 is done (below); milestone 2 — splitting
+      in the read-only paths (PDF, reading mode, thumbnails) behind a project
+      setting — is next.
+- [x] Line-level flow milestone 1: per-line measurement — shipped 2026-09-25
+      (Phase 181). `blockLineTops` published beside `blockHeights`; every PDF
+      export checks each paragraph's line count against the screen
+      (`PdfLineCheck`); `pdfFidelity.e2e.mjs` enforces it per paragraph on
+      three books (24/24 agree). Found and fixed two print bugs on the way:
+      italic in Source Serif/Inter was printed in Times/Helvetica (no italic
+      file — now the upright face, slanted, as the browser does), and a
+      style change inside a word (`re<em>arrange</em>ment`) printed as
+      separate words
+- [ ] Tell the author when a PDF's line breaks differ from the screen —
+      `PdfLineCheck` is computed on every export and kept in `exportStore`,
+      but nothing shows it yet. A paragraph with more lines in print pushes
+      everything below it on the page down; that deserves a notice naming
+      the page
+- [ ] Drop-cap paragraphs wrap every PDF line at the narrowed width, where
+      the screen narrows only the lines beside the capital. Agrees on every
+      fixture so far (the slack absorbs it); the line check will now say
+      when it doesn't, and `wrapRuns`' `firstLineWidth` is the shape of the
+      fix (a per-line width for the first N lines)
 - [x] `LazySpread` unmounts spreads that scroll far away — shipped
       2026-09-05 (Phase 149). It mounted and never unmounted, so the DOM grew
       monotonically for as long as the app stayed open. Two margins now

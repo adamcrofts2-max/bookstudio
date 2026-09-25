@@ -116,8 +116,48 @@ const READ_APP_PAGES = () => {
     const flowStyle = flow ? getComputedStyle(flow) : null
     const padTop = flowStyle ? parseFloat(flowStyle.paddingTop) || 0 : 0
     const padBottom = flowStyle ? parseFloat(flowStyle.paddingBottom) || 0 : 0
+    // Every paragraph on the page and how many lines the browser broke it
+    // into — grouped by line top, the same rule `lineMeasure.ts` uses — so
+    // the PDF can be held to the same count paragraph by paragraph
+    // (Phase 181), not just page by page.
+    const paragraphs = [...el.querySelectorAll('[data-block-type="paragraph"]')].map((block) => {
+      const r = block.getBoundingClientRect()
+      const rects = []
+      const walk = document.createTreeWalker(block, NodeFilter.SHOW_TEXT)
+      const range = document.createRange()
+      let textNode
+      while ((textNode = walk.nextNode())) {
+        if (!textNode.textContent?.trim()) continue
+        range.selectNodeContents(textNode)
+        for (const rect of range.getClientRects()) if (rect.width > 0 && rect.height > 0) rects.push(rect)
+      }
+      // A drop cap's box is three lines tall and starts above its line; it
+      // decorates a line rather than being one (same rule as lineMeasure.ts).
+      const heights = rects.map((r) => r.height).sort((a, b) => a - b)
+      const typical = heights[Math.floor((heights.length - 1) / 2)] ?? 0
+      const tops = rects.filter((r) => r.height <= typical * 1.6).map((r) => r.top).sort((a, b) => a - b)
+      let lineCount = 0
+      let last = null
+      for (const t of tops) {
+        if (last === null || t - last > 2) lineCount += 1
+        if (last === null || t - last > 2) last = t
+      }
+      const text = block.textContent ?? ''
+      const firstText = document.createTreeWalker(block, NodeFilter.SHOW_TEXT).nextNode()
+      const fontSizePx = firstText?.parentElement ? parseFloat(getComputedStyle(firstText.parentElement).fontSize) : 0
+      return {
+        fontSizePx,
+        id: block.getAttribute('data-block-id'),
+        top: r.top - pageRect.top,
+        bottom: r.bottom - pageRect.top,
+        lineCount,
+        dropCap: Boolean(block.querySelector('.book-drop-cap')),
+        text: text.slice(0, 40),
+      }
+    })
     pages.push({
       id: el.id,
+      paragraphs,
       rectTop: pageRect.top,
       rectLeft: pageRect.left,
       width: pageRect.width,
@@ -297,6 +337,7 @@ async function main() {
 
       // ---- the page with the most type on it, line by line ----
       let compared = 0
+      const paragraphChecks = []
       for (let i = 0; i < Math.min(appPages.length, pdfPages.length); i += 1) {
         const app = appPages[i]
         const pdf = pdfPages[i]
@@ -388,6 +429,25 @@ async function main() {
         // at the body size and drops out of this filter on both sides. The
         // "a full page of type was compared" check below is what stops a
         // run of skips from passing for a clean result.
+        // ---- paragraph by paragraph (Phase 181) ----
+        // Each PDF body line is placed back into screen coordinates with the
+        // page's own baseline-to-line-top offset, then counted into the
+        // paragraph whose box it falls in. A paragraph the PDF wrapped onto
+        // one line more than the screen shows up here as a count that is one
+        // too high (and, usually, a neighbour that is one too high as well,
+        // because the extra line lands in the next block's box).
+        const typicalOffset = [...offsets].sort((a, b) => a - b)[Math.floor(offsets.length / 2)]
+        const pdfLineTops = pdfTops.map((t) => t - typicalOffset)
+        for (const para of app.paragraphs) {
+          // Only paragraphs at body size: the PDF side above is filtered to
+          // body-size lines, so a paragraph with a size override (Phase 171)
+          // would count as zero lines in print for a reason that is the
+          // ruler's, not the exporter's.
+          if (para.lineCount === 0 || Math.abs(para.fontSizePx - bodyFontPx) >= 0.5) continue
+          const pdfCount = pdfLineTops.filter((t) => t >= para.top - 3 && t < para.bottom - 3).length
+          paragraphChecks.push({ page: i + 1, ...para, pdfCount })
+        }
+
         if (offsets.length > 4) {
           check(
             `${label} page ${i + 1}: every line of body text lands in the same place, to within a pixel (drift ${drift.toFixed(2)}px over ${offsets.length} lines)`,
@@ -398,6 +458,17 @@ async function main() {
         }
       }
       check(`${label}: a full page of type was compared (${compared})`, compared > 0)
+      // A paragraph cut by a page boundary is not a disagreement — its lines
+      // are counted on two pages. Block-level flow never splits one today,
+      // so every paragraph here is whole on its page.
+      const lineMismatches = paragraphChecks.filter((p) => p.pdfCount !== p.lineCount)
+      if (process.env.FIDELITY_DEBUG || lineMismatches.length) {
+        for (const p of lineMismatches) console.log(`   page ${p.page} "${p.text}…": ${p.lineCount} lines on screen, ${p.pdfCount} in the PDF`)
+      }
+      check(
+        `${label}: every paragraph has the same number of lines in the PDF as on screen (${paragraphChecks.length - lineMismatches.length} of ${paragraphChecks.length})`,
+        paragraphChecks.length > 0 && lineMismatches.length === 0,
+      )
 
     // Reported, not asserted: how much of a full page block-level flow
     // leaves unused, because a paragraph moves to the next page whole. This
@@ -613,6 +684,44 @@ async function main() {
     await page.waitForTimeout(4000)
 
     await measureBook('every block')
+
+    // A book written to make the two line-breakers disagree (Phase 181):
+    // long compound words that CSS may hyphenate and `wrapRuns` never does,
+    // runs of bold and italic whose widths differ from the regular face,
+    // dashes, quotes, numbers, a link, and paragraphs from one line to ten.
+    // Per-line measurement is only worth having if the per-paragraph check
+    // it enables holds on text like this, not just on the tidy sentences
+    // above.
+    await page.evaluate(() => {
+      const projectId = location.pathname.split('/project/')[1]?.split('/')[0]
+      const parsed = JSON.parse(localStorage.getItem('book-studio.content'))
+      const texts = [
+        'Counterrevolutionaries and internationalisation committees argued about incomprehensibilities until the electroencephalographers left.',
+        'She said, “It is <em>not</em> the harbour — it never was,” and the ferryman, who had heard it all before, simply shrugged.',
+        'The <strong>1874 rebuilding</strong> cost £12,400 — roughly £1.6m today — and nobody on the board could say where it came from.',
+        'Short.',
+        'A <a href="https://example.com">catalogue of the collection</a> was begun in 1881, abandoned in 1883, resumed in 1902 and is, by the library’s own reckoning, still in progress.',
+        'Photolithographically reproduced plates, uncharacteristically well preserved, sat beside notwithstanding marginalia in an overconscientious hand.',
+        '<em>Everything in this paragraph is set in italic, which is narrower than the roman face, so a line that fits in one would wrap differently in the other if the exporter measured the wrong font.</em>',
+        '<strong>Everything in this paragraph is set in bold, which is wider than the roman face, so the same risk runs the other way for every line of it.</strong>',
+        'Mid-word <strong>bo</strong>ld and <em>ita</em>lic runs split single words across faces: re<em>arrange</em>ment, over<strong>ride</strong>, and un<em>believ</em>able.',
+        'The keeper’s ledger — kept, as she always insisted, in pencil — recorded arrivals, departures, weather, tides, the price of coal and, once, a whale.',
+        'Interdisciplinary, extraterritorial, deinstitutionalisation, antidisestablishmentarianism: the committee’s vocabulary grew faster than its budget.',
+        'On the fourth floor the shelving ran out, and the books continued along the skirting boards, then up the stairs, and finally into the lift, which no longer moved.',
+      ]
+      const blocks = texts.map((html, i) => ({ id: `stress-${i}`, type: 'paragraph', html }))
+      parsed.state.byProject[projectId] = {
+        chapters: [{ id: 'stress-chapter', title: 'Hard to Wrap', blocks }],
+        importedAt: new Date().toISOString(),
+        sourceFileName: 'stress.md',
+      }
+      parsed.state.revisionByProject = { ...(parsed.state.revisionByProject ?? {}), [projectId]: 2 }
+      localStorage.setItem('book-studio.content', JSON.stringify(parsed))
+      localStorage.removeItem('book-studio.block-styles')
+    })
+    await page.reload()
+    await page.waitForTimeout(4000)
+    await measureBook('hard to wrap')
 
 
     check(`no page errors throughout (${pageErrors.length})`, pageErrors.length === 0)

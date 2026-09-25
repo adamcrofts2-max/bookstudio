@@ -25,22 +25,46 @@ interface Word {
   italic?: boolean
   href?: string
   forceBreakAfter?: boolean
+  /**
+   * No whitespace between this piece and the previous one: a style change
+   * *inside* a word — `re<em>arrange</em>ment`. The pieces are one word, so
+   * they are drawn touching and never broken apart. Before Phase 181 each
+   * piece was its own word, and the PDF printed "re arrange ment".
+   */
+  joinsPrevious?: boolean
 }
 
 function tokenise(runs: TextRun[]): Word[] {
   const words: Word[] = []
+  // Whether the text so far ends in whitespace — what decides if the first
+  // word of the next run is a new word or the rest of the last one.
+  let endsInSpace = true
   for (const run of runs) {
     const parts = run.text.split('\n')
     parts.forEach((part, i) => {
-      for (const word of part.split(/\s+/).filter(Boolean)) {
-        words.push({ text: word, bold: run.bold, italic: run.italic, href: run.href })
+      for (const match of part.matchAll(/\S+/g)) {
+        const joinsPrevious = i === 0 && match.index === 0 && !endsInSpace && words.length > 0
+        words.push({ text: match[0], bold: run.bold, italic: run.italic, href: run.href, ...(joinsPrevious ? { joinsPrevious } : {}) })
       }
       if (i < parts.length - 1 && words.length > 0) {
         words[words.length - 1].forceBreakAfter = true
       }
+      if (i < parts.length - 1) endsInSpace = true
     })
+    if (run.text.length > 0) endsInSpace = /\s$/.test(run.text)
   }
   return words
+}
+
+/** Groups pieces joined without whitespace into the words a reader sees. */
+function toUnits(words: Word[]): Word[][] {
+  const units: Word[][] = []
+  for (const word of words) {
+    const last = units[units.length - 1]
+    if (word.joinsPrevious && last && !last[last.length - 1].forceBreakAfter) last.push(word)
+    else units.push([word])
+  }
+  return units
 }
 
 /** Optional extras for `wrapRuns` — every existing call site (there are
@@ -99,42 +123,52 @@ export function wrapRuns(
   maxWidth: number,
   options?: WrapRunsOptions,
 ): WrappedLine[] {
-  const words = tokenise(runs)
+  const units = toUnits(tokenise(runs))
   const spaceWidth = regularFont.widthOfTextAtSize(' ', size)
   const lines: WrappedLine[] = []
   let current: LineFragment[] = []
+  // Which word of the line each fragment belongs to — justification
+  // stretches the gaps *between words*, and a word may be several pieces.
+  let wordIndexOf: number[] = []
+  let wordsInLine = 0
   let x = 0
 
   const widthForLine = () => (lines.length === 0 ? (options?.firstLineWidth ?? maxWidth) : maxWidth)
 
   const pushLine = (isParagraphEnd: boolean) => {
-    if (options?.justify && !isParagraphEnd && current.length > 1) {
+    if (options?.justify && !isParagraphEnd && wordsInLine > 1) {
       const extraSpace = Math.max(0, widthForLine() - x)
-      const gaps = current.length - 1
-      const extraPerGap = extraSpace / gaps
+      const extraPerGap = extraSpace / (wordsInLine - 1)
       current.forEach((fragment, i) => {
-        fragment.x += extraPerGap * i
+        fragment.x += extraPerGap * wordIndexOf[i]
       })
     }
     lines.push({ fragments: current, width: x, isParagraphEnd })
     current = []
+    wordIndexOf = []
+    wordsInLine = 0
     x = 0
   }
 
-  for (const word of words) {
-    const font = fontFor(word, regularFont, boldFont, options)
-    const wordWidth = font.widthOfTextAtSize(word.text, size)
+  for (const unit of units) {
+    const widths = unit.map((piece) => fontFor(piece, regularFont, boldFont, options).widthOfTextAtSize(piece.text, size))
+    const unitWidth = widths.reduce((sum, w) => sum + w, 0)
     const needsSpace = current.length > 0
-    const widthWithSpace = wordWidth + (needsSpace ? spaceWidth : 0)
+    const widthWithSpace = unitWidth + (needsSpace ? spaceWidth : 0)
 
     if (x + widthWithSpace > widthForLine() && current.length > 0) {
       pushLine(false)
     }
-    const startX = x + (current.length > 0 ? spaceWidth : 0)
-    current.push({ text: word.text, bold: word.bold, italic: word.italic, href: word.href, x: startX, width: wordWidth })
-    x = startX + wordWidth
+    let pieceX = x + (current.length > 0 ? spaceWidth : 0)
+    unit.forEach((piece, i) => {
+      current.push({ text: piece.text, bold: piece.bold, italic: piece.italic, href: piece.href, x: pieceX, width: widths[i] })
+      wordIndexOf.push(wordsInLine)
+      pieceX += widths[i]
+    })
+    wordsInLine++
+    x = pieceX
 
-    if (word.forceBreakAfter) pushLine(true)
+    if (unit[unit.length - 1].forceBreakAfter) pushLine(true)
   }
   if (current.length > 0) pushLine(true)
   if (lines.length > 0) lines[lines.length - 1].isParagraphEnd = true

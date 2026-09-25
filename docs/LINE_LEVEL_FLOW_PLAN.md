@@ -1,6 +1,6 @@
 # Line-level text flow — design, cost, and why it isn't a phase
 
-**Status: designed, not built. Written 2026-09-06 (Phase 163).**
+**Status: milestone 1 shipped 2026-09-25 (Phase 181); milestones 2–4 designed, not built. Written 2026-09-06 (Phase 163).**
 
 Pagination is block-level: a paragraph moves to the next page whole rather
 than splitting mid-way. `docs/STATUS.md` has carried this under "Known
@@ -106,7 +106,16 @@ Four milestones, each shippable and verifiable on its own:
 4. **Widow and orphan control**, which only becomes possible once splitting
    exists, and which `docs/BOOK_LAYOUT_RULES.md` will want.
 
-Milestone 1 is a phase. Milestone 2 is a phase. Milestone 3 is not — it is
+**Milestone 1 — done (Phase 181).** `HeightMeasurer` publishes
+`blockLineTops` (every paragraph's line tops) into `exportStore` beside
+`blockHeights`; every PDF export compares each paragraph's `wrapRuns` line
+count with it (`PdfLineCheck`); and `pdfFidelity.e2e.mjs` asserts the same
+invariant independently, paragraph by paragraph, on three books including
+one written to be hard to wrap. Its first run found two real print bugs —
+italic in a family with no italic face was set in Times, and a style change
+inside a word printed as spaces — both fixed. It holds on all 24 paragraphs.
+
+Milestone 1 was a phase. Milestone 2 is a phase. Milestone 3 is not — it is
 a rewrite of how the canvas relates to pages, and it should not begin until
 1 and 2 have been living in the app long enough to trust the wrapping
 invariant.

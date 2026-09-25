@@ -1,7 +1,7 @@
 import { PDFDocument, type PDFPage } from 'pdf-lib'
 import fontkit from '@pdf-lib/fontkit'
 
-import type { ExportableLayout } from '@/store/exportStore'
+import type { ExportableLayout, PdfLineCheck, PdfLineMismatch } from '@/store/exportStore'
 import type { ContentBlock } from '@/types/content'
 import type { ProjectSettings } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
@@ -46,6 +46,18 @@ export interface DrawCtx {
    * `drawPdf` implementation reads it from `ctx.colorMode` rather than each
    * needing its own fallback. See `src/pdf/color.ts`'s `PdfColorMode`. */
   colorMode: PdfColorMode
+  /**
+   * Set by `drawBlock` for the duration of one block's `drawPdf`: a
+   * paragraph calls it with the number of lines `wrapRuns` gave it, so the
+   * exporter can compare that with the screen (`PdfLineCheck`, Phase 181).
+   * Optional — no other block type needs to know it exists.
+   */
+  reportLines?: (lineCount: number) => void
+}
+
+export interface ExportPdfOptions {
+  /** Receives the screen-vs-PDF line comparison once the file is built. */
+  onLineCheck?: (check: PdfLineCheck) => void
 }
 
 /**
@@ -86,6 +98,7 @@ async function drawBlock(
   dropCap: boolean,
   measuredHeightPx?: number,
   style?: BlockTypographyOverride,
+  reportLines?: (lineCount: number) => void,
 ) {
   const def = getBlockTypeDefinition(block.type)
   if (!def) return
@@ -95,7 +108,7 @@ async function drawBlock(
   // measured it with, so no `drawPdf` implementation has to know overrides
   // exist and none of the three can disagree about what one means
   // (Phase 171).
-  const blockCtx = style ? { ...ctx, theme: themeForBlock(ctx.theme, style) } : ctx
+  const blockCtx = { ...ctx, theme: style ? themeForBlock(ctx.theme, style) : ctx.theme, reportLines }
   await def.drawPdf(blockCtx, block, dropCap)
   ctx.cursorY = blockCtx.cursorY
   if (measuredHeightPx && measuredHeightPx > 0) {
@@ -129,7 +142,13 @@ function drawCropMarks(page: PDFPage, mediaWidth: number, mediaHeight: number, b
  * self-hosted fonts, and page geometry all derived from the same
  * deterministic pagination the on-screen preview uses.
  */
-export async function exportBookToPdf(layout: ExportableLayout, bookTitle: string, settings: ProjectSettings, projectId: string): Promise<Blob> {
+export async function exportBookToPdf(
+  layout: ExportableLayout,
+  bookTitle: string,
+  settings: ProjectSettings,
+  projectId: string,
+  options: ExportPdfOptions = {},
+): Promise<Blob> {
   const { pageBox, theme, toc } = layout
   const doc = await PDFDocument.create()
   doc.registerFontkit(fontkit)
@@ -162,6 +181,18 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
   const marginInnerPt = pageBox.marginInnerPx * PX_TO_PT
   const marginOuterPt = pageBox.marginOuterPx * PX_TO_PT
   const contentWidthPt = pageBox.contentWidthPx * PX_TO_PT
+
+  // Every paragraph's PDF line count against the screen's (Phase 181).
+  let paragraphsCompared = 0
+  const mismatches: PdfLineMismatch[] = []
+  const lineReporter = (blockId: string, pageNumber: number) => {
+    const screenLines = layout.blockLineTops?.[blockId]?.length
+    if (screenLines === undefined) return undefined
+    return (pdfLines: number) => {
+      paragraphsCompared++
+      if (pdfLines !== screenLines) mismatches.push({ blockId, pageNumber, screenLines, pdfLines })
+    }
+  }
 
   for (const page of layout.pages) {
     const pdfPage = doc.addPage([mediaWidth, mediaHeight])
@@ -258,10 +289,26 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
       }
       for (const block of page.blocks) {
         const isDropCap = block.type === 'paragraph' && theme.typography.dropCap && block === page.blocks.find((b) => b.type === 'paragraph')
-        await drawBlock(ctx, block, isDropCap, layout.blockHeights?.[block.id], layout.blockStyles?.[block.id])
+        await drawBlock(
+          ctx,
+          block,
+          isDropCap,
+          layout.blockHeights?.[block.id],
+          layout.blockStyles?.[block.id],
+          lineReporter(block.id, page.number),
+        )
       }
     } else if (page.kind === 'content') {
-      for (const block of page.blocks) await drawBlock(ctx, block, false, layout.blockHeights?.[block.id], layout.blockStyles?.[block.id])
+      for (const block of page.blocks) {
+        await drawBlock(
+          ctx,
+          block,
+          false,
+          layout.blockHeights?.[block.id],
+          layout.blockStyles?.[block.id],
+          lineReporter(block.id, page.number),
+        )
+      }
     }
 
     if (ctx.cursorY < contentBottom) {
@@ -275,6 +322,8 @@ export async function exportBookToPdf(layout: ExportableLayout, bookTitle: strin
     const numX = isRight ? mediaWidth - bleedPt - marginOuterPt - numFont.widthOfTextAtSize(numText, 9) : bleedPt + marginOuterPt
     pdfPage.drawText(numText, { x: numX, y: bleedPt + marginBottomPt * 0.4, size: 9, font: numFont, color: hexToPdfColor(theme.page.mutedInk, colorMode) })
   }
+
+  options.onLineCheck?.({ checkedAt: new Date().toISOString(), paragraphsCompared, mismatches })
 
   const bytes = await doc.save()
   return new Blob([bytes as BlobPart], { type: 'application/pdf' })

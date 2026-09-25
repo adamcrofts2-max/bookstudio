@@ -237,7 +237,12 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const canMergeWithPrevious = block.type === 'paragraph' && previousBlockInChapter?.type === 'paragraph'
 
     return (
-      <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group/block relative">
+      <div
+        key={block.id}
+        data-block-id={decorative ? undefined : block.id}
+        data-block-type={decorative ? undefined : block.type}
+        className="group/block relative"
+      >
         <BlockContent
           block={block}
           // The book's theme, or that block's own departure from it

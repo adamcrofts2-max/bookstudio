@@ -7,6 +7,7 @@ import { themeForBlock } from '@/theme/blockTheme'
 import type { BlockTypographyOverride } from '@/types/blockStyle'
 import { BlockContent } from '@/renderer/BlockContent'
 import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
+import { measureLineTops } from '@/renderer/lineMeasure'
 
 interface HeightMeasurerProps {
   chapters: Chapter[]
@@ -30,6 +31,14 @@ interface HeightMeasurerProps {
    * label + title) — see that key's own measurement below for why.
    */
   onMeasured: (heights: Record<string, number>) => void
+  /**
+   * Where each paragraph's lines start, in CSS px from the paragraph's top
+   * (Phase 181 — milestone 1 of `docs/LINE_LEVEL_FLOW_PLAN.md`). Paragraphs
+   * only: they are what a page break would split, and measuring every line
+   * of every block type would be cost with no consumer. Optional so a
+   * caller that only paginates pays nothing for it.
+   */
+  onLinesMeasured?: (lineTops: Record<string, number[]>) => void
 }
 
 /**
@@ -39,8 +48,18 @@ interface HeightMeasurerProps {
  * instead of guessing — the same `BlockContent` component used for real
  * pages is used here, so measurement and final render can never disagree.
  */
-function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, blockStyles, measureKey, onMeasured }: HeightMeasurerProps) {
+function HeightMeasurerImpl({
+  chapters,
+  contentWidthPx,
+  theme,
+  dropCapBlockIds,
+  blockStyles,
+  measureKey,
+  onMeasured,
+  onLinesMeasured,
+}: HeightMeasurerProps) {
   const refs = useRef(new Map<string, HTMLDivElement>())
+  const paragraphIds = useRef(new Set<string>())
 
   useLayoutEffect(() => {
     let cancelled = false
@@ -51,6 +70,14 @@ function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, 
         heights[id] = el.getBoundingClientRect().height
       })
       onMeasured(heights)
+      if (onLinesMeasured) {
+        const lineTops: Record<string, number[]> = {}
+        paragraphIds.current.forEach((id) => {
+          const el = refs.current.get(id)
+          if (el) lineTops[id] = measureLineTops(el)
+        })
+        onLinesMeasured(lineTops)
+      }
     }
 
     // Measure right away so layout isn't blocked on network fonts — but
@@ -131,7 +158,20 @@ function HeightMeasurerImpl({ chapters, contentWidthPx, theme, dropCapBlockIds, 
             </h1>
           </div>
           {chapter.blocks.map((block) => (
-            <div key={block.id} ref={(el) => { if (el) refs.current.set(block.id, el) }}>
+            <div
+              key={block.id}
+              ref={(el) => {
+                if (!el) return
+                refs.current.set(block.id, el)
+                if (block.type !== 'paragraph') return
+                paragraphIds.current.add(block.id)
+                // A deleted paragraph, or one converted to another type,
+                // must stop being measured as one.
+                return () => {
+                  paragraphIds.current.delete(block.id)
+                }
+              }}
+            >
               {/* The same per-block theme `Page.tsx` renders with, so a
                   block with an override is *measured* at the size it will
                   actually be drawn — otherwise pagination would reserve the

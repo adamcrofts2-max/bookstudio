@@ -115,6 +115,7 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
   const contentRevision = useContentStore((s) => s.revisionByProject[project.id] ?? 0)
 
   const [heights, setHeights] = useState<Record<string, number> | null>(null)
+  const [lineTops, setLineTops] = useState<Record<string, number[]>>({})
   const blockStyles = useBlockStyleStore((s) => s.byProject[project.id]) ?? EMPTY_BLOCK_STYLES
   // A per-block override changes how tall that block renders, so it has to
   // reach `measureKey` or the layout would keep the heights measured under
@@ -235,8 +236,10 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
 
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {}, blockStyles })
-  }, [pages, toc, pageBox, theme, heights, project.id, setExportLayout])
+    if (pages.length > 0) {
+      setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {}, blockStyles, blockLineTops: lineTops })
+    }
+  }, [pages, toc, pageBox, theme, heights, lineTops, project.id, setExportLayout])
 
   // Sidebar's chapter nav can't just scrollIntoView `[data-chapter-start]`
   // directly: LazySpread doesn't mount a spread's real pages until it's
@@ -329,6 +332,7 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
         blockStyles={blockStyles}
         measureKey={measureKey}
         onMeasured={setHeights}
+        onLinesMeasured={setLineTops}
       />
 
       {showThumbnails && pages.length > 0 && (

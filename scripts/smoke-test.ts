@@ -3174,5 +3174,115 @@ import { useVirtualEditorStore as useVeStoreForAi } from '../src/store/virtualEd
   check('ai store: deleting a project drops its read', useVeStoreForAi.getState().aiByProject['ai-store'] === undefined)
 }
 
+
+// --- Line-level flow, milestone 1 (Phase 181) ---
+// Per-line measurement, the screen-vs-PDF line check it enables, and the two
+// print bugs that check found on its first run.
+import { groupLineTops } from '../src/renderer/lineMeasure'
+import { SYNTHETIC_ITALIC_SKEW } from '../src/pdf/fonts'
+import type { PdfLineCheck } from '../src/store/exportStore'
+
+{
+  const tops = groupLineTops(
+    [
+      { top: 100, height: 22, width: 60 }, // line 1
+      { top: 100.5, height: 22, width: 30 }, // a bold run on line 1
+      { top: 98, height: 68, width: 40 }, // a drop cap, starting on line 1
+      { top: 126.4, height: 22, width: 200 }, // line 2
+      { top: 152.8, height: 22, width: 180 }, // line 3
+      { top: 152.8, height: 0, width: 0 }, // an empty fragment
+    ],
+    98,
+  )
+  check(`line measurement: fragments on one line are one line, and a drop cap is not a line (${tops.join(', ')})`, JSON.stringify(tops) === JSON.stringify([2, 28.4, 54.8]))
+  check('line measurement: no text, no lines', groupLineTops([], 0).length === 0)
+  const oneLineCap = groupLineTops([{ top: 98, height: 68, width: 40 }, { top: 100.5, height: 22, width: 200 }], 98)
+  check(`line measurement: a one-line paragraph with a drop cap is one line (${oneLineCap.join(', ')})`, oneLineCap.length === 1)
+
+  const mono = { widthOfTextAtSize: (t: string, s: number) => t.length * s * 0.5 }
+  const midWord = wrapRuns(
+    [
+      { text: 'a re', bold: false },
+      { text: 'arrange', bold: false, italic: true },
+      { text: 'ment b', bold: false },
+    ],
+    mono,
+    mono,
+    10,
+    1000,
+  )
+  const pieces = midWord[0]!.fragments
+  check(
+    `pdf wrap: a style change inside a word leaves no gap (${pieces.map((f) => `${f.text}@${f.x}`).join(' ')})`,
+    pieces[1]!.x + pieces[1]!.width === pieces[2]!.x && pieces[2]!.x + pieces[2]!.width === pieces[3]!.x,
+  )
+  // "rearrangement" is 13 characters (65pt); only the whole word may move.
+  const narrow = wrapRuns(
+    [
+      { text: 'ab re', bold: false },
+      { text: 'arrange', bold: true },
+      { text: 'ment', bold: false },
+    ],
+    mono,
+    mono,
+    10,
+    60,
+  )
+  check(
+    `pdf wrap: a word is never broken at a style change (${narrow.map((l) => l.fragments.map((f) => f.text).join('|')).join(' / ')})`,
+    narrow.length === 2 && narrow[1]!.fragments.map((f) => f.text).join('') === 'rearrangement',
+  )
+  const spaced = wrapRuns([{ text: 'one ', bold: false }, { text: 'two', bold: true }], mono, mono, 10, 1000)
+  check('pdf wrap: a run that starts after a space is still a new word', spaced[0]!.fragments[1]!.x > spaced[0]!.fragments[0]!.width)
+  const afterBreak = wrapRuns([{ text: 'end\n', bold: false }, { text: 'start', bold: true }], mono, mono, 10, 1000)
+  check('pdf wrap: a forced line break is never glued across', afterBreak.length === 2)
+  const justified = wrapRuns(
+    [
+      { text: 'aa bb re', bold: false },
+      { text: 'set', bold: true },
+      { text: ' cc dd ee ff gg hh', bold: false },
+    ],
+    mono,
+    mono,
+    10,
+    100,
+    { justify: true },
+  )
+  const first = justified[0]!.fragments
+  const re = first.find((f) => f.text === 're')!
+  const set = first.find((f) => f.text === 'set')!
+  check('pdf wrap: justification stretches the gaps between words, never inside one', Math.abs(re.x + re.width - set.x) < 1e-9)
+
+  check('pdf italic: a synthetic italic leans forward 14°', Math.abs(Math.tan((SYNTHETIC_ITALIC_SKEW as { angle: number }).angle * (Math.PI / 180)) - 0.2493) < 0.001)
+
+  // The exporter's line check, end to end on the real PDF pipeline.
+  const lineBook = parseMarkdown(
+    '# Lines\n\nA short paragraph.\n\nA paragraph long enough that it certainly wraps onto more than one line in a six by nine inch book, because it keeps going well past the measure of any sensible text column.\n',
+    'Lines',
+  )
+  const { pages: linePages, toc: lineToc } = paginate(lineBook, () => 40, testPageBox.contentHeightPx, testTheme.chapterOpener.topSpacer)
+  const paragraphIds = lineBook.flatMap((c) => c.blocks.filter((b) => b.type === 'paragraph').map((b) => b.id))
+  const runCheck = async (lineTops: Record<string, number[]>) => {
+    let result: PdfLineCheck | undefined
+    await exportBookToPdf(
+      { pages: linePages, toc: lineToc, pageBox: testPageBox, theme: { ...testTheme, typography: { ...testTheme.typography, dropCap: false } }, blockHeights: {}, blockStyles: {}, blockLineTops: lineTops },
+      'Lines',
+      DEFAULT_PROJECT_SETTINGS,
+      'lines-project',
+      { onLineCheck: (c) => (result = c) },
+    )
+    return result
+  }
+  const truthful = await runCheck({ [paragraphIds[0]!]: [0], [paragraphIds[1]!]: [0, 26, 52] })
+  const pdfLongLines = (truthful?.mismatches.find((m) => m.blockId === paragraphIds[1])?.pdfLines) ?? 3
+  check(`pdf line check: every paragraph drawn is compared (${truthful?.paragraphsCompared})`, truthful?.paragraphsCompared === 2)
+  check('pdf line check: a one-line paragraph agrees', !truthful?.mismatches.some((m) => m.blockId === paragraphIds[0]))
+  const wrong = await runCheck({ [paragraphIds[0]!]: [0, 26, 52, 78], [paragraphIds[1]!]: Array.from({ length: pdfLongLines }, (_, i) => i * 26) })
+  const flagged = wrong?.mismatches.find((m) => m.blockId === paragraphIds[0])
+  check(`pdf line check: a disagreement is reported with both counts (${JSON.stringify(flagged)})`, flagged?.screenLines === 4 && flagged.pdfLines === 1 && (flagged.pageNumber ?? 0) > 0)
+  const none = await runCheck({})
+  check('pdf line check: with nothing measured, nothing is claimed', none?.paragraphsCompared === 0 && none.mismatches.length === 0)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

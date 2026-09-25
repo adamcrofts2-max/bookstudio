@@ -36,7 +36,7 @@ import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
-import { pickFont, pickItalicFont } from '@/pdf/fonts'
+import { italicSkew, pickFont, pickItalicFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { tintHex } from '@/structuralPages/colorUtils'
@@ -381,6 +381,9 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   const titleFont = typography?.italic
     ? pickItalicFont(ctx.fonts, titleFontFamily, titleWeight)
     : pickFont(ctx.fonts, titleFontFamily, titleWeight)
+  // A family with no italic face is drawn as the upright face, slanted —
+  // as the browser draws it (see `italicSkew`).
+  const titleSkew = typography?.italic ? italicSkew(ctx.fonts, titleFontFamily) : undefined
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   // No "Untitled" fallback here (fixed Phase 49) — that placeholder is an
   // on-screen-only editing cue (see `EditableText`'s own `placeholder`
@@ -433,9 +436,9 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   if (title) {
     if (page.content.titlePosition) {
       const { x, y } = fieldPdfXY(page.content.titlePosition)
-      ctx.page.drawText(title, { x: x - titleWidth / 2, y: y - titleSize * 0.35, size: titleSize, font: titleFont, color: ink })
+      ctx.page.drawText(title, { x: x - titleWidth / 2, y: y - titleSize * 0.35, size: titleSize, font: titleFont, color: ink, ...(titleSkew ? { ySkew: titleSkew } : {}) })
     } else {
-      ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink })
+      ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink, ...(titleSkew ? { ySkew: titleSkew } : {}) })
     }
   }
 

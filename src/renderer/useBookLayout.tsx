@@ -63,6 +63,7 @@ export function useBookLayout(project: Project): BookLayout {
   }, [chapters, theme.typography.dropCap])
 
   const [heights, setHeights] = useState<Record<string, number> | null>(null)
+  const [lineTops, setLineTops] = useState<Record<string, number[]>>({})
   // Folding in the content revision is what makes an edit made elsewhere
   // actually repaginate rather than reusing stale cached heights.
   const blockStyles = useBlockStyleStore((s) => s.byProject[project.id]) ?? EMPTY_BLOCK_STYLES
@@ -104,8 +105,10 @@ export function useBookLayout(project: Project): BookLayout {
   // exported file identical to the preview.
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {}, blockStyles })
-  }, [pages, toc, pageBox, theme, heights, project.id, setExportLayout])
+    if (pages.length > 0) {
+      setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {}, blockStyles, blockLineTops: lineTops })
+    }
+  }, [pages, toc, pageBox, theme, heights, lineTops, project.id, setExportLayout])
 
   const measurer = (
     <HeightMeasurer
@@ -116,6 +119,7 @@ export function useBookLayout(project: Project): BookLayout {
       blockStyles={blockStyles}
       measureKey={measureKey}
       onMeasured={setHeights}
+      onLinesMeasured={setLineTops}
     />
   )
 
