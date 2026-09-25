@@ -1894,16 +1894,12 @@ Book Studio today and an actual multi-device Canva-style product.)*
       titles, body text and bold runs. It has to run in the browser suite —
       mammoth swaps its unzip implementation for the browser build, so
       `{ arrayBuffer }` is only valid input there
-- [ ] Fix/confirm the stray partially-installed `node_modules` artifact —
-      confirmed concretely in Phase 53 (2026-07-31): `@tailwindcss/node/dist/
-      index.mjs` is truncated mid-file (17,347 bytes, cuts off mid-string).
-      Re-confirmed 2026-08-03 by inspecting the file directly — this is a
-      real on-disk corruption in the live-mounted project, not sandbox-only,
-      which is why `vite build`'s config load and `oxlint`'s native binding
-      have never actually been verified working this whole project. No
-      registry access to `npm install` a repair from this sandbox — the fix
-      (`npm ci`) is written up in `docs/TERMINAL_SETUP.md` for the user to
-      run from their own terminal. Leave unchecked until confirmed fixed.
+- [x] The stray partially-installed `node_modules` artifact — confirmed fixed
+      2026-09-25 (Phase 180). `@tailwindcss/node/dist/index.mjs` is 54,924
+      bytes, ends on its export list and imports cleanly; `npm run build` and
+      `npm run lint` have passed on every commit since, and CI runs both on
+      every push. Original entry said: truncated mid-file (17,347 bytes), so
+      the build and lint had never been verified working
 - [x] Verify the exported PDF against the screen — shipped 2026-09-05 (Phase
       159), as geometry rather than pixels: there is no rasteriser in this
       environment, and comparing two text renderers' screenshots would measure
@@ -2048,14 +2044,15 @@ a gap to close later.)*
       which leaves tablets and short desktop windows exactly as they were
 - [x] Mobile "+" FAB had no accessible name (icon-only button) — fixed 2026-09-03
       (Phase 126)
-- [ ] Remaining live-verification owed:
-      resize-triggered shell switch, chapter-switcher sheet (including the
-      new add/rename/delete), inline edit of each of the six text-bearing
-      block types, the new per-block "⋮" menu, "Add photo" actually
-      triggering the OS picker, the new header Undo button, autosave firing
-      from mobile edits, and Ideas List/Board on a narrow viewport. See
-      STATUS.md Phase 95/100's verification caveats — Phase 100 additionally
-      hasn't even had a local `tsc` pass yet due to a sandbox VM outage.
+- [x] Remaining live-verification owed — done 2026-09-25 (Phase 180), on a
+      touch device. Inline edits of the text-bearing blocks, the "⋮" menu and
+      autosave were already covered by `mobileBlocks`/`writing`; the rest is
+      `mobileChrome.e2e.mjs`: the shell swaps both ways across the breakpoint
+      without losing text, the chapter sheet adds/renames/deletes, the header
+      Undo restores a deleted chapter, "Add photo" raises the OS file picker
+      for a single image, and Ideas List/Board fit a 412px screen. One real
+      bug found and fixed: the List/Board toggle was a 24px target on touch
+      (now 40px under `pointer: coarse`)
 - [x] Mobile book preview — shipped 2026-09-03 (Phase 127): a third bottom-tab
       surface showing the real paginated book read-only (chapter flow, front/back
       matter, running heads, folios, drop caps, generated Contents). Reuses

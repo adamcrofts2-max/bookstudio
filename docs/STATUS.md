@@ -12402,3 +12402,32 @@ that needs the author's key and should be the next thing anyone does with
 it. Books over ~600k characters are read as far as one request allows, and
 the panel says so. A read lives in memory only, like the report.
 
+## Phase 180 — closing two stale roadmap items honestly
+
+Two unchecked items looked finished. One was; the other was half done.
+
+**The corrupted `node_modules` file** (Phase 53: `@tailwindcss/node/dist/
+index.mjs` truncated at 17,347 bytes). It is 54,924 bytes now, ends on its
+export list, and `import('@tailwindcss/node')` resolves. Build and lint have
+passed on every commit for over a hundred phases and CI runs both. Closed.
+
+**Mobile "live verification owed"** (Phases 95/100). Reading the mobile
+suites against the list showed less coverage than assumed: inline block edits,
+the per-block "⋮" menu and autosave were covered; the resize switch, chapter
+rename/delete, header Undo, the photo picker and Ideas on a phone were not.
+`scripts/e2e/mobileChrome.e2e.mjs` covers them on a touch context:
+
+- a 1280px touch window gets the desktop shell, narrowing to 412px swaps to
+  the phone shell and back, and the manuscript is unchanged after both;
+- the chapter sheet adds, renames and deletes; delete has no confirmation on
+  a phone, so the header Undo is the safety net — and it restores the chapter;
+- "Add photo" raises a real `filechooser` event for a single image, and the
+  picked file becomes an image block;
+- two ideas captured on a phone appear in List and Board, neither view
+  overflows 412px.
+
+It found one bug: the List/Board toggle buttons were 24×24px — fine for a
+mouse, a poor target for a thumb. They grow to 40px under
+`[@media(pointer:coarse)]`, the pattern `coverElementLayer.tsx` already uses,
+so desktop is unchanged. The test measures it.
+

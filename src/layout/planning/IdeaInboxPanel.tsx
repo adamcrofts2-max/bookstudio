@@ -144,7 +144,9 @@ export function IdeaInboxPanel({ projectId, onOpenBookGraph }: IdeaInboxPanelPro
           <div className="flex shrink-0 items-center gap-2">
             {/* List/Board toggle — a plain segmented row, not a dropdown,
                since these are mutually-exclusive states someone will flip
-               between often. */}
+               between often. 24px suits a mouse; on a touch screen it was a
+               24px target for a thumb, so it grows to 40px there
+               (mobileChrome.e2e.mjs measures it). */}
             <div className="flex items-center gap-0.5 rounded-[var(--radius-button)] border border-border p-0.5">
               <button
                 type="button"
@@ -152,7 +154,7 @@ export function IdeaInboxPanel({ projectId, onOpenBookGraph }: IdeaInboxPanelPro
                 aria-label="List view"
                 title="List view"
                 className={cn(
-                  'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
+                  'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150 [@media(pointer:coarse)]:size-10',
                   view === 'list' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
                 )}
               >
@@ -164,7 +166,7 @@ export function IdeaInboxPanel({ projectId, onOpenBookGraph }: IdeaInboxPanelPro
                 aria-label="Board view"
                 title="Board view"
                 className={cn(
-                  'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150',
+                  'flex size-6 items-center justify-center rounded-[calc(var(--radius-button)-2px)] transition-colors duration-150 [@media(pointer:coarse)]:size-10',
                   view === 'board' ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]' : 'text-text-muted hover:bg-hover',
                 )}
               >
