@@ -1587,6 +1587,14 @@ Book Studio today and an actual multi-device Canva-style product.)*
       type sized in `cqw` so the same markup reads at both the dialog's 200px
       cards and the Inspector's 130px ones
 
+- [x] The canvas opens on one page — shipped 2026-09-25 (Phase 178). Fit
+      zoom made the spread visible but shrank a 6x9 page to 56% on a normal
+      laptop, which is a page you can look at, not one you can write on. One
+      page fits at 81-100%; the spread is one click away and still fits.
+      `pdfFidelity.e2e.mjs` now orders the pages it sweeps by canvas position
+      — with one page per row, the selected block's force-mounted page was
+      read out of order and compared against the wrong PDF page
+
 ## Phase J — Platform Hardening & Technical Debt
 
 - [x] Repair the test suite — shipped 2026-09-03 (Phase 125). `npm test` had been

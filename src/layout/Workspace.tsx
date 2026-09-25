@@ -53,7 +53,10 @@ function ViewControls() {
             {viewMode === 'spread' ? <Columns2 className="size-4 text-accent" /> : <SquareStack className="size-4" />}
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{viewMode === 'spread' ? 'Two-page spread' : 'Single page'}</TooltipContent>
+        {/* Names what a click will do, not what is on screen: with single
+            page now the default (Phase 178), "Single page" read as a
+            description of the current state and hid the spread entirely. */}
+        <TooltipContent>{viewMode === 'spread' ? 'Show one page at a time' : 'Show facing pages (two-page spread)'}</TooltipContent>
       </Tooltip>
 
       <div className="ml-auto flex items-center gap-1">
@@ -68,7 +71,7 @@ function ViewControls() {
             <button
               type="button"
               onClick={() => setZoomMode(zoomMode === 'fit' ? 'manual' : 'fit')}
-              aria-label={zoomMode === 'fit' ? 'Zoom to 100%' : 'Fit the spread to the window'}
+              aria-label={zoomMode === 'fit' ? 'Zoom to 100%' : 'Fit to the window'}
               className={cn(
                 'h-7 min-w-14 rounded-[var(--radius-button)] px-2 text-center text-xs tabular-nums transition-colors hover:bg-hover',
                 zoomMode === 'fit' ? 'text-accent' : 'text-text-secondary',
@@ -77,7 +80,11 @@ function ViewControls() {
               {zoomMode === 'fit' ? `Fit ${Math.round(appliedZoom * 100)}%` : `${Math.round(zoom * 100)}%`}
             </button>
           </TooltipTrigger>
-          <TooltipContent>{zoomMode === 'fit' ? 'Fitting the spread — click for 100%' : 'Click to fit the spread to the window'}</TooltipContent>
+          <TooltipContent>
+            {zoomMode === 'fit'
+              ? `Fitting the ${viewMode === 'spread' ? 'spread' : 'page'} to the window — click for 100%`
+              : `Click to fit the ${viewMode === 'spread' ? 'spread' : 'page'} to the window`}
+          </TooltipContent>
         </Tooltip>
         <Button variant="ghost" size="icon" onClick={() => setZoom((zoomMode === 'fit' ? appliedZoom : zoom) + 0.1)} aria-label="Zoom in">
           <Plus className="size-4" />

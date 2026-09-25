@@ -118,6 +118,8 @@ const READ_APP_PAGES = () => {
     const padBottom = flowStyle ? parseFloat(flowStyle.paddingBottom) || 0 : 0
     pages.push({
       id: el.id,
+      rectTop: pageRect.top,
+      rectLeft: pageRect.left,
       width: pageRect.width,
       height: pageRect.height,
       contentTop: flowRect ? flowRect.top - pageRect.top + padTop : null,
@@ -235,11 +237,21 @@ async function main() {
             if (scroller) scroller.scrollTop = position
           }, top)
           await page.waitForTimeout(900)
+          const scrolled = await page.evaluate(() => {
+            const scroller = [...document.querySelectorAll('div')].find((el) => el.scrollHeight > el.clientHeight + 400 && el.clientHeight > 400)
+            return scroller?.scrollTop ?? 0
+          })
           for (const candidate of await page.evaluate(READ_APP_PAGES)) {
-            if (!collected.some((p) => p.id === candidate.id)) collected.push(candidate)
+            if (!collected.some((p) => p.id === candidate.id)) collected.push({ ...candidate, canvasTop: candidate.rectTop + scrolled })
           }
         }
-        return collected
+        // Page order is canvas order, not first-seen order. They were the
+        // same while two pages shared a row, but in the single-page view
+        // (the default since Phase 178) the page holding the selected block
+        // is force-mounted ahead of the pages above it — the just-inserted
+        // figure's page was read before the page before it, and every image
+        // check compared against the wrong PDF page.
+        return collected.sort((a, b) => a.canvasTop - b.canvasTop || a.rectLeft - b.rectLeft)
       }
       const appPages = await sweep()
 

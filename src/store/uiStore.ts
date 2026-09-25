@@ -126,7 +126,15 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       sidebarCollapsed: false,
       inspectorCollapsed: false,
       inspectorTab: 'page',
-      viewMode: 'spread',
+      // Single page by default (Phase 178). The centre column is where a
+      // book gets *written*, and a fitted 6x9 spread on an ordinary laptop
+      // is 43% at 1280px and 56% at 1440px — a layout you can see and body
+      // type you can barely read. One page fits at 81% and 100% on the same
+      // windows. The spread is one click away in the view controls for the
+      // moment facing pages are what you are checking. Only affects people
+      // who have never chosen: the setting is persisted, so anyone who
+      // picked the spread keeps it.
+      viewMode: 'single',
       zoom: 1,
       zoomMode: 'fit',
       appliedZoom: 1,

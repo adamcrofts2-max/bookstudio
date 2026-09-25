@@ -12284,3 +12284,33 @@ card takes the height it is given. (Making the page a flex column also
 shrank the header to its content, bunching the logo and the buttons into
 the middle — `mx-auto` on a flex child overrides the default stretch. The
 header is `w-full` now.)
+
+## Phase 178 — open on one page
+
+Phase 174 fitted the spread to the window, which fixed a canvas you could
+not scroll back to the left of, and replaced it with a smaller problem that
+was still a problem: a 6x9 spread fitted into a 1280px laptop is a 56% page.
+You can see the book at that size. You cannot comfortably write in it, and
+writing is what the canvas is for.
+
+`uiStore.viewMode` now defaults to `'single'`. At fit zoom that is 81% on a
+1280px window and 100% on 1440px — type at, or near, the size it will print.
+The spread is still one click away in the view controls, still fits, and its
+tooltip says what it is for ("Show facing pages (two-page spread)"). A
+choice the user has already made persists as before; only the default
+changed.
+
+`canvasFit.e2e.mjs` asserts the new default at both widths, that the spread
+toggle still fits with no left overflow, that 100% is a real 576px page, and
+that a PDF exported from a fitted canvas is still 449x665pt.
+
+**A test that had been right by coincidence.** `pdfFidelity.e2e.mjs` sweeps
+the canvas and collects pages in first-seen order, which was page order
+while two pages shared a row. With one page per row the page holding the
+selected block — the figure the test had just inserted — is force-mounted
+by `LazySpread` before the page above it has scrolled into view, so the
+sweep read page 3 before page 2 and compared the figure against a PDF page
+with no image on it. The export was right; the ruler was wrong. Pages are
+now sorted by where they sit on the canvas, which is what "page order"
+meant all along.
+

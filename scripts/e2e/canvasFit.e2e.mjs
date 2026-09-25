@@ -28,7 +28,7 @@ const canvas = (page) =>
       const r = el.getBoundingClientRect()
       return { left: Math.round(r.left), right: Math.round(r.right), width: Math.round(r.width) }
     })
-    const readout = document.querySelector('button[aria-label*="Zoom to 100"], button[aria-label*="Fit the spread"]')
+    const readout = document.querySelector('button[aria-label*="Zoom to 100"], button[aria-label*="Fit to the window"]')
     return {
       pages,
       readout: readout?.textContent?.trim() ?? null,
@@ -88,8 +88,22 @@ for (const width of [1280, 1440]) {
     await newProjectWithChapter(page, { mobile: false })
     await page.waitForTimeout(1500)
 
+    // Single page is the default (Phase 178): a fitted spread on these
+    // windows is 43% and 56% — visible as a layout, hard to write in.
+    const opened = await canvas(page)
+    check(`${width}: the canvas opens in Fit (${opened.readout})`, /^Fit \d+%$/.test(opened.readout ?? ''))
+    const openedPercent = Number(opened.readout?.match(/(\d+)%/)?.[1] ?? 0)
+    check(`${width}: it opens on one page, at a size you can write in (${openedPercent}%)`, openedPercent >= 80)
+    check(
+      `${width}: the page fits with nothing to scroll (${opened.scrollWidth} in ${opened.clientWidth})`,
+      opened.scrollWidth <= opened.clientWidth + 1,
+    )
+
+    // Facing pages are one click away, and fit too.
+    await page.getByRole('button', { name: /toggle spread view/i }).click()
+    await page.waitForTimeout(1200)
     const fitted = await canvas(page)
-    check(`${width}: the canvas opens in Fit (${fitted.readout})`, /^Fit \d+%$/.test(fitted.readout ?? ''))
+    check(`${width}: the spread re-fits (${fitted.readout})`, /^Fit \d+%$/.test(fitted.readout ?? ''))
     check(
       `${width}: the spread fits with nothing to scroll (${fitted.scrollWidth} wide in ${fitted.clientWidth})`,
       fitted.scrollWidth <= fitted.clientWidth + 1,
@@ -99,9 +113,9 @@ for (const width of [1280, 1440]) {
       Math.min(...fitted.pages.map((p) => p.left)) >= fitted.containerLeft - 1,
     )
 
-    // 100% is a choice, and at these widths it genuinely overflows — the
-    // point is that every part of it can still be reached, which is what
-    // `justify-center` on a scroll container quietly prevents.
+    // 100% is a choice, and for a spread at these widths it genuinely
+    // overflows — the point is that every part of it can still be reached,
+    // which is what `justify-center` on a scroll container quietly prevents.
     await page.getByRole('button', { name: /zoom to 100%/i }).click()
     await page.waitForTimeout(900)
     const actual = await canvas(page)
@@ -116,20 +130,6 @@ for (const width of [1280, 1440]) {
     check(
       `${width}: the overflowing left page can be scrolled back into view (${Math.min(...scrolledLeft.pages.map((p) => p.left))})`,
       Math.min(...scrolledLeft.pages.map((p) => p.left)) >= scrolledLeft.containerLeft - 1,
-    )
-
-    // Back to Fit, then a single page — which at these widths fits at full
-    // size, so the spread toggle is a real answer to a narrow window and
-    // not just a different way to be cut off.
-    await page.getByRole('button', { name: /fit the spread/i }).click()
-    await page.waitForTimeout(700)
-    await page.getByRole('button', { name: /toggle spread view/i }).click()
-    await page.waitForTimeout(1200)
-    const single = await canvas(page)
-    check(`${width}: single-page view re-fits (${single.readout})`, /^Fit \d+%$/.test(single.readout ?? ''))
-    check(
-      `${width}: and still fits with nothing to scroll (${single.scrollWidth} in ${single.clientWidth})`,
-      single.scrollWidth <= single.clientWidth + 1,
     )
 
     check(`${width}: no page errors (${pageErrors.join('; ') || 'none'})`, pageErrors.length === 0)
