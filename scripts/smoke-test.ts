@@ -3001,5 +3001,178 @@ check(
   check('neither checker claims to have run without front matter to read', !bookPartsChecker.isApplicable?.(noPages) && !bookDetailsChecker.isApplicable?.(noPages))
 }
 
+
+// --- Virtual Editor: the AI editorial read (Phase 179) ---
+// Everything except the network: prompt building, anchoring the model's
+// findings to real text, mechanical fixes, merging and the store's run /
+// cancel / error flow. The transport is a canned reply, so no key is needed
+// and nothing is spent.
+import {
+  buildAiReviewRequest,
+  parseAiReview,
+  revalidateAiFindings,
+  createAiReviewer,
+  AI_REVIEW_CATEGORIES,
+} from '../src/virtualEditor/aiReviewer'
+import { mergeAiReview } from '../src/virtualEditor/pipeline'
+import type { AiReviewer as AiReviewerType, AiReviewResult as AiReviewResultType } from '../src/virtualEditor/types'
+import type { VerseBlock } from '../src/types/content'
+import { useVirtualEditorStore as useVeStoreForAi } from '../src/store/virtualEditorStore'
+
+{
+  const aiBook: Manuscript = {
+    chapters: [
+      {
+        id: 'ai-ch1',
+        title: 'The "Harbour"',
+        order: 0,
+        blocks: [
+          { id: 'ai-h1', type: 'heading', level: 1, text: 'The Harbour' } as HeadingBlock,
+          { id: 'ai-p1', type: 'paragraph', html: 'It was a dark and stormy night, and <em>nobody</em> came.' } as ParagraphBlock,
+          { id: 'ai-p2', type: 'paragraph', html: 'Tom &amp; Jerry walked to the harbour’s edge.' } as ParagraphBlock,
+          { id: 'ai-p3', type: 'paragraph', html: 'The boat was red. The boat was red.' } as ParagraphBlock,
+        ],
+      },
+      {
+        id: 'ai-ch2',
+        title: 'Tide',
+        order: 1,
+        blocks: [
+          { id: 'ai-p4', type: 'paragraph', html: 'Morning came slowly over the water.' } as ParagraphBlock,
+          { id: 'ai-v1', type: 'verse', lines: ['The tide goes out', '', 'the tide comes in'] } as VerseBlock,
+        ],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'ai-fixture.md',
+  }
+
+  const request = buildAiReviewRequest({ manuscript: aiBook })
+  check('ai request: every block with text gets a key, in reading order', request.keys.get('b1')?.blockId === 'ai-h1' && request.keys.get('b2')?.blockId === 'ai-p1' && request.keys.get('b6')?.blockId === 'ai-v1')
+  check('ai request: chapters get their own keys', request.keys.get('c2')?.chapterId === 'ai-ch2' && request.keys.get('c2')?.blockId === undefined)
+  check('ai request: the prompt carries the text, not the HTML', request.prompt.includes('[b2] It was a dark and stormy night, and nobody came.') && !request.prompt.includes('<em>'))
+  check('ai request: chapter titles are escaped as attributes', request.prompt.includes('title="The &quot;Harbour&quot;"'))
+  check('ai request: coverage is the whole book when it fits', request.coverage.chaptersRead === 2 && request.coverage.chaptersTotal === 2 && request.coverage.wordsRead > 20)
+  check('ai request: the schema limits categories to what judgement scores', JSON.stringify(request.schema).includes('"developmental"') && !JSON.stringify(request.schema).includes('"layout"'))
+
+  const tight = buildAiReviewRequest({ manuscript: aiBook }, 150)
+  check('ai request: a book too long for one read says how far it got', tight.coverage.chaptersRead < 2 && tight.prompt.includes('too long for one read'))
+
+  const reply = (findings: unknown[], summary = 'A promising opening.') => JSON.stringify({ summary, findings })
+  const base = { severity: 'minor', confidence: 'high', issueType: 'cliche', message: 'A stock opening line.', whyItMatters: 'Readers have seen it before.', replacement: '' }
+
+  const parsed = parseAiReview(
+    reply([
+      { ...base, category: 'copyEditing', location: 'b2', excerpt: 'a dark and stormy night', replacement: 'a black, gale-torn night' },
+      { ...base, category: 'copyEditing', location: 'b3', excerpt: "harbour's edge", replacement: 'water’s edge', issueType: 'Curly Quotes' },
+      { ...base, category: 'readability', location: 'b2', excerpt: 'Tom & Jerry walked', replacement: 'Tom and Jerry <walked>' },
+      { ...base, category: 'consistency', location: 'b4', excerpt: 'The boat was red.', replacement: 'The boat was blue.' },
+      { ...base, category: 'developmental', location: 'c2', excerpt: '', message: 'Chapter two has no conflict.' },
+      { ...base, category: 'copyEditing', location: 'b6', excerpt: 'the tide comes in', replacement: 'the tide returns' },
+      { ...base, category: 'copyEditing', location: 'b2', excerpt: 'words that are not in the book' },
+      { ...base, category: 'copyEditing', location: 'b99', excerpt: 'Morning came slowly' },
+      { ...base, category: 'layout', location: 'b5', excerpt: 'Morning came slowly' },
+    ]),
+    request,
+    aiBook,
+  )
+  const [stormy, curly, reanchored, twice, chapterLevel, verse] = parsed.findings
+  check('ai parse: valid findings survive, invented ones are dropped and counted', parsed.findings.length === 6 && parsed.discarded === 3)
+  check('ai parse: findings are marked as AI, with the quoted excerpt', stormy?.source === 'ai' && stormy.excerpt === 'a dark and stormy night' && stormy.location.blockId === 'ai-p1')
+  check('ai parse: high confidence maps to 0.9', stormy?.confidence === 0.9)
+  check('ai parse: summary comes through', parsed.summary === 'A promising opening.' && parsed.categories.length === AI_REVIEW_CATEGORIES.length)
+  const p1 = aiBook.chapters[0]!.blocks[1]!
+  const stormyPatch = stormy?.suggestedFix?.apply(p1) as Partial<ParagraphBlock> | undefined
+  check('ai fix: replaces the quoted words and keeps the markup around them', stormyPatch?.html === 'It was a black, gale-torn night, and <em>nobody</em> came.')
+  check('ai parse: a straight apostrophe still finds a curly one', curly?.location.blockId === 'ai-p2' && curly.issueType === 'ai-curly-quotes')
+  const p2 = aiBook.chapters[0]!.blocks[2]!
+  check('ai fix: works across quote styles', (curly?.suggestedFix?.apply(p2) as Partial<ParagraphBlock>)?.html === 'Tom &amp; Jerry walked to the water’s edge.')
+  check('ai parse: a quote cited against the wrong block follows its words', reanchored?.location.blockId === 'ai-p2')
+  check('ai fix: HTML entities match, and the replacement is escaped', (reanchored?.suggestedFix?.apply(p2) as Partial<ParagraphBlock>)?.html === 'Tom and Jerry &lt;walked&gt; to the harbour’s edge.')
+  check('ai parse: words that occur twice are flagged but not auto-fixed', twice !== undefined && twice.suggestedFix === undefined)
+  check('ai parse: a chapter-level finding has no block', chapterLevel?.location.chapterId === 'ai-ch2' && chapterLevel.location.blockId === undefined && chapterLevel.excerpt === undefined)
+  const v1 = aiBook.chapters[1]!.blocks[1]!
+  check('ai fix: verse lines can be fixed line by line', JSON.stringify((verse?.suggestedFix?.apply(v1) as Partial<VerseBlock>)?.lines) === JSON.stringify(['The tide goes out', '', 'the tide returns']))
+  check('ai fix: a fix whose words have gone does nothing', Object.keys(stormy?.suggestedFix?.apply({ ...p1, html: 'Rewritten entirely.' } as ParagraphBlock) ?? { x: 1 }).length === 0)
+
+  let threw = false
+  try {
+    parseAiReview('Sorry, here is some prose instead.', request, aiBook)
+  } catch {
+    threw = true
+  }
+  check('ai parse: a reply that is not the JSON asked for is an error, not an empty report', threw)
+
+  const edited: Manuscript = {
+    ...aiBook,
+    chapters: aiBook.chapters.map((c, i) =>
+      i === 0 ? { ...c, blocks: c.blocks.map((b) => (b.id === 'ai-p1' ? { ...b, html: 'Rain fell.' } as ParagraphBlock : b)) } : c,
+    ),
+  }
+  const stillValid = revalidateAiFindings(parsed.findings, edited)
+  check('ai revalidate: a finding whose words were rewritten is dropped', stillValid.length === parsed.findings.length - 1 && !stillValid.some((f) => f.id === stormy?.id))
+
+  const aiResult: AiReviewResultType = { ...parsed, generatedAt: new Date().toISOString() }
+  const deterministic = runPipeline('ai-project', aiBook)
+  const merged = mergeAiReview(deterministic, aiResult, aiBook)
+  check('ai merge: Claude\'s findings count toward their category', (merged.categoryScores.developmental?.findingCount ?? 0) === (deterministic.categoryScores.developmental?.findingCount ?? 0) + 1)
+  check('ai merge: every category the read covers is scored', AI_REVIEW_CATEGORIES.every((c) => merged.categoryScores[c] !== null))
+  check('ai merge: deterministic findings are kept alongside', merged.findings.filter((f) => f.source !== 'ai').length === deterministic.findings.filter((f) => f.source !== 'ai').length && merged.findings.filter((f) => f.source === 'ai').length === 6)
+  const mergedTwice = mergeAiReview(merged, aiResult, aiBook)
+  check('ai merge: merging the same read twice changes nothing', mergedTwice.findings.length === merged.findings.length && mergedTwice.overallScore === merged.overallScore)
+  check('ai merge: the report records what the read covered', merged.ai?.coverage.chaptersRead === 2 && merged.ai.summary === 'A promising opening.')
+  const rerun = mergeAiReview(runPipeline('ai-project', edited), aiResult, edited)
+  check('ai merge: a later deterministic re-run keeps only findings that still fit', rerun.findings.filter((f) => f.source === 'ai').length === 5)
+
+  // The reviewer, end to end through a fake transport.
+  let sentSchema: unknown = null
+  let sentPrompt = ''
+  const progressSeen: string[] = []
+  const reviewer = createAiReviewer(async (req, { onProgress }) => {
+    sentSchema = req.schema
+    sentPrompt = req.prompt
+    onProgress?.({ phase: 'thinking', receivedChars: 0 })
+    onProgress?.({ phase: 'writing', receivedChars: 40 })
+    return reply([{ ...base, category: 'commercial', location: 'b2', excerpt: 'nobody came' }], 'Strong.')
+  })
+  const run = await reviewer.run({ manuscript: aiBook }, { onProgress: (p) => progressSeen.push(p.phase) })
+  check('ai reviewer: sends the schema and the book', sentSchema !== null && sentPrompt.includes('[b4] The boat was red.'))
+  check('ai reviewer: reports progress as it goes', progressSeen.join(',') === 'thinking,writing')
+  check('ai reviewer: returns anchored findings with a timestamp', run.findings.length === 1 && run.findings[0]!.category === 'commercial' && !Number.isNaN(Date.parse(run.generatedAt)))
+
+  // The store: run, error, cancel.
+  const ve = useVeStoreForAi.getState()
+  const okReviewer: AiReviewerType = { id: 't', label: 't', categories: AI_REVIEW_CATEGORIES, run: async () => aiResult }
+  await ve.runAiReview('ai-store', okReviewer, { manuscript: aiBook })
+  const afterRun = useVeStoreForAi.getState()
+  check('ai store: a read with no report yet builds one and merges into it', afterRun.aiByProject['ai-store']?.status === 'done' && afterRun.reportsByProject['ai-store']?.ai !== undefined && (afterRun.reportsByProject['ai-store']?.findings.some((f) => f.source === 'ai') ?? false))
+
+  const failing: AiReviewerType = { ...okReviewer, run: async () => { throw new Error('Anthropic did not accept this API key.') } }
+  await ve.runAiReview('ai-store', failing, { manuscript: aiBook })
+  const afterFail = useVeStoreForAi.getState().aiByProject['ai-store']
+  check('ai store: a failed read says why and keeps the previous read', afterFail?.status === 'error' && afterFail.message.includes('API key') && afterFail.result === aiResult)
+
+  const hanging: AiReviewerType = {
+    ...okReviewer,
+    run: (_ctx, options) =>
+      new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')))),
+  }
+  const pending = ve.runAiReview('ai-cancel', hanging, { manuscript: aiBook })
+  check('ai store: a read in flight shows as running', useVeStoreForAi.getState().aiByProject['ai-cancel']?.status === 'running')
+  ve.cancelAiReview('ai-cancel')
+  await pending
+  check('ai store: stopping a first read leaves nothing behind', useVeStoreForAi.getState().aiByProject['ai-cancel'] === undefined)
+
+  const aiFixable = useVeStoreForAi.getState().reportsByProject['ai-store']?.findings.find((f) => f.source === 'ai' && f.suggestedFix)
+  useVeStoreForAi.getState().fixAll('ai-store')
+  check('ai store: Fix All never applies an AI rewording', aiFixable !== undefined && useVeStoreForAi.getState().getFindingStatus('ai-store', aiFixable.id) === 'new')
+
+  ve.runReview('ai-store', aiBook)
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  check('ai store: re-running the free review keeps the paid read', useVeStoreForAi.getState().reportsByProject['ai-store']?.ai !== undefined)
+  ve.clearProject('ai-store')
+  check('ai store: deleting a project drops its read', useVeStoreForAi.getState().aiByProject['ai-store'] === undefined)
+}
+
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

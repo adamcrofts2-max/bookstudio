@@ -7,9 +7,9 @@
  * that's the concrete, structural half of "market readiness" this codebase
  * can check deterministically. The subjective half — cover design quality,
  * blurb persuasiveness — stays out of scope for a deterministic checker and
- * is exactly the kind of judgement call `docs/VIRTUAL_EDITOR.md` earmarks
- * for a future real `AiReviewer`, not something faked here with a heuristic
- * that can't actually judge writing quality.
+ * is judgement, which belongs to the editorial read (`aiReviewer.ts`), not
+ * to a heuristic here that can't actually judge writing quality. (That read
+ * sees the manuscript today, not the cover or the blurb.)
  */
 
 import type { Checker, CheckerContext, Finding } from '@/virtualEditor/types'

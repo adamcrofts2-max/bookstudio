@@ -12314,3 +12314,91 @@ with no image on it. The export was right; the ruler was wrong. Pages are
 now sorted by where they sit on the canvas, which is what "page order"
 meant all along.
 
+## Phase 179 — the editorial read
+
+The Virtual Editor has had an `AiReviewer` interface since Phase 13 and eleven
+`createNullAiReviewer` stubs that always said "unavailable". The deterministic
+checkers are good at what can be counted; none of them can say that a
+chapter circles, that a narrator slips out of point of view, or that an
+opening line is the most famous cliché in English. That is now one button:
+**Ask Claude to read it**.
+
+**What it is.** `createAiReviewer(transport)` in `src/virtualEditor/aiReviewer.ts`
+— one reviewer, one request for the whole book, five categories
+(`AI_REVIEW_CATEGORIES`: developmental, copyEditing, readability,
+consistency, commercial). The other seven stay deterministic; they are
+measurements, and a model's guess would only blur numbers that are currently
+exact. The eleven stubs are gone.
+
+**The request.** `buildAiReviewRequest` is pure. Every block with text is
+prefixed with a short key (`[b12]`), every chapter gets one (`c3`), and the
+book's kind and house style go in a details section before the manuscript;
+the instructions come after it. The prompt tells Claude what the automatic
+checks already cover so it does not spend the author's money repeating them,
+asks for at most 40 findings, most important first, and says plainly that an
+empty list is a good answer when it is true. The reply is constrained by a
+JSON schema (`AI_REVIEW_SCHEMA`, sent as `output_config.format`).
+
+**The transport.** `src/ai/claudeReviewTransport.ts` is the only file that
+knows about keys or the SDK: Claude Opus 5, adaptive thinking, streamed (a
+whole-book read takes minutes; the panel shows "reading" and then characters
+received), `stop_reason` checked for `refusal` and `max_tokens`, and every
+typed SDK error — 401, 403, 429, 400, 5xx, connection, abort — turned into a
+sentence an author can act on ("Anthropic did not accept this API key. Check
+it in AI settings."). The Virtual Editor layer receives a transport and never
+imports the settings store.
+
+**Anchoring, the part that makes it trustworthy.** `parseAiReview` checks
+every finding against the key table and the manuscript. Unknown key,
+category outside the five, or a quote that is not in the cited block: dropped
+and counted (`discarded`), and the panel says "1 left out because they quoted
+words that aren't in the book" rather than hiding it. A quote cited against
+the wrong block but present in exactly one other block of the same chapter is
+re-anchored there — the commonest slip. `excerptPattern` tolerates straight
+vs curly quotes, whitespace runs and HTML entities, because the model sees
+text and paragraphs are stored as HTML.
+
+**Fixes.** Offered only when Claude supplies a replacement and its quote
+occurs exactly once in one field of the block. `apply` recomputes at click
+time and returns `{}` if the words have gone; `acceptFix` now records no
+revision for an empty patch. Replacements are HTML-escaped for paragraph
+fields; markup around the quote is kept. Verse lines became patchable
+(`textPatch.ts` learned `lines[i]`) on the way. AI fixes are excluded from
+"Fix All" and "Fix all in …" (`isBulkFixable`): a mechanical fix is safe in
+bulk, a rewording of the author's sentence is not.
+
+**Merging.** `runPipeline` stays synchronous and now records
+`deterministicCategories`; `mergeAiReview` adds the AI findings (re-validated
+against the current manuscript), marks its categories analysed and rescores.
+It is idempotent. `virtualEditorStore.runAiReview` merges into whichever
+report is current when the read *finishes* (the author may have re-run the
+free review meanwhile), builds one first if there is none, keeps existing
+finding decisions, and `runReview` folds the last read back into every
+free re-run — so a paid read is not thrown away by a click, and a finding
+whose sentence was rewritten disappears instead of pointing at nothing. A
+failed read keeps the previous one; a stopped first read leaves nothing
+behind; deleting the project drops it.
+
+**The panel.** `AiReviewPanel.tsx`, between the coverage line and the score
+tiles. Without a key it explains what a read is for and offers "Connect
+Claude" (the existing AI settings dialog). With one, it says what will be
+sent — "the whole chapter (593 words) to Anthropic with your key" — before
+anything is. Below 400 words it declines to spend money on a paragraph.
+Findings carry a "Claude" badge and the quoted words.
+
+**Tests.** 38 unit assertions in `scripts/smoke-test.ts` against a canned
+transport (keys, escaping, coverage and truncation, every drop rule,
+re-anchoring, quote/entity tolerance, fixes including verse and escaping,
+revalidation, merge idempotence, the store's run/error/cancel/re-run/delete
+flow, Fix All exclusion). `scripts/e2e/aiReview.e2e.mjs` runs the real app
+against a stubbed `api.anthropic.com` SSE stream with a thinking block, and
+asserts the request itself — model, adaptive thinking, JSON schema, streaming,
+the keyed manuscript, the author's key — plus the in-flight state, the
+summary, the discarded count, the fix landing in the manuscript, survival
+across a free re-run, and a 401 explained.
+
+**Not yet done.** It has not been run against the live API with a real key —
+that needs the author's key and should be the next thing anyone does with
+it. Books over ~600k characters are read as far as one request allows, and
+the panel says so. A read lives in memory only, like the report.
+

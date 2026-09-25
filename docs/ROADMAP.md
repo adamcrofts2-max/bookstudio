@@ -656,10 +656,25 @@ daily use of everything built so far.)*
 - [x] Commercial Quality checker — see STATUS.md Phase 36
 - [x] Developmental checker — see STATUS.md Phase 36
 - [x] Field-guide checker — see STATUS.md Phase 36
-- [ ] Real `AiReviewer` (LLM-backed judgement calls, currently a null stub) —
-      deliberately deferred, see docs/STATUS.md Phase 37's note
+- [x] Real `AiReviewer` — shipped 2026-09-25 (Phase 179). "Editorial read by
+      Claude" in the Virtual Editor: one explicitly requested, bring-your-own-key
+      read of the whole book (Claude Opus 5, adaptive thinking, structured
+      output, streamed) scoring developmental, grammar, readability,
+      consistency and commercial. Every finding is anchored to quoted text or
+      dropped; a fix is offered only for an exact, unique quote and is never
+      bulk-applied; a paid read survives free re-runs, re-checked against the
+      current text. Unit-tested and covered end to end against a stubbed API
+- [ ] Verify the editorial read against the live API with a real key and a
+      real manuscript — the prompt, the finding quality and the anchoring rate
+      (`discarded`) have only been exercised against canned replies
+- [ ] Editorial read for books longer than one request (~600k characters):
+      today it reads the opening chapters and says so; a chapter-batched read
+      with a book-level synthesis pass would cover the whole thing
+- [ ] Keep an editorial read across a reload — in memory only today because
+      findings carry `apply` functions; persisting the parsed reply and
+      re-parsing it against the current manuscript would work
 - [ ] AI Learning — a personal editorial profile that adapts to accepted/rejected fixes —
-      deliberately deferred alongside the above (depends on it)
+      now unblocked by the real reviewer above
 - [x] Original / RevA / RevB / RevC side-by-side revision compare view —
       see STATUS.md Phase 38
 - [x] Persist revision log across a reload — see STATUS.md Phase 37. Reports/

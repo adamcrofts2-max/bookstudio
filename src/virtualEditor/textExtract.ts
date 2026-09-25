@@ -34,7 +34,8 @@ export function extractTextSpans(manuscript: Manuscript): TextSpan[] {
   return spans
 }
 
-function blockTextSpans(chapterId: string, block: ContentBlock): TextSpan[] {
+/** The spans of one block — see `extractTextSpans`. */
+export function blockTextSpans(chapterId: string, block: ContentBlock): TextSpan[] {
   switch (block.type) {
     case 'heading':
       return [{ chapterId, blockId: block.id, field: 'text', text: block.text }]

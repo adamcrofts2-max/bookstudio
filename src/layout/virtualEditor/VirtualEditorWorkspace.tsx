@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Loader2, RefreshCcw, Sparkles, Wand2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -8,17 +8,18 @@ import { useExportStore } from '@/store/exportStore'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
 import { EMPTY_LAYER0_BIBLE, useLayer0Store } from '@/store/layer0Store'
-import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorStore'
+import { EMPTY_REVISIONS, isBulkFixable, useVirtualEditorStore } from '@/store/virtualEditorStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { SCORE_TILES } from '@/virtualEditor/scoring'
 import { blockPlainText } from '@/virtualEditor/textExtract'
 import { wordCount, formatTimestamp } from '@/utils/format'
 import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
-import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
+import type { CheckerContext, Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
 import { FindingRow, formatCategory } from '@/layout/virtualEditor/FindingRow'
 import { RevisionCompareView } from '@/layout/virtualEditor/RevisionCompareView'
+import { AiReviewPanel } from '@/layout/virtualEditor/AiReviewPanel'
 import type { Revision } from '@/store/virtualEditorStore'
 import type { Project } from '@/types'
 
@@ -87,6 +88,22 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
 
+  // Everything a review reads, assembled here for the same layer-separation
+  // reason as `runReview`'s arguments below. Only called on a click (or to
+  // state what a read would cover), never on every render.
+  const buildAiContext = useCallback(
+    (): CheckerContext => ({
+      manuscript: manuscript ?? { chapters: [], importedAt: '', sourceFileName: '' },
+      styleGuide: project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE,
+      pages: layout?.pages,
+      project,
+      structuralPages,
+      assets,
+      layer0Bible,
+    }),
+    [manuscript, project, layout, structuralPages, assets, layer0Bible],
+  )
+
   const chapterTitleById = useMemo(() => {
     const map = new Map<string, string>()
     manuscript?.chapters.forEach((c) => map.set(c.id, c.title))
@@ -103,7 +120,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   )
 
   const fixableCount = activeFindings.filter(
-    (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
+    (f) => isBulkFixable(f) && (findingStatuses?.[f.id] ?? 'new') === 'new',
   ).length
 
   // Group findings by category, preserving each category's first-seen
@@ -265,6 +282,12 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
           </p>
         )}
 
+        <AiReviewPanel
+          projectId={project.id}
+          buildContext={buildAiContext}
+          enoughWritten={reviewedWords >= ENOUGH_WORDS_TO_JUDGE}
+        />
+
         <section className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {SCORE_TILES.map((tile) => {
             const categoryEntry = tile.key === 'overall' ? undefined : report?.categoryScores[tile.key]
@@ -328,7 +351,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             <div className="flex flex-col gap-6">
               {findingsByCategory.map(([category, findings]) => {
                 const categoryFixableCount = findings.filter(
-                  (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
+                  (f) => isBulkFixable(f) && (findingStatuses?.[f.id] ?? 'new') === 'new',
                 ).length
                 return (
                   <div key={category} className="flex flex-col gap-3">
@@ -347,7 +370,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                         onClick={() => fixCategory(project.id, category)}
                       >
                         <Wand2 className="size-3.5" />
-                        Fix all in {formatCategory(category)}
+                        Fix all in {formatCategory(category).toLowerCase()}
                       </Button>
                     </div>
                     <div className="flex flex-col gap-3">

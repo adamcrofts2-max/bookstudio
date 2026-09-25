@@ -78,11 +78,16 @@ src/virtualEditor/
     publishingStandards.ts 3 real checkers reading real pagination output (Phase 25)
     layout.ts              2 real checkers reading real pagination output (Phase 25)
     index.ts               ALL_CHECKERS registry
-  aiReviewer.ts          AiReviewer interface stub + NullAiReviewer instances for
-                        every category that doesn't have a real checker yet
+  aiReviewer.ts          the editorial read: builds the request (keyed manuscript,
+                        prompt, JSON schema), parses and anchors the reply,
+                        re-validates old findings; talks to no network itself
   scoring.ts             severity → score-deduction weights, category/overall
                         aggregation, SCORE_TILES (the 11 dashboard tiles)
-  pipeline.ts            runPipeline(projectId, manuscript) -> EditorialReport
+  pipeline.ts            runPipeline(projectId, manuscript) -> EditorialReport;
+                        mergeAiReview(report, aiResult, manuscript)
+
+src/ai/claudeReviewTransport.ts   the AiReviewTransport the app uses: the
+                                   author's key, @anthropic-ai/sdk, streaming
 
 src/store/virtualEditorStore.ts   Zustand store: reports, finding statuses,
                                    revision log, acceptFix/restoreRevision
@@ -91,6 +96,8 @@ src/layout/virtualEditor/
   VirtualEditorWorkspace.tsx      the Editorial Dashboard (new workspace)
   ScoreCard.tsx                   one score tile
   FindingRow.tsx                  one finding + its action buttons
+  AiReviewPanel.tsx               "Editorial read by Claude": connect / read /
+                                  progress / stop / summary / error
 ```
 
 ## The hybrid AI workflow
@@ -103,21 +110,47 @@ LLM and hope." Two kinds of check, one pipeline:
    consistency of literal strings — anything with a correct, checkable answer.
    Fast, free, 100% reproducible, and the user can always see exactly why a
    finding fired (see `checkers/proofreading.ts` for six real ones).
-2. **`AiReviewer` (model-backed, asynchronous — designed, not built).**
-   Developmental editing judgement, readability/reading-age estimation, design
-   critique, "does this chapter opener feel weak," contextual style learning.
-   These need judgement a regex can't provide, so they're reserved for a model.
-   `aiReviewer.ts` defines the interface and registers a `NullAiReviewer` stub
-   per unimplemented category — always `isAvailable() === false`, always
-   returns `[]`. This is what lets the dashboard say "Not yet analysed" instead
-   of fabricating a number, and it means adding a real AI module later is a
-   drop-in: implement `AiReviewer`, register it, done.
+2. **`AiReviewer` (model-backed, asynchronous — real since Phase 179).**
+   Developmental judgement, clarity, pacing, consistency of story facts, and
+   whether an opening earns its reader. One reviewer, `createAiReviewer` in
+   `aiReviewer.ts`, reads the whole book in a single request and returns
+   findings in five categories (`AI_REVIEW_CATEGORIES`: developmental,
+   copyEditing, readability, consistency, commercial). Layout, typography,
+   print, accessibility and proofreading stay deterministic — they are
+   measurable, and a model's guess would only blur numbers that are exact.
 
-`runPipeline` today only runs `ALL_CHECKERS` (synchronous). Once a real
-`AiReviewer` exists, `runPipeline` becomes `async`: run every `Checker` first
-(instant), then `await` every *available* `AiReviewer` and merge their findings
-in. That's an isolated change to one function — nothing else in the app needs to
-know the pipeline became partly asynchronous.
+How the two halves meet:
+
+- **The AI read never runs on its own.** "Review Entire Book" is free and runs
+  only `ALL_CHECKERS`, synchronously, as before. The editorial read spends the
+  author's money on their own key, so it runs only from the "Ask Claude to read
+  it" button in `AiReviewPanel.tsx`, which says what will be sent and to whom
+  before it is pressed.
+- **Every finding is anchored to real text.** The model sees each block
+  prefixed with a key (`[b12]`) and must quote the exact words it means. The
+  parser drops (and counts, as `discarded`) any finding whose key is unknown or
+  whose quote is not in the block; a quote cited against the neighbouring block
+  is re-anchored to the one block of that chapter that really contains it.
+  Matching tolerates straight/curly quotes, whitespace runs and HTML entities.
+- **A fix is offered only when it is mechanical.** When the model supplies a
+  replacement and its quote occurs exactly once in one field of the block,
+  "Fix" swaps those words and nothing else — recomputed at click time, a no-op
+  if the words have gone — through the ordinary revision-logged `acceptFix`.
+  AI fixes are excluded from "Fix All" (`isBulkFixable`): a rewording is
+  accepted one at a time or not at all.
+- **A paid read survives a free re-run.** `virtualEditorStore` keeps the last
+  read (`aiByProject`) and `mergeAiReview` folds it into every new
+  deterministic report, re-validating each finding against the manuscript as
+  it is now so a rewritten sentence's finding disappears instead of pointing
+  at nothing.
+- **This layer never touches a network.** The reviewer is handed an
+  `AiReviewTransport`; the app's is `src/ai/claudeReviewTransport.ts`
+  (Claude Opus 5, adaptive thinking, structured output via
+  `output_config.format`, streamed, typed SDK errors turned into sentences an
+  author can act on). Tests hand it a canned reply.
+- **Long books are read as far as one request allows** (`AI_REVIEW_MAX_CHARS`,
+  about 150k tokens) and the panel states the coverage — "the first 18 of 24
+  chapters" — rather than implying a complete read.
 
 ## Review pipeline
 
@@ -189,7 +222,7 @@ The middle column below is generated by reading the `label` of every rule in
 `src/virtualEditor/checkers/`. If it drifts from that directory again it is
 wrong, and the directory is right.
 
-| Category (dashboard label) | Real today — every rule that ships | Reserved for a real `AiReviewer` |
+| Category (dashboard label) | Real today — every rule that ships | Judgement — for the AI read (Phase 179 covers developmental, grammar, readability, consistency and commercial) |
 |---|---|---|
 | **Proofreading** | Double spaces · repeated words · unmatched quotation marks · unmatched brackets · missing terminal punctuation · straight-vs-curly quote consistency · spelling (dictionary-backed) | Dash and ellipsis consistency, spacing around punctuation, broken links, malformed URLs |
 | **Grammar** (`copyEditing`) | Heading capitalisation style (only when `styleGuide.headingCapitalisation` is set) · serial (Oxford) comma | Sentence flow, awkward wording, passive voice, overly long sentences, inconsistent terminology, italic species names |
@@ -222,9 +255,9 @@ the honest-by-construction behaviour `ScoreCard.tsx` was built for, and it is
 the only reason a tile is ever blank today.
 
 What none of this covers is judgement, which is exactly what the right-hand
-column is: the deterministic rules find what is *checkable*, and a real
-`AiReviewer` (still `createNullAiReviewer` in `aiReviewer.ts`) is what would
-find what is merely *wrong*. See § The hybrid AI workflow.
+column is: the deterministic rules find what is *checkable*, and the editorial
+read (`createAiReviewer` in `aiReviewer.ts`, Phase 179) finds what is merely
+*wrong* in the five categories it covers. See § The hybrid AI workflow.
 
 ## Publishing Standards & Layout checkers (Phase 25)
 
@@ -479,8 +512,8 @@ was written and the paragraph was simply never corrected — fixed here.
 ## Future extensibility
 
 `AiReviewer` is the seam every future AI module plugs into — implement the
-interface, register it in place of the matching `NullAiReviewer` stub, and
-`runPipeline` picks it up once it becomes async (see § Hybrid AI Workflow). This
+interface, hand it a transport, and merge its result the way `mergeAiReview`
+merges the editorial read (see § The hybrid AI workflow). This
 is intentionally the same shape for every future module the product spec names as
 "design for, don't build yet":
 
@@ -495,8 +528,7 @@ is intentionally the same shape for every future module the product spec names a
 - Diagram generation
 - Image generation
 
-None of these are stubbed individually (unlike the 11 editorial categories, which
-already have `NullAiReviewer` placeholders) because they aren't part of the
+None of these are stubbed individually because they aren't part of the
 Virtual Editor's own taxonomy — they're separate future services that would
 plug into the same layer boundary: read Project/Content/Theme/Layout output,
 never mutate it directly, report through the same `Finding`-like structure (or
@@ -516,7 +548,7 @@ revision log) generalise to them too.
 | 3 publishing-standards checkers (sparse chapter endings, empty chapters, consecutive blank pages) | **Real** (Phase 25), tested in `scripts/smoke-test.ts` — need `CheckerContext.pages` (real pagination output); honestly `null` ("Not yet analysed") when the manuscript view hasn't rendered yet this session. No widow/orphan detection (already prevented by `paginate.ts`'s construction, not a gap), no page-numbering-uniqueness check (structural pages make it a non-finding once correctly excluded), no true whitespace/fill-ratio measurement (no per-block rendered height on `LaidOutPage`) |
 | 2 layout checkers (inconsistent image sizing, image density imbalance) | **Real** (Phase 25), tested in `scripts/smoke-test.ts` — same `ctx.pages` dependency and honest-`null` behaviour as above. No visual-imbalance/image-placement/whitespace-hierarchy checks beyond image count and size |
 | `CheckerContext.pages` + `Checker.isApplicable` | **Real** (Phase 25) — `pipeline.ts`'s `analysedCategories` only counts a category as analysed when a checker is actually applicable to the context run, not merely registered; defaults to "always applicable" so every pre-Phase-25 checker is unaffected |
-| `AiReviewer` interface | **Real** (interface only — `NullAiReviewer` is the only implementation) |
+| `AiReviewer` — the editorial read by Claude | **Real** (Phase 179) — five categories, bring-your-own-key, run only on request; request building, anchoring, fixes, merge and the store flow in `scripts/smoke-test.ts`, the whole flow against a stubbed API in `scripts/e2e/aiReview.e2e.mjs`. Not yet verified against the live API by the project (needs the author's own key) |
 | Score aggregation (category + overall) | **Real** |
 | Editorial Dashboard UI, 11 score tiles | **Real** — all 11 show a real number for a review run with `ctx.pages` present; Publishing Quality and Layout are the only two that can read "Not yet analysed", and only when it isn't (corrected Phase 160) |
 | Review Entire Book pipeline | **Real** (synchronous, deterministic-only) |

@@ -97,7 +97,8 @@ export interface Finding {
   /** 0–1. Deterministic checkers use this to express certainty (e.g. a
    * mismatched bracket count is 1.0 certain; "paragraph doesn't end in
    * punctuation" is softer because some sentences legitimately don't).
-   * AI-sourced findings (future) will carry the model's own estimate. */
+   * AI-sourced findings carry the model's own high/medium/low estimate,
+   * mapped to 0.9/0.7/0.5 in `aiReviewer.ts`. */
   confidence: number
   location: FindingLocation
   /** What is wrong, in one sentence. */
@@ -105,6 +106,11 @@ export interface Finding {
   /** Why it matters to a reader/publisher — required, never omitted. */
   whyItMatters: string
   suggestedFix?: SuggestedFix
+  /** The exact words the finding is about, quoted from the manuscript.
+   * AI findings always carry one (it is how a finding is anchored and
+   * re-checked after the text changes); deterministic checkers leave it
+   * out, because their `message` already names what they matched. */
+  excerpt?: string
   /** Where this finding came from — surfaced in the UI so the hybrid
    * approach stays honest and legible, per CLAUDE.md. */
   source: 'deterministic' | 'ai'
@@ -190,21 +196,60 @@ export interface Checker {
 }
 
 /**
- * The "reserve AI for higher-level judgement" half of the hybrid approach.
- * Not implemented in this milestone — no real network/LLM call exists yet.
- * `NullAiReviewer` in `aiReviewer.ts` is the only implementation today, and
- * it always reports itself unavailable so the dashboard can honestly show
- * "Not yet analysed" instead of a fabricated score. Future modules
- * (developmental editing critique, readability judgement, design critique,
- * contextual style learning) implement this same interface.
+ * The "reserve AI for higher-level judgement" half of the hybrid approach
+ * (docs/STATUS.md Phase 179). One reviewer reads the whole book in a single
+ * request and returns findings across the categories only judgement can
+ * score — pacing, structure, clarity, whether an opening earns a reader.
+ *
+ * It is never run automatically. A deterministic review costs nothing; an AI
+ * read costs the author real money on their own key, so it happens only
+ * when they ask for it (`virtualEditorStore.runAiReview`).
+ *
+ * The reviewer knows nothing about keys, SDKs or networks — it is handed an
+ * `AiReviewTransport` (see `aiReviewer.ts`), which is what keeps this layer
+ * testable without a model and free of the AI settings store.
  */
 export interface AiReviewer {
   id: string
-  category: IssueCategory
   label: string
-  description: string
-  isAvailable: () => boolean
-  run: (ctx: CheckerContext) => Promise<Finding[]>
+  /** Every category this reviewer scores. A category it covers counts as
+   * analysed once a read completes, even if it found nothing there. */
+  categories: IssueCategory[]
+  run: (ctx: CheckerContext, options?: AiReviewRunOptions) => Promise<AiReviewResult>
+}
+
+export interface AiReviewRunOptions {
+  signal?: AbortSignal
+  /** Called as the reply streams in. `phase` is `thinking` until the first
+   * word of the actual answer arrives. */
+  onProgress?: (progress: AiReviewProgress) => void
+}
+
+export interface AiReviewProgress {
+  phase: 'thinking' | 'writing'
+  /** Characters of the answer received so far (0 while thinking). */
+  receivedChars: number
+}
+
+/** How much of the book the model was actually shown — stated in the UI,
+ * because "Claude read your book" is a lie if it read half of it. */
+export interface AiReviewCoverage {
+  chaptersRead: number
+  chaptersTotal: number
+  wordsRead: number
+}
+
+export interface AiReviewResult {
+  generatedAt: string
+  /** The model's overall read of the book, in its own words. */
+  summary: string
+  findings: Finding[]
+  categories: IssueCategory[]
+  coverage: AiReviewCoverage
+  /** Findings the model returned that pointed at text that does not exist
+   * (an unknown block, a misquoted excerpt) and were dropped rather than
+   * shown. Surfaced so a bad read is visible, not silent. */
+  discarded: number
 }
 
 /**
@@ -250,6 +295,13 @@ export interface EditorialReport {
   /** Mean of analysed category scores only — see scoring.ts. `null` if
    * nothing has been analysed at all. */
   overallScore: number | null
+  /** The categories the deterministic checkers could analyse this run —
+   * kept so an AI read can be merged in (and later re-merged against a
+   * fresh deterministic run) without losing which categories were scored
+   * by which half. */
+  deterministicCategories: IssueCategory[]
+  /** Present when an AI read has been merged into this report. */
+  ai?: Omit<AiReviewResult, 'findings'>
 }
 
 /** The user's decision on a single finding. `new` is the initial state
