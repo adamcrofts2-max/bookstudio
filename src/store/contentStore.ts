@@ -27,7 +27,10 @@ interface ContentStoreState {
 
 interface ContentStoreActions {
   setManuscript: (projectId: string, manuscript: Manuscript) => void
-  clearManuscript: (projectId: string) => void
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getManuscript: (projectId: string) => Manuscript | undefined
   /** The current content revision for a project — 0 if never touched. */
   getRevision: (projectId: string) => number
@@ -158,11 +161,13 @@ export const useContentStore = create<ContentStoreState & ContentStoreActions>()
           revisionByProject: { ...state.revisionByProject, [projectId]: (state.revisionByProject[projectId] ?? 0) + 1 },
         })),
 
-      clearManuscript: (projectId) =>
+      clearProject: (projectId) =>
         set((state) => {
           const next = { ...state.byProject }
           delete next[projectId]
-          return { byProject: next }
+          const nextRevisions = { ...state.revisionByProject }
+          delete nextRevisions[projectId]
+          return { byProject: next, revisionByProject: nextRevisions }
         }),
 
       getManuscript: (projectId) => get().byProject[projectId],

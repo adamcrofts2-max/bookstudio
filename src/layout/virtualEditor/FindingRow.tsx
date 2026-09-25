@@ -7,8 +7,8 @@ import type { Finding, FindingStatus } from '@/virtualEditor/types'
 
 const SEVERITY_STYLE: Record<Finding['severity'], string> = {
   critical: 'bg-danger text-danger-foreground',
-  major: 'bg-danger/15 text-danger',
-  minor: 'bg-warning/15 text-warning',
+  major: 'bg-danger/15 text-danger-ink',
+  minor: 'bg-warning/15 text-warning-ink',
   suggestion: 'bg-background-secondary text-text-secondary',
 }
 
@@ -64,12 +64,20 @@ export function FindingRow({
         </span>
         <span className="text-xs uppercase tracking-wide text-text-muted">{formatCategory(finding.category)}</span>
         <span className="text-xs text-text-muted">· {Math.round(finding.confidence * 100)}% confidence</span>
+        {finding.source === 'ai' && (
+          <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">Claude</span>
+        )}
         <button type="button" onClick={onLocate} className="ml-auto text-xs font-medium text-accent hover:underline">
           {chapterTitle} →
         </button>
       </div>
 
       <p className="text-sm font-medium text-text-primary">{finding.message}</p>
+      {finding.excerpt && (
+        <blockquote className="border-l-2 border-border pl-3 font-serif text-sm italic text-text-secondary">
+          {finding.excerpt}
+        </blockquote>
+      )}
       <p className="text-xs text-text-secondary">
         <span className="font-medium text-text-primary">Why it matters: </span>
         {finding.whyItMatters}

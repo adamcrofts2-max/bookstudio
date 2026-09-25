@@ -1,15 +1,28 @@
-import { useLayoutEffect, useRef } from 'react'
+import { memo, useLayoutEffect, useRef } from 'react'
+import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 
 import type { Chapter } from '@/types/content'
 import type { ResolvedBookTheme } from '@/theme/presets'
+import { themeForBlock } from '@/theme/blockTheme'
+import type { BlockTypographyOverride } from '@/types/blockStyle'
 import { BlockContent } from '@/renderer/BlockContent'
 import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
+import { measureLineTops } from '@/renderer/lineMeasure'
 
 interface HeightMeasurerProps {
   chapters: Chapter[]
   contentWidthPx: number
   theme: ResolvedBookTheme
   dropCapBlockIds: Set<string>
+  /**
+   * Per-block typographic overrides (Phase 171), so a block with one is
+   * measured at the size it will be drawn at. Passed rather than read from
+   * the store here, because this component is memoised on props and a
+   * measurement that silently ignored a prop change would be worse than no
+   * memo at all — `measureKey` carries a signature of these for the same
+   * reason it carries the content revision.
+   */
+  blockStyles: Record<string, BlockTypographyOverride>
   /** Recomputed whenever any of these change; identity-stable between. */
   measureKey: string
   /**
@@ -18,6 +31,14 @@ interface HeightMeasurerProps {
    * label + title) — see that key's own measurement below for why.
    */
   onMeasured: (heights: Record<string, number>) => void
+  /**
+   * Where each paragraph's lines start, in CSS px from the paragraph's top
+   * (Phase 181 — milestone 1 of `docs/LINE_LEVEL_FLOW_PLAN.md`). Paragraphs
+   * only: they are what a page break would split, and measuring every line
+   * of every block type would be cost with no consumer. Optional so a
+   * caller that only paginates pays nothing for it.
+   */
+  onLinesMeasured?: (lineTops: Record<string, number[]>) => void
 }
 
 /**
@@ -27,8 +48,18 @@ interface HeightMeasurerProps {
  * instead of guessing — the same `BlockContent` component used for real
  * pages is used here, so measurement and final render can never disagree.
  */
-export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockIds, measureKey, onMeasured }: HeightMeasurerProps) {
+function HeightMeasurerImpl({
+  chapters,
+  contentWidthPx,
+  theme,
+  dropCapBlockIds,
+  blockStyles,
+  measureKey,
+  onMeasured,
+  onLinesMeasured,
+}: HeightMeasurerProps) {
   const refs = useRef(new Map<string, HTMLDivElement>())
+  const paragraphIds = useRef(new Set<string>())
 
   useLayoutEffect(() => {
     let cancelled = false
@@ -39,6 +70,14 @@ export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockId
         heights[id] = el.getBoundingClientRect().height
       })
       onMeasured(heights)
+      if (onLinesMeasured) {
+        const lineTops: Record<string, number[]> = {}
+        paragraphIds.current.forEach((id) => {
+          const el = refs.current.get(id)
+          if (el) lineTops[id] = measureLineTops(el)
+        })
+        onLinesMeasured(lineTops)
+      }
     }
 
     // Measure right away so layout isn't blocked on network fonts — but
@@ -89,22 +128,56 @@ export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockId
           <div key={`opener-${chapter.id}`} ref={(el) => { if (el) refs.current.set(`opener:${chapter.id}`, el) }}>
             {getChapterNumberLabel(theme, chapterIndex) !== null && (
               <p
-                className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
-                style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
+                className="font-medium uppercase"
+                style={{
+                  // `chapterOpenerMetrics.ts` — shared with Page.tsx and the
+                  // PDF exporter, which all have to agree.
+                  fontSize: CHAPTER_OPENER.label.fontPx,
+                  lineHeight: `${CHAPTER_OPENER.label.lineHeightPx}px`,
+                  paddingBottom: CHAPTER_OPENER.label.afterPx,
+                  letterSpacing: `${CHAPTER_OPENER.label.letterSpacingEm}em`,
+                  color: theme.page.accent,
+                  fontFamily: theme.fonts.heading,
+                }}
               >
                 {getChapterNumberLabel(theme, chapterIndex)}
               </p>
             )}
             <h1
-              className="pb-10 text-4xl"
-              style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+              className=""
+              style={{
+                fontSize: CHAPTER_OPENER.title.fontPx,
+                lineHeight: `${CHAPTER_OPENER.title.lineHeightPx}px`,
+                paddingBottom: CHAPTER_OPENER.title.afterPx,
+                fontFamily: theme.fonts.heading,
+                fontWeight: theme.typography.headingWeight,
+                color: theme.page.ink,
+              }}
             >
               {chapter.title}
             </h1>
           </div>
           {chapter.blocks.map((block) => (
-            <div key={block.id} ref={(el) => { if (el) refs.current.set(block.id, el) }}>
-              <BlockContent block={block} theme={theme} dropCap={dropCapBlockIds.has(block.id)} />
+            <div
+              key={block.id}
+              ref={(el) => {
+                if (!el) return
+                refs.current.set(block.id, el)
+                if (block.type !== 'paragraph') return
+                paragraphIds.current.add(block.id)
+                // A deleted paragraph, or one converted to another type,
+                // must stop being measured as one.
+                return () => {
+                  paragraphIds.current.delete(block.id)
+                }
+              }}
+            >
+              {/* The same per-block theme `Page.tsx` renders with, so a
+                  block with an override is *measured* at the size it will
+                  actually be drawn — otherwise pagination would reserve the
+                  theme's height for it and the page would over- or
+                  under-fill (Phase 171). */}
+              <BlockContent block={block} theme={themeForBlock(theme, blockStyles[block.id])} dropCap={dropCapBlockIds.has(block.id)} />
             </div>
           ))}
         </div>
@@ -112,3 +185,23 @@ export function HeightMeasurer({ chapters, contentWidthPx, theme, dropCapBlockId
     </div>
   )
 }
+
+/**
+ * Memoised, because this renders every block in the book off-screen and
+ * nothing above it should be able to make it do that again for free.
+ *
+ * Honest scope: this was tried first as a fix for the structural-page freeze
+ * and it barely moved the number (4,340ms -> 3,986ms on a 1,700-block book).
+ * The freeze was an unbounded DOM, not React render work — see
+ * `LazySpread.tsx` for the measurements that settled it. This stays because
+ * re-rendering a thousand `BlockContent` subtrees on a parent render that
+ * cannot change a single measured height is still waste, not because it is
+ * what fixed anything.
+ *
+ * Every prop here is already reference-stable between real changes —
+ * `manuscript.chapters`, a memoised `pageBox`, `resolveTheme`'s cached
+ * object, a memoised Set, a string, and `setHeights` — so the default
+ * shallow comparison is exactly right, and measurement still reruns whenever
+ * `measureKey` or the content width genuinely change.
+ */
+export const HeightMeasurer = memo(HeightMeasurerImpl)

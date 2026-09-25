@@ -15,6 +15,7 @@ import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 function ImageRender(props: BlockRenderProps) {
   const { block, theme, selected, onSelect, onCommit, autoEdit, editable, onAutoEditHandled } = props
@@ -69,7 +70,12 @@ function ImageRender(props: BlockRenderProps) {
   }
 
   return (
-    <figure onClick={onSelect} className={cn(wrapperClass, 'cursor-pointer pb-5')}>
+    <figure
+      onClick={onSelect}
+      className={cn(wrapperClass, 'cursor-pointer')}
+      // Paired with `drawImagePdf` below — `blocks/blockSpacing.ts`.
+      style={{ paddingBottom: BLOCK_SPACING.image.after }}
+    >
       <div
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -176,7 +182,7 @@ async function drawImagePdf(ctx: DrawCtx, block: ContentBlock) {
     ctx.cursorY -= capSize
     ctx.page.drawText(block.caption, { x: imageX, y: ctx.cursorY, size: capSize, font: pickFont(ctx.fonts, theme.fonts.body, 400), color: muted })
   }
-  ctx.cursorY -= 10
+  ctx.cursorY -= BLOCK_SPACING.image.after * PX_TO_PT
 }
 
 export const imageBlockType: BlockTypeDefinition = {

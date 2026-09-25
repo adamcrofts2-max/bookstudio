@@ -13,6 +13,7 @@ export type ContentBlockType =
   | 'list'
   | 'table'
   | 'quote'
+  | 'verse'
   | 'pull-quote'
   | 'callout'
   | 'case-study'
@@ -111,6 +112,33 @@ export interface QuoteBlock {
   type: 'quote'
   text: string
   attribution?: string
+}
+
+/**
+ * Poetry, song lyrics, epigraphs in verse — anything whose line breaks are
+ * the author's and must survive to print exactly as written. Added in Phase
+ * 167 because EPUB import had nowhere to put verse: real EPUBs mark it up as
+ * a line group (`epub:type="z3998:verse"`, `<div class="line">`, `<pre>`),
+ * and this app flattened every one of those into a paragraph each, which
+ * kept the line breaks by accident and lost the fact that they were
+ * deliberate. A justified, auto-wrapped paragraph is the one thing verse
+ * must never become.
+ *
+ * `lines` is plain text, one entry per line, matching `ListBlock.items` —
+ * verse carries no inline formatting through import today, and a plain
+ * string is what lets the PDF exporter place each line at a known baseline
+ * without an HTML round trip. An **empty entry is a stanza break**, which is
+ * how the form already writes itself down: a blank line between stanzas.
+ *
+ * No `attribution` field, deliberately. `QuoteBlock` and `PullQuoteBlock`
+ * both have one and either is the right block for an attributed excerpt;
+ * verse inside a chapter is the author's own, and a field that is almost
+ * always empty is a field that gets filled in wrongly.
+ */
+export interface VerseBlock {
+  id: string
+  type: 'verse'
+  lines: string[]
 }
 
 /**
@@ -256,6 +284,7 @@ export type ContentBlock = (
   | ListBlock
   | TableBlock
   | QuoteBlock
+  | VerseBlock
   | PullQuoteBlock
   | CalloutBlock
   | CaseStudyBlock

@@ -16,10 +16,24 @@ export interface AiProvider {
   /** Hands the assembled prompt off to the user's own AI workflow.
    * `ClipboardProvider` copies it to the clipboard and returns immediately
    * — there is no response to wait for here; the AI's reply comes back
-   * later through a separate paste-response-back flow (a further Phase F
-   * item, not part of this one), matching `docs/AI_WORKSPACE_VISION.md`'s
-   * "bible sync must be a reviewable diff, never automatic" decision. */
+   * later through the paste-response-back flow, matching
+   * `docs/AI_WORKSPACE_VISION.md`'s "bible sync must be a reviewable diff,
+   * never automatic" decision. */
   sendPrompt: (text: string) => Promise<void>
+  /**
+   * Asks the model directly and returns its reply, streaming as it arrives.
+   *
+   * Optional because the clipboard provider genuinely cannot do it: there is
+   * no round trip, only a hand-off. A provider that omits this is used
+   * exactly as before.
+   *
+   * The reply is deliberately returned as **the same text a user would have
+   * pasted back by hand**, not applied to anything. Removing the copy-paste
+   * step is the whole point of an API provider; removing the *review* step
+   * would quietly break the rule the whole AI workspace is built on — the
+   * bible is never edited without a diff the author accepted.
+   */
+  requestResponse?: (text: string, onDelta: (chunk: string) => void, signal?: AbortSignal) => Promise<string>
 }
 
 /**

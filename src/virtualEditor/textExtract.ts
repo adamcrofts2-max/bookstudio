@@ -34,7 +34,8 @@ export function extractTextSpans(manuscript: Manuscript): TextSpan[] {
   return spans
 }
 
-function blockTextSpans(chapterId: string, block: ContentBlock): TextSpan[] {
+/** The spans of one block — see `extractTextSpans`. */
+export function blockTextSpans(chapterId: string, block: ContentBlock): TextSpan[] {
   switch (block.type) {
     case 'heading':
       return [{ chapterId, blockId: block.id, field: 'text', text: block.text }]
@@ -47,6 +48,12 @@ function blockTextSpans(chapterId: string, block: ContentBlock): TextSpan[] {
           ? [{ chapterId, blockId: block.id, field: 'attribution', text: block.attribution }]
           : []),
       ]
+    case 'verse':
+      // One span per line, so a spelling fix lands on the line it belongs
+      // to. Stanza breaks are empty and carry nothing to check.
+      return block.lines.flatMap((line, i) =>
+        line.trim() === '' ? [] : [{ chapterId, blockId: block.id, field: `lines[${i}]`, text: line }],
+      )
     case 'list':
       return block.items.map((item, i) => ({
         chapterId,
@@ -89,6 +96,8 @@ export function blockPlainText(block: ContentBlock): string {
       return stripHtml(block.html)
     case 'quote':
       return block.text
+    case 'verse':
+      return block.lines.join(' ')
     case 'list':
       return block.items.join(' ')
     case 'table':

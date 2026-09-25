@@ -129,21 +129,28 @@ async function drawGalleryPdf(ctx: DrawCtx, block: ContentBlock) {
     block.assetIds.map(async (assetId) => {
       const blob = await getAssetBlob(assetId)
       if (!blob) return undefined
-      const { bytes, width, height } = await blobToPng(blob, false)
+      // Cropped to a centred square, matching the `aspect-square
+      // object-cover` cell on screen — see `blobToPng`'s `squareCover`.
+      const { bytes, width, height } = await blobToPng(blob, false, true)
       const pdfImage = await ctx.page.doc.embedPng(bytes)
       return { pdfImage, width, height }
     }),
   )
 
-  for (let row = 0; row * cols < embedded.length; row++) {
+  // Every cell is a square of the column width, because that is what the
+  // grid on screen is. The images are cropped to square before embedding,
+  // so `cellWidth` is both the width and the height, and a row's height no
+  // longer depends on which photograph happened to be the tallest.
+  const rows = Math.ceil(embedded.length / cols)
+  for (let row = 0; row < rows; row++) {
     const rowItems = embedded.slice(row * cols, row * cols + cols)
-    const rowHeight = Math.max(...rowItems.map((item) => (item ? cellWidth * (item.height / item.width) : cellWidth)))
-    ctx.cursorY -= rowHeight
+    ctx.cursorY -= cellWidth
     rowItems.forEach((item, colIndex) => {
       const x = ctx.contentX + colIndex * (cellWidth + gapPt)
-      if (item) ctx.page.drawImage(item.pdfImage, { x, y: ctx.cursorY, width: cellWidth, height: cellWidth * (item.height / item.width) })
+      if (item) ctx.page.drawImage(item.pdfImage, { x, y: ctx.cursorY, width: cellWidth, height: cellWidth })
     })
-    ctx.cursorY -= gapPt
+    // A gap *between* rows, as `gap-2` is on screen — not after the last.
+    if (row < rows - 1) ctx.cursorY -= gapPt
   }
 
   if (block.caption) {

@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils'
 import type { Project } from '@/types'
 import type { Manuscript } from '@/types/content'
 import { useUiStore } from '@/store/uiStore'
+import { useFitZoom } from '@/renderer/useFitZoom'
 import { computePageBox } from '@/renderer/pageGeometry'
 import { resolveTheme } from '@/theme/presets'
 import { paginate, type LaidOutPage } from '@/renderer/paginate'
@@ -14,6 +15,7 @@ import { LazySpread } from '@/renderer/LazySpread'
 import { ThumbnailRail } from '@/renderer/ThumbnailRail'
 import { useExportStore } from '@/store/exportStore'
 import { useContentStore } from '@/store/contentStore'
+import { EMPTY_BLOCK_STYLES, useBlockStyleStore } from '@/store/blockStyleStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 
@@ -72,12 +74,29 @@ function groupIntoSpreads(pages: LaidOutPage[]): LaidOutPage[][] {
   return spreads
 }
 
+/** The canvas's own `px-10` — 40px a side, and the spread has to fit
+ * inside what is left. */
+const CANVAS_PADDING_X_PX = 80
+
 export function BookRenderer({ project, manuscript, decorative, hideThumbnails, paginated }: BookRendererProps) {
   const theme = resolveTheme(project.settings.themeId)
   const pageBox = useMemo(() => computePageBox(project.settings), [project.settings])
   const viewMode = useUiStore((s) => s.viewMode)
-  const zoom = useUiStore((s) => s.zoom)
+  const manualZoom = useUiStore((s) => s.zoom)
+  const zoomMode = useUiStore((s) => s.zoomMode)
+  const setAppliedZoom = useUiStore((s) => s.setAppliedZoom)
   const showThumbnails = useUiStore((s) => s.showThumbnails) && !hideThumbnails
+
+  // The width the canvas has to hold: one page, or two side by side, plus
+  // the container's own horizontal padding (`px-10`).
+  const spreadWidthPx = pageBox.widthPx * (viewMode === 'spread' ? 2 : 1) + CANVAS_PADDING_X_PX
+  const { ref: fitRef, fitZoom } = useFitZoom(spreadWidthPx)
+  const zoom = zoomMode === 'fit' ? fitZoom : manualZoom
+
+  // Reported upward so the zoom control can show what "Fit" currently is.
+  useEffect(() => {
+    if (zoomMode === 'fit') setAppliedZoom(fitZoom)
+  }, [zoomMode, fitZoom, setAppliedZoom])
 
   const dropCapBlockIds = useMemo(() => {
     const ids = new Set<string>()
@@ -96,7 +115,16 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
   const contentRevision = useContentStore((s) => s.revisionByProject[project.id] ?? 0)
 
   const [heights, setHeights] = useState<Record<string, number> | null>(null)
-  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}-${contentRevision}`
+  const [lineTops, setLineTops] = useState<Record<string, number[]>>({})
+  const blockStyles = useBlockStyleStore((s) => s.byProject[project.id]) ?? EMPTY_BLOCK_STYLES
+  // A per-block override changes how tall that block renders, so it has to
+  // reach `measureKey` or the layout would keep the heights measured under
+  // the old one (Phase 171) — the same reason `contentRevision` is here.
+  const blockStyleKey = Object.entries(blockStyles)
+    .map(([id, o]) => `${id}:${o.sizeScale ?? 1}:${o.leadingScale ?? 1}`)
+    .sort()
+    .join(',')
+  const measureKey = `${project.settings.themeId}-${Math.round(pageBox.contentWidthPx)}-${manuscript.importedAt}-${contentRevision}-${blockStyleKey}`
 
   const { pages: paginatedPages, toc } = useMemo(() => {
     if (!heights) return { pages: [] as LaidOutPage[], toc: [] }
@@ -208,8 +236,10 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
 
   const setExportLayout = useExportStore((s) => s.setLayout)
   useEffect(() => {
-    if (pages.length > 0) setExportLayout(project.id, { pages, toc, pageBox, theme })
-  }, [pages, toc, pageBox, theme, project.id, setExportLayout])
+    if (pages.length > 0) {
+      setExportLayout(project.id, { pages, toc, pageBox, theme, blockHeights: heights ?? {}, blockStyles, blockLineTops: lineTops })
+    }
+  }, [pages, toc, pageBox, theme, heights, lineTops, project.id, setExportLayout])
 
   // Sidebar's chapter nav can't just scrollIntoView `[data-chapter-start]`
   // directly: LazySpread doesn't mount a spread's real pages until it's
@@ -249,6 +279,7 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
     // Wait a couple of paints so the forced spread's real <Page> (and the
     // DOM node we're about to look up) actually exists before we scroll.
     let raf2 = 0
+    let releaseTimer = 0
     const raf1 = requestAnimationFrame(() => {
       raf2 = requestAnimationFrame(() => {
         const el =
@@ -257,14 +288,37 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
             : target.type === 'block'
               ? document.querySelector(`[data-block-id="${target.blockId}"]`)
               : document.getElementById(`page-${target.pageId}`)
-        el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' ? 'start' : 'center' })
+        // Centring only makes sense for something that fits. A whole page
+        // taller than the canvas — a structural page at 100%, or anything
+        // at a zoomed-in manual scale — gets centred *past* the top of the
+        // view, so a newly added cover arrived with its own "Add cover
+        // image" and "Add element" controls cut off by the toolbar above it
+        // (Phase 177). Anything too tall is aligned to its top instead.
+        const fits = el ? el.getBoundingClientRect().height <= (el.parentElement?.closest('[class*="overflow-auto"]')?.clientHeight ?? Infinity) : true
+        el?.scrollIntoView({ behavior: 'smooth', block: target.type === 'chapter' || !fits ? 'start' : 'center' })
         // Only clear the request if nothing newer has come in while we waited.
         if (scrollRequestRef.current?.requestId === scrollRequest.requestId) consumeScrollRequest()
+        // Release the pin once the smooth scroll has had time to land. This
+        // set used to only ever grow, so every chapter or page ever jumped to
+        // stayed force-mounted for the rest of the session — the same
+        // unbounded-DOM problem `LazySpread` itself had, arriving by a
+        // different door. By now the spread is on screen, so its own
+        // IntersectionObserver is holding it mounted; when it later scrolls
+        // far away it becomes free to unmount like any other.
+        releaseTimer = window.setTimeout(() => {
+          setForcedSpreadIndices((prev) => {
+            if (!prev.has(spreadIndex)) return prev
+            const next = new Set(prev)
+            next.delete(spreadIndex)
+            return next
+          })
+        }, 1200)
       })
     })
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
+      window.clearTimeout(releaseTimer)
     }
   }, [scrollRequest, spreads, heights, consumeScrollRequest])
 
@@ -275,8 +329,10 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
         contentWidthPx={pageBox.contentWidthPx}
         theme={theme}
         dropCapBlockIds={dropCapBlockIds}
+        blockStyles={blockStyles}
         measureKey={measureKey}
         onMeasured={setHeights}
+        onLinesMeasured={setLineTops}
       />
 
       {showThumbnails && pages.length > 0 && (
@@ -292,7 +348,18 @@ export function BookRenderer({ project, manuscript, decorative, hideThumbnails, 
         />
       )}
 
-      <div className={cn('flex flex-1 justify-center overflow-auto px-10 py-10', paginated ? 'relative items-center' : 'items-start')}>
+      <div
+        ref={fitRef}
+        className={cn(
+          // `justify-center` with `overflow-auto` is the trap here: when the
+          // content is wider than the box, the overflow spills off the
+          // *start* edge and cannot be scrolled back. `justify-start` plus
+          // `m-auto` on the content centres it when it fits and keeps every
+          // pixel reachable when it doesn't (Phase 174).
+          'flex flex-1 justify-start overflow-auto px-10 py-10 [&>*]:m-auto',
+          paginated ? 'relative items-center' : 'items-start',
+        )}
+      >
         {!heights ? (
           <div className="flex flex-col items-center gap-3 pt-24 text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             <Loader2 className="size-5 animate-spin" />

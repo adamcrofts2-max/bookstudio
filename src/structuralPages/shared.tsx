@@ -8,6 +8,7 @@ import { useImageUpload } from '@/hooks/useImageUpload'
 import { PX_PER_MM, type PageBox } from '@/renderer/pageGeometry'
 import type { CoverImageFocalPoint, CoverFieldPosition } from '@/types/structuralPage'
 import { cn } from '@/lib/utils'
+import { canDragOnThisDevice } from '@/lib/pointer'
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
@@ -197,7 +198,10 @@ export function DraggableCoverField({ position, onLiveMove, onCommitMove, contai
   return (
     <div
       ref={fieldRef}
-      className={cn('pointer-events-auto', pageSelected && 'cursor-move')}
+      // `touch-none` for the same reason the cover element layer needs it:
+      // a browser that takes the gesture for scrolling stops sending
+      // `pointermove`, and the field simply never moves under a finger.
+      className={cn('pointer-events-auto', pageSelected && 'cursor-move touch-none')}
       style={
         position
           ? { position: 'absolute', left: `${position.x * 100}%`, top: `${position.y * 100}%`, transform: 'translate(-50%, -50%)' }
@@ -258,7 +262,6 @@ export function ResetFieldPositionButton({ onReset }: { onReset: () => void }) {
 }
 
 interface StructuralImageDropZoneProps {
-  hasImage: boolean
   onDropAsset: (assetId: string) => void
   label?: string
 }
@@ -278,8 +281,15 @@ interface StructuralImageDropZoneProps {
  * background space works — not gated behind "only when no image is set yet"
  * so it doubles as a replace affordance too.
  */
-export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop an image here' }: StructuralImageDropZoneProps) {
+export function StructuralImageDropZone({ onDropAsset, label = 'Drop an image here' }: StructuralImageDropZoneProps) {
   const [isOver, setIsOver] = useState(false)
+  // There is no drag source on a touch device — no Assets sidebar to drag
+  // from — and this label is `pointer-events-none`, so on a phone it was an
+  // instruction the user physically could not follow, sitting across the
+  // cover in Preview ("Drop a cover image here"). The working path there is
+  // the Add cover image control in the page editor (Phase 137), so say
+  // nothing here rather than something impossible.
+  const canDrag = canDragOnThisDevice()
 
   return (
     <div
@@ -297,7 +307,18 @@ export function StructuralImageDropZone({ hasImage, onDropAsset, label = 'Drop a
         if (assetId) onDropAsset(assetId)
       }}
     >
-      {(isOver || !hasImage) && (
+      {/* Shown only while a drag is actually over the page. It used to
+       * render whenever the cover had no image yet, which meant a dark
+       * "Drop a cover image here" pill sat permanently in the dead centre
+       * of the cover — directly across the title and subtitle, so a brand
+       * new book's own cover was unreadable in its own editor (seen in the
+       * running app, Phase 157). Dropping works whether or not the pill is
+       * there, and the discoverable path for someone who'd never think to
+       * drag is the "Add cover image" button on the page and in the
+       * Inspector (Phase 46), so as instruction it was redundant and as
+       * decoration it was destructive. As drag feedback it earns its
+       * place. */}
+      {canDrag && isOver && (
         <div className="pointer-events-none flex items-center gap-2 rounded-[var(--radius-button)] border border-dashed border-white/60 bg-black/45 px-4 py-2 text-xs text-white">
           <ImagePlus className="size-3.5" />
           {label}
@@ -381,11 +402,13 @@ export function CoverNudgeHandle({ value, onLiveChange, onCommitFinal, horizonta
         horizontal?.onCommitFinal(nextValueX(e.clientX))
       }}
       className={cn(
-        'mx-auto flex w-fit items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm',
+        'mx-auto flex w-fit touch-none items-center gap-1.5 rounded-full bg-black/55 px-2.5 py-1 text-[10px] tracking-wide text-white shadow-[var(--shadow-sm)] backdrop-blur-sm',
         horizontal ? 'cursor-move' : 'cursor-ns-resize',
       )}
     >
       <GripVertical className="size-3" />
+      {/* audit-copy-ok: only on a selected, non-decorative page; and the
+          handle is pointer-event driven, so dragging does work on touch */}
       Drag to reposition
     </button>
   )
@@ -407,7 +430,7 @@ interface CoverImageUploadButtonProps {
  * conversion also use. See `docs/STATUS.md` Phase 46.
  */
 export function CoverImageUploadButton({ projectId, onUploaded, label, className }: CoverImageUploadButtonProps) {
-  const { openPicker, inputProps } = useImageUpload(projectId, onUploaded)
+  const { openPicker, error, inputProps } = useImageUpload(projectId, onUploaded)
 
   return (
     <>
@@ -425,6 +448,14 @@ export function CoverImageUploadButton({ projectId, onUploaded, label, className
         <ImagePlus className="size-3.5" />
         {label}
       </button>
+      {/* A picked file that can't be decoded used to do nothing at all. The
+          message sits under the button in both places this renders — over the
+          cover canvas on desktop, and in the mobile page editor. */}
+      {error && (
+        <p className="pointer-events-none mt-1.5 max-w-[220px] rounded-[var(--radius-button)] border border-border bg-panel px-2 py-1 text-center text-[11px] text-danger">
+          {error}
+        </p>
+      )}
       <input {...inputProps} />
     </>
   )

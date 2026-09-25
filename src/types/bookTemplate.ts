@@ -21,6 +21,26 @@ import type { CustomTheme } from '@/store/customThemeStore'
  */
 export const BOOK_TEMPLATE_VERSION = 1
 
+/**
+ * One image carried by a template — a publisher's mark, a series device, a
+ * cover treatment. The bytes live in `store/templateAssetDb.ts`; this is
+ * only what the template itself needs to know about them, small enough to
+ * sit in `localStorage` alongside the rest of the template.
+ *
+ * Shaped like `ImageAsset` minus `projectId`, deliberately: a template
+ * belongs to no project, and the copy made when the template is applied
+ * becomes an ordinary project asset with a fresh id.
+ */
+export interface TemplateAsset {
+  id: string
+  name: string
+  mimeType: string
+  size: number
+  width: number
+  height: number
+  createdAt: string
+}
+
 export interface BookTemplate {
   id: string
   schemaVersion: number
@@ -44,15 +64,22 @@ export interface BookTemplate {
   /**
    * The full structural-page set, with ids regenerated at apply time.
    *
-   * Image references (`imageAssetId`) are stripped when a template is saved.
-   * Assets are per-project blobs in IndexedDB (`store/assetDb.ts`), so an id
-   * captured from one project resolves to nothing in another — a template
-   * that kept them would apply cleanly and then render missing images. Cover
-   * artwork is per-title anyway; layout, typography and colour are what a
-   * series shares. See `docs/ROADMAP.md` Phase E for carrying template
-   * assets properly as a later step.
+   * Image references (`imageAssetId`, and a cover element's `assetId`) point
+   * at `assets` below, **not** at the project the template was saved from.
+   * Until Phase 169 they were stripped instead: assets are per-project blobs
+   * in IndexedDB (`store/assetDb.ts`), so an id captured from one project
+   * resolves to nothing in another, and a template that kept them would
+   * apply cleanly and then render missing images. Copying the bytes into
+   * template-scoped storage is what makes keeping them honest.
    */
   structuralPages: StructuralPage[]
+  /**
+   * Images this template carries, by value in bytes (in
+   * `store/templateAssetDb.ts`) and by metadata here. Absent on every
+   * template saved before Phase 169 — those simply carry no images, which
+   * is exactly what they carried before, so there is nothing to migrate.
+   */
+  assets?: TemplateAsset[]
   /** Whether page text (imprint boilerplate, copyright wording, back-cover
    * copy) was kept at save time. Surfaced in the template list so it is
    * obvious what applying it will bring. */

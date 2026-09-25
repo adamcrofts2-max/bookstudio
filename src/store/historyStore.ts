@@ -39,6 +39,10 @@ interface HistoryStoreState {
 }
 
 interface HistoryStoreActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   /** Pushes a new command onto the undo stack and clears the redo stack —
    * any new action invalidates the "future" that redo would have replayed. */
   record: (projectId: string, label: string, undo: () => void, redo: () => void) => void
@@ -66,6 +70,15 @@ interface HistoryStoreActions {
 export const useHistoryStore = create<HistoryStoreState & HistoryStoreActions>()((set, get) => ({
   undoStackByProject: {},
   redoStackByProject: {},
+
+  clearProject: (projectId) =>
+    set((state) => {
+      const nextUndoStackByProject = { ...state.undoStackByProject }
+      delete nextUndoStackByProject[projectId]
+      const nextRedoStackByProject = { ...state.redoStackByProject }
+      delete nextRedoStackByProject[projectId]
+      return { undoStackByProject: nextUndoStackByProject, redoStackByProject: nextRedoStackByProject }
+    }),
 
   record: (projectId, label, undo, redo) => {
     set((state) => {

@@ -42,6 +42,91 @@ export interface HtmlImportOptions {
   resolveImage?: (img: HTMLImageElement) => string | undefined
 }
 
+/**
+ * Recognises verse markup and pulls the author's lines out of it, or returns
+ * `null` if this element isn't verse.
+ *
+ * Poetry has no single markup in the wild. Real EPUBs use at least four
+ * shapes, and this handles all of them because a book that loses its line
+ * breaks has lost the poem:
+ *
+ * - `epub:type="z3998:verse"` (or `z3998:poem`) — the EPUB structural
+ *   semantic, and what this app's own EPUB export writes.
+ * - `class="poem"` / `"verse"` / `"stanza"` / `"linegroup"` / `"lg"` —
+ *   the conventions publishers actually ship, including the `<lg>` naming
+ *   inherited from TEI.
+ * - `<pre>` — the plain-HTML author's way of saying "these breaks matter".
+ * - Nested line groups: a poem whose stanzas are their own containers.
+ *   Each nested group is separated by an empty entry, which is how
+ *   `VerseBlock` records a stanza break.
+ *
+ * Lines are plain text (`textContent`), matching `ListBlock.items` and
+ * `VerseBlock.lines`. Deliberately conservative: an element with no verse
+ * marker is never guessed at, because promoting ordinary prose to verse
+ * would strip its justification and indent it for no reason the author asked
+ * for.
+ */
+const VERSE_CLASS = /(^|[\s-])(verse|poem|stanza|linegroup|lg)([\s-]|$)/i
+
+function isVerseMarked(el: Element): boolean {
+  if (el.tagName === 'PRE') return true
+  const epubType = el.getAttribute('epub:type') ?? el.getAttribute('data-epub-type') ?? ''
+  if (/z3998:(verse|poem)/i.test(epubType)) return true
+  return VERSE_CLASS.test(el.getAttribute('class') ?? '')
+}
+
+/** The text of an element, split wherever a `<br>` breaks it. */
+function splitOnBreaks(el: Element): string[] {
+  const lines: string[] = []
+  let current = ''
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === 1 && (node as Element).tagName === 'BR') {
+      lines.push(current)
+      current = ''
+      continue
+    }
+    current += node.textContent ?? ''
+  }
+  lines.push(current)
+  return lines
+}
+
+function collectVerseLines(el: Element, lines: string[]): void {
+  // A `<br>`-separated run is a leaf however many inline elements it holds.
+  if (el.querySelector(':scope > br')) {
+    lines.push(...splitOnBreaks(el))
+    return
+  }
+  const children = Array.from(el.children)
+  if (children.length === 0) {
+    lines.push(el.textContent ?? '')
+    return
+  }
+  for (const child of children) {
+    if (child.tagName === 'BR') continue
+    // A nested line group is a stanza: separate it from what came before.
+    if (isVerseMarked(child) && child.children.length > 0) {
+      if (lines.length > 0) lines.push('')
+      collectVerseLines(child, lines)
+      continue
+    }
+    collectVerseLines(child, lines)
+  }
+}
+
+export function verseLinesFrom(el: Element): string[] | null {
+  if (!isVerseMarked(el)) return null
+  const raw = el.tagName === 'PRE' ? (el.textContent ?? '').split('\n') : []
+  if (raw.length === 0) collectVerseLines(el, raw)
+  const lines = raw.map((line) => line.replace(/\s+/g, ' ').trim())
+  // Trim blank lines off both ends and collapse runs of them, so one stanza
+  // break is one stanza break however the source spaced its markup.
+  while (lines.length > 0 && lines[0] === '') lines.shift()
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop()
+  const collapsed = lines.filter((line, i) => line !== '' || lines[i - 1] !== '')
+  return collapsed.some((line) => line !== '') ? collapsed : null
+}
+
 /** Parses an HTML document body into chapters, splitting on <h1>. Shared by
  * the .html and .docx (via mammoth → HTML) importers. */
 export function parseHtmlDocument(html: string, fallbackTitle: string, options: HtmlImportOptions = {}): Chapter[] {
@@ -52,6 +137,15 @@ export function parseHtmlDocument(html: string, fallbackTitle: string, options: 
   const push = (block: ContentBlock) => current.blocks.push(block)
 
   for (const el of Array.from(doc.body.children)) {
+    // Verse is checked before the tag switch because its container is often
+    // a tag the switch already claims — `<blockquote class="poem">` is the
+    // commonest single shape in real books, and reading it as a quote loses
+    // every line break in the poem.
+    const verseLines = verseLinesFrom(el)
+    if (verseLines) {
+      push({ id: generateId('blk'), type: 'verse', lines: verseLines })
+      continue
+    }
     switch (el.tagName) {
       case 'H1': {
         if (current.blocks.length > 0 || chapters.length > 0) chapters.push(current)

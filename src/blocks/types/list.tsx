@@ -10,6 +10,7 @@ import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 function ListRender(props: BlockRenderProps) {
   const {
@@ -51,8 +52,10 @@ function ListRender(props: BlockRenderProps) {
   return (
     <Tag
       onClick={onSelect}
-      className={cn(wrapperClass, 'cursor-pointer pb-4 pl-6', block.ordered ? 'list-decimal' : 'list-disc')}
+      className={cn(wrapperClass, 'cursor-pointer pl-6', block.ordered ? 'list-decimal' : 'list-disc')}
       style={{
+        // Paired with `drawListPdf` below — `blocks/blockSpacing.ts`.
+        paddingBottom: BLOCK_SPACING.list.after,
         fontFamily: theme.fonts.body,
         fontSize: theme.typography.bodySize,
         lineHeight: theme.typography.lineHeight,
@@ -95,7 +98,7 @@ function drawListPdf(ctx: DrawCtx, block: ContentBlock) {
     ctx.page.drawText(prefix, { x: ctx.contentX, y: startY - sizePt * theme.typography.lineHeight, size: sizePt, font, color: ink })
     ctx.cursorY = shifted.cursorY
   })
-  ctx.cursorY -= 10
+  ctx.cursorY -= BLOCK_SPACING.list.after * PX_TO_PT
 }
 
 export const listBlockType: BlockTypeDefinition = {

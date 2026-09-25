@@ -3,7 +3,9 @@ import { useMemo, useState } from 'react'
 import type { LaidOutPage, TocEntry } from '@/renderer/paginate'
 import type { PageBox } from '@/renderer/pageGeometry'
 import type { ResolvedBookTheme } from '@/theme/presets'
-import type { ContentBlock, ImageBlock } from '@/types/content'
+import { themeForBlock } from '@/theme/blockTheme'
+import { EMPTY_BLOCK_STYLES, useBlockStyleStore } from '@/store/blockStyleStore'
+import type { ContentBlock, GalleryBlock, ImageBlock } from '@/types/content'
 import { Trash2 } from 'lucide-react'
 import { BlockContent } from '@/renderer/BlockContent'
 import { BlockToolbar } from '@/renderer/BlockToolbar'
@@ -13,7 +15,7 @@ import { IdeaIndicatorBadge } from '@/renderer/IdeaIndicatorBadge'
 import { SelectionDevelopMenu } from '@/renderer/SelectionDevelopMenu'
 import { InsertBlockButton } from '@/renderer/InsertBlockButton'
 import { AiDraftInsertDialog } from '@/renderer/AiDraftInsertDialog'
-import { createDefaultBlock, type InsertableBlockType } from '@/blocks/defaultContent'
+import { createDefaultBlock, isTextFirstBlock, type InsertableBlockType } from '@/blocks/defaultContent'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { useContentStore } from '@/store/contentStore'
@@ -32,6 +34,7 @@ import {
   deletePageBlocksWithHistory,
   deleteChapterWithHistory,
   splitParagraphWithHistory,
+  splitHeadingIntoParagraphWithHistory,
   mergeParagraphWithPreviousHistory,
   splitListItemWithHistory,
   mergeListItemWithPreviousWithHistory,
@@ -41,6 +44,7 @@ import { ASSET_DRAG_MIME } from '@/layout/dragTypes'
 import { useStructuralPageStore, EMPTY_STRUCTURAL_PAGES } from '@/store/structuralPageStore'
 import { getStructuralPageTypeDefinition } from '@/structuralPages/registry'
 import { getChapterNumberLabel } from '@/renderer/chapterOpenerLabel'
+import { CHAPTER_OPENER } from '@/renderer/chapterOpenerMetrics'
 import { generateId } from '@/utils'
 import { cn } from '@/lib/utils'
 
@@ -55,6 +59,21 @@ import { cn } from '@/lib/utils'
  * current overlay uses.
  */
 const BLOCK_OVERLAY_BUFFER_PX = 16
+
+/**
+ * Horizontal counterpart to `BLOCK_OVERLAY_BUFFER_PX`, added for Phase 156.
+ * Block furniture — the `BlockToolbar` handle, `NoteIndicatorBadge` — now
+ * parks in the page's side margin rather than on top of the block's own
+ * first line, and the content-flow container's `overflow-hidden` box would
+ * otherwise clip it dead at the text column's edge, exactly as that
+ * container used to clip `-top-3` overlays at its top edge (Phase 89).
+ * Same remedy: pull the box outward and give back the same number of
+ * pixels as padding, so text still starts and ends at the identical
+ * position and pagination is untouched. Wide enough for the note badge
+ * (~39px) plus its 8px gutter; clamped per-side to the margin actually
+ * available, since a project can set margins narrower than this.
+ */
+const BLOCK_OVERLAY_SIDE_BUFFER_PX = 48
 
 /**
  * Thin drop target rendered between two adjacent blocks (or before the
@@ -129,10 +148,15 @@ interface PageProps {
 
 
 export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bookTitle, language = 'en', decorative = false }: PageProps) {
+  const blockStyles = useBlockStyleStore((s) => s.byProject[projectId]) ?? EMPTY_BLOCK_STYLES
   const select = useSelectionStore((s) => s.select)
   const clearSelection = useSelectionStore((s) => s.clear)
   const selectedBlockId = useSelectionStore((s) => s.selectedBlockId)
   const editRequestId = useSelectionStore((s) => s.editRequestId)
+  // Ignore requests aimed at the Inspector's Typography box — otherwise the
+  // two editors fight over the same block and the caret lands wherever the
+  // race happened to end.
+  const editRequestSource = useSelectionStore((s) => s.editRequestSource)
   const editRequestCaretPosition = useSelectionStore((s) => s.editRequestCaretPosition)
   const editRequestItemIndex = useSelectionStore((s) => s.editRequestItemIndex)
   const consumeEditRequest = useSelectionStore((s) => s.consumeEditRequest)
@@ -154,6 +178,16 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
   const isRight = page.side === 'right'
   const marginLeft = isRight ? pageBox.marginInnerPx : pageBox.marginOuterPx
   const marginRight = isRight ? pageBox.marginOuterPx : pageBox.marginInnerPx
+  // How much of each side margin the content-flow container can borrow for
+  // block furniture without ever reaching past the page's own trim edge.
+  const sideBufferLeft = Math.min(BLOCK_OVERLAY_SIDE_BUFFER_PX, marginLeft)
+  const sideBufferRight = Math.min(BLOCK_OVERLAY_SIDE_BUFFER_PX, marginRight)
+  // A 24px handle plus its 8px gutter is the least the margin placement
+  // needs; anything tighter and the handle falls back inside the block.
+  const blockToolbarPlacement = sideBufferRight >= 32 ? 'margin' : 'inside'
+  // The note badge is wider than the handle, so it needs the full buffer
+  // before it can move out of the text column.
+  const noteBadgeInMargin = sideBufferLeft >= BLOCK_OVERLAY_SIDE_BUFFER_PX
 
   const handleSelect = (chapterId: string, block: { id: string; type: string }) => {
     select(chapterId, block.id)
@@ -203,10 +237,19 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     const canMergeWithPrevious = block.type === 'paragraph' && previousBlockInChapter?.type === 'paragraph'
 
     return (
-      <div key={block.id} data-block-id={decorative ? undefined : block.id} className="group/block relative">
+      <div
+        key={block.id}
+        data-block-id={decorative ? undefined : block.id}
+        data-block-type={decorative ? undefined : block.type}
+        className="group/block relative"
+      >
         <BlockContent
           block={block}
-          theme={theme}
+          // The book's theme, or that block's own departure from it
+          // (Phase 171). Resolved here rather than inside `BlockContent`
+          // so `HeightMeasurer` and `exportPdf` can resolve the same way
+          // and cannot disagree about what an override means.
+          theme={themeForBlock(theme, blockStyles[block.id])}
           dropCap={dropCapBlockIds.has(block.id)}
           selected={isSelected}
           onSelect={decorative ? undefined : () => chapterId && handleSelect(chapterId, block)}
@@ -217,7 +260,13 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               ? undefined
               : (before, after) => {
                   if (!chapterId) return
-                  const newBlockId = splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
+                  // A heading's Enter creates a paragraph beneath it; a
+                  // paragraph's splits in two. Both land the caret in the
+                  // new block so writing simply continues.
+                  const newBlockId =
+                    block.type === 'heading'
+                      ? splitHeadingIntoParagraphWithHistory(projectId, chapterId, block.id, before, after)
+                      : splitParagraphWithHistory(projectId, chapterId, block.id, before, after)
                   if (newBlockId) selectForEdit(chapterId, newBlockId, 'start')
                 }
           }
@@ -248,7 +297,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
                   if (caretOffset !== undefined) selectForEdit(chapterId, block.id, caretOffset, itemIndex - 1)
                 }
           }
-          autoEdit={isSelected && editRequestId !== null}
+          autoEdit={isSelected && editRequestId !== null && editRequestSource === 'canvas'}
           autoEditCaretPosition={editRequestCaretPosition}
           autoEditItemIndex={editRequestItemIndex}
           onAutoEditHandled={consumeEditRequest}
@@ -275,6 +324,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           // path once a block is selected.
           <BlockToolbar
             selected={isSelected}
+            placement={blockToolbarPlacement}
             canMoveUp={canMoveUp}
             canMoveDown={canMoveDown}
             onMoveUp={() => moveBlockWithHistory(projectId, chapterId, block.id, 'up')}
@@ -294,13 +344,19 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           </BlockToolbar>
         )}
         {chapterId && !decorative && (
-          // Restored to its pre-Phase-83 standalone position — Notes alone
-          // (without Ideas sharing the spot) never had a collision problem,
-          // so only Ideas needed to move.
+          // Phase 156 moved this out into the left margin alongside the
+          // block-actions handle. Its old spot (`-top-3 left-2`) sat on the
+          // block's own first line, and unlike the hover-gated handle this
+          // badge is always visible whenever a block has an unresolved
+          // note — so a noted paragraph had its opening words permanently
+          // covered. The margin is empty by construction; text is not.
           <NoteIndicatorBadge
             projectId={projectId}
             blockId={block.id}
-            className="absolute -top-3 left-2 z-10"
+            className={cn(
+              'absolute z-10',
+              noteBadgeInMargin ? 'right-full top-0 mr-2' : '-top-3 left-2',
+            )}
             onClick={() => {
               select(chapterId, block.id)
               setInspectorTab('notes')
@@ -325,10 +381,31 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
     setInspectorTab('image')
   }
 
+  /** A gallery is the one block type with no blank starting point: it is
+   * defined by the photos in it, so it is only ever created from a real
+   * multi-photo pick. Selecting it opens the Image inspector tab, same as a
+   * single image, so captioning is one click away. */
+  const handleInsertGallery = (chapterId: string, afterBlockId: string | null, assetIds: string[]) => {
+    if (assetIds.length === 0) return
+    const newBlock: GalleryBlock = {
+      id: generateId('block'),
+      type: 'gallery',
+      assetIds,
+      caption: undefined,
+    }
+    insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
+    select(chapterId, newBlock.id)
+    setInspectorTab('image')
+  }
+
   const handleInsertBlock = (chapterId: string, afterBlockId: string | null, type: InsertableBlockType) => {
     const newBlock = createDefaultBlock(type)
     insertBlockWithHistory(projectId, chapterId, afterBlockId, newBlock)
     handleSelect(chapterId, newBlock)
+    // Selecting is not the same as being able to type: this used to leave
+    // the new block highlighted but not editable, so anything typed next
+    // went to the document body and was lost. See `isTextFirstBlock`.
+    if (isTextFirstBlock(type)) selectForEdit(chapterId, newBlock.id, 'start', type === 'list' ? 0 : undefined)
   }
 
   /** Interleaves a drop zone + "insert block" button before the first block,
@@ -362,6 +439,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           projectId={projectId}
           onInsert={(type) => handleInsertBlock(chapterId, afterId, type)}
           onInsertImage={(assetId) => handleDropAsset(chapterId, afterId, assetId)}
+          onInsertGallery={(assetIds) => handleInsertGallery(chapterId, afterId, assetIds)}
           onInsertAiDraft={() => setAiDraftTarget({ chapterId, afterBlockId: afterId })}
           emptyChapter={emptyChapter}
         />
@@ -446,6 +524,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               pageBox={pageBox}
               projectId={projectId}
               siblingPages={structuralPages}
+              bookTitle={bookTitle}
               selected={isStructuralPageSelected}
               onSelect={
                 decorative
@@ -522,6 +601,23 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
         </div>
       )}
 
+      {/*
+        The manuscript flow container. **Not rendered on a structural page**
+        (Phase 172): every child below is gated on `page.kind` being `toc`,
+        `chapter-start` or `content`, so on a Cover or a Dedication this was
+        an empty box — and an empty box is still a hit target. It is
+        `absolute`, inset only by the page margins, and it comes *after* the
+        structural page in DOM order, so it painted on top of the cover and
+        swallowed every pointer event aimed at the cover's own controls.
+
+        That is why "Drag to reposition" and the cover element layer could
+        not be dragged — and it was never a mobile gap, which is how
+        `docs/ROADMAP.md` had it filed: `document.elementsFromPoint` over the
+        handle on a 1400px desktop window returned this div above the button
+        just the same. Rendering nothing where there is nothing to render
+        costs nothing and is the whole fix.
+      */}
+      {page.kind !== 'structural' && (
       <div
         lang={language}
         className="absolute overflow-hidden"
@@ -551,10 +647,12 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
           // own bounds.
           top: pageBox.marginTopPx - Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginTopPx),
           bottom: pageBox.marginBottomPx - Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginBottomPx),
-          left: marginLeft,
-          right: marginRight,
+          left: marginLeft - sideBufferLeft,
+          right: marginRight - sideBufferRight,
           paddingTop: Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginTopPx),
           paddingBottom: Math.min(BLOCK_OVERLAY_BUFFER_PX, pageBox.marginBottomPx),
+          paddingLeft: sideBufferLeft,
+          paddingRight: sideBufferRight,
         }}
       >
         {page.kind === 'toc' && (
@@ -594,8 +692,17 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
             <div className="group/title relative">
               {getChapterNumberLabel(theme, chapterIndex) !== null && (
                 <p
-                  className="pb-3 text-sm font-medium uppercase tracking-[0.2em]"
-                  style={{ color: theme.page.accent, fontFamily: theme.fonts.heading }}
+                  className="font-medium uppercase"
+                  style={{
+                    // `chapterOpenerMetrics.ts` — shared with HeightMeasurer
+                    // and the PDF exporter, which all have to agree.
+                    fontSize: CHAPTER_OPENER.label.fontPx,
+                    lineHeight: `${CHAPTER_OPENER.label.lineHeightPx}px`,
+                    paddingBottom: CHAPTER_OPENER.label.afterPx,
+                    letterSpacing: `${CHAPTER_OPENER.label.letterSpacingEm}em`,
+                    color: theme.page.accent,
+                    fontFamily: theme.fonts.heading,
+                  }}
                 >
                   {getChapterNumberLabel(theme, chapterIndex)}
                 </p>
@@ -621,8 +728,15 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
               ) : (
                 <h1
                   onDoubleClick={startRenameTitle}
-                  className="cursor-pointer pb-10 text-4xl"
-                  style={{ fontFamily: theme.fonts.heading, fontWeight: theme.typography.headingWeight, color: theme.page.ink }}
+                  className="cursor-pointer"
+                  style={{
+                    fontSize: CHAPTER_OPENER.title.fontPx,
+                    lineHeight: `${CHAPTER_OPENER.title.lineHeightPx}px`,
+                    paddingBottom: CHAPTER_OPENER.title.afterPx,
+                    fontFamily: theme.fonts.heading,
+                    fontWeight: theme.typography.headingWeight,
+                    color: theme.page.ink,
+                  }}
                 >
                   {page.chapterTitle}
                 </h1>
@@ -648,6 +762,7 @@ export function Page({ projectId, page, pageBox, theme, dropCapBlockIds, toc, bo
 
         {page.kind === 'content' && renderBlocksWithDropZones(page.blocks)}
       </div>
+      )}
 
       {(page.kind === 'chapter-start' || page.kind === 'content') && page.chapterId && !decorative && page.blocks.length > 0 && (
         <SelectionDevelopMenu projectId={projectId} chapterId={page.chapterId} blockIds={pageBlockIds} />

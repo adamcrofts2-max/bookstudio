@@ -36,7 +36,7 @@ import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
-import { pickFont, pickItalicFont } from '@/pdf/fonts'
+import { italicSkew, pickFont, pickItalicFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { tintHex } from '@/structuralPages/colorUtils'
@@ -49,7 +49,7 @@ import { cn } from '@/lib/utils'
  * `CoverOverlayStyle`/`CoverImageFocalPoint`) — absent means every value
  * reproduces this milestone's pre-existing fixed look exactly, so no
  * project made before Phase 46 changes. */
-function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCommit }: StructuralPageRenderProps) {
+function CoverRender({ page, theme, pageBox, projectId, bookTitle, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   const getObjectUrl = useAssetStore((s) => s.getObjectUrl)
   const showSafeZone = useUiStore((s) => s.showCoverSafeZone)
   const selectedElementId = useSelectionStore((s) => s.selectedCoverElementId)
@@ -124,7 +124,7 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
         />
       )}
       <StructuralImageDropZone
-        hasImage={!!imageUrl}
+        // audit-copy-ok: StructuralImageDropZone hides this label on touch
         label="Drop a cover image here"
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
@@ -217,7 +217,13 @@ function CoverRender({ page, theme, pageBox, projectId, selected, onSelect, onCo
           <div className="flex flex-col items-center gap-1">
             <HideableTextField
               as="h1"
-              value={page.content.title ?? ''}
+              // Falls back to the project's own name rather than showing
+              // "Untitled" on a book the author has already titled (Phase
+              // 157) — and because this is the *value*, not a placeholder,
+              // it's also what prints. Editing writes an explicit override,
+              // the same shape `halfTitle.tsx` uses for its sibling
+              // fallback. `drawCoverPdf` repeats the identical expression.
+              value={page.content.title ?? bookTitle ?? ''}
               placeholder="Untitled"
               onCommit={(value) => onCommit({ title: value || undefined })}
               hidden={titleHidden}
@@ -375,13 +381,20 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   const titleFont = typography?.italic
     ? pickItalicFont(ctx.fonts, titleFontFamily, titleWeight)
     : pickFont(ctx.fonts, titleFontFamily, titleWeight)
+  // A family with no italic face is drawn as the upright face, slanted —
+  // as the browser draws it (see `italicSkew`).
+  const titleSkew = typography?.italic ? italicSkew(ctx.fonts, titleFontFamily) : undefined
   const bodyFont = pickFont(ctx.fonts, theme.fonts.body, 400)
   // No "Untitled" fallback here (fixed Phase 49) — that placeholder is an
   // on-screen-only editing cue (see `EditableText`'s own `placeholder`
   // prop); a real export must never print literal placeholder text for a
   // field the author left blank on purpose (e.g. a deliberately photo-only
   // cover).
-  const title = titleHidden ? '' : (page.content.title ?? '').trim()
+  // Same own-title-else-book-title expression `CoverRender` uses above, so
+  // the printed cover matches the screen exactly (Phase 157). Still no
+  // "Untitled" fallback: a blank title with no project name behind it stays
+  // blank, per the note above.
+  const title = titleHidden ? '' : (page.content.title ?? ctx.bookTitle ?? '').trim()
   const titleSize = theme.typography.bodySize * 2.2 * titleSizeScale * PX_TO_PT
   const titleWidth = title ? titleFont.widthOfTextAtSize(title, titleSize) : 0
   // Matches the on-screen `translateX` exactly — same `COVER_NUDGE_RANGE_PX`
@@ -423,9 +436,9 @@ async function drawCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedB
   if (title) {
     if (page.content.titlePosition) {
       const { x, y } = fieldPdfXY(page.content.titlePosition)
-      ctx.page.drawText(title, { x: x - titleWidth / 2, y: y - titleSize * 0.35, size: titleSize, font: titleFont, color: ink })
+      ctx.page.drawText(title, { x: x - titleWidth / 2, y: y - titleSize * 0.35, size: titleSize, font: titleFont, color: ink, ...(titleSkew ? { ySkew: titleSkew } : {}) })
     } else {
-      ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink })
+      ctx.page.drawText(title, { x: centerX - titleWidth / 2, y: cursorY, size: titleSize, font: titleFont, color: ink, ...(titleSkew ? { ySkew: titleSkew } : {}) })
     }
   }
 

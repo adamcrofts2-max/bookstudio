@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Loader2, RefreshCcw, Sparkles, Wand2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -8,17 +8,29 @@ import { useExportStore } from '@/store/exportStore'
 import { EMPTY_STRUCTURAL_PAGES, useStructuralPageStore } from '@/store/structuralPageStore'
 import { EMPTY_ASSETS, useAssetStore } from '@/store/assetStore'
 import { EMPTY_LAYER0_BIBLE, useLayer0Store } from '@/store/layer0Store'
-import { EMPTY_REVISIONS, useVirtualEditorStore } from '@/store/virtualEditorStore'
+import { EMPTY_REVISIONS, isBulkFixable, useVirtualEditorStore } from '@/store/virtualEditorStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { useUiStore } from '@/store/uiStore'
 import { SCORE_TILES } from '@/virtualEditor/scoring'
+import { blockPlainText } from '@/virtualEditor/textExtract'
+import { wordCount, formatTimestamp } from '@/utils/format'
 import { DEFAULT_STYLE_GUIDE } from '@/virtualEditor/types'
-import type { Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
+import type { CheckerContext, Finding, FindingStatus, IssueCategory } from '@/virtualEditor/types'
 import { ScoreCard } from '@/layout/virtualEditor/ScoreCard'
 import { FindingRow, formatCategory } from '@/layout/virtualEditor/FindingRow'
 import { RevisionCompareView } from '@/layout/virtualEditor/RevisionCompareView'
+import { AiReviewPanel } from '@/layout/virtualEditor/AiReviewPanel'
 import type { Revision } from '@/store/virtualEditorStore'
 import type { Project } from '@/types'
+
+/**
+ * Below this, the deterministic checkers can still say what a book is
+ * *missing* — a cover, a copyright page — but nothing they report about the
+ * prose means anything. Roughly a page and a half of a printed book: short
+ * enough that a real first chapter clears it, long enough that a paragraph
+ * typed to try the feature out does not.
+ */
+const ENOUGH_WORDS_TO_JUDGE = 400
 
 interface VirtualEditorWorkspaceProps {
   project: Project
@@ -76,6 +88,22 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
 
+  // Everything a review reads, assembled here for the same layer-separation
+  // reason as `runReview`'s arguments below. Only called on a click (or to
+  // state what a read would cover), never on every render.
+  const buildAiContext = useCallback(
+    (): CheckerContext => ({
+      manuscript: manuscript ?? { chapters: [], importedAt: '', sourceFileName: '' },
+      styleGuide: project.settings.styleGuide ?? DEFAULT_STYLE_GUIDE,
+      pages: layout?.pages,
+      project,
+      structuralPages,
+      assets,
+      layer0Bible,
+    }),
+    [manuscript, project, layout, structuralPages, assets, layer0Bible],
+  )
+
   const chapterTitleById = useMemo(() => {
     const map = new Map<string, string>()
     manuscript?.chapters.forEach((c) => map.set(c.id, c.title))
@@ -84,8 +112,15 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
 
   const activeFindings = report?.findings.filter((f) => (findingStatuses?.[f.id] ?? 'new') !== 'ignoredSimilar') ?? []
 
+  // The sample the report is drawn from, stated plainly beside the scores.
+  const reviewedChapters = manuscript?.chapters.length ?? 0
+  const reviewedWords = useMemo(
+    () => (manuscript?.chapters ?? []).reduce((sum, chapter) => sum + wordCount(chapter.blocks.map(blockPlainText).join(' ')), 0),
+    [manuscript],
+  )
+
   const fixableCount = activeFindings.filter(
-    (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
+    (f) => isBulkFixable(f) && (findingStatuses?.[f.id] ?? 'new') === 'new',
   ).length
 
   // Group findings by category, preserving each category's first-seen
@@ -177,9 +212,19 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
               <Sparkles className="size-5 text-accent" />
               Virtual Editor
             </h1>
+            {/* Was: "Proofreading is real today; the rest of the taxonomy is
+             * designed and lands incrementally — see docs/VIRTUAL_EDITOR.md."
+             * Two problems, both found by reading the screen as a user
+             * (Phase 157): it pointed an author at a Markdown file inside a
+             * repository they don't have, and it had quietly gone false —
+             * `src/virtualEditor/checkers/` now holds a real checker for
+             * every one of the twelve categories, not just proofreading.
+             * A tile with no applicable checker still says "Not yet
+             * analysed" on its own, which is where that caveat belongs. */}
             <p className="max-w-[60ch] text-sm text-text-secondary">
-              Reviews the whole project like a publishing team would. Proofreading is real today; the rest of the
-              taxonomy is designed and lands incrementally — see <span className="font-medium">docs/VIRTUAL_EDITOR.md</span>.
+              Reads the whole book the way a publishing team would — proofreading, grammar, consistency,
+              readability, layout, typography and print readiness — and lists what it finds, with a one-click
+              fix wherever the correction is unambiguous. Nothing is rewritten without you.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1.5">
@@ -207,18 +252,60 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             {!layout && (
               <p className="max-w-[36ch] text-right text-xs text-text-secondary">
                 Layout and Publishing Quality checks need the manuscript view to have rendered at least once this
-                session — open the Chapters view, then come back and re-run the review.
+                session — open your manuscript, then come back and re-run the review.
               </p>
             )}
           </div>
         </header>
 
-        <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {report && (
+          // What the score was computed from. A 27-word manuscript used to
+          // return 99/100 with tens of 100s beside it, which is arithmetically
+          // true of the things the checkers looked at and reads as "your book
+          // is finished" (Phase 175). The checkers now notice a missing cover
+          // or copyright page; this line answers the other half, which is
+          // that a number means nothing without its sample size.
+          <p className="text-sm text-text-secondary">
+            {reviewedWords < ENOUGH_WORDS_TO_JUDGE ? (
+              <>
+                <strong className="font-medium text-text-primary">Too little written to judge yet.</strong> These
+                scores cover {reviewedWords.toLocaleString()} {reviewedWords === 1 ? 'word' : 'words'} across{' '}
+                {reviewedChapters} {reviewedChapters === 1 ? 'chapter' : 'chapters'} — enough to catch what is
+                missing from the book, not enough to say anything about the writing.
+              </>
+            ) : (
+              <>
+                Across {reviewedWords.toLocaleString()} words in {reviewedChapters}{' '}
+                {reviewedChapters === 1 ? 'chapter' : 'chapters'}.
+              </>
+            )}
+          </p>
+        )}
+
+        <AiReviewPanel
+          projectId={project.id}
+          buildContext={buildAiContext}
+          enoughWritten={reviewedWords >= ENOUGH_WORDS_TO_JUDGE}
+        />
+
+        <section className="grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
           {SCORE_TILES.map((tile) => {
             const categoryEntry = tile.key === 'overall' ? undefined : report?.categoryScores[tile.key]
             const score = tile.key === 'overall' ? (report?.overallScore ?? null) : (categoryEntry?.score ?? null)
             const findingCount = tile.key === 'overall' ? report?.findings.length : categoryEntry?.findingCount
-            return <ScoreCard key={tile.key} tile={tile} score={score} findingCount={findingCount} />
+            return (
+              <ScoreCard
+                key={tile.key}
+                tile={tile}
+                score={score}
+                findingCount={findingCount}
+                withheldReason={
+                  tile.key === 'overall' && report && reviewedWords < ENOUGH_WORDS_TO_JUDGE
+                    ? 'Not enough written to score'
+                    : undefined
+                }
+              />
+            )
           })}
         </section>
 
@@ -228,7 +315,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             <div className="flex items-center gap-3">
               {report && (
                 <p className="text-xs text-text-secondary">
-                  {activeFindings.length} shown · generated {new Date(report.generatedAt).toLocaleString()}
+                  {activeFindings.length} shown · generated {formatTimestamp(report.generatedAt)}
                 </p>
               )}
               {report && activeFindings.length > 0 && (
@@ -264,7 +351,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
             <div className="flex flex-col gap-6">
               {findingsByCategory.map(([category, findings]) => {
                 const categoryFixableCount = findings.filter(
-                  (f) => f.suggestedFix && (findingStatuses?.[f.id] ?? 'new') === 'new',
+                  (f) => isBulkFixable(f) && (findingStatuses?.[f.id] ?? 'new') === 'new',
                 ).length
                 return (
                   <div key={category} className="flex flex-col gap-3">
@@ -283,7 +370,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                         onClick={() => fixCategory(project.id, category)}
                       >
                         <Wand2 className="size-3.5" />
-                        Fix all in {formatCategory(category)}
+                        Fix all in {formatCategory(category).toLowerCase()}
                       </Button>
                     </div>
                     <div className="flex flex-col gap-3">
@@ -326,7 +413,7 @@ export function VirtualEditorWorkspace({ project }: VirtualEditorWorkspaceProps)
                     <p className="text-sm text-text-primary">{revision.summary}</p>
                     <p className="text-xs text-text-secondary">
                       {chapterTitleById.get(revision.chapterId) ?? 'Unknown chapter'} ·{' '}
-                      {new Date(revision.appliedAt).toLocaleString()}
+                      {formatTimestamp(revision.appliedAt)}
                     </p>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => restoreRevision(project.id, revision.id)}>

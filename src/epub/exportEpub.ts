@@ -2,6 +2,7 @@ import type { Manuscript } from '@/types/content'
 import type { Project } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import { resolveTheme } from '@/theme/presets'
+import { useBlockStyleStore } from '@/store/blockStyleStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
 import { blockToXhtml } from '@/epub/blockToXhtml'
@@ -97,6 +98,10 @@ export async function exportBookToEpub(
   bookTitle: string,
 ): Promise<Blob> {
   const theme = resolveTheme(project.settings.themeId)
+  // Per-block typographic overrides travel into the reflowable formats
+  // too (Phase 171) — read here rather than threaded through every caller,
+  // the same way the theme itself is resolved from the project.
+  const blockStyles = useBlockStyleStore.getState().getOverrides(project.id)
   const titlePage = structuralPages.find((p) => p.type === 'title-page')
   const coverPage = structuralPages.find((p) => p.type === 'cover')
   const author = titlePage?.content.author ?? coverPage?.content.author ?? ''
@@ -144,7 +149,7 @@ export async function exportBookToEpub(
   // 3. One XHTML file per chapter — its own title as `<h1>`, then every
   // block converted via `blockToXhtml`.
   manuscript.chapters.forEach((chapter, index) => {
-    const bodyBlocks = chapter.blocks.map((block) => blockToXhtml(block, imageSrc)).join('\n')
+    const bodyBlocks = chapter.blocks.map((block) => blockToXhtml(block, imageSrc, { epubSemantics: true, style: blockStyles[block.id] })).join('\n')
     const body = `<h1>${escapeXmlText(chapter.title)}</h1>\n${bodyBlocks}`
     const fileName = `chapter-${index + 1}.xhtml`
     xhtmlEntries.push({ name: `OEBPS/${fileName}`, data: xhtmlDocument(chapter.title, body) })

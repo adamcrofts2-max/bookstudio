@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { BookOpenText, PenLine, Volume2, VolumeX, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { BookRenderer } from '@/renderer/BookRenderer'
+import { useSelectionStore } from '@/store/selectionStore'
 import { useContentStore } from '@/store/contentStore'
 import { useUiStore, type FocusMode } from '@/store/uiStore'
 import { useTypewriterMode } from '@/hooks/useTypewriterMode'
@@ -35,6 +37,21 @@ export function FocusModeLayout({ project, mode }: FocusModeLayoutProps) {
   const toggleTypewriterSound = useUiStore((s) => s.toggleTypewriterSound)
 
   useTypewriterMode(mode === 'write' && typewriterMode, typewriterSound)
+
+  // Distraction-free writing used to open on whatever the canvas last
+  // showed, which for a freshly imported book is the table of contents —
+  // you ask for a page to write on and get the contents page (seen while
+  // walking the built app, Phase 161). Land on the chapter instead: the
+  // one you had selected, else the first. Requested once per entry into
+  // focus mode, so it never fights the scrolling you do afterwards.
+  const requestScrollToChapter = useSelectionStore((s) => s.requestScrollToChapter)
+  const selectedChapterId = useSelectionStore((s) => s.selectedChapterId)
+  const firstChapterId = manuscript?.chapters[0]?.id
+  useEffect(() => {
+    const target = selectedChapterId ?? firstChapterId
+    if (target) requestScrollToChapter(target)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode])
 
   return (
     <div className="relative flex h-dvh w-full flex-col bg-background">

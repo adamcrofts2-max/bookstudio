@@ -49,6 +49,11 @@ function NoteCard({ projectId, note }: { projectId: string; note: Note }) {
     >
       <Textarea
         rows={3}
+        // A placeholder is not a label: it disappears the moment anyone
+        // types, and the accessibility audit (Phase 173) counts it as a
+        // control with no accessible name, which is what a screen reader
+        // finds too.
+        aria-label="Note"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
@@ -106,6 +111,7 @@ function NewNoteComposer({ onAdd }: { onAdd: (text: string) => void }) {
         rows={3}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
+        aria-label="New note"
         placeholder="Add a note about this…"
         className="text-sm"
       />

@@ -10,6 +10,7 @@ import { wrapRuns } from '@/pdf/textWrap'
 import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 function QuoteRender(props: BlockRenderProps) {
   const { block, theme, selected, onSelect, editable, onCommit, autoEdit, onAutoEditHandled } = props
@@ -46,9 +47,12 @@ function QuoteRender(props: BlockRenderProps) {
       className={cn(
         'outline-offset-4 transition-[outline-color] duration-150',
         outlineClass(!!selected, primary.isEditing || attribution.isEditing),
-        'cursor-pointer py-6 pl-5',
+        'cursor-pointer pl-5',
       )}
       style={{
+        // Paired with `drawQuotePdf` below — `blocks/blockSpacing.ts`.
+        paddingTop: BLOCK_SPACING.quote.before,
+        paddingBottom: BLOCK_SPACING.quote.after,
         fontFamily: theme.fonts.heading,
         fontSize: theme.typography.bodySize * 1.15,
         lineHeight: 1.5,
@@ -110,7 +114,7 @@ function drawQuotePdf(ctx: DrawCtx, block: ContentBlock) {
   const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
   const sizePt = theme.typography.bodySize * 1.05 * PX_TO_PT
   const font = pickFont(ctx.fonts, theme.fonts.heading, 400)
-  ctx.cursorY -= 8
+  ctx.cursorY -= BLOCK_SPACING.quote.before * PX_TO_PT
   const ruleTop = ctx.cursorY + sizePt
   const lines = wrapRuns([{ text: `“${block.text}”`, bold: false }], font, font, sizePt, ctx.contentWidthPt - 16)
   const startCtx = { ...ctx, contentX: ctx.contentX + 16 }
@@ -123,7 +127,7 @@ function drawQuotePdf(ctx: DrawCtx, block: ContentBlock) {
     ctx.page.drawText(`— ${block.attribution}`, { x: ctx.contentX + 16, y: ctx.cursorY - capSize, size: capSize, font: pickFont(ctx.fonts, theme.fonts.body, 400), color: muted })
     ctx.cursorY -= capSize + 4
   }
-  ctx.cursorY -= 10
+  ctx.cursorY -= BLOCK_SPACING.quote.after * PX_TO_PT
 }
 
 export const quoteBlockType: BlockTypeDefinition = {

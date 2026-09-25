@@ -17,7 +17,7 @@ import { cn } from '@/lib/utils'
  * inline-editable directly on the page (double-click) via `EditableText`,
  * not only through the Inspector's "Page" panel — see
  * docs/ROADMAP.md Phase B. */
-function TitlePageRender({ page, theme, selected, onSelect, onCommit }: StructuralPageRenderProps) {
+function TitlePageRender({ page, theme, bookTitle, selected, onSelect, onCommit }: StructuralPageRenderProps) {
   if (page.type !== 'title-page') return null
 
   return (
@@ -31,7 +31,11 @@ function TitlePageRender({ page, theme, selected, onSelect, onCommit }: Structur
     >
       <EditableText
         as="h1"
-        value={page.content.title ?? ''}
+        // The project's name stands in until the author sets a title of
+        // their own — see `cover.tsx` for the reasoning; `halfTitle.tsx`
+        // already falls back to *this* page in turn, so a book titled once
+        // at creation now names all three.
+        value={page.content.title ?? bookTitle ?? ''}
         placeholder="Untitled"
         onCommit={(value) => onCommit({ title: value || undefined })}
         style={{
@@ -80,7 +84,11 @@ function drawTitlePagePdf(ctx: DrawCtx, page: StructuralPage, theme: ResolvedBoo
   const mutedInk = hexToPdfColor(theme.page.mutedInk, ctx.colorMode)
   const accent = hexToPdfColor(theme.page.accent, ctx.colorMode)
 
-  const title = page.content.title || 'Untitled'
+  // Matches `TitlePageRender`'s own-title-else-book-title expression, so the
+  // printed title page says what the screen says (Phase 157). The literal
+  // 'Untitled' stays as a last resort only — a project always has a name,
+  // so in practice it is now unreachable.
+  const title = page.content.title || ctx.bookTitle || 'Untitled'
   const titleSize = theme.typography.bodySize * 1.7 * PX_TO_PT
   const titleWidth = titleFont.widthOfTextAtSize(title, titleSize)
 

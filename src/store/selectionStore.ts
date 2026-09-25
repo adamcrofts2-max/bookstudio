@@ -80,7 +80,23 @@ interface SelectionState {
     target: { type: 'chapter'; chapterId: string } | { type: 'page'; pageId: string } | { type: 'block'; chapterId: string; blockId: string }
     requestId: string
   } | null
-  select: (chapterId: string, blockId: string) => void
+  /** `blockId` is nullable because "this chapter is open, no particular
+   * block" is a real state: mobile Write has no block-level selection, and
+   * `selectedBlockId` has always been `string | null` in the state above —
+   * only this signature was narrower than the field it writes. Desktop
+   * callers passing a real id are unaffected. */
+  /** Which editing surface a pending edit request is meant for.
+   *
+   * Two editors can be mounted on the same block at once: the on-canvas
+   * paragraph and the Inspector's Typography box. Both used to auto-focus
+   * from the same unqualified request, so the Inspector reliably won the
+   * race and yanked the caret off the page into a side panel mid-sentence.
+   * Naming the intended surface lets each ignore requests that aren't its
+   * own. Defaults to `'canvas'` — the page is the primary writing surface,
+   * so anything that doesn't say otherwise means "put the caret back in the
+   * book". */
+  editRequestSource: 'canvas' | 'panel'
+  select: (chapterId: string, blockId: string | null) => void
   /** Same as `select`, but also flags the selection for immediate editing.
    * `caretPosition` defaults to `'end'` — pass `'start'` for a block whose
    * content is brand new from the caret's perspective (e.g. the second half
@@ -90,7 +106,13 @@ interface SelectionState {
    * yet, or at the wrong end of a merge. `itemIndex` (Phase 115) is only
    * meaningful when `blockId` refers to a `list` block — see
    * `editRequestItemIndex` above. */
-  selectForEdit: (chapterId: string, blockId: string, caretPosition?: 'start' | 'end' | number, itemIndex?: number) => void
+  selectForEdit: (
+    chapterId: string,
+    blockId: string,
+    caretPosition?: 'start' | 'end' | number,
+    itemIndex?: number,
+    source?: 'canvas' | 'panel',
+  ) => void
   /** Selects a structural page (clearing any block/chapter selection) —
    * used by the Sidebar's Structure tab rows and by clicking a structural
    * page directly in the on-screen preview. */
@@ -122,6 +144,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
   editRequestId: null,
   editRequestCaretPosition: 'end',
   editRequestItemIndex: null,
+  editRequestSource: 'canvas',
   scrollRequest: null,
   select: (chapterId, blockId) =>
     set({
@@ -132,8 +155,9 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       editRequestId: null,
       editRequestCaretPosition: 'end',
       editRequestItemIndex: null,
+      editRequestSource: 'canvas',
     }),
-  selectForEdit: (chapterId, blockId, caretPosition: 'start' | 'end' | number = 'end', itemIndex) =>
+  selectForEdit: (chapterId, blockId, caretPosition: 'start' | 'end' | number = 'end', itemIndex, source = 'canvas') =>
     set({
       selectedChapterId: chapterId,
       selectedBlockId: blockId,
@@ -142,6 +166,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       editRequestId: generateId('edit-request'),
       editRequestCaretPosition: caretPosition,
       editRequestItemIndex: itemIndex ?? null,
+      editRequestSource: source,
     }),
   selectStructuralPage: (pageId) =>
     set({
@@ -152,6 +177,7 @@ export const useSelectionStore = create<SelectionState>()((set) => ({
       editRequestId: null,
       editRequestCaretPosition: 'end',
       editRequestItemIndex: null,
+      editRequestSource: 'canvas',
     }),
   selectCoverElement: (elementId) => set({ selectedCoverElementId: elementId }),
   consumeEditRequest: () => set({ editRequestId: null, editRequestItemIndex: null }),

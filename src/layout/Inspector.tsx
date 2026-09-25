@@ -1,4 +1,4 @@
-import { ChevronsRight, Palette } from 'lucide-react'
+import { ChevronsRight } from 'lucide-react'
 
 import { useUiStore, type InspectorTab } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
@@ -9,7 +9,8 @@ import { TypographyPanel } from '@/layout/inspector/TypographyPanel'
 import { ImagePanel } from '@/layout/inspector/ImagePanel'
 import { StructuralPagePanel } from '@/layout/inspector/StructuralPagePanel'
 import { NotesPanel } from '@/layout/inspector/NotesPanel'
-import { resolveTheme } from '@/theme/presets'
+import { ThemeGallery } from '@/components/settings/ThemeGallery'
+import { useProjectStore } from '@/store/projectStore'
 import type { Project } from '@/types'
 
 interface InspectorProps {
@@ -39,7 +40,7 @@ export function Inspector({ project }: InspectorProps) {
   const toggleInspector = useUiStore((s) => s.toggleInspector)
   const activeTab = useUiStore((s) => s.inspectorTab)
   const setInspectorTab = useUiStore((s) => s.setInspectorTab)
-  const setProjectSettingsOpen = useUiStore((s) => s.setProjectSettingsOpen)
+  const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
   const selectedStructuralPageId = useSelectionStore((s) => s.selectedStructuralPageId)
 
   if (collapsed) return null
@@ -99,7 +100,15 @@ export function Inspector({ project }: InspectorProps) {
             ) : (
               <div className="flex flex-col divide-y divide-border">
                 <SettingRow label="Trim size" value={settings.trimSize.replace('x', ' × ')} />
-                <SettingRow label="Margins (in)" value={`${settings.margins.inner}mm inner`} />
+                {/* Label said "(in)" over a millimetre value (Phase 157).
+                 * Every margin in `ProjectSettings` is stored in mm, and
+                 * three of the four were being hidden anyway — a book's
+                 * outer, top and bottom margins matter as much as its
+                 * gutter, and the Page tab is where you'd look for them. */}
+                <SettingRow
+                  label="Margins"
+                  value={`${settings.margins.inner} inner · ${settings.margins.outer} outer · ${settings.margins.top}/${settings.margins.bottom} mm`}
+                />
                 <SettingRow label="Bleed" value={`${settings.bleed}mm`} />
                 <SettingRow label="Language" value={settings.language.toUpperCase()} />
               </div>
@@ -118,24 +127,30 @@ export function Inspector({ project }: InspectorProps) {
             <NotesPanel projectId={project.id} />
           </TabsContent>
 
-          <TabsContent value="theme">
-            {/* Previously a permanent "Theme editing arrives in Phase 4" placeholder,
-             * even though a full Theme Gallery has existed in Project Settings since
-             * Phase 43 — misleading, since a user landing on this tab had no way to
-             * know changing themes was possible at all. Now opens that same real
-             * gallery instead of duplicating it here. See docs/STATUS.md's
-             * audit-fixes entry. */}
-            <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
-              <Palette className="size-6 text-text-muted" />
-              <div className="flex flex-col gap-1">
-                <p className="text-sm font-medium text-text-primary">{resolveTheme(settings.themeId).name}</p>
-                <p className="text-xs text-text-secondary">
-                  Themes control colour, type and layout — switching one never touches your manuscript.
-                </p>
-              </div>
-              <Button variant="secondary" size="sm" onClick={() => setProjectSettingsOpen(true)}>
-                Change theme…
-              </Button>
+          <TabsContent value="theme" className="px-1">
+            {/* The gallery itself, not a button that opens it somewhere else.
+             *
+             * This tab has been through two versions of the same mistake.
+             * First a permanent "Theme editing arrives in Phase 4"
+             * placeholder, while a real Theme Gallery had existed in Project
+             * Settings since Phase 43. Then a link to that gallery — an
+             * icon, a name and a "Change theme…" button, which is a 300 by
+             * 800 pixel panel spending all of it on one button, in the one
+             * tab of a *design* application that should be showing the
+             * design (Phase 176).
+             *
+             * Choosing a book's typography by opening a modal over the book
+             * is backwards. Here the previews sit beside the page they
+             * apply to, and a click re-renders it instantly. */}
+            <div className="flex flex-col gap-3 px-3 pb-4 pt-1">
+              <p className="text-xs text-text-secondary">
+                Colour, type and layout. Switching never touches your manuscript.
+              </p>
+              <ThemeGallery
+                compact
+                value={settings.themeId}
+                onChange={(themeId) => updateProjectSettings(project.id, { themeId })}
+              />
             </div>
           </TabsContent>
         </div>

@@ -76,6 +76,32 @@ check('paginate: all chapter starts on odd (recto) page numbers', chapterStarts.
 const allBlockIds = pages.flatMap((p) => p.blocks.map((b) => b.id))
 const expectedBlockIds = bigChapters.flatMap((c) => c.blocks.map((b) => b.id))
 check('paginate: no blocks lost or duplicated', allBlockIds.length === expectedBlockIds.length && new Set(allBlockIds).size === allBlockIds.length)
+
+// --- Page identity is stable across runs (Phase 139) ---
+// The whole writing experience rested on this: `LazySpread` keys its pages
+// by `page.id`, so a fresh random id per run made React tear down and
+// rebuild every page — destroying the focused element and the caret in it.
+{
+  const runA = paginate(bigChapters, () => 60, contentHeight, 100)
+  const runB = paginate(bigChapters, () => 60, contentHeight, 100)
+  check(
+    'paginate: identical input produces identical page ids',
+    runA.pages.length === runB.pages.length && runA.pages.every((page, i) => page.id === runB.pages[i].id),
+  )
+  check('paginate: page ids are unique within a run', new Set(runA.pages.map((x) => x.id)).size === runA.pages.length)
+
+  // Editing a chapter must not renumber the pages before the edit — that is
+  // what lets the page holding the caret keep its React identity while its
+  // contents reflow.
+  const edited = bigChapters.map((c, i) =>
+    i === bigChapters.length - 1 ? { ...c, blocks: [...c.blocks, { id: 'extra-block', type: 'paragraph' as const, html: 'More.' }] } : c,
+  )
+  const runC = paginate(edited, () => 60, contentHeight, 100)
+  const sharedPrefix = Math.min(runA.pages.length, runC.pages.length)
+  let stable = 0
+  for (let i = 0; i < sharedPrefix; i++) if (runA.pages[i].id === runC.pages[i].id) stable++
+  check('paginate: adding a block keeps earlier page ids stable', stable === sharedPrefix)
+}
 check('paginate: block order preserved within manuscript', JSON.stringify(allBlockIds) === JSON.stringify(expectedBlockIds))
 // verify no page overflows content height
 const overflow = pages.some((p) => {
@@ -114,12 +140,30 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const originalFetch = globalThis.fetch
-// @ts-expect-error -- test shim: serve /fonts/*.woff2 from the local public/ dir
+/**
+ * Serves anything under `public/` straight from disk, the way the dev server
+ * and the deployed site both do.
+ *
+ * Covers absolute same-origin URLs as well as root-relative ones: production
+ * code resolves asset paths against `document.baseURI` (so the app keeps
+ * working when served from a sub-path), which means requests arrive here as
+ * `http://localhost/...` rather than `/...`.
+ *
+ * Deliberately broader than the fonts-only shim it replaces. The spell-check
+ * dictionaries live under `public/dictionaries/`, and without them every
+ * spelling-dependent checker silently reported "not analysed" — which is how
+ * a genuine assertion about category scores came to fail without anyone
+ * noticing the dictionary had never loaded.
+ */
+// @ts-expect-error -- test shim
 globalThis.fetch = async (url: string) => {
-  if (typeof url === 'string' && url.startsWith('/fonts/')) {
-    const filePath = path.join(__dirname, '..', 'public', url)
-    const buf = fs.readFileSync(filePath)
-    return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+  const requestPath = typeof url === 'string' ? url.replace(/^https?:\/\/[^/]+/, '') : ''
+  if (requestPath.startsWith('/')) {
+    const filePath = path.join(__dirname, '..', 'public', requestPath)
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+      const buf = fs.readFileSync(filePath)
+      return { arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) } as Response
+    }
   }
   return originalFetch(url)
 }
@@ -541,14 +585,27 @@ check(
   'VE pipeline: copyEditing now scores a real 100 (registered checker, zero findings with no styleGuide passed) instead of null',
   dirtyReport.categoryScores.copyEditing !== null && dirtyReport.categoryScores.copyEditing?.score === 100,
 )
-const analysedDirtyScores = [
-  dirtyReport.categoryScores.proofreading,
-  dirtyReport.categoryScores.consistency,
-  dirtyReport.categoryScores.readability,
-  dirtyReport.categoryScores.copyEditing,
-].filter((c): c is NonNullable<typeof c> => c !== null)
+// Derived from the report itself rather than a hardcoded category list.
+// The previous version named the four categories that had checkers when it
+// was written; four more (developmental, typography, accessibility,
+// commercial) were registered afterwards, so the assertion quietly went stale
+// and started failing — unnoticed, because the suite was already red further
+// down. Reading whatever the pipeline actually analysed keeps this honest as
+// new checkers are added, which is the whole point of the assertion.
+const analysedDirtyScores = Object.values(dirtyReport.categoryScores).filter(
+  (c): c is NonNullable<typeof c> => c !== null,
+)
 check(
-  'VE pipeline: overall score equals the mean of every analysed category (proofreading + consistency + readability + copyEditing), not just proofreading alone',
+  'VE pipeline: at least the four long-standing categories are analysed',
+  [
+    dirtyReport.categoryScores.proofreading,
+    dirtyReport.categoryScores.consistency,
+    dirtyReport.categoryScores.readability,
+    dirtyReport.categoryScores.copyEditing,
+  ].every((c) => c !== null),
+)
+check(
+  'VE pipeline: overall score equals the mean of every analysed category, not just proofreading alone',
   dirtyReport.overallScore === Math.round(analysedDirtyScores.reduce((sum, c) => sum + c.score, 0) / analysedDirtyScores.length),
 )
 
@@ -586,12 +643,24 @@ function makeFixAllTestManuscript(): Manuscript {
   }
 }
 
+/**
+ * `virtualEditorStore.runReview` defers `runPipeline` by one tick
+ * (`window.setTimeout(…, 0)`) so the "Reviewing…" state paints before the
+ * synchronous pipeline blocks the main thread. These tests therefore have to
+ * let that tick run before asserting on the report — reading it synchronously
+ * finds no report at all, which is what silently broke this suite: the
+ * assertions below failed, and a later line dereferenced the missing report
+ * and killed the whole run before anything after it could execute.
+ */
+const flushReview = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 // fixCategory: scoped correctly (a category with no matching findings is a
 // no-op; the matching category applies every fixable 'new' finding in it
 // and leaves the unfixable one alone).
 const fixCategoryProjectId = 've-fixcategory-test-project'
 useContentStoreForFixAll.getState().setManuscript(fixCategoryProjectId, makeFixAllTestManuscript())
 useVirtualEditorStore.getState().runReview(fixCategoryProjectId, useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!)
+await flushReview()
 
 useVirtualEditorStore.getState().fixCategory(fixCategoryProjectId, 'readability')
 const afterWrongCategoryFix = useContentStoreForFixAll.getState().getManuscript(fixCategoryProjectId)!
@@ -630,6 +699,7 @@ check('fixCategory: unfixable finding stays new (never touched)', (fixCategorySt
 const fixAllProjectId = 've-fixall-test-project'
 useContentStoreForFixAll.getState().setManuscript(fixAllProjectId, makeFixAllTestManuscript())
 useVirtualEditorStore.getState().runReview(fixAllProjectId, useContentStoreForFixAll.getState().getManuscript(fixAllProjectId)!)
+await flushReview()
 
 const fixAllReportBefore = useVirtualEditorStore.getState().reportsByProject[fixAllProjectId]!
 const repeatedWordFindingForFixAll = fixAllReportBefore.findings.find((f) => f.issueType === 'repeated-word')!
@@ -669,6 +739,7 @@ useVirtualEditorStore.getState().runReview(
   styleGuideReviewManuscript,
   { ...DEFAULT_STYLE_GUIDE, headingCapitalisation: 'title-case' },
 )
+await flushReview()
 const styleGuideReport = useVirtualEditorStore.getState().reportsByProject[styleGuideReviewProjectId]!
 check(
   'runReview: a styleGuide passed through runReview reaches headingCapitalisationChecker via runPipeline',
@@ -678,6 +749,7 @@ check(
 const noStyleGuideReviewProjectId = 've-no-styleguide-review-project'
 useContentStoreForFixAll.getState().setManuscript(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
 useVirtualEditorStore.getState().runReview(noStyleGuideReviewProjectId, styleGuideReviewManuscript)
+await flushReview()
 const noStyleGuideReport = useVirtualEditorStore.getState().reportsByProject[noStyleGuideReviewProjectId]!
 check(
   'runReview: with no styleGuide argument, headingCapitalisationChecker stays silent (no false-positive plumbing bug)',
@@ -1023,12 +1095,14 @@ check(
 const veReviewPagesProjectId = 've-pages-review-project'
 useContentStoreForFixAll.getState().setManuscript(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT)
 useVirtualEditorStore.getState().runReview(veReviewPagesProjectId, EMPTY_VE_MANUSCRIPT, undefined, sparsePages)
+await flushReview()
 const veReviewPagesReport = useVirtualEditorStore.getState().reportsByProject[veReviewPagesProjectId]!
 check('runReview: an optional pages argument reaches the pipeline and produces a real publishingStandards score', veReviewPagesReport.categoryScores.publishingStandards !== null)
 
 const veNoPagesReviewProjectId = 've-no-pages-review-project'
 useContentStoreForFixAll.getState().setManuscript(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
 useVirtualEditorStore.getState().runReview(veNoPagesReviewProjectId, EMPTY_VE_MANUSCRIPT)
+await flushReview()
 const veNoPagesReviewReport = useVirtualEditorStore.getState().reportsByProject[veNoPagesReviewProjectId]!
 check('runReview: without a pages argument, publishingStandards stays null (genuinely optional, no silent default)', veNoPagesReviewReport.categoryScores.publishingStandards === null)
 
@@ -1593,9 +1667,19 @@ check(
 await useVersionStore.getState().createSnapshot(vhProjectId, 'auto')
 await useVersionStore.getState().listSnapshots(vhProjectId)
 const vhSnapshotsAfterAuto = useVersionStore.getState().getSnapshots(vhProjectId)
+// Phase 161 changed this contract deliberately. The label used to default
+// to a formatted timestamp ("Autosave — 9/6/2026, 9:26:49 AM"), and
+// `VersionHistoryDialog` prints the timestamp *underneath* the label — so
+// every unnamed version showed the same time twice, with the kind badge
+// beside it saying "auto" a third time. An unnamed snapshot now stores no
+// label at all, and what to show in its place is the row's decision.
 check(
-  'createSnapshot (auto, no label given): defaults to an "Autosave — <timestamp>" label',
-  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label.startsWith('Autosave — ')),
+  'createSnapshot (auto, no label given): stores no label, leaving the display to decide',
+  vhSnapshotsAfterAuto.some((s) => s.kind === 'auto' && s.label === ''),
+)
+check(
+  'createSnapshot: an explicit label is still kept verbatim',
+  vhSnapshotsAfterAuto.some((s) => s.label === 'My named save'),
 )
 
 // listSnapshots: newest-first ordering — write two snapshots directly via
@@ -2358,6 +2442,9 @@ check(
     elements: [
       { id: 'el-1', kind: 'text', text: 'THE HIDDEN LIBRARY', x: 0.5, y: 0.9, width: 0.5, height: 0.05 },
       { id: 'el-2', kind: 'rect', x: 0.1, y: 0.1, width: 0.8, height: 0.02 },
+      // A positioned cover image — the second place an asset id hides, and
+      // the one Phase 169 found was never actually being stripped.
+      { id: 'el-3', kind: 'image', imageAssetId: 'asset-mark', x: 0.5, y: 0.2, width: 0.2, height: 0.1 },
     ],
   } as unknown as AnyPage
 
@@ -2404,14 +2491,73 @@ check(
     wocCover.elements.some((e) => e.kind === 'rect'),
   )
 
-  // Assets are per-project IndexedDB blobs; a retained id would resolve to a
-  // missing image in whatever project the template is applied to.
+  // Without an asset map, references are stripped — a project asset id
+  // would resolve to a missing image in whatever project the template is
+  // applied to. This is what every template did before Phase 169.
   check('buildTemplate: strips image asset references in both modes', wcCover.content.imageAssetId === undefined && wocCover.content.imageAssetId === undefined)
+  check(
+    'buildTemplate: strips a positioned cover image too',
+    (wcCover.elements.find((e) => e.kind === 'image') as { imageAssetId?: string } | undefined)?.imageAssetId === undefined,
+  )
 
   // A template is presentation and structure — never a manuscript.
   check('buildTemplate: carries no manuscript', !('manuscript' in withContent) && !('chapters' in withContent))
   check('buildTemplate: records which mode it was saved in', withContent.includesContent === true && withoutContent.includesContent === false)
   check('buildTemplate: carries page setup', withContent.settings.trimSize === '5.5x8.5')
+
+  // --- Carrying images with a template (Phase 169) ---
+  {
+    const { collectAssetIds, captureTemplateAssets, materialiseTemplateAssets } = await import('../src/templates/templateAssets')
+    const { putAsset, getAssetBlob, listAssetsForProject } = await import('../src/store/assetDb')
+
+    check('collectAssetIds: finds both a page image and a positioned cover image', collectAssetIds([coverPage, copyrightPage]).sort().join(',') === 'asset-123,asset-mark')
+
+    // Two real blobs in a source project's library, distinguishable by
+    // their bytes so the copy can be proved to be a copy of the right one.
+    const bytesFor = (id: string) => new Blob([new Uint8Array([1, 2, 3, id.length])], { type: 'image/png' })
+    for (const [id, name] of [['asset-123', 'cover.png'], ['asset-mark', 'mark.png']] as const) {
+      await putAsset(
+        { id, projectId: 'proj-source', name, mimeType: 'image/png', size: 4, width: 10, height: 20, createdAt: '' },
+        bytesFor(id),
+      )
+    }
+
+    const captured = await captureTemplateAssets([coverPage, copyrightPage], 'proj-source')
+    check('captureTemplateAssets: copies every referenced image', captured.assets.length === 2)
+    check('captureTemplateAssets: gives each a template-scoped id', captured.assets.every((a) => a.id !== 'asset-123' && a.id !== 'asset-mark'))
+    check('captureTemplateAssets: keeps the original name and dimensions', captured.assets.some((a) => a.name === 'mark.png' && a.width === 10 && a.height === 20))
+
+    const carried = buildTemplate({ ...base, includeContent: true, assets: captured.assets, assetIdMap: captured.assetIdMap })
+    const carriedCover = carried.structuralPages[0] as unknown as { content: { imageAssetId?: string }; elements: { kind: string; imageAssetId?: string }[] }
+    check("buildTemplate: rewrites a page image to the template's own copy", carriedCover.content.imageAssetId === captured.assetIdMap['asset-123'])
+    check('buildTemplate: rewrites a positioned cover image too', carriedCover.elements.find((e) => e.kind === 'image')?.imageAssetId === captured.assetIdMap['asset-mark'])
+    check('buildTemplate: records the images it carries', (carried.assets ?? []).length === 2)
+
+    // Applying it into a second project must give that project its own
+    // copies under its own ids — sharing an id would mean deleting one
+    // project took the other's image with it.
+    const template = { ...carried, id: 'tpl-carry', schemaVersion: 1, createdAt: '' }
+    const map = await materialiseTemplateAssets(template, 'proj-target')
+    check('materialiseTemplateAssets: copies one asset per template image', Object.keys(map).length === 2)
+    const targetAssets = await listAssetsForProject('proj-target')
+    check('materialiseTemplateAssets: the copies belong to the new project', targetAssets.length === 2 && targetAssets.every((a) => a.projectId === 'proj-target'))
+    check("materialiseTemplateAssets: under fresh ids, not the template's", targetAssets.every((a) => !(a.id in map)))
+
+    const appliedPages = pagesForNewProject(template, map) as unknown as { content: { imageAssetId?: string }; elements?: { kind: string; imageAssetId?: string }[] }[]
+    check("pagesForNewProject: points the page image at the new project's copy", appliedPages[0].content.imageAssetId === map[carriedCover.content.imageAssetId!])
+    check(
+      "pagesForNewProject: points the cover element at the new project's copy",
+      appliedPages[0].elements?.find((e) => e.kind === 'image')?.imageAssetId === map[carriedCover.elements.find((e) => e.kind === 'image')!.imageAssetId!],
+    )
+    const roundTripped = await getAssetBlob(appliedPages[0].content.imageAssetId!)
+    check('the applied image is the same bytes as the original', !!roundTripped && roundTripped.size === 4)
+
+    // And with no map — the template's images unreadable, or an old
+    // template saved before any of this — the reference is dropped rather
+    // than left pointing at a blob the project cannot read.
+    const orphaned = pagesForNewProject(template) as unknown as { content: { imageAssetId?: string } }[]
+    check('pagesForNewProject: drops references it cannot resolve', orphaned[0].content.imageAssetId === undefined)
+  }
 
   const applied = pagesForNewProject({ ...withContent, id: 'tpl-1', schemaVersion: 1, createdAt: '' })
   check('applyTemplate: regenerates page ids', applied[0].id !== 'page-cover' && applied[1].id !== 'page-copyright')
@@ -2458,7 +2604,13 @@ check(
   </body></html>`
 
   const c2 = `<html><body><section><h2>The Parables</h2><p>The second vision.</p>
-  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul></section></body></html>`
+  <blockquote>A quotation.</blockquote><ul><li>one</li><li>two</li></ul>
+  <blockquote class="poem">Roll on, thou deep and dark blue Ocean&#8212;roll!<br/>Ten thousand fleets sweep over thee in vain;</blockquote>
+  <div epub:type="z3998:verse"><div class="stanza"><p>First stanza, first line.</p><p>First stanza, second line.</p></div>
+  <div class="stanza"><p>Second stanza.</p></div></div>
+  <pre>  A line kept as typed
+  And another</pre>
+  </section></body></html>`
 
   const epubBytes = await buildZip([
     { name: 'mimetype', data: enc('application/epub+zip') },
@@ -2481,18 +2633,75 @@ check(
 
   const c1Text = epubChapters[0].blocks.map((b) => (b.type === 'paragraph' ? b.html : '')).join('\n')
   check('epub: flattens nested containers instead of dropping their text', c1Text.includes('words of the blessing'))
-  // Regression: verse lives in bare <div class="line"> elements, which are not
-  // block tags. An importer that only walks known block tags drops every line
-  // of poetry in the book while appearing to work.
-  check('epub: preserves verse lines held in non-block containers', c1Text.includes('the eternal God will tread'))
+
+  // Verse lives in bare <div class="line"> elements inside a marked line
+  // group — not block tags, so an importer that only walks known block tags
+  // drops every line of poetry in the book while appearing to work.
+  //
+  // Phase 167 changed what "preserved" means here. Until then these three
+  // lines arrived as three separate paragraphs: the breaks survived by
+  // accident (one block each) and the fact that they were the poet's did
+  // not, so re-flowing or exporting could justify them like prose. They are
+  // now one `verse` block whose `lines` are the poet's lines.
+  const c1Verse = epubChapters[0].blocks.find((b) => b.type === 'verse')
+  check('epub: verse arrives as a verse block, not as paragraphs', c1Verse?.type === 'verse')
   check(
-    'epub: keeps each verse line as its own block rather than merging them',
-    epubChapters[0].blocks.filter((b) => b.type === 'paragraph' && /eternal God|His camp|of heavens/.test(b.html)).length === 3,
+    'epub: every line of the poem survives, in order',
+    c1Verse?.type === 'verse' &&
+      c1Verse.lines.length === 3 &&
+      c1Verse.lines[0].includes('the eternal God will tread') &&
+      c1Verse.lines[2].includes('of heavens'),
   )
-  check('epub: preserves textual-critical brackets verbatim', c1Text.includes('⌜of heavens⌝') && c1Text.includes('[And appear from His camp]'))
+  check(
+    'epub: preserves textual-critical brackets verbatim',
+    c1Verse?.type === 'verse' && c1Verse.lines[1] === '[And appear from His camp]' && c1Verse.lines[2].includes('⌜of heavens⌝'),
+  )
+  check(
+    'epub: no stray paragraph is left behind by the verse container',
+    !/eternal God|His camp|of heavens/.test(c1Text),
+  )
 
   const c2Types = epubChapters[1].blocks.map((b) => b.type)
   check('epub: converts blockquote and list blocks', c2Types.includes('quote') && c2Types.includes('list'))
+
+  // The other three shapes poetry actually ships as.
+  const c2Verse = epubChapters[1].blocks.filter((b) => b.type === 'verse')
+  check('epub: recognises all three remaining verse shapes', c2Verse.length === 3)
+  check(
+    'epub: a <blockquote class="poem"> is verse, not a quote',
+    c2Verse[0]?.type === 'verse' && c2Verse[0].lines.length === 2 && c2Verse[0].lines[0].startsWith('Roll on'),
+  )
+  check(
+    'epub: a nested line group becomes a stanza break',
+    c2Verse[1]?.type === 'verse' && c2Verse[1].lines.join('|') === 'First stanza, first line.|First stanza, second line.||Second stanza.',
+  )
+  check(
+    'epub: <pre> keeps its lines',
+    c2Verse[2]?.type === 'verse' && c2Verse[2].lines.length === 2 && c2Verse[2].lines[0] === 'A line kept as typed',
+  )
+
+  // The round trip: what this app *writes* for verse must be what it reads
+  // back as verse. Without it the export could drift into markup our own
+  // importer flattens, and nothing would notice until someone re-opened
+  // their own book and found the poems turned into prose.
+  {
+    const { blockToXhtml } = await import('../src/epub/blockToXhtml')
+    const { parseHtmlDocument } = await import('../src/parser/html')
+    const original = {
+      id: 'v1',
+      type: 'verse' as const,
+      lines: ['Roll on, thou deep and dark blue Ocean—roll!', 'Ten thousand fleets sweep over thee in vain;', '', 'A new stanza.'],
+    }
+    const xhtml = blockToXhtml(original, () => '', { epubSemantics: true })
+    check('verse export: carries the EPUB structural semantic', xhtml.includes('epub:type="z3998:verse"'))
+    check('verse export: the HTML book gets no namespaced attribute', !blockToXhtml(original, () => '').includes('epub:type'))
+    const [roundTripped] = parseHtmlDocument(`<h1>Poem</h1>${xhtml}`, 'F')[0].blocks
+    check('verse round trip: comes back as a verse block', roundTripped?.type === 'verse')
+    check(
+      'verse round trip: every line and the stanza break survive',
+      roundTripped?.type === 'verse' && roundTripped.lines.join('|') === original.lines.join('|'),
+    )
+  }
 
   // A non-EPUB file must fail with a message safe to show the user, not a
   // stack trace from the ZIP reader.
@@ -2502,6 +2711,577 @@ check(
     await parseEpub(new File([enc('not a zip at all') as unknown as BlobPart], 'x.epub'), 'F', 'p')
   } catch (err) { epubError = err }
   check('epub: a non-EPUB file raises a user-safe ManuscriptImportError', epubError instanceof ManuscriptImportError)
+}
+
+// --- Mobile shell detection (Phase 126) ---
+{
+  const { MOBILE_QUERY } = await import('../src/hooks/useIsMobile')
+
+  /** Evaluates the real media query against a device, so this asserts the
+   * shipped rule rather than restating it. Supports only the three features
+   * the query actually uses. */
+  const matches = (query: string, device: { width: number; height: number; coarsePointer: boolean }): boolean =>
+    query.split(',').some((clause) =>
+      clause.split(' and ').every((term) => {
+        const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(term)
+        if (maxWidth) return device.width <= Number(maxWidth[1])
+        const maxHeight = /\(max-height:\s*(\d+)px\)/.exec(term)
+        if (maxHeight) return device.height <= Number(maxHeight[1])
+        const pointer = /\(pointer:\s*(\w+)\)/.exec(term)
+        if (pointer) return pointer[1] === (device.coarsePointer ? 'coarse' : 'fine')
+        return false
+      }),
+    )
+
+  const phonePortrait = { width: 390, height: 844, coarsePointer: true }
+  const phoneLandscape = { width: 844, height: 390, coarsePointer: true }
+  const tabletPortrait = { width: 820, height: 1180, coarsePointer: true }
+  const shortDesktopWindow = { width: 1280, height: 420, coarsePointer: false }
+  const desktop = { width: 1440, height: 900, coarsePointer: false }
+
+  check('mobile detection: phone in portrait gets the mobile shell', matches(MOBILE_QUERY, phonePortrait))
+  // Regression: a phone rotated to landscape is ~844x390, which clears the
+  // 640px width test. Before this rule it was handed the three-column desktop
+  // shell inside 390px of height — toolbar clipped, page canvas a sliver.
+  check('mobile detection: phone in LANDSCAPE gets the mobile shell', matches(MOBILE_QUERY, phoneLandscape))
+  check('mobile detection: tablet in portrait keeps the desktop shell', !matches(MOBILE_QUERY, tabletPortrait))
+  // A short desktop window is short because the user made it so, and still
+  // has a mouse — `pointer: coarse` is what keeps it on the desktop shell.
+  check('mobile detection: a short desktop window keeps the desktop shell', !matches(MOBILE_QUERY, shortDesktopWindow))
+  check('mobile detection: a normal desktop keeps the desktop shell', !matches(MOBILE_QUERY, desktop))
+}
+
+// --- Mobile book preview scaling (Phase 127) ---
+{
+  const { computePreviewScale } = await import('../src/layout/mobile/previewScale')
+
+  // A 6x9in trim is ~680px wide at this app's scale — far wider than a phone,
+  // so the real page is rendered full-size and CSS-scaled rather than
+  // reflowed. Reflowing would change where pages break and show a different
+  // book from the one that prints.
+  const PAGE_W = 680
+
+  const phone = computePreviewScale(390, PAGE_W)
+  check('preview scale: a page is scaled down to fit a phone', phone > 0 && phone < 1)
+  check('preview scale: the scaled page fits inside the container', phone * PAGE_W <= 390)
+
+  // Never scale up: on a wide viewport the page sits at true size.
+  check('preview scale: never magnifies past 100% on a wide viewport', computePreviewScale(1400, PAGE_W) === 1)
+  check('preview scale: exactly 1 when the page just fits', computePreviewScale(PAGE_W + 32, PAGE_W) === 1)
+
+  // Before the container has been measured there is no meaningful scale; the
+  // view shows its loading state rather than a zero-sized page.
+  check('preview scale: unmeasured container yields 0', computePreviewScale(0, PAGE_W) === 0)
+  check('preview scale: a container narrower than the padding yields 0', computePreviewScale(20, PAGE_W) === 0)
+  check('preview scale: guards a zero page width', computePreviewScale(390, 0) === 0)
+
+  // Larger trims scale down further — the rule is proportional, not a constant.
+  check('preview scale: a larger trim scales down further', computePreviewScale(390, 900) < computePreviewScale(390, 680))
+}
+
+// --- Book Graph node placement (Phase 135) ---
+{
+  const { findFreeGraphPosition, MIN_NODE_SEPARATION } = await import('../src/layout/planning/graphPlacement')
+
+  const near = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y)
+
+  // Empty canvas: the candidate is already free, so it is used unchanged.
+  const empty = findFreeGraphPosition({ x: 10, y: 20 }, [])
+  check('graph placement: an unobstructed candidate is used as-is', empty.x === 10 && empty.y === 20)
+
+  // A node far away is not an obstacle.
+  const clear = findFreeGraphPosition({ x: 0, y: 0 }, [{ x: 900, y: 900 }])
+  check('graph placement: a distant node does not displace the candidate', clear.x === 0 && clear.y === 0)
+
+  // The real bug this exists for: "centre of the view" on a fresh graph is
+  // exactly where the Book hub sits, which drew the new node underneath it.
+  const hub = { x: 0, y: 0 }
+  const nudged = findFreeGraphPosition({ x: 0, y: 0 }, [hub])
+  check('graph placement: a candidate on top of an existing node is moved off it', near(nudged, hub) >= MIN_NODE_SEPARATION)
+
+  // Deterministic — the same inputs must not wander between calls.
+  const again = findFreeGraphPosition({ x: 0, y: 0 }, [hub])
+  check('graph placement: placement is deterministic', again.x === nudged.x && again.y === nudged.y)
+
+  // Clears every obstacle, not just the first one it collided with.
+  const crowd = [
+    { x: 0, y: 0 },
+    { x: 0, y: -MIN_NODE_SEPARATION },
+    { x: MIN_NODE_SEPARATION, y: 0 },
+    { x: 0, y: MIN_NODE_SEPARATION },
+    { x: -MIN_NODE_SEPARATION, y: 0 },
+  ]
+  const free = findFreeGraphPosition({ x: 0, y: 0 }, crowd)
+  check(
+    'graph placement: the result clears every existing node, not just the first',
+    crowd.every((c) => near(free, c) >= MIN_NODE_SEPARATION),
+  )
+
+  // A second add from the same spot must not stack on the first.
+  const first = findFreeGraphPosition({ x: 50, y: 50 }, [hub])
+  const second = findFreeGraphPosition({ x: 50, y: 50 }, [hub, first])
+  check('graph placement: a second node added from the same spot does not stack', near(second, first) >= MIN_NODE_SEPARATION)
+}
+
+// --- Image import partial failure (Phase 137) ---
+{
+  // `importFiles` needs a DOM (Image decoding, object URLs, IndexedDB), so
+  // what is unit-tested here is the contract its callers depend on: the shape
+  // that lets one bad file be reported without discarding the good ones.
+  // The end-to-end behaviour is covered by the browser suite.
+  const { EMPTY_ASSETS } = await import('../src/store/assetStore')
+  check('asset store: EMPTY_ASSETS is a stable frozen-style constant', Array.isArray(EMPTY_ASSETS) && EMPTY_ASSETS.length === 0)
+
+  // The identity matters: Zustand v5 selectors returning a fresh [] each call
+  // never settle and trip React's "Maximum update depth exceeded".
+  const { EMPTY_ASSETS: again } = await import('../src/store/assetStore')
+  check('asset store: EMPTY_ASSETS keeps one identity across imports', again === EMPTY_ASSETS)
+}
+
+// --- Book Graph minimap geometry (Phase 166) ---
+{
+  const { visibleGraphRect, transformToCentreOn, clampCentreToBounds } = await import(
+    '../src/layout/planning/graphMinimapGeometry'
+  )
+  const bounds = { minX: -200, minY: -150, width: 400, height: 300 }
+  const canvas = { width: 600, height: 400 }
+
+  // At 1x with no pan, the canvas's own viewBox already fits everything, so
+  // the visible rect is the whole graph in the axis that fits tightest.
+  // That identity is the reason the minimap stays hidden at 100%.
+  const atRest = visibleGraphRect(bounds, canvas, { x: 0, y: 0, k: 1 })
+  check('minimap: at 1x the visible rect is centred on the graph', Math.abs(atRest.minX + atRest.width / 2 - 0) < 0.001 && Math.abs(atRest.minY + atRest.height / 2 + 0) < 0.001)
+  check('minimap: at 1x the visible rect covers the whole graph', atRest.width >= bounds.width - 0.001 && atRest.height >= bounds.height - 0.001)
+
+  // Zooming in halves what you can see, in both axes.
+  const zoomed = visibleGraphRect(bounds, canvas, { x: 0, y: 0, k: 2 })
+  check('minimap: 2x zoom halves the visible width', Math.abs(zoomed.width - atRest.width / 2) < 0.001)
+  check('minimap: 2x zoom halves the visible height', Math.abs(zoomed.height - atRest.height / 2) < 0.001)
+
+  // The round trip that the whole interaction rests on: ask for the pan that
+  // centres on a point, then read back where the view is centred.
+  for (const target of [{ x: 120, y: -80 }, { x: -190, y: 140 }, { x: 0, y: 0 }]) {
+    const t = { ...transformToCentreOn(target, bounds, canvas, 2.5), k: 2.5 }
+    const view = visibleGraphRect(bounds, canvas, t)
+    const centre = { x: view.minX + view.width / 2, y: view.minY + view.height / 2 }
+    check(
+      `minimap: centring on (${target.x}, ${target.y}) puts it in the middle of the view`,
+      Math.abs(centre.x - target.x) < 0.001 && Math.abs(centre.y - target.y) < 0.001,
+    )
+  }
+
+  // Clamping: a corner click lands on the nearest part of the graph, and an
+  // axis with nothing to slide along centres instead.
+  const small = { minX: -200, minY: -150, width: 100, height: 80 }
+  const clamped = clampCentreToBounds({ x: -1000, y: 1000 }, bounds, small)
+  check('minimap: a click outside the graph clamps back inside it', clamped.x === bounds.minX + small.width / 2 && clamped.y === bounds.minY + bounds.height - small.height / 2)
+  const wider = clampCentreToBounds({ x: 1000, y: 0 }, bounds, { ...bounds, width: 900, height: 900 })
+  check('minimap: an axis with nothing to slide along centres', wider.x === 0 && wider.y === 0)
+}
+
+// --- Per-block typography overrides (Phase 171) ---
+{
+  const { themeForBlock } = await import('../src/theme/blockTheme')
+  const { isDefaultOverride } = await import('../src/types/blockStyle')
+  const { useBlockStyleStore } = await import('../src/store/blockStyleStore')
+  const { resolveTheme } = await import('../src/theme/presets')
+
+  const theme = resolveTheme('classic-novel')
+
+  // The identity guarantee the renderers rely on: no override means the
+  // very same object, so React and `useMemo` see no change for the
+  // overwhelmingly common case of a book with none.
+  check('themeForBlock: returns the same theme when there is no override', themeForBlock(theme, undefined) === theme)
+  check('themeForBlock: returns the same theme for an override equal to the theme', themeForBlock(theme, { sizeScale: 1, leadingScale: 1 }) === theme)
+
+  const smaller = themeForBlock(theme, { sizeScale: 0.9 })
+  check('themeForBlock: scales the body size', Math.abs(smaller.typography.bodySize - theme.typography.bodySize * 0.9) < 1e-9)
+  check('themeForBlock: leaves the leading alone when only size is set', smaller.typography.lineHeight === theme.typography.lineHeight)
+  const looser = themeForBlock(theme, { leadingScale: 1.08 })
+  check('themeForBlock: scales the leading', Math.abs(looser.typography.lineHeight - theme.typography.lineHeight * 1.08) < 1e-9)
+  check('themeForBlock: never touches anything but typography', looser.fonts === theme.fonts && looser.page === theme.page)
+
+  check('isDefaultOverride: an absent override is the theme', isDefaultOverride(undefined))
+  check('isDefaultOverride: 1x is the theme', isDefaultOverride({ sizeScale: 1, leadingScale: 1 }))
+  check('isDefaultOverride: anything else is not', !isDefaultOverride({ sizeScale: 0.9 }))
+
+  const store = useBlockStyleStore.getState()
+  store.setOverride('proj-a', 'blk-1', { sizeScale: 0.9, leadingScale: 1 })
+  check('blockStyleStore: stores an override', useBlockStyleStore.getState().getOverride('proj-a', 'blk-1')?.sizeScale === 0.9)
+
+  // Setting a block back to the theme deletes the record rather than
+  // storing 1x — "has an override" and "differs from the theme" must never
+  // drift apart, or the Inspector shows a block as customised when it isn't.
+  useBlockStyleStore.getState().setOverride('proj-a', 'blk-1', { sizeScale: 1, leadingScale: 1 })
+  check('blockStyleStore: returning to the theme clears the record', useBlockStyleStore.getState().getOverride('proj-a', 'blk-1') === undefined)
+
+  useBlockStyleStore.getState().setOverride('proj-a', 'blk-2', { leadingScale: 1.08 })
+  useBlockStyleStore.getState().clearOverride('proj-a', 'blk-2')
+  check('blockStyleStore: an override can be cleared', useBlockStyleStore.getState().getOverride('proj-a', 'blk-2') === undefined)
+  check('blockStyleStore: an empty project hands back one stable object', useBlockStyleStore.getState().getOverrides('proj-none') === useBlockStyleStore.getState().getOverrides('proj-none'))
+
+  // The manuscript is untouched by a styling change — the whole reason this
+  // is Theme-layer data keyed by block id rather than a field on the block.
+  const { useContentStore } = await import('../src/store/contentStore')
+  const before = JSON.stringify(useContentStore.getState().byProject)
+  useBlockStyleStore.getState().setOverride('proj-a', 'blk-3', { sizeScale: 1.1 })
+  check('a typographic override never touches the manuscript', JSON.stringify(useContentStore.getState().byProject) === before)
+
+  // And the EPUB carries it as a *relative* size, so an e-reader's own type
+  // size keeps winning.
+  const { blockToXhtml } = await import('../src/epub/blockToXhtml')
+  const para = { id: 'p1', type: 'paragraph' as const, html: 'A paragraph.' }
+  const styled = blockToXhtml(para, () => '', { style: { sizeScale: 0.9 } })
+  check('EPUB: an overridden block carries a relative font size', styled.includes('font-size: 0.9em'))
+  check('EPUB: an unoverridden block is wrapped in nothing at all', blockToXhtml(para, () => '') === '<p>A paragraph.</p>')
+}
+
+// --- Virtual Editor: what a finished book is missing (Phase 175) ---
+{
+  const { bookPartsChecker, bookDetailsChecker } = await import('../src/virtualEditor/checkers/completeness')
+  type AnyPage = import('../src/types/structuralPage').StructuralPage
+
+  const manuscript = {
+    chapters: [{ id: 'ch1', title: 'One', order: 0, blocks: [{ id: 'b1', type: 'paragraph' as const, html: 'A sentence.' }] }],
+  }
+  const page = (type: string, content: Record<string, unknown> = {}) =>
+    ({ id: `page-${type}`, type, category: 'front-matter', order: 0, content }) as unknown as AnyPage
+
+  const ctx = (pages: AnyPage[]) =>
+    ({ manuscript, structuralPages: pages }) as unknown as import('../src/virtualEditor/types').CheckerContext
+
+  // The exact book the roadmap complained about: two paragraphs, nothing
+  // else. Every other checker passes it; these must not.
+  const bare = [...bookPartsChecker.run(ctx([])), ...bookDetailsChecker.run(ctx([]))]
+  const types = bare.map((f) => f.issueType).sort()
+  check(`a book with no front matter is not silently fine (${types.join(', ')})`, bare.length >= 3)
+  check('it notices there is no cover', types.includes('missing-cover'))
+  check('it notices there is no title page', types.includes('missing-title-page'))
+  check('it notices there is no copyright page', types.includes('missing-copyright-page'))
+
+  // Absence is a fact, so these are certain, and every finding explains
+  // itself — the Virtual Editor's own non-negotiable.
+  check('every finding is certain', bare.every((f) => f.confidence === 1))
+  check('every finding says why it matters', bare.every((f) => f.whyItMatters.trim().length > 20))
+  check('every finding is anchored to a real chapter', bare.every((f) => f.location.chapterId === 'ch1'))
+
+  // A complete book raises none of them.
+  const complete = [
+    page('cover', { title: 'The Walled Garden', author: 'M. Vale' }),
+    page('title-page', { title: 'The Walled Garden', author: 'M. Vale' }),
+    page('copyright', { isbn: '978-0-00-000000-0' }),
+    page('back-cover', { text: 'A blurb.' }),
+  ]
+  const clean = [...bookPartsChecker.run(ctx(complete)), ...bookDetailsChecker.run(ctx(complete))]
+  check(`a complete book raises nothing (${clean.map((f) => f.issueType).join(', ') || 'none'})`, clean.length === 0)
+
+  // The narrower cases, one at a time.
+  const noAuthor = bookDetailsChecker.run(ctx([page('cover', { title: 'A Title' }), page('title-page', { title: 'A Title' })]))
+  check('a book that names no author says so', noAuthor.some((f) => f.issueType === 'missing-author'))
+
+  // A cover falls back to the project name when its own title is empty,
+  // which is a good default and a bad thing to print.
+  const fallbackTitle = bookDetailsChecker.run(ctx([page('cover', { author: 'M. Vale' })]))
+  check('a cover still showing the project name is flagged', fallbackTitle.some((f) => f.issueType === 'cover-title-is-a-fallback'))
+
+  const noIsbn = bookDetailsChecker.run(ctx([page('copyright', {})]))
+  const isbnFinding = noIsbn.find((f) => f.issueType === 'missing-isbn')
+  check('a missing ISBN is raised', !!isbnFinding)
+  // Not every book needs one, so it must not be scored like a defect.
+  check('but only as a suggestion', isbnFinding?.severity === 'suggestion')
+
+  // A back cover is only expected once there is a front one.
+  const coverOnly = bookPartsChecker.run(ctx([page('cover', { title: 'A Title' })]))
+  check('a back cover is expected once there is a front one', coverOnly.some((f) => f.issueType === 'missing-back-cover'))
+  check('and not demanded of a book with no cover at all', !bookPartsChecker.run(ctx([])).some((f) => f.issueType === 'missing-back-cover'))
+
+  // Neither can run without the structural pages, and must say so rather
+  // than reporting a clean bill of health it has not earned.
+  const noPages = { manuscript } as unknown as import('../src/virtualEditor/types').CheckerContext
+  check('neither checker claims to have run without front matter to read', !bookPartsChecker.isApplicable?.(noPages) && !bookDetailsChecker.isApplicable?.(noPages))
+}
+
+
+// --- Virtual Editor: the AI editorial read (Phase 179) ---
+// Everything except the network: prompt building, anchoring the model's
+// findings to real text, mechanical fixes, merging and the store's run /
+// cancel / error flow. The transport is a canned reply, so no key is needed
+// and nothing is spent.
+import {
+  buildAiReviewRequest,
+  parseAiReview,
+  revalidateAiFindings,
+  createAiReviewer,
+  AI_REVIEW_CATEGORIES,
+} from '../src/virtualEditor/aiReviewer'
+import { mergeAiReview } from '../src/virtualEditor/pipeline'
+import type { AiReviewer as AiReviewerType, AiReviewResult as AiReviewResultType } from '../src/virtualEditor/types'
+import type { VerseBlock } from '../src/types/content'
+import { useVirtualEditorStore as useVeStoreForAi } from '../src/store/virtualEditorStore'
+
+{
+  const aiBook: Manuscript = {
+    chapters: [
+      {
+        id: 'ai-ch1',
+        title: 'The "Harbour"',
+        order: 0,
+        blocks: [
+          { id: 'ai-h1', type: 'heading', level: 1, text: 'The Harbour' } as HeadingBlock,
+          { id: 'ai-p1', type: 'paragraph', html: 'It was a dark and stormy night, and <em>nobody</em> came.' } as ParagraphBlock,
+          { id: 'ai-p2', type: 'paragraph', html: 'Tom &amp; Jerry walked to the harbour’s edge.' } as ParagraphBlock,
+          { id: 'ai-p3', type: 'paragraph', html: 'The boat was red. The boat was red.' } as ParagraphBlock,
+        ],
+      },
+      {
+        id: 'ai-ch2',
+        title: 'Tide',
+        order: 1,
+        blocks: [
+          { id: 'ai-p4', type: 'paragraph', html: 'Morning came slowly over the water.' } as ParagraphBlock,
+          { id: 'ai-v1', type: 'verse', lines: ['The tide goes out', '', 'the tide comes in'] } as VerseBlock,
+        ],
+      },
+    ],
+    importedAt: new Date().toISOString(),
+    sourceFileName: 'ai-fixture.md',
+  }
+
+  const request = buildAiReviewRequest({ manuscript: aiBook })
+  check('ai request: every block with text gets a key, in reading order', request.keys.get('b1')?.blockId === 'ai-h1' && request.keys.get('b2')?.blockId === 'ai-p1' && request.keys.get('b6')?.blockId === 'ai-v1')
+  check('ai request: chapters get their own keys', request.keys.get('c2')?.chapterId === 'ai-ch2' && request.keys.get('c2')?.blockId === undefined)
+  check('ai request: the prompt carries the text, not the HTML', request.prompt.includes('[b2] It was a dark and stormy night, and nobody came.') && !request.prompt.includes('<em>'))
+  check('ai request: chapter titles are escaped as attributes', request.prompt.includes('title="The &quot;Harbour&quot;"'))
+  check('ai request: coverage is the whole book when it fits', request.coverage.chaptersRead === 2 && request.coverage.chaptersTotal === 2 && request.coverage.wordsRead > 20)
+  check('ai request: the schema limits categories to what judgement scores', JSON.stringify(request.schema).includes('"developmental"') && !JSON.stringify(request.schema).includes('"layout"'))
+
+  const tight = buildAiReviewRequest({ manuscript: aiBook }, 150)
+  check('ai request: a book too long for one read says how far it got', tight.coverage.chaptersRead < 2 && tight.prompt.includes('too long for one read'))
+
+  const reply = (findings: unknown[], summary = 'A promising opening.') => JSON.stringify({ summary, findings })
+  const base = { severity: 'minor', confidence: 'high', issueType: 'cliche', message: 'A stock opening line.', whyItMatters: 'Readers have seen it before.', replacement: '' }
+
+  const parsed = parseAiReview(
+    reply([
+      { ...base, category: 'copyEditing', location: 'b2', excerpt: 'a dark and stormy night', replacement: 'a black, gale-torn night' },
+      { ...base, category: 'copyEditing', location: 'b3', excerpt: "harbour's edge", replacement: 'water’s edge', issueType: 'Curly Quotes' },
+      { ...base, category: 'readability', location: 'b2', excerpt: 'Tom & Jerry walked', replacement: 'Tom and Jerry <walked>' },
+      { ...base, category: 'consistency', location: 'b4', excerpt: 'The boat was red.', replacement: 'The boat was blue.' },
+      { ...base, category: 'developmental', location: 'c2', excerpt: '', message: 'Chapter two has no conflict.' },
+      { ...base, category: 'copyEditing', location: 'b6', excerpt: 'the tide comes in', replacement: 'the tide returns' },
+      { ...base, category: 'copyEditing', location: 'b2', excerpt: 'words that are not in the book' },
+      { ...base, category: 'copyEditing', location: 'b99', excerpt: 'Morning came slowly' },
+      { ...base, category: 'layout', location: 'b5', excerpt: 'Morning came slowly' },
+    ]),
+    request,
+    aiBook,
+  )
+  const [stormy, curly, reanchored, twice, chapterLevel, verse] = parsed.findings
+  check('ai parse: valid findings survive, invented ones are dropped and counted', parsed.findings.length === 6 && parsed.discarded === 3)
+  check('ai parse: findings are marked as AI, with the quoted excerpt', stormy?.source === 'ai' && stormy.excerpt === 'a dark and stormy night' && stormy.location.blockId === 'ai-p1')
+  check('ai parse: high confidence maps to 0.9', stormy?.confidence === 0.9)
+  check('ai parse: summary comes through', parsed.summary === 'A promising opening.' && parsed.categories.length === AI_REVIEW_CATEGORIES.length)
+  const p1 = aiBook.chapters[0]!.blocks[1]!
+  const stormyPatch = stormy?.suggestedFix?.apply(p1) as Partial<ParagraphBlock> | undefined
+  check('ai fix: replaces the quoted words and keeps the markup around them', stormyPatch?.html === 'It was a black, gale-torn night, and <em>nobody</em> came.')
+  check('ai parse: a straight apostrophe still finds a curly one', curly?.location.blockId === 'ai-p2' && curly.issueType === 'ai-curly-quotes')
+  const p2 = aiBook.chapters[0]!.blocks[2]!
+  check('ai fix: works across quote styles', (curly?.suggestedFix?.apply(p2) as Partial<ParagraphBlock>)?.html === 'Tom &amp; Jerry walked to the water’s edge.')
+  check('ai parse: a quote cited against the wrong block follows its words', reanchored?.location.blockId === 'ai-p2')
+  check('ai fix: HTML entities match, and the replacement is escaped', (reanchored?.suggestedFix?.apply(p2) as Partial<ParagraphBlock>)?.html === 'Tom and Jerry &lt;walked&gt; to the harbour’s edge.')
+  check('ai parse: words that occur twice are flagged but not auto-fixed', twice !== undefined && twice.suggestedFix === undefined)
+  check('ai parse: a chapter-level finding has no block', chapterLevel?.location.chapterId === 'ai-ch2' && chapterLevel.location.blockId === undefined && chapterLevel.excerpt === undefined)
+  const v1 = aiBook.chapters[1]!.blocks[1]!
+  check('ai fix: verse lines can be fixed line by line', JSON.stringify((verse?.suggestedFix?.apply(v1) as Partial<VerseBlock>)?.lines) === JSON.stringify(['The tide goes out', '', 'the tide returns']))
+  check('ai fix: a fix whose words have gone does nothing', Object.keys(stormy?.suggestedFix?.apply({ ...p1, html: 'Rewritten entirely.' } as ParagraphBlock) ?? { x: 1 }).length === 0)
+
+  let threw = false
+  try {
+    parseAiReview('Sorry, here is some prose instead.', request, aiBook)
+  } catch {
+    threw = true
+  }
+  check('ai parse: a reply that is not the JSON asked for is an error, not an empty report', threw)
+
+  const edited: Manuscript = {
+    ...aiBook,
+    chapters: aiBook.chapters.map((c, i) =>
+      i === 0 ? { ...c, blocks: c.blocks.map((b) => (b.id === 'ai-p1' ? { ...b, html: 'Rain fell.' } as ParagraphBlock : b)) } : c,
+    ),
+  }
+  const stillValid = revalidateAiFindings(parsed.findings, edited)
+  check('ai revalidate: a finding whose words were rewritten is dropped', stillValid.length === parsed.findings.length - 1 && !stillValid.some((f) => f.id === stormy?.id))
+
+  const aiResult: AiReviewResultType = { ...parsed, generatedAt: new Date().toISOString() }
+  const deterministic = runPipeline('ai-project', aiBook)
+  const merged = mergeAiReview(deterministic, aiResult, aiBook)
+  check('ai merge: Claude\'s findings count toward their category', (merged.categoryScores.developmental?.findingCount ?? 0) === (deterministic.categoryScores.developmental?.findingCount ?? 0) + 1)
+  check('ai merge: every category the read covers is scored', AI_REVIEW_CATEGORIES.every((c) => merged.categoryScores[c] !== null))
+  check('ai merge: deterministic findings are kept alongside', merged.findings.filter((f) => f.source !== 'ai').length === deterministic.findings.filter((f) => f.source !== 'ai').length && merged.findings.filter((f) => f.source === 'ai').length === 6)
+  const mergedTwice = mergeAiReview(merged, aiResult, aiBook)
+  check('ai merge: merging the same read twice changes nothing', mergedTwice.findings.length === merged.findings.length && mergedTwice.overallScore === merged.overallScore)
+  check('ai merge: the report records what the read covered', merged.ai?.coverage.chaptersRead === 2 && merged.ai.summary === 'A promising opening.')
+  const rerun = mergeAiReview(runPipeline('ai-project', edited), aiResult, edited)
+  check('ai merge: a later deterministic re-run keeps only findings that still fit', rerun.findings.filter((f) => f.source === 'ai').length === 5)
+
+  // The reviewer, end to end through a fake transport.
+  let sentSchema: unknown = null
+  let sentPrompt = ''
+  const progressSeen: string[] = []
+  const reviewer = createAiReviewer(async (req, { onProgress }) => {
+    sentSchema = req.schema
+    sentPrompt = req.prompt
+    onProgress?.({ phase: 'thinking', receivedChars: 0 })
+    onProgress?.({ phase: 'writing', receivedChars: 40 })
+    return reply([{ ...base, category: 'commercial', location: 'b2', excerpt: 'nobody came' }], 'Strong.')
+  })
+  const run = await reviewer.run({ manuscript: aiBook }, { onProgress: (p) => progressSeen.push(p.phase) })
+  check('ai reviewer: sends the schema and the book', sentSchema !== null && sentPrompt.includes('[b4] The boat was red.'))
+  check('ai reviewer: reports progress as it goes', progressSeen.join(',') === 'thinking,writing')
+  check('ai reviewer: returns anchored findings with a timestamp', run.findings.length === 1 && run.findings[0]!.category === 'commercial' && !Number.isNaN(Date.parse(run.generatedAt)))
+
+  // The store: run, error, cancel.
+  const ve = useVeStoreForAi.getState()
+  const okReviewer: AiReviewerType = { id: 't', label: 't', categories: AI_REVIEW_CATEGORIES, run: async () => aiResult }
+  await ve.runAiReview('ai-store', okReviewer, { manuscript: aiBook })
+  const afterRun = useVeStoreForAi.getState()
+  check('ai store: a read with no report yet builds one and merges into it', afterRun.aiByProject['ai-store']?.status === 'done' && afterRun.reportsByProject['ai-store']?.ai !== undefined && (afterRun.reportsByProject['ai-store']?.findings.some((f) => f.source === 'ai') ?? false))
+
+  const failing: AiReviewerType = { ...okReviewer, run: async () => { throw new Error('Anthropic did not accept this API key.') } }
+  await ve.runAiReview('ai-store', failing, { manuscript: aiBook })
+  const afterFail = useVeStoreForAi.getState().aiByProject['ai-store']
+  check('ai store: a failed read says why and keeps the previous read', afterFail?.status === 'error' && afterFail.message.includes('API key') && afterFail.result === aiResult)
+
+  const hanging: AiReviewerType = {
+    ...okReviewer,
+    run: (_ctx, options) =>
+      new Promise((_resolve, reject) => options?.signal?.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')))),
+  }
+  const pending = ve.runAiReview('ai-cancel', hanging, { manuscript: aiBook })
+  check('ai store: a read in flight shows as running', useVeStoreForAi.getState().aiByProject['ai-cancel']?.status === 'running')
+  ve.cancelAiReview('ai-cancel')
+  await pending
+  check('ai store: stopping a first read leaves nothing behind', useVeStoreForAi.getState().aiByProject['ai-cancel'] === undefined)
+
+  const aiFixable = useVeStoreForAi.getState().reportsByProject['ai-store']?.findings.find((f) => f.source === 'ai' && f.suggestedFix)
+  useVeStoreForAi.getState().fixAll('ai-store')
+  check('ai store: Fix All never applies an AI rewording', aiFixable !== undefined && useVeStoreForAi.getState().getFindingStatus('ai-store', aiFixable.id) === 'new')
+
+  ve.runReview('ai-store', aiBook)
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  check('ai store: re-running the free review keeps the paid read', useVeStoreForAi.getState().reportsByProject['ai-store']?.ai !== undefined)
+  ve.clearProject('ai-store')
+  check('ai store: deleting a project drops its read', useVeStoreForAi.getState().aiByProject['ai-store'] === undefined)
+}
+
+
+// --- Line-level flow, milestone 1 (Phase 181) ---
+// Per-line measurement, the screen-vs-PDF line check it enables, and the two
+// print bugs that check found on its first run.
+import { groupLineTops } from '../src/renderer/lineMeasure'
+import { SYNTHETIC_ITALIC_SKEW } from '../src/pdf/fonts'
+import type { PdfLineCheck } from '../src/store/exportStore'
+
+{
+  const tops = groupLineTops(
+    [
+      { top: 100, height: 22, width: 60 }, // line 1
+      { top: 100.5, height: 22, width: 30 }, // a bold run on line 1
+      { top: 98, height: 68, width: 40 }, // a drop cap, starting on line 1
+      { top: 126.4, height: 22, width: 200 }, // line 2
+      { top: 152.8, height: 22, width: 180 }, // line 3
+      { top: 152.8, height: 0, width: 0 }, // an empty fragment
+    ],
+    98,
+  )
+  check(`line measurement: fragments on one line are one line, and a drop cap is not a line (${tops.join(', ')})`, JSON.stringify(tops) === JSON.stringify([2, 28.4, 54.8]))
+  check('line measurement: no text, no lines', groupLineTops([], 0).length === 0)
+  const oneLineCap = groupLineTops([{ top: 98, height: 68, width: 40 }, { top: 100.5, height: 22, width: 200 }], 98)
+  check(`line measurement: a one-line paragraph with a drop cap is one line (${oneLineCap.join(', ')})`, oneLineCap.length === 1)
+
+  const mono = { widthOfTextAtSize: (t: string, s: number) => t.length * s * 0.5 }
+  const midWord = wrapRuns(
+    [
+      { text: 'a re', bold: false },
+      { text: 'arrange', bold: false, italic: true },
+      { text: 'ment b', bold: false },
+    ],
+    mono,
+    mono,
+    10,
+    1000,
+  )
+  const pieces = midWord[0]!.fragments
+  check(
+    `pdf wrap: a style change inside a word leaves no gap (${pieces.map((f) => `${f.text}@${f.x}`).join(' ')})`,
+    pieces[1]!.x + pieces[1]!.width === pieces[2]!.x && pieces[2]!.x + pieces[2]!.width === pieces[3]!.x,
+  )
+  // "rearrangement" is 13 characters (65pt); only the whole word may move.
+  const narrow = wrapRuns(
+    [
+      { text: 'ab re', bold: false },
+      { text: 'arrange', bold: true },
+      { text: 'ment', bold: false },
+    ],
+    mono,
+    mono,
+    10,
+    60,
+  )
+  check(
+    `pdf wrap: a word is never broken at a style change (${narrow.map((l) => l.fragments.map((f) => f.text).join('|')).join(' / ')})`,
+    narrow.length === 2 && narrow[1]!.fragments.map((f) => f.text).join('') === 'rearrangement',
+  )
+  const spaced = wrapRuns([{ text: 'one ', bold: false }, { text: 'two', bold: true }], mono, mono, 10, 1000)
+  check('pdf wrap: a run that starts after a space is still a new word', spaced[0]!.fragments[1]!.x > spaced[0]!.fragments[0]!.width)
+  const afterBreak = wrapRuns([{ text: 'end\n', bold: false }, { text: 'start', bold: true }], mono, mono, 10, 1000)
+  check('pdf wrap: a forced line break is never glued across', afterBreak.length === 2)
+  const justified = wrapRuns(
+    [
+      { text: 'aa bb re', bold: false },
+      { text: 'set', bold: true },
+      { text: ' cc dd ee ff gg hh', bold: false },
+    ],
+    mono,
+    mono,
+    10,
+    100,
+    { justify: true },
+  )
+  const first = justified[0]!.fragments
+  const re = first.find((f) => f.text === 're')!
+  const set = first.find((f) => f.text === 'set')!
+  check('pdf wrap: justification stretches the gaps between words, never inside one', Math.abs(re.x + re.width - set.x) < 1e-9)
+
+  check('pdf italic: a synthetic italic leans forward 14°', Math.abs(Math.tan((SYNTHETIC_ITALIC_SKEW as { angle: number }).angle * (Math.PI / 180)) - 0.2493) < 0.001)
+
+  // The exporter's line check, end to end on the real PDF pipeline.
+  const lineBook = parseMarkdown(
+    '# Lines\n\nA short paragraph.\n\nA paragraph long enough that it certainly wraps onto more than one line in a six by nine inch book, because it keeps going well past the measure of any sensible text column.\n',
+    'Lines',
+  )
+  const { pages: linePages, toc: lineToc } = paginate(lineBook, () => 40, testPageBox.contentHeightPx, testTheme.chapterOpener.topSpacer)
+  const paragraphIds = lineBook.flatMap((c) => c.blocks.filter((b) => b.type === 'paragraph').map((b) => b.id))
+  const runCheck = async (lineTops: Record<string, number[]>) => {
+    let result: PdfLineCheck | undefined
+    await exportBookToPdf(
+      { pages: linePages, toc: lineToc, pageBox: testPageBox, theme: { ...testTheme, typography: { ...testTheme.typography, dropCap: false } }, blockHeights: {}, blockStyles: {}, blockLineTops: lineTops },
+      'Lines',
+      DEFAULT_PROJECT_SETTINGS,
+      'lines-project',
+      { onLineCheck: (c) => (result = c) },
+    )
+    return result
+  }
+  const truthful = await runCheck({ [paragraphIds[0]!]: [0], [paragraphIds[1]!]: [0, 26, 52] })
+  const pdfLongLines = (truthful?.mismatches.find((m) => m.blockId === paragraphIds[1])?.pdfLines) ?? 3
+  check(`pdf line check: every paragraph drawn is compared (${truthful?.paragraphsCompared})`, truthful?.paragraphsCompared === 2)
+  check('pdf line check: a one-line paragraph agrees', !truthful?.mismatches.some((m) => m.blockId === paragraphIds[0]))
+  const wrong = await runCheck({ [paragraphIds[0]!]: [0, 26, 52, 78], [paragraphIds[1]!]: Array.from({ length: pdfLongLines }, (_, i) => i * 26) })
+  const flagged = wrong?.mismatches.find((m) => m.blockId === paragraphIds[0])
+  check(`pdf line check: a disagreement is reported with both counts (${JSON.stringify(flagged)})`, flagged?.screenLines === 4 && flagged.pdfLines === 1 && (flagged.pageNumber ?? 0) > 0)
+  const none = await runCheck({})
+  check('pdf line check: with nothing measured, nothing is claimed', none?.paragraphsCompared === 0 && none.mismatches.length === 0)
 }
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURE(S)`}`)

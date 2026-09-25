@@ -68,3 +68,100 @@ export function getCaretTextOffset(el: HTMLElement): number | null {
   probe.setEnd(range.startContainer, range.startOffset)
   return probe.toString().length
 }
+
+/**
+ * The text offset at which `node` begins inside `el` — the same plain-text
+ * counting `getCaretTextOffset` uses, so the two are interchangeable.
+ */
+export function textOffsetOfNode(el: HTMLElement, node: Node): number {
+  const probe = document.createRange()
+  probe.selectNodeContents(el)
+  probe.setEnd(node, 0)
+  return probe.toString().length
+}
+
+/**
+ * The current selection inside `el` as a plain-text offset pair, or `null`
+ * if the selection is not inside `el` at all.
+ *
+ * The collapsed case is exactly `getCaretTextOffset` (`start === end`); the
+ * non-collapsed case is what makes a *word* survivable across a DOM
+ * rewrite. That matters because the spell-check underliner rebuilds this
+ * element's nodes on every rescan: before this, restoring only ever put back
+ * a caret, so selecting a misspelled word and waiting a moment silently
+ * threw the selection away — and with it the toolbar offering to fix it.
+ */
+export function getSelectionTextRange(el: HTMLElement): { start: number; end: number } | null {
+  const selection = window.getSelection()
+  if (!selection || selection.rangeCount === 0) return null
+  const range = selection.getRangeAt(0)
+  if (!el.contains(range.startContainer) || !el.contains(range.endContainer)) return null
+  const startProbe = document.createRange()
+  startProbe.selectNodeContents(el)
+  startProbe.setEnd(range.startContainer, range.startOffset)
+  const endProbe = document.createRange()
+  endProbe.selectNodeContents(el)
+  endProbe.setEnd(range.endContainer, range.endOffset)
+  return { start: startProbe.toString().length, end: endProbe.toString().length }
+}
+
+/** Walks `el`'s text nodes to the container and offset holding plain-text
+ * position `offset`, or `null` past the end. */
+function locate(el: HTMLElement, offset: number): { node: Text; offset: number } | null {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT)
+  let remaining = offset
+  let node = walker.nextNode() as Text | null
+  while (node) {
+    if (remaining <= node.data.length) return { node, offset: remaining }
+    remaining -= node.data.length
+    node = walker.nextNode() as Text | null
+  }
+  return null
+}
+
+/**
+ * Restores a selection spanning plain-text offsets `start`..`end` in `el` —
+ * the inverse of `getSelectionTextRange`. A collapsed pair places a caret,
+ * so this covers both cases and callers need only one restore path.
+ */
+export function selectTextRange(el: HTMLElement, start: number, end: number) {
+  const from = locate(el, start)
+  const to = locate(el, end)
+  if (!from) {
+    placeCaretAtElementEnd(el)
+    return
+  }
+  const range = document.createRange()
+  range.setStart(from.node, from.offset)
+  if (to) range.setEnd(to.node, to.offset)
+  else range.collapse(true)
+  const selection = window.getSelection()
+  selection?.removeAllRanges()
+  selection?.addRange(range)
+}
+
+/**
+ * Replaces the plain-text range `start`..`end` inside `el` with
+ * `replacement`, touching only the text nodes that range actually covers.
+ *
+ * Deliberately not `el.textContent = corrected`. That is the obvious way to
+ * do this and it silently destroys the paragraph: every `<strong>`, `<em>`
+ * and link in it collapses to plain text, so correcting one misspelling
+ * would strip the formatting from the whole paragraph around it. The
+ * manuscript is not something a spelling fix gets to rewrite wholesale.
+ *
+ * Returns false if the range could not be located, so the caller can decline
+ * to commit rather than commit something wrong.
+ */
+export function replaceTextRange(el: HTMLElement, start: number, end: number, replacement: string): boolean {
+  const from = locate(el, start)
+  const to = locate(el, end)
+  if (!from || !to) return false
+  const range = document.createRange()
+  range.setStart(from.node, from.offset)
+  range.setEnd(to.node, to.offset)
+  range.deleteContents()
+  range.insertNode(document.createTextNode(replacement))
+  el.normalize()
+  return true
+}

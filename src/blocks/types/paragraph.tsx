@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { Pilcrow } from 'lucide-react'
 
 import type { ContentBlock } from '@/types/content'
@@ -7,12 +7,14 @@ import type { DrawCtx } from '@/pdf/exportPdf'
 import { useEditableField, outlineClass } from '@/blocks/shared'
 import { FloatingFormatToolbar } from '@/renderer/FloatingFormatToolbar'
 import { useLiveSpellcheck } from '@/renderer/useLiveSpellcheck'
-import { pickFont, pickItalicFont } from '@/pdf/fonts'
+import { italicSkew, pickFont, pickItalicFont } from '@/pdf/fonts'
 import { wrapRuns } from '@/pdf/textWrap'
 import { parseInlineRuns } from '@/pdf/htmlRuns'
 import { hexToPdfColor } from '@/pdf/color'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
+import { selectTextRange } from '@/blocks/caretOffset'
 import { cn } from '@/lib/utils'
+import { BLOCK_SPACING } from '@/blocks/blockSpacing'
 
 function ParagraphRender(props: BlockRenderProps) {
   const {
@@ -60,11 +62,51 @@ function ParagraphRender(props: BlockRenderProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoEdit])
 
-  // Phase 116 (2026-08-03): live, dictionary-backed spell-check underlining
-  // while this specific paragraph is being edited — see
-  // `useLiveSpellcheck.ts`'s own doc comment for the full design (why it's
-  // scoped to just the active field, how it avoids disturbing the caret).
-  useLiveSpellcheck(primary.ref, primary.isEditing, projectId)
+  /**
+   * A misspelled word the reader clicked while this paragraph was not being
+   * edited, waiting for edit mode so it can be re-selected.
+   *
+   * Phase 143 gave every paragraph underlines, editing or not — but
+   * `FloatingFormatToolbar` below is mounted with `active={isEditing}`, so
+   * on any paragraph the reader had not already clicked into, the red line
+   * led nowhere: no toolbar, no suggestions, no way to fix the word it was
+   * pointing at (reported 2026-09-05, "there still doesn't seem to be any
+   * spelling suggestions when red lines appear"). Clicking a flagged word
+   * now opens the paragraph for editing, which is what the toolbar needs.
+   *
+   * The selection has to be re-applied afterwards rather than simply made
+   * once: `startEditing`'s own layout effect reassigns `innerHTML` and
+   * places a caret, which destroys any selection that existed before it.
+   * Same shape as every other "act after the DOM has settled" fix in this
+   * codebase — the offsets are plain-text, so they survive the rewrite.
+   */
+  const pendingWordRef = useRef<{ start: number; end: number } | null>(null)
+
+  // Phase 116 (2026-08-03): live, dictionary-backed spell-check underlining —
+  // see `useLiveSpellcheck.ts`'s own doc comment for the full design (how it
+  // avoids disturbing the caret, why it observes rather than listens).
+  useLiveSpellcheck(
+    primary.ref,
+    !!editable,
+    projectId,
+    block.type === 'paragraph' ? block.html : '',
+    (start, end) => {
+      // Already editing: the selection the hook just made is the real one
+      // and nothing is about to replace the DOM, so leave it alone.
+      if (primary.isEditing || !editable) return
+      pendingWordRef.current = { start, end }
+      primary.startEditing(start)
+    },
+  )
+
+  useEffect(() => {
+    const pending = pendingWordRef.current
+    if (!primary.isEditing || !pending) return
+    pendingWordRef.current = null
+    const el = primary.ref.current
+    if (el) selectTextRange(el, pending.start, pending.end)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primary.isEditing])
 
   if (block.type !== 'paragraph') return null
 
@@ -108,10 +150,14 @@ function ParagraphRender(props: BlockRenderProps) {
         className={cn(
           'outline-offset-4 transition-[outline-color] duration-150',
           outlineClass(!!selected, primary.isEditing),
-          'cursor-pointer pb-3.5',
+          'cursor-pointer',
           dropCap && 'book-drop-cap',
         )}
         style={{
+          // Paired with `drawParagraphPdf`'s trailing gap below — see
+          // `blocks/blockSpacing.ts` for why this is a shared number and
+          // not a Tailwind class.
+          paddingBottom: BLOCK_SPACING.paragraph.after,
           fontFamily: theme.fonts.body,
           fontSize: theme.typography.bodySize,
           lineHeight: theme.typography.lineHeight,
@@ -148,7 +194,7 @@ function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
   // `text-align: justify` — this makes the exported PDF match it instead
   // of silently staying left-aligned (docs/ROADMAP.md Phase D).
   const wrapOptions = { italicFont, boldItalicFont, justify: theme.typography.justify }
-  const drawOptions = { italicFont, boldItalicFont, linkColor: accent }
+  const drawOptions = { italicFont, boldItalicFont, linkColor: accent, italicSkew: italicSkew(ctx.fonts, theme.fonts.body) }
   if (dropCap && runs.length > 0 && runs[0].text.length > 0) {
     // Faux drop cap: draw the first letter oversized, offset the rest of
     // the paragraph's first line to its right. Simplified vs. the CSS
@@ -167,12 +213,14 @@ function drawParagraphPdf(ctx: DrawCtx, block: ContentBlock, dropCap: boolean) {
     const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt - capWidth, { italicFont, boldItalicFont })
     // Shift every fragment right by capWidth for this block's lines.
     for (const line of lines) for (const f of line.fragments) f.x += capWidth
+    ctx.reportLines?.(lines.length)
     drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont, drawOptions)
   } else {
     const lines = wrapRuns(runs, regularFont, boldFont, sizePt, ctx.contentWidthPt, wrapOptions)
+    ctx.reportLines?.(lines.length)
     drawWrappedLines(ctx, lines, sizePt, sizePt * theme.typography.lineHeight, ink, regularFont, boldFont, drawOptions)
   }
-  ctx.cursorY -= 4
+  ctx.cursorY -= BLOCK_SPACING.paragraph.after * PX_TO_PT
 }
 
 export const paragraphBlockType: BlockTypeDefinition = {

@@ -78,11 +78,16 @@ src/virtualEditor/
     publishingStandards.ts 3 real checkers reading real pagination output (Phase 25)
     layout.ts              2 real checkers reading real pagination output (Phase 25)
     index.ts               ALL_CHECKERS registry
-  aiReviewer.ts          AiReviewer interface stub + NullAiReviewer instances for
-                        every category that doesn't have a real checker yet
+  aiReviewer.ts          the editorial read: builds the request (keyed manuscript,
+                        prompt, JSON schema), parses and anchors the reply,
+                        re-validates old findings; talks to no network itself
   scoring.ts             severity → score-deduction weights, category/overall
                         aggregation, SCORE_TILES (the 11 dashboard tiles)
-  pipeline.ts            runPipeline(projectId, manuscript) -> EditorialReport
+  pipeline.ts            runPipeline(projectId, manuscript) -> EditorialReport;
+                        mergeAiReview(report, aiResult, manuscript)
+
+src/ai/claudeReviewTransport.ts   the AiReviewTransport the app uses: the
+                                   author's key, @anthropic-ai/sdk, streaming
 
 src/store/virtualEditorStore.ts   Zustand store: reports, finding statuses,
                                    revision log, acceptFix/restoreRevision
@@ -91,6 +96,8 @@ src/layout/virtualEditor/
   VirtualEditorWorkspace.tsx      the Editorial Dashboard (new workspace)
   ScoreCard.tsx                   one score tile
   FindingRow.tsx                  one finding + its action buttons
+  AiReviewPanel.tsx               "Editorial read by Claude": connect / read /
+                                  progress / stop / summary / error
 ```
 
 ## The hybrid AI workflow
@@ -103,21 +110,47 @@ LLM and hope." Two kinds of check, one pipeline:
    consistency of literal strings — anything with a correct, checkable answer.
    Fast, free, 100% reproducible, and the user can always see exactly why a
    finding fired (see `checkers/proofreading.ts` for six real ones).
-2. **`AiReviewer` (model-backed, asynchronous — designed, not built).**
-   Developmental editing judgement, readability/reading-age estimation, design
-   critique, "does this chapter opener feel weak," contextual style learning.
-   These need judgement a regex can't provide, so they're reserved for a model.
-   `aiReviewer.ts` defines the interface and registers a `NullAiReviewer` stub
-   per unimplemented category — always `isAvailable() === false`, always
-   returns `[]`. This is what lets the dashboard say "Not yet analysed" instead
-   of fabricating a number, and it means adding a real AI module later is a
-   drop-in: implement `AiReviewer`, register it, done.
+2. **`AiReviewer` (model-backed, asynchronous — real since Phase 179).**
+   Developmental judgement, clarity, pacing, consistency of story facts, and
+   whether an opening earns its reader. One reviewer, `createAiReviewer` in
+   `aiReviewer.ts`, reads the whole book in a single request and returns
+   findings in five categories (`AI_REVIEW_CATEGORIES`: developmental,
+   copyEditing, readability, consistency, commercial). Layout, typography,
+   print, accessibility and proofreading stay deterministic — they are
+   measurable, and a model's guess would only blur numbers that are exact.
 
-`runPipeline` today only runs `ALL_CHECKERS` (synchronous). Once a real
-`AiReviewer` exists, `runPipeline` becomes `async`: run every `Checker` first
-(instant), then `await` every *available* `AiReviewer` and merge their findings
-in. That's an isolated change to one function — nothing else in the app needs to
-know the pipeline became partly asynchronous.
+How the two halves meet:
+
+- **The AI read never runs on its own.** "Review Entire Book" is free and runs
+  only `ALL_CHECKERS`, synchronously, as before. The editorial read spends the
+  author's money on their own key, so it runs only from the "Ask Claude to read
+  it" button in `AiReviewPanel.tsx`, which says what will be sent and to whom
+  before it is pressed.
+- **Every finding is anchored to real text.** The model sees each block
+  prefixed with a key (`[b12]`) and must quote the exact words it means. The
+  parser drops (and counts, as `discarded`) any finding whose key is unknown or
+  whose quote is not in the block; a quote cited against the neighbouring block
+  is re-anchored to the one block of that chapter that really contains it.
+  Matching tolerates straight/curly quotes, whitespace runs and HTML entities.
+- **A fix is offered only when it is mechanical.** When the model supplies a
+  replacement and its quote occurs exactly once in one field of the block,
+  "Fix" swaps those words and nothing else — recomputed at click time, a no-op
+  if the words have gone — through the ordinary revision-logged `acceptFix`.
+  AI fixes are excluded from "Fix All" (`isBulkFixable`): a rewording is
+  accepted one at a time or not at all.
+- **A paid read survives a free re-run.** `virtualEditorStore` keeps the last
+  read (`aiByProject`) and `mergeAiReview` folds it into every new
+  deterministic report, re-validating each finding against the manuscript as
+  it is now so a rewritten sentence's finding disappears instead of pointing
+  at nothing.
+- **This layer never touches a network.** The reviewer is handed an
+  `AiReviewTransport`; the app's is `src/ai/claudeReviewTransport.ts`
+  (Claude Opus 5, adaptive thinking, structured output via
+  `output_config.format`, streamed, typed SDK errors turned into sentences an
+  author can act on). Tests hand it a canned reply.
+- **Long books are read as far as one request allows** (`AI_REVIEW_MAX_CHARS`,
+  about 150k tokens) and the panel states the coverage — "the first 18 of 24
+  chapters" — rather than implying a complete read.
 
 ## Review pipeline
 
@@ -185,32 +218,46 @@ scores; `developmental` and `fieldGuide` don't get their own tile (the spec's
 dashboard list doesn't name them) but exist for findings/checkers to use — their
 findings still show up in the Findings list under their own category label.
 
-| Category (dashboard label) | Real today | Designed for later |
-|---|---|---|
-| **Proofreading** | Double spaces, repeated adjacent words, unmatched quotes, unmatched brackets, missing terminal punctuation, straight/curly quote consistency (book-wide heuristic with no Style Guide preference set, **or** a per-span preference-violation flag once `styleGuide.quoteStyle` is `'curly'`/`'straight'`) | Spelling, dash consistency, ellipsis consistency, missing/extra spaces around punctuation, broken hyperlinks, malformed URLs |
-| **Grammar** (`copyEditing`) | Heading capitalisation (Title Case / Sentence case), but **only when** `styleGuide.headingCapitalisation` is explicitly set to `'title-case'` or `'sentence-case'` — silent with no preference | Grammar, sentence flow, awkward wording, passive voice, word repetition, overly long sentences, inconsistent terminology/abbreviations, number/bullet/table formatting, italic species names |
-| *(taxonomy only)* `developmental` | — | Weak intros/conclusions, out-of-place chapters, missing explanations/diagrams/examples, poor transitions, repetition, information overload, chapter length outliers, logical inconsistencies |
-| **Publishing Quality** (`publishingStandards`) | *(Phase 25, needs `ctx.pages` — real pagination output, see § below)* Sparse chapter endings (a lone short paragraph alone on a chapter's final page), empty chapters (no content at all under the title), consecutive blank pages (a sanity check — should be structurally impossible today) | Images separated from captions, captions without images, bad table splits, bad page turns, crowded pages, isolated bullets, missing folios, running-header errors, inconsistent margins/spacing. **Widows/orphans are not a future item** — `paginate.ts`'s heading-orphan guard already prevents them structurally, by construction, not something to detect after the fact. **Page-numbering-uniqueness was considered and deliberately dropped** — once structural (front/back-matter) pages are correctly excluded, `paginate.ts` numbers every real page exactly once by construction; there was nothing left to check |
-| **Readability** | Book-wide Flesch Reading Ease + Flesch-Kincaid Grade Level (real word/sentence/syllable-count formulas, informational, always reported), per-paragraph unusually-long-average-sentence-length flag | Reading age (beyond Flesch-Kincaid), passive-voice %, reading time, chapter difficulty, reading fatigue |
-| **Consistency** | Term-casing consistency ("Forest Garden" vs "forest garden", two-word terms only), metric-vs-imperial unit mixing, abbreviated-vs-spelled-out metric unit style ("5m" vs "5 metres") | "Figure 2" vs "Fig. 2", British vs American spelling, italic scientific names, heading/caption spacing, three-plus-word term casing, imperial abbreviation style ("5ft" vs "5 feet") |
-| *(taxonomy only)* `fieldGuide` | — | Species-profile completeness: scientific name, common name, family, origin, uses, wildlife value, edibility, medicinal use, propagation, care, height/spread, hardiness, light, moisture, warnings, seasonality, illustrations, references |
-| **Layout** | *(Phase 25, needs `ctx.pages`)* Inconsistent image sizing within a chapter (3+ images spread across more than 3 distinct effective-width buckets), image density imbalance book-wide (a chapter with zero images when the book averages 2+, or more than double the book's average) | Visual imbalance beyond image count/size, poor image placement relative to text, weak chapter openers, poor whitespace/hierarchy. **True whitespace/fill-ratio measurement (e.g. "this page is only 20% full") is not built** — `LaidOutPage` doesn't store each block's real rendered height (that only exists transiently inside `HeightMeasurer`'s off-screen DOM pass), so a genuine page-density check needs that measurement threaded through too, which this milestone didn't do |
-| **Typography** | — | Font hierarchy, leading, tracking, kerning, hyphenation quality, line length, paragraph rhythm, heading hierarchy |
-| **Accessibility** | — | Contrast, minimum font size, colour-blindness safety, screen-reader compatibility, line spacing, print readability |
-| **Print Readiness** | — | Bleed, crop marks, embedded fonts, CMYK readiness, image resolution, trim, spine, page count, blank pages |
-| **Commercial Quality** | — | Professional appearance, educational quality, visual impact, reader engagement, market readiness, "does this feel like a £40–£60 book" |
+The middle column below is generated by reading the `label` of every rule in
+`src/virtualEditor/checkers/`. If it drifts from that directory again it is
+wrong, and the directory is right.
 
-**Proofreading**, **Consistency**, **Readability**, **Grammar** (`copyEditing`,
-since Phase 24), and an honest **Overall** always show a real number today —
-this paragraph was stale from before Phase 24 landed a registered `copyEditing`
-checker and was never corrected until now. **Publishing Quality**
-(`publishingStandards`) and **Layout** (since Phase 25) show a real number
-whenever `ctx.pages` was available for that review run (see § Publishing
-Standards & Layout checkers below) — otherwise, exactly like every other
-tile that has no applicable checker for the current context, they render
-"Not yet analysed." Every other tile (`typography`, `accessibility`, `print`,
-`commercial`) still always renders "Not yet analysed" — no checker exists
-for them at all yet.
+| Category (dashboard label) | Real today — every rule that ships | Judgement — for the AI read (Phase 179 covers developmental, grammar, readability, consistency and commercial) |
+|---|---|---|
+| **Proofreading** | Double spaces · repeated words · unmatched quotation marks · unmatched brackets · missing terminal punctuation · straight-vs-curly quote consistency · spelling (dictionary-backed) | Dash and ellipsis consistency, spacing around punctuation, broken links, malformed URLs |
+| **Grammar** (`copyEditing`) | Heading capitalisation style (only when `styleGuide.headingCapitalisation` is set) · serial (Oxford) comma | Sentence flow, awkward wording, passive voice, overly long sentences, inconsistent terminology, italic species names |
+| **Developmental** | Chapter length outlier · placeholder or missing chapter title | Weak intros and conclusions, out-of-place chapters, missing explanations, poor transitions, repetition, information overload, logical inconsistency |
+| **Publishing Quality** (`publishingStandards`) | Sparse chapter ending · empty chapter · consecutive blank pages *(needs `ctx.pages`)* | Images separated from captions, bad table splits, bad page turns, crowded pages, isolated bullets, running-header errors. Widows/orphans are **not** a future item — `paginate.ts` prevents them by construction |
+| **Readability** | Flesch Reading Ease and Flesch-Kincaid Grade Level · unusually long sentences | Reading age beyond Flesch-Kincaid, passive-voice percentage, reading time, chapter difficulty, reading fatigue |
+| **Consistency** | Term capitalisation · measurement units · British vs American spelling · date format · (via `continuity.ts`) bible entry never mentioned in the manuscript · duplicate bible entry name | "Figure 2" vs "Fig. 2", italic scientific names, heading and caption spacing |
+| **Field Guide** (`fieldGuide`) | No glossary, index or bibliography · inconsistent chapter-title numbering | Species-profile completeness: scientific and common name, family, origin, uses, wildlife value, edibility, propagation, care, hardiness, warnings, seasonality, references |
+| **Layout** | Inconsistent image sizing within a chapter · image density imbalance book-wide *(needs `ctx.pages`)* | Visual balance beyond image count and size, image placement relative to text, weak chapter openers, whitespace and hierarchy. True fill-ratio measurement is still not built — `LaidOutPage` doesn't carry each block's rendered height |
+| **Typography** | All-caps used for emphasis · drop cap starting on a non-letter · consecutive headings with nothing between them | Leading, tracking, kerning, hyphenation quality, line length, paragraph rhythm |
+| **Accessibility** | Missing image description · gallery with no per-image descriptions · heading level skips a level · table with no header row · cover element text contrast | Colour-blindness safety, screen-reader behaviour, minimum font size in context |
+| **Print Readiness** | Image below print resolution · image wider than the content column · inner margin below the KDP gutter minimum · bleed below the commercial-print minimum | CMYK readiness, spine width against page count, a real preflight against a printer's own rules |
+| **Commercial Quality** | Missing or empty copyright page · missing ISBN · missing back-cover blurb · missing title page · no author bio anywhere · unresolved placeholder blocks | Professional appearance, visual impact, reader engagement, "does this feel like a £40–£60 book" |
+
+**Corrected 2026-09-05 (Phase 160).** This table used to say that
+`typography`, `accessibility`, `print` and `commercial` had no checker at all
+and always rendered "Not yet analysed", and that "proofreading is real today;
+the rest of the taxonomy is designed". That stopped being true somewhere
+around Phases 25-40 and nobody came back to it — with the result that a
+review of the app's own state, conducted by reading this file, reached the
+wrong conclusion about what the product does. Every one of the twelve
+categories now has at least one deterministic rule that ships; the counts
+above were read out of `src/virtualEditor/checkers/` rather than remembered.
+
+A tile still renders **"Not yet analysed"** whenever no checker in that
+category was *applicable* to the review that ran — `publishingStandards` and
+`layout` need `ctx.pages`, so a review triggered before the renderer has
+paginated leaves both blank rather than scoring them out of nothing. That is
+the honest-by-construction behaviour `ScoreCard.tsx` was built for, and it is
+the only reason a tile is ever blank today.
+
+What none of this covers is judgement, which is exactly what the right-hand
+column is: the deterministic rules find what is *checkable*, and the editorial
+read (`createAiReviewer` in `aiReviewer.ts`, Phase 179) finds what is merely
+*wrong* in the five categories it covers. See § The hybrid AI workflow.
 
 ## Publishing Standards & Layout checkers (Phase 25)
 
@@ -424,13 +471,14 @@ tab set). `uiStore.workspaceMode` (`'manuscript' | 'virtualEditor'`) decides wha
 `Workspace.tsx` renders; `AppShell`, `Sidebar` and `Inspector` are untouched.
 
 `VirtualEditorWorkspace.tsx` shows:
-- All 11 named scores (`SCORE_TILES` in `scoring.ts`) — real numbers always
-  for Proofreading, Consistency, Readability, Grammar (`copyEditing`) and
-  Overall; real numbers for Publishing Quality and Layout whenever `pages`
-  was available for that review run (see § Publishing Standards & Layout
-  checkers); "Not yet analysed" for the remaining 4 (Typography,
-  Accessibility, Print Readiness, Commercial Quality) and for Publishing
-  Quality/Layout when `pages` wasn't available.
+- All 11 named scores (`SCORE_TILES` in `scoring.ts`), every one of them
+  backed by at least one deterministic rule that ships — see § Issue-type
+  taxonomy for the full list per category. A tile reads "Not yet analysed"
+  only when no checker in that category was *applicable* to the review that
+  ran, which today means Publishing Quality and Layout on a review triggered
+  before the renderer has paginated (both need `ctx.pages`). Corrected Phase
+  160: this list used to name four categories as permanently unanalysed,
+  long after each of them had grown real checkers.
 - A "Review Entire Book" button that runs the pipeline against the project's
   current manuscript and its current real pagination output (read from
   `useExportStore`, when present — see § Publishing Standards & Layout
@@ -464,8 +512,8 @@ was written and the paragraph was simply never corrected — fixed here.
 ## Future extensibility
 
 `AiReviewer` is the seam every future AI module plugs into — implement the
-interface, register it in place of the matching `NullAiReviewer` stub, and
-`runPipeline` picks it up once it becomes async (see § Hybrid AI Workflow). This
+interface, hand it a transport, and merge its result the way `mergeAiReview`
+merges the editorial read (see § The hybrid AI workflow). This
 is intentionally the same shape for every future module the product spec names as
 "design for, don't build yet":
 
@@ -480,8 +528,7 @@ is intentionally the same shape for every future module the product spec names a
 - Diagram generation
 - Image generation
 
-None of these are stubbed individually (unlike the 11 editorial categories, which
-already have `NullAiReviewer` placeholders) because they aren't part of the
+None of these are stubbed individually because they aren't part of the
 Virtual Editor's own taxonomy — they're separate future services that would
 plug into the same layer boundary: read Project/Content/Theme/Layout output,
 never mutate it directly, report through the same `Finding`-like structure (or
@@ -501,9 +548,9 @@ revision log) generalise to them too.
 | 3 publishing-standards checkers (sparse chapter endings, empty chapters, consecutive blank pages) | **Real** (Phase 25), tested in `scripts/smoke-test.ts` — need `CheckerContext.pages` (real pagination output); honestly `null` ("Not yet analysed") when the manuscript view hasn't rendered yet this session. No widow/orphan detection (already prevented by `paginate.ts`'s construction, not a gap), no page-numbering-uniqueness check (structural pages make it a non-finding once correctly excluded), no true whitespace/fill-ratio measurement (no per-block rendered height on `LaidOutPage`) |
 | 2 layout checkers (inconsistent image sizing, image density imbalance) | **Real** (Phase 25), tested in `scripts/smoke-test.ts` — same `ctx.pages` dependency and honest-`null` behaviour as above. No visual-imbalance/image-placement/whitespace-hierarchy checks beyond image count and size |
 | `CheckerContext.pages` + `Checker.isApplicable` | **Real** (Phase 25) — `pipeline.ts`'s `analysedCategories` only counts a category as analysed when a checker is actually applicable to the context run, not merely registered; defaults to "always applicable" so every pre-Phase-25 checker is unaffected |
-| `AiReviewer` interface | **Real** (interface only — `NullAiReviewer` is the only implementation) |
+| `AiReviewer` — the editorial read by Claude | **Real** (Phase 179) — five categories, bring-your-own-key, run only on request; request building, anchoring, fixes, merge and the store flow in `scripts/smoke-test.ts`, the whole flow against a stubbed API in `scripts/e2e/aiReview.e2e.mjs`. Not yet verified against the live API by the project (needs the author's own key) |
 | Score aggregation (category + overall) | **Real** |
-| Editorial Dashboard UI, 11 score tiles | **Real** (6 of 11 always show a real number: Proofreading, Consistency, Readability, Grammar, Overall — plus Publishing Quality and Layout whenever `pages` was available for that review run; the remaining 4 — Typography, Accessibility, Print Readiness, Commercial Quality — always render "Not yet analysed," no checker exists for them yet) |
+| Editorial Dashboard UI, 11 score tiles | **Real** — all 11 show a real number for a review run with `ctx.pages` present; Publishing Quality and Layout are the only two that can read "Not yet analysed", and only when it isn't (corrected Phase 160) |
 | Review Entire Book pipeline | **Real** (synchronous, deterministic-only) |
 | Fix / Reject / Ignore / Ignore Similar / Edit | **Real** (Edit disabled only for book-wide findings with no single block to jump to) |
 | Batch-apply ("Fix All" + per-category "Fix all in [Category]", replacing the original "Apply to Chapter"/"Apply to Book" placeholders — see Phase 13 in `docs/STATUS.md`) | **Real** |

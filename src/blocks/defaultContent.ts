@@ -2,19 +2,55 @@ import { generateId } from '@/utils'
 import type { ContentBlock, ContentBlockType } from '@/types/content'
 
 /**
- * Block types the "+" inserter (`InsertBlockButton.tsx`) offers — every
- * `ContentBlockType` except `image`/`gallery`, which need a real asset
- * picked first (images are created via drag-and-drop from the asset
- * library — `Page.tsx`'s `handleDropAsset`/`ImageDropZone` — and there's no
- * equivalent "pick images for a new gallery" flow yet). See
- * docs/ROADMAP.md Phase B.
+ * Block types the "+" inserter (`InsertBlockButton.tsx`) can create from
+ * nothing — every `ContentBlockType` except `image`/`gallery`.
+ *
+ * Those two are still offered by the same menu; they are excluded from this
+ * list because they cannot be built from a type alone. An image needs one
+ * real asset id and a gallery needs several, so both go through their own
+ * picker callbacks (`onInsertImage`/`onInsertGallery`) and their own
+ * factories, rather than `createDefaultBlock`. There is no such thing as a
+ * blank image block to fill in afterwards.
  */
 export type InsertableBlockType = Exclude<ContentBlockType, 'image' | 'gallery'>
+
+/**
+ * Block types that open with a text field the writer should be typing into
+ * the moment the block appears.
+ *
+ * Inserting one of these and *not* landing the caret is not a missing
+ * nicety — it silently loses work. Measured on both shells before this
+ * existed: "+ → Add paragraph", then type, and the manuscript stored an
+ * empty string, because every keystroke went to `document.body`. Same
+ * failure Phase 139 fixed for Enter and Phase 144 fixed for "Start
+ * writing…", found a third time by auditing for the signature.
+ *
+ * Deliberately not every insertable type: an image or a placeholder has
+ * nothing to type into, and grabbing focus for those would move the caret
+ * somewhere the user did not ask for.
+ */
+export const TEXT_FIRST_BLOCK_TYPES = new Set<string>([
+  'paragraph',
+  'heading',
+  'quote',
+  'pull-quote',
+  'callout',
+  'case-study',
+  'list',
+  'verse',
+])
+
+/** Where the caret goes for a freshly inserted block — `list` starts on its
+ * first item, everything else at the start of its single field. */
+export function isTextFirstBlock(type: string): boolean {
+  return TEXT_FIRST_BLOCK_TYPES.has(type)
+}
 
 export const INSERTABLE_BLOCK_TYPES: InsertableBlockType[] = [
   'paragraph',
   'heading',
   'quote',
+  'verse',
   'pull-quote',
   'list',
   'table',
@@ -52,6 +88,10 @@ export function createDefaultBlock(type: InsertableBlockType): ContentBlock {
       return { id, type, text: '' }
     case 'pull-quote':
       return { id, type, text: '' }
+    case 'verse':
+      // One empty line, so the block has something to type into — the same
+      // reasoning as `list`'s single empty item.
+      return { id, type, lines: [''] }
     case 'list':
       return { id, type, ordered: false, items: [''] }
     case 'table':

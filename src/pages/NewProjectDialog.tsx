@@ -26,6 +26,8 @@ import { useStructuralPageStore } from '@/store/structuralPageStore'
 import { useCustomThemeStore } from '@/store/customThemeStore'
 import { useTemplateStore } from '@/store/templateStore'
 import { pagesForNewProject } from '@/templates/applyTemplate'
+import { materialiseTemplateAssets } from '@/templates/templateAssets'
+import { useAssetStore } from '@/store/assetStore'
 import { CATEGORY_TEMPLATES, seedProjectTemplate } from '@/data/projectTemplates'
 import { addIdeaWithHistory } from '@/store/editorActions'
 import { generateId } from '@/utils'
@@ -65,6 +67,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
   const createProject = useProjectStore((s) => s.createProject)
   const updateProjectSettings = useProjectStore((s) => s.updateProjectSettings)
   const replaceAllPages = useStructuralPageStore((s) => s.replaceAllPages)
+  const loadAssets = useAssetStore((s) => s.loadAssets)
   const importCustomTheme = useCustomThemeStore((s) => s.importCustomTheme)
   const templates = useTemplateStore((s) => s.templates)
   const [idea, setIdea] = useState('')
@@ -106,18 +109,30 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
     }
   }
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     const template = templateId ? templates.find((t) => t.id === templateId) : undefined
     const project = createProject(idea, template?.category ?? category ?? 'other', template?.bookForm ?? bookForm)
 
     if (template) {
+      // A template's images are copies of their own; give this project a
+      // copy of each so they appear in its Assets tab and are deleted with
+      // it (Phase 169). A failure leaves the map empty, and
+      // `pagesForNewProject` then drops the references rather than pointing
+      // them at blobs this project cannot read.
+      let assetIdMap: Record<string, string> = {}
+      try {
+        assetIdMap = await materialiseTemplateAssets(template, project.id)
+      } catch {
+        // Fall through with no images.
+      }
+      if (Object.keys(assetIdMap).length > 0) await loadAssets(project.id)
       // A template carries a deliberate page setup, theme and structural-page
       // set — that's the whole point of having saved it, so it wins over the
       // category-driven trim-size default below. Its custom theme is restored
       // under its own id first, so `settings.themeId` still resolves.
       if (template.customTheme) importCustomTheme(template.customTheme)
       updateProjectSettings(project.id, template.settings)
-      replaceAllPages(project.id, pagesForNewProject(template))
+      replaceAllPages(project.id, pagesForNewProject(template, assetIdMap))
     } else if (category) {
       // Category-driven starting template — trim size default plus a few
       // clearly-marked example Develop entries, per `docs/ROADMAP.md`'s
@@ -148,7 +163,10 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
       <DialogContent>
         <DialogHeader>
           <DialogTitle>New Project</DialogTitle>
-          <DialogDescription>What's the idea? You can change everything later.</DialogDescription>
+          {/* This used to read "What's the idea? You can change everything
+              later." — the same sentence as the first field's own label,
+              thirty pixels above it (Phase 177). */}
+          <DialogDescription>Everything here can be changed later.</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-5">
@@ -161,10 +179,10 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
               value={idea}
               onChange={(e) => setIdea(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && idea.trim()) handleCreate()
+                if (e.key === 'Enter' && idea.trim()) void handleCreate()
               }}
             />
-            <p className="text-xs text-text-secondary">This becomes your project's title, and its first Idea in Develop.</p>
+            <p className="text-xs text-text-secondary">Becomes the book's title, and its first Idea in Develop.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -189,9 +207,11 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
                 </button>
               ))}
             </div>
-            <p className="text-xs text-text-secondary">
-              Decides how Develop labels things and which templates it offers — never a data change, and always editable later from Project Settings.
-            </p>
+            {/* The helper text here said what the choice does *and* that it
+                is reversible *and* where to reverse it — three claims for a
+                three-button toggle, under a dialog that already says
+                everything can be changed later. */}
+            <p className="text-xs text-text-secondary">Sets how Develop labels things, and which templates it offers.</p>
           </div>
 
           {templates.length > 0 && (
@@ -234,8 +254,8 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
             </Select>
             <p className="text-xs text-text-secondary">
               {category
-                ? "We'll set a matching trim size and add a few example Develop entries you can edit or delete — nothing is exported until you write it yourself."
-                : 'Pick this now if you know it, or leave it and set it later from Project Settings.'}
+                ? "Sets a matching trim size and a few example Develop entries you can edit or delete."
+                : 'Optional — it only picks a starting trim size and some examples.'}
             </p>
           </div>
         </div>
@@ -244,7 +264,7 @@ export function NewProjectDialog({ open, onOpenChange }: NewProjectDialogProps) 
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleCreate} disabled={!idea.trim()}>
+          <Button variant="primary" onClick={() => void handleCreate()} disabled={!idea.trim()}>
             Create Project
           </Button>
         </DialogFooter>

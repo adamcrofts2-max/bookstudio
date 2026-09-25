@@ -65,9 +65,38 @@ function load(variant: Variant): Promise<void> {
   const entry = entries[variant]
   if (!entry.loadPromise) {
     const basePath = DICTIONARY_PATH_BY_VARIANT[variant]
+    // Resolved against the document's own base URL rather than requested
+    // root-relative. Two reasons: a root-relative path breaks the moment the
+    // app is served from a sub-path (a project site, a preview deployment
+    // under a prefix), and outside a browser there is no origin to resolve
+    // `/dictionaries/...` against at all — Node rejects it with
+    // `ERR_INVALID_URL`, which is what made this loader throw under the test
+    // harness.
+    const url = (file: string): string => {
+      // `import.meta.env.BASE_URL`, NOT `document.baseURI`.
+      //
+      // Phase 125 switched this to resolve relatively against
+      // `document.baseURI` so a sub-path deployment would work. That broke
+      // spell-check completely, everywhere, and it stayed broken because
+      // nothing failed loudly: the editor always lives on a client-side
+      // route (`/project/:projectId`), so `document.baseURI` is the *route*,
+      // not the app root, and `new URL('./dictionaries/…', '/project/abc')`
+      // asks the server for `/project/dictionaries/en-gb/index.aff`. That
+      // 404s, nspell throws "Missing `aff` in dictionary", the console
+      // message scrolls past, and every caller silently falls back to "not
+      // yet analysed". Confirmed live 2026-09-04.
+      //
+      // Vite's `BASE_URL` is the deployed app root as a build-time constant
+      // — `/` normally, and the configured prefix under a sub-path deploy.
+      // It solves what Phase 125 was aiming at without depending on which
+      // route the user happens to be on.
+      const base = typeof import.meta.env?.BASE_URL === 'string' ? import.meta.env.BASE_URL : '/'
+      const root = base.endsWith('/') ? base : `${base}/`
+      return `${root}${basePath.replace(/^\//, '')}/${file}`
+    }
     entry.loadPromise = Promise.all([
-      fetch(`${basePath}/index.aff`).then((response) => response.arrayBuffer()),
-      fetch(`${basePath}/index.dic`).then((response) => response.arrayBuffer()),
+      fetch(url('index.aff')).then((response) => response.arrayBuffer()),
+      fetch(url('index.dic')).then((response) => response.arrayBuffer()),
     ])
       .then(([aff, dic]) => {
         // Phase 119 (2026-08-03, user: "ALL words, even words typed like

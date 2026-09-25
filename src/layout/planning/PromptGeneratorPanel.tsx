@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Check, Copy, Sparkles } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Check, Copy, Loader2, Settings, Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -9,6 +9,9 @@ import { EmptyState } from '@/components/common/EmptyState'
 import { useContentStore } from '@/store/contentStore'
 import { useLayer0Store } from '@/store/layer0Store'
 import { clipboardProvider } from '@/types/aiProvider'
+import { apiKeyProvider } from '@/ai/apiKeyProvider'
+import { useAiSettingsStore } from '@/store/aiSettingsStore'
+import { AiSettingsDialog } from '@/components/settings/AiSettingsDialog'
 import { LAYER0_ENTITY_KINDS, LAYER0_KIND_LABELS, LAYER0_KIND_TO_COLLECTION, type Layer0Bible, type Layer0EntityKind } from '@/types/layer0'
 import type { Chapter } from '@/types/content'
 import {
@@ -71,6 +74,42 @@ export function PromptGeneratorPanel({ projectId }: PromptGeneratorPanelProps) {
   const [selectedIds, setSelectedIds] = useState<Record<Layer0EntityKind, string[]>>(() => defaultSelectionForChapter(bible, undefined))
   const [copied, setCopied] = useState(false)
 
+  /**
+   * The direct-API path. Everything below it exists to hand the reply to the
+   * *same* review the clipboard flow feeds — `docs/AI_WORKSPACE_VISION.md`'s
+   * rule is that the planning bible is never edited without an author
+   * accepting a diff, and an API key removes the copy-paste, not the
+   * consent.
+   */
+  const providerId = useAiSettingsStore((s) => s.providerId)
+  const hasKey = useAiSettingsStore((s) => s.apiKey.length > 0)
+  const [aiSettingsOpen, setAiSettingsOpen] = useState(false)
+  const [reply, setReply] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [askError, setAskError] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const useApi = providerId === 'api-key' && hasKey
+
+  async function handleAsk() {
+    if (!apiKeyProvider.requestResponse) return
+    const controller = new AbortController()
+    abortRef.current = controller
+    setAsking(true)
+    setAskError(null)
+    setReply('')
+    try {
+      await apiKeyProvider.requestResponse(promptText, (chunk) => setReply((prev) => prev + chunk), controller.signal)
+    } catch (error) {
+      // An abort is the user pressing Stop, not a failure worth an alarm.
+      if (controller.signal.aborted) return
+      setAskError(error instanceof Error ? error.message : 'That request could not be completed.')
+    } finally {
+      setAsking(false)
+      abortRef.current = null
+    }
+  }
+
   const chapter = chapters.find((c) => c.id === chapterId)
   const detected = useMemo(() => (chapter ? detectMentionedEntityIds(bible, chapterPlainText(chapter)) : new Set<string>()), [bible, chapter])
 
@@ -115,8 +154,9 @@ export function PromptGeneratorPanel({ projectId }: PromptGeneratorPanelProps) {
       <div>
         <h2 className="text-lg font-semibold text-text-primary">Generate a prompt</h2>
         <p className="text-sm text-text-secondary">
-          Assembles a minimum-relevant context bundle from your planning bible — copy it into your own Claude or ChatGPT, then
-          paste the result back into your manuscript yourself. Book Studio never calls an AI on your behalf.
+          Assembles a minimum-relevant context bundle from your planning bible. Copy it into whatever you already use, or
+          — if you have added your own API key — ask Claude here. Either way the reply is only ever text for you to
+          review; nothing reaches your book until you accept it as a diff.
         </p>
       </div>
 
@@ -190,16 +230,72 @@ export function PromptGeneratorPanel({ projectId }: PromptGeneratorPanelProps) {
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
             <Label>Prompt preview</Label>
-            <Button type="button" size="sm" className="gap-1.5" onClick={() => void handleCopy()}>
-              {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-              {copied ? 'Copied' : 'Copy to clipboard'}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="ghost" size="sm" className="gap-1.5" onClick={() => setAiSettingsOpen(true)}>
+                <Settings className="size-3.5" />
+                AI settings
+              </Button>
+              <Button type="button" variant={useApi ? 'secondary' : 'primary'} size="sm" className="gap-1.5" onClick={() => void handleCopy()}>
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                {copied ? 'Copied' : 'Copy to clipboard'}
+              </Button>
+              {useApi &&
+                (asking ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={() => abortRef.current?.abort()}
+                  >
+                    <Loader2 className="size-3.5 animate-spin" />
+                    Stop
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" className="gap-1.5" onClick={() => void handleAsk()}>
+                    <Sparkles className="size-3.5" />
+                    Ask Claude
+                  </Button>
+                ))}
+            </div>
           </div>
           <pre className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded-[var(--radius-card)] border border-border bg-background-secondary p-4 text-xs leading-relaxed text-text-primary">
             {promptText}
           </pre>
         </div>
+
+        {(reply || askError || asking) && (
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <Label>Claude’s reply</Label>
+              {reply && !asking && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="gap-1.5"
+                  onClick={() => void navigator.clipboard.writeText(reply)}
+                >
+                  <Copy className="size-3.5" />
+                  Copy the reply
+                </Button>
+              )}
+            </div>
+            {askError && <p className="text-sm text-danger">{askError}</p>}
+            <pre className="max-h-[50vh] overflow-y-auto whitespace-pre-wrap rounded-[var(--radius-card)] border border-border bg-panel p-4 text-xs leading-relaxed text-text-primary">
+              {reply || (asking ? 'Thinking…' : '')}
+            </pre>
+            {reply && !asking && (
+              <p className="text-xs text-text-secondary">
+                Nothing has been changed yet. Take this to <strong>Paste response</strong> to review it as a diff before
+                any of it reaches your planning bible.
+              </p>
+            )}
+          </div>
+        )}
       </div>
+
+      <AiSettingsDialog open={aiSettingsOpen} onOpenChange={setAiSettingsOpen} />
     </div>
   )
 }

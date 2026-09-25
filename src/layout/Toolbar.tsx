@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
+  AlertTriangle,
   BookOpenText,
   ChevronDown,
   ChevronsRight,
@@ -11,6 +12,7 @@ import {
   LayoutTemplate,
   Loader2,
   Moon,
+  HardDrive,
   MoreHorizontal,
   NotebookPen,
   PanelLeft,
@@ -19,6 +21,7 @@ import {
   Save,
   Settings,
   Sparkles,
+  SpellCheck2,
   Sun,
   Undo2,
 } from 'lucide-react'
@@ -43,6 +46,11 @@ import { useExportHtmlBook } from '@/epub/useExportHtmlBook'
 import { useExportProjectFile } from '@/projectFile/useExportProjectFile'
 import { useImportProjectFile } from '@/projectFile/useImportProjectFile'
 import { SaveAsTemplateDialog } from '@/components/settings/SaveAsTemplateDialog'
+import { ManageTemplatesDialog } from '@/components/settings/ManageTemplatesDialog'
+import { DiagnosticsDialog } from '@/components/common/DiagnosticsDialog'
+import { BackupDialog } from '@/components/common/BackupDialog'
+import { useBackupStore } from '@/store/backupStore'
+import { useStorageWarning } from '@/hooks/useStorageWarning'
 import { useProjectFilePicker } from '@/projectFile/useProjectFilePicker'
 import { useExportReadiness } from '@/hooks/useExportReadiness'
 import { useManuscriptWordCount } from '@/hooks/useManuscriptWordCount'
@@ -85,6 +93,13 @@ export function Toolbar({ project }: ToolbarProps) {
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false)
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false)
+  const [manageTemplatesOpen, setManageTemplatesOpen] = useState(false)
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
+  const [backupsOpen, setBackupsOpen] = useState(false)
+  // Shown on the menu row itself: whether this book has a copy on disk is
+  // worth knowing without opening anything (Phase 158).
+  const backupStatus = useBackupStore((s) => s.byProject[project.id])
+  const { tight: storageTight } = useStorageWarning()
   const [writingGoalOpen, setWritingGoalOpen] = useState(false)
   const [readinessOpen, setReadinessOpen] = useState(false)
   const [pendingExportFormat, setPendingExportFormat] = useState<'pdf' | 'epub' | 'html' | null>(null)
@@ -97,6 +112,8 @@ export function Toolbar({ project }: ToolbarProps) {
   const setWorkspaceMode = useUiStore((s) => s.setWorkspaceMode)
   const setAppMode = useUiStore((s) => s.setAppMode)
   const setFocusMode = useUiStore((s) => s.setFocusMode)
+  const spellcheckWhileWriting = useUiStore((s) => s.spellcheckWhileWriting)
+  const toggleSpellcheckWhileWriting = useUiStore((s) => s.toggleSpellcheckWhileWriting)
   const manuscript = useContentStore((s) => s.getManuscript(project.id))
   // Lifted to uiStore (not local state) so the Inspector's Theme tab can
   // open this same dialog — see uiStore.ts's `projectSettingsOpen` comment.
@@ -323,14 +340,37 @@ export function Toolbar({ project }: ToolbarProps) {
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="More">
+                <Button variant="ghost" size="icon" aria-label="More" className="relative">
                   <MoreHorizontal className="size-4" />
+                  {/* Storage running out is the one thing in this menu that
+                     can't wait to be discovered — see `useStorageWarning`. */}
+                  {storageTight && (
+                    <span className="absolute right-1 top-1 size-1.5 rounded-full bg-[var(--color-warning)]" aria-hidden />
+                  )}
                 </Button>
               </DropdownMenuTrigger>
             </TooltipTrigger>
             <TooltipContent>More</TooltipContent>
           </Tooltip>
           <DropdownMenuContent align="end">
+            {/* Spell-check is a writing preference, so it sits with the other
+                writing controls rather than in Project Settings — and it
+                needs to be visible, because until 2026-09-04 it was silently
+                broken and nobody could tell whether it was on. */}
+            <DropdownMenuItem
+              className="gap-2"
+              onSelect={(e) => {
+                // Keep the menu open: toggling a setting and having the menu
+                // vanish makes it hard to confirm what you just changed.
+                e.preventDefault()
+                toggleSpellcheckWhileWriting()
+              }}
+            >
+              <SpellCheck2 className="size-3.5" />
+              Spell-check while writing
+              <span className="ml-auto text-xs text-text-muted">{spellcheckWhileWriting ? 'On' : 'Off'}</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2" disabled={!manuscript} onSelect={() => setFocusMode('write')}>
               <PenLine className="size-3.5" />
               Distraction-free writing
@@ -348,6 +388,17 @@ export function Toolbar({ project }: ToolbarProps) {
               {savingProject ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />}
               {savingProject ? 'Saving…' : (saveProjectError ?? 'Save project file')}
             </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setBackupsOpen(true)}>
+              <HardDrive className="size-3.5" />
+              Backups
+              {storageTight
+                ? ' — storage nearly full'
+                : backupStatus?.needsPermission
+                  ? ' — needs permission'
+                  : backupStatus
+                    ? ' — on'
+                    : ''}
+            </DropdownMenuItem>
             <DropdownMenuItem className="gap-2" disabled={loadingProject} onSelect={openProjectFilePicker}>
               {loadingProject ? <Loader2 className="size-3.5 animate-spin" /> : <FolderOpen className="size-3.5" />}
               {loadingProject ? 'Loading…' : (loadProjectError ?? 'Load project file')}
@@ -355,6 +406,10 @@ export function Toolbar({ project }: ToolbarProps) {
             <DropdownMenuItem className="gap-2" onSelect={() => setSaveTemplateOpen(true)}>
               <LayoutTemplate className="size-3.5" />
               Save as template
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setManageTemplatesOpen(true)}>
+              <LayoutTemplate className="size-3.5" />
+              Saved templates
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="gap-2" onSelect={() => setSettingsOpen(true)}>
@@ -364,6 +419,10 @@ export function Toolbar({ project }: ToolbarProps) {
             <DropdownMenuItem className="gap-2" onSelect={() => setShortcutsOpen(true)}>
               <Keyboard className="size-3.5" />
               Keyboard shortcuts
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2" onSelect={() => setDiagnosticsOpen(true)}>
+              <AlertTriangle className="size-3.5" />
+              Report a problem
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -379,12 +438,15 @@ export function Toolbar({ project }: ToolbarProps) {
       <KeyboardShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <VersionHistoryDialog projectId={project.id} open={versionHistoryOpen} onOpenChange={setVersionHistoryOpen} />
       <SaveAsTemplateDialog project={project} open={saveTemplateOpen} onOpenChange={setSaveTemplateOpen} />
+      <ManageTemplatesDialog open={manageTemplatesOpen} onOpenChange={setManageTemplatesOpen} />
+      <DiagnosticsDialog open={diagnosticsOpen} onOpenChange={setDiagnosticsOpen} />
+      <BackupDialog project={project} open={backupsOpen} onOpenChange={setBackupsOpen} />
       <WritingGoalDialog projectId={project.id} open={writingGoalOpen} onOpenChange={setWritingGoalOpen} />
       <ExportReadinessDialog
         open={readinessOpen}
         onOpenChange={setReadinessOpen}
         findings={readinessFindings}
-        formatLabel={pendingExportFormat === 'epub' ? 'the EPUB' : pendingExportFormat === 'html' ? 'the HTML' : 'the PDF'}
+        format={pendingExportFormat ?? 'pdf'}
         onExportAnyway={handleExportAnyway}
       />
     </header>

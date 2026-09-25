@@ -8,7 +8,13 @@ interface ExportReadinessDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   findings: Finding[]
-  formatLabel: string
+  /**
+   * Which export was asked for. The dialog names it, rather than taking a
+   * pre-written label: the two shells used to pass their own ("the PDF" on
+   * desktop, "PDF" on mobile) and one of them read ungrammatically —
+   * "You can export PDF anyway" (Phase 161).
+   */
+  format: 'pdf' | 'epub' | 'html'
   onExportAnyway: () => void
 }
 
@@ -21,7 +27,13 @@ interface ExportReadinessDialogProps {
  * gate): the user can always choose "Export anyway" — this is a warning,
  * not a lock.
  */
-export function ExportReadinessDialog({ open, onOpenChange, findings, formatLabel, onExportAnyway }: ExportReadinessDialogProps) {
+const FORMAT_LABEL: Record<'pdf' | 'epub' | 'html', string> = {
+  pdf: 'the PDF',
+  epub: 'the EPUB',
+  html: 'the web page',
+}
+
+export function ExportReadinessDialog({ open, onOpenChange, findings, format, onExportAnyway }: ExportReadinessDialogProps) {
   const blocking = findings.filter((f) => f.severity === 'critical' || f.severity === 'major')
 
   return (
@@ -34,7 +46,7 @@ export function ExportReadinessDialog({ open, onOpenChange, findings, formatLabe
           </DialogTitle>
           <DialogDescription>
             This book has {blocking.length} print-readiness/commercial-quality issue{blocking.length === 1 ? '' : 's'} that
-            print-on-demand platforms like Amazon KDP or IngramSpark typically flag. You can export {formatLabel} anyway —
+            print-on-demand platforms like Amazon KDP or IngramSpark typically flag. You can export {FORMAT_LABEL[format]} anyway —
             these are warnings, not a hard block.
           </DialogDescription>
         </DialogHeader>

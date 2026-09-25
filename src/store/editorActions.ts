@@ -272,6 +272,54 @@ export function splitParagraphWithHistory(
 }
 
 /**
+ * Enter at the end of a heading starts the paragraph underneath it — the
+ * store-level half of the same "Enter continues writing" behaviour
+ * `splitParagraphWithHistory` gives paragraphs (Phase 139, 2026-09-04).
+ *
+ * A heading is a single line by definition, so this is a split in name only:
+ * whatever sits before the caret stays in the heading, and anything after it
+ * (usually nothing — the caret is normally at the end) becomes the first
+ * words of a new paragraph immediately below. Before this, Enter on a
+ * heading just committed and dropped the caret, so writing a chapter meant
+ * typing a title, losing focus, reaching for the mouse, and inserting a
+ * paragraph by hand.
+ *
+ * One `replaceChapterBlocks` call, so it is one undo step — same principle
+ * as the paragraph split. Returns the new paragraph's id for the caller to
+ * point the caret at.
+ */
+export function splitHeadingIntoParagraphWithHistory(
+  projectId: string,
+  chapterId: string,
+  blockId: string,
+  beforeText: string,
+  afterText: string,
+): string | undefined {
+  const manuscript = useContentStore.getState().getManuscript(projectId)
+  const chapter = manuscript?.chapters.find((c) => c.id === chapterId)
+  if (!chapter) return undefined
+  const index = chapter.blocks.findIndex((b) => b.id === blockId)
+  const oldBlock = index >= 0 ? chapter.blocks[index] : undefined
+  if (!oldBlock || oldBlock.type !== 'heading') return undefined
+
+  const updatedHeading: ContentBlock = { ...oldBlock, text: beforeText }
+  const newParagraph: ContentBlock = { id: generateId('block'), type: 'paragraph', html: afterText }
+  const oldBlocks = chapter.blocks
+  const newBlocks = [...oldBlocks.slice(0, index), updatedHeading, newParagraph, ...oldBlocks.slice(index + 1)]
+
+  useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks)
+
+  useHistoryStore.getState().record(
+    projectId,
+    'New paragraph',
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, oldBlocks),
+    () => useContentStore.getState().replaceChapterBlocks(projectId, chapterId, newBlocks),
+  )
+
+  return newParagraph.id
+}
+
+/**
  * Merges a paragraph block into its immediately preceding sibling — the
  * store-level half of "pressing Backspace at the start of a paragraph joins
  * it with the one above" (Phase 112, 2026-08-03, the natural companion to

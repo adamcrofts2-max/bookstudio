@@ -1,6 +1,5 @@
 import type { Chapter, ContentBlock } from '@/types/content'
 import { getBlockTypeDefinition } from '@/blocks/registry'
-import { generateId } from '@/utils'
 
 export type PageKind = 'toc' | 'chapter-start' | 'content' | 'blank' | 'structural'
 export type PageSide = 'left' | 'right'
@@ -52,6 +51,33 @@ function blockSpacing(block: ContentBlock): number {
  * a page boundary) — see docs/STATUS.md for why, and where line-level flow
  * would extend this.
  */
+/**
+ * A flow page's React identity, derived from its page number rather than
+ * generated fresh each run.
+ *
+ * This is load-bearing for the writing experience, not a tidiness change.
+ * `paginate` re-runs on every content change, and `LazySpread` keys its
+ * pages by `page.id`. With a random id per run, every repagination handed
+ * React a brand-new key for every page, so it unmounted and rebuilt the
+ * entire page subtree — destroying the DOM node that had focus along with
+ * the caret inside it. Pressing Enter mid-paragraph therefore split the
+ * paragraph correctly and then dropped the cursor on the floor: the new
+ * paragraph was focused ~27ms in and remounted out of existence ~9ms later,
+ * so everything typed next went nowhere (traced 2026-09-04).
+ *
+ * Keyed by number, "page 7" stays page 7 across runs even as its contents
+ * reflow, which is exactly the identity a paginated document has. Nothing
+ * persists these ids — they are React keys, DOM anchors for scroll-to-page,
+ * and thumbnail keys, all session-scoped — so deriving them is safe, and it
+ * also keeps a pending scroll target valid across a repagination.
+ *
+ * Structural pages are unaffected: `composePages.ts` gives them their own
+ * store ids, which never collide with this prefix.
+ */
+function flowPageId(pageNumber: number): string {
+  return `flow-${pageNumber}`
+}
+
 export function paginate(
   chapters: Chapter[],
   getHeight: (block: ContentBlock) => number,
@@ -75,14 +101,14 @@ export function paginate(
   const tocStartPage: TocEntry[] = []
 
   // Reserve page 1 for the table of contents; chapters begin after it.
-  pages.push({ id: generateId('page'), number: 1, side: 'right', kind: 'toc', blocks: [] })
+  pages.push({ id: flowPageId(1), number: 1, side: 'right', kind: 'toc', blocks: [] })
   let pageNumber = 2
 
   for (const chapter of chapters) {
     // Chapter openers always start on a right-hand (recto) page.
     const wouldBeSide: PageSide = pageNumber % 2 === 1 ? 'right' : 'left'
     if (wouldBeSide !== 'right') {
-      pages.push({ id: generateId('page'), number: pageNumber, side: 'left', kind: 'blank', blocks: [] })
+      pages.push({ id: flowPageId(pageNumber), number: pageNumber, side: 'left', kind: 'blank', blocks: [] })
       pageNumber++
     }
 
@@ -95,7 +121,7 @@ export function paginate(
 
     const flush = () => {
       pages.push({
-        id: generateId('page'),
+        id: flowPageId(pageNumber),
         number: pageNumber,
         side: pageNumber % 2 === 1 ? 'right' : 'left',
         kind: isOpener ? 'chapter-start' : 'content',

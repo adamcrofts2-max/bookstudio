@@ -20,6 +20,9 @@ export function getRawFieldText(block: ContentBlock, field: string): string {
   const singleIndex = /^items\[(\d+)\]$/.exec(field)
   if (block.type === 'list' && singleIndex) return block.items[Number(singleIndex[1])] ?? ''
 
+  const lineIndex = /^lines\[(\d+)\]$/.exec(field)
+  if (block.type === 'verse' && lineIndex) return block.lines[Number(lineIndex[1])] ?? ''
+
   const headerIndex = /^header\[(\d+)\]$/.exec(field)
   if (block.type === 'table' && headerIndex) return block.header[Number(headerIndex[1])] ?? ''
 
@@ -49,6 +52,13 @@ export function patchTextField(
     const items = block.items.slice()
     items[Number(singleIndex[1])] = next
     return { items }
+  }
+
+  const lineIndex = /^lines\[(\d+)\]$/.exec(field)
+  if (block.type === 'verse' && lineIndex) {
+    const lines = block.lines.slice()
+    lines[Number(lineIndex[1])] = next
+    return { lines }
   }
 
   const headerIndex = /^header\[(\d+)\]$/.exec(field)

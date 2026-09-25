@@ -453,6 +453,11 @@ export function CoverElementLayer({ elements, theme, pageBox, pageSelected, sele
               'pointer-events-auto absolute',
               pageSelected && 'cursor-move',
               isSelected && 'outline outline-2 outline-[var(--color-accent)] outline-offset-2',
+              // Without this the browser claims the gesture for scrolling
+              // the moment a finger moves, and `pointermove` stops firing —
+              // the same thing that made the Book Graph undraggable on
+              // touch before Phase 130. Harmless with a mouse (Phase 172).
+              'touch-none',
             )}
             style={{
               left: `${rect.x * 100}%`,
@@ -814,7 +819,14 @@ function ResizeHandleDot({
 }) {
   return (
     <div
-      className={cn('absolute z-20 size-3 rounded-full border-2 border-white bg-[var(--color-accent)] shadow-[var(--shadow-sm)]', HANDLE_POSITION[handle])}
+      className={cn(
+        'absolute z-20 size-3 rounded-full border-2 border-white bg-[var(--color-accent)] shadow-[var(--shadow-sm)]',
+        // A 12px dot is a comfortable mouse target and an impossible
+        // finger one. On a coarse pointer it grows to 24px — still small
+        // enough not to hide the corner it marks (Phase 172).
+        '[@media(pointer:coarse)]:size-6 touch-none',
+        HANDLE_POSITION[handle],
+      )}
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
     />
@@ -840,8 +852,11 @@ function RotateHandleDot({
 }) {
   return (
     <div
+      // audit-copy-ok: a `title` is a pointer affordance by nature; the
+      // handle itself is pointer-event driven and works under a finger
+      // since Phase 172 (mobile's Arrange mode).
       title="Drag to rotate — hold Shift to snap to 15°"
-      className="absolute -top-16 left-1/2 z-20 flex size-6 -translate-x-1/2 cursor-grab items-center justify-center rounded-full border-2 border-white bg-[var(--color-accent)] shadow-[var(--shadow-sm)] active:cursor-grabbing"
+      className="absolute -top-16 left-1/2 z-20 flex size-6 -translate-x-1/2 cursor-grab touch-none items-center justify-center rounded-full border-2 border-white bg-[var(--color-accent)] shadow-[var(--shadow-sm)] active:cursor-grabbing [@media(pointer:coarse)]:size-9"
       onPointerDown={onPointerDown}
       onPointerUp={onPointerUp}
     >

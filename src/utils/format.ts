@@ -25,6 +25,19 @@ export function formatDate(isoDate: string): string {
   return new Intl.DateTimeFormat('en', { dateStyle: 'medium' }).format(new Date(isoDate))
 }
 
+/**
+ * A date and time as a person would write it — "24 Sep 2026, 18:44".
+ *
+ * Replaces the eight scattered `new Date(x).toLocaleString()` calls, which
+ * printed seconds nobody needed ("9/24/2026, 6:44:05 PM") and each picked
+ * their own format by accident (Phase 177). One formatter, used everywhere
+ * a timestamp is shown, so a saved version, a backup and a review report
+ * all look like they belong to the same application.
+ */
+export function formatTimestamp(isoDate: string | number | Date): string {
+  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(isoDate))
+}
+
 /** Strips HTML tags from a sanitised inline fragment, returning plain text. */
 export function stripHtml(html: string): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')

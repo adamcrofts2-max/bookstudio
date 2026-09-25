@@ -42,6 +42,21 @@ interface UiStoreState {
   inspectorTab: InspectorTab
   viewMode: BookViewMode
   zoom: number
+  /**
+   * `'fit'` scales the canvas so the current spread fits the window;
+   * `'manual'` uses `zoom`. Default `'fit'` — see `useFitZoom.ts` for the
+   * measurements that made a fixed 100% the wrong default (it cut the
+   * left-hand page off on every laptop narrower than about 1700px).
+   */
+  zoomMode: 'fit' | 'manual'
+  /**
+   * The zoom actually applied to the canvas right now. Written by
+   * `BookRenderer` (the only component that knows how wide the canvas is)
+   * and read by the zoom control so it can show what "Fit" currently
+   * works out to. Transient — excluded from persistence below, because a
+   * measurement restored from a previous window size is a lie.
+   */
+  appliedZoom: number
   showThumbnails: boolean
   workspaceMode: WorkspaceMode
   /** Toggleable dashed safe-text-zone guide on the Cover/Back Cover
@@ -64,6 +79,13 @@ interface UiStoreState {
    * see `src/hooks/useTypewriterMode.ts`. Only has any visible effect in
    * Focus Mode's `write` view (`FocusModeLayout.tsx`); persisted like
    * `showThumbnails` since it's a standing preference, not session state. */
+  /** Live spell-check underlining while writing. On by default — a writing
+   * tool that silently doesn't check spelling is worse than one that
+   * doesn't offer it — but genuinely worth turning off for a manuscript
+   * full of invented words, or in a language the bundled dictionaries don't
+   * cover. Scoped to the underlining only: the Virtual Editor's own
+   * spelling review is a deliberate action and stays available either way. */
+  spellcheckWhileWriting: boolean
   typewriterMode: boolean
   /** Whether typewriter mode also plays a soft synthesised key-click on
    * each keystroke. Independent toggle so a user can keep the scroll-
@@ -79,12 +101,15 @@ interface UiStoreActions {
   setInspectorTab: (tab: InspectorTab) => void
   setViewMode: (mode: BookViewMode) => void
   setZoom: (zoom: number) => void
+  setZoomMode: (mode: 'fit' | 'manual') => void
+  setAppliedZoom: (zoom: number) => void
   toggleThumbnails: () => void
   setWorkspaceMode: (mode: WorkspaceMode) => void
   toggleCoverSafeZone: () => void
   setProjectSettingsOpen: (open: boolean) => void
   setAppMode: (mode: AppMode) => void
   setFocusMode: (mode: FocusMode) => void
+  toggleSpellcheckWhileWriting: () => void
   toggleTypewriterMode: () => void
   toggleTypewriterSound: () => void
 }
@@ -101,14 +126,25 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       sidebarCollapsed: false,
       inspectorCollapsed: false,
       inspectorTab: 'page',
-      viewMode: 'spread',
+      // Single page by default (Phase 178). The centre column is where a
+      // book gets *written*, and a fitted 6x9 spread on an ordinary laptop
+      // is 43% at 1280px and 56% at 1440px — a layout you can see and body
+      // type you can barely read. One page fits at 81% and 100% on the same
+      // windows. The spread is one click away in the view controls for the
+      // moment facing pages are what you are checking. Only affects people
+      // who have never chosen: the setting is persisted, so anyone who
+      // picked the spread keeps it.
+      viewMode: 'single',
       zoom: 1,
+      zoomMode: 'fit',
+      appliedZoom: 1,
       showThumbnails: true,
       workspaceMode: 'manuscript',
       showCoverSafeZone: false,
       projectSettingsOpen: false,
       appMode: 'editor',
       focusMode: 'none',
+      spellcheckWhileWriting: true,
       typewriterMode: false,
       typewriterSound: false,
 
@@ -129,13 +165,20 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       // only ever re-opens it, never closes it.
       setInspectorTab: (tab) => set({ inspectorTab: tab, inspectorCollapsed: false }),
       setViewMode: (mode) => set({ viewMode: mode }),
-      setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)) }),
+      // Setting a zoom *is* the act of leaving fit mode — there is no
+      // separate "stop fitting" control to forget to press.
+      setZoom: (zoom) => set({ zoom: Math.min(2, Math.max(0.4, zoom)), zoomMode: 'manual' }),
+      // Leaving fit lands on a true 100% — "actual size" is the only
+      // manual zoom anyone means when they click away from Fit.
+      setZoomMode: (zoomMode) => set(zoomMode === 'manual' ? { zoomMode, zoom: 1 } : { zoomMode }),
+      setAppliedZoom: (appliedZoom) => set((state) => (state.appliedZoom === appliedZoom ? state : { appliedZoom })),
       toggleThumbnails: () => set((state) => ({ showThumbnails: !state.showThumbnails })),
       setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
       toggleCoverSafeZone: () => set((state) => ({ showCoverSafeZone: !state.showCoverSafeZone })),
       setProjectSettingsOpen: (open) => set({ projectSettingsOpen: open }),
       setAppMode: (mode) => set({ appMode: mode }),
       setFocusMode: (mode) => set({ focusMode: mode }),
+      toggleSpellcheckWhileWriting: () => set((state) => ({ spellcheckWhileWriting: !state.spellcheckWhileWriting })),
       toggleTypewriterMode: () => set((state) => ({ typewriterMode: !state.typewriterMode })),
       toggleTypewriterSound: () => set((state) => ({ typewriterSound: !state.typewriterSound })),
     }),
@@ -144,7 +187,7 @@ export const useUiStore = create<UiStoreState & UiStoreActions>()(
       version: 1,
       // Neither a dialog's open state nor focus mode should reopen/resume
       // itself after a page reload — same reasoning as `projectSettingsOpen`.
-      partialize: ({ projectSettingsOpen: _projectSettingsOpen, focusMode: _focusMode, ...rest }) => rest,
+      partialize: ({ projectSettingsOpen: _projectSettingsOpen, focusMode: _focusMode, appliedZoom: _appliedZoom, ...rest }) => rest,
     },
   ),
 )

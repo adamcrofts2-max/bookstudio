@@ -216,6 +216,13 @@
  * colour-scheme media query, so the in-app toggle has full control. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Enables `can-hover:` utilities, for affordances that are allowed to hide
+ * until the pointer arrives. A control revealed only by `group-hover` is
+ * invisible forever on a touch screen — `opacity-0` still accepts taps, so
+ * the button is there but unfindable. Wrap the hiding half in `can-hover:`
+ * and the control stays permanently visible on a phone. */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
 :root {
   /* Surfaces */
   --background: #fafaf8;
@@ -223,10 +230,16 @@
   --sidebar: #ecebe7;
   --panel: #ffffff;
 
-  /* Text */
+  /* Text — every step here clears WCAG AA (4.5:1) against the *lightest*
+   * surface it is ever set on (`--panel`, #ffffff) and the darkest
+   * (`--sidebar`, #ecebe7). Phase 173's accessibility audit found the old
+   * ramp failing on 110 distinct pieces of copy: `--text-muted` managed
+   * 2.89:1 on the sidebar, which is a caption nobody with low vision could
+   * read. Darkening muted alone would have collapsed it into secondary, so
+   * the whole ramp moved down a step and kept its three visible levels. */
   --text-primary: #1d1d1f;
-  --text-secondary: #666666;
-  --text-muted: #8a8a8a;
+  --text-secondary: #4a4a4a;
+  --text-muted: #6a6a6a;
 
   /* Structure */
   --border: #e3e3e3;
@@ -234,12 +247,27 @@
   --selection: #ddefe0;
 
   /* Accent & semantic */
-  --accent: #4f8a5b;
+  /* Deepened in Phase 173. The accent is not only a fill — it is the colour
+   * of a selected tab's label, a link, a count — and at #4f8a5b that text
+   * managed 3.44:1 on the sidebar. A second "accent, but for text" token
+   * would have meant forty call sites each having to pick the right one;
+   * one deeper green is a smaller thing to keep true. White on it improves
+   * too (4.10:1 -> 5.40:1), so buttons got more legible in the same move. */
+  --accent: #43754d;
   --accent-foreground: #ffffff;
   --success: #3ba776;
   --warning: #d89b00;
   --danger: #d84f4f;
   --danger-foreground: #ffffff;
+  /* "Ink" variants: the same three meanings, dark enough to be *read* on
+   * their own 15%-opacity tint (Phase 173). The fills above stay as they
+   * are — an amber that works as a warning outline is not an amber anyone
+   * can read at 12px on a pale amber pill, and 2.15:1 is what that
+   * actually measured. Separate tokens rather than one darker value,
+   * because the two jobs genuinely want different colours. */
+  --success-ink: #287251;
+  --warning-ink: #845f00;
+  --danger-ink: #bb2929;
 
   /* Radii */
   --radius-button: 0.75rem; /* 12px */
@@ -261,7 +289,8 @@
 
   --text-primary: #f2f2f0;
   --text-secondary: #a8a8a8;
-  --text-muted: #7a7a7a;
+  /* 3.70:1 on `--panel` before Phase 173. */
+  --text-muted: #898989;
 
   --border: #313134;
   --hover: rgba(255, 255, 255, 0.06);
@@ -273,6 +302,10 @@
   --warning: #e0ac33;
   --danger: #e06868;
   --danger-foreground: #1a0d0d;
+  /* On a dark tint the fills already read; only danger needed lifting. */
+  --success-ink: #4cc490;
+  --warning-ink: #e0ac33;
+  --danger-ink: #e57f7f;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24), 0 1px 1px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -338,6 +371,9 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
+  --color-success-ink: var(--success-ink);
+  --color-warning-ink: var(--warning-ink);
+  --color-danger-ink: var(--danger-ink);
   --color-danger-foreground: var(--danger-foreground);
 
   /* Radii */

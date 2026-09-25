@@ -12,6 +12,21 @@ import { deleteAsset, getAssetBlob, listAssetsForProject, putAsset } from '@/sto
  */
 export const EMPTY_ASSETS: readonly ImageAsset[] = []
 
+/** One file that couldn't be imported, and why — named so the UI can say
+ * *which* of several picked files was the problem. */
+export interface FailedImport {
+  name: string
+  reason: string
+}
+
+/** `importFiles` reports both halves rather than throwing: picking five
+ * photos where one is corrupt should import four and explain the fifth, not
+ * fail all five. */
+export interface ImportResult {
+  imported: ImageAsset[]
+  failed: FailedImport[]
+}
+
 interface AssetStoreState {
   /** Assets currently loaded, keyed by project id. */
   byProject: Record<string, ImageAsset[]>
@@ -22,7 +37,7 @@ interface AssetStoreState {
 
 interface AssetStoreActions {
   loadAssets: (projectId: string) => Promise<void>
-  importFiles: (projectId: string, files: File[]) => Promise<ImageAsset[]>
+  importFiles: (projectId: string, files: File[]) => Promise<ImportResult>
   removeAsset: (projectId: string, assetId: string) => Promise<void>
   /**
    * Re-inserts a previously-removed asset under its own original `id` —
@@ -35,13 +50,18 @@ interface AssetStoreActions {
    */
   restoreAsset: (projectId: string, asset: ImageAsset, blob: Blob) => Promise<void>
   getObjectUrl: (assetId: string) => string | undefined
+  /** Drops every image a project owns, from this store, from IndexedDB and
+   * from the object-URL cache. Called only from `useDeleteProject`. */
+  clearProject: (projectId: string) => Promise<void>
 }
 
 function readImageDimensions(url: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
-    img.onerror = reject
+    // `onerror` hands back an Event, not an Error, so rejecting with it raw
+    // produced the uninformative "PAGEERROR Event" this used to surface as.
+    img.onerror = () => reject(new Error('The file could not be decoded as an image.'))
     img.src = url
   })
 }
@@ -67,29 +87,67 @@ export const useAssetStore = create<AssetStoreState & AssetStoreActions>()((set,
   },
 
   importFiles: async (projectId, files) => {
-    const created: ImageAsset[] = []
+    const imported: ImageAsset[] = []
+    const failed: FailedImport[] = []
+
     for (const file of files) {
-      if (!file.type.startsWith('image/')) continue
-      const objectUrl = URL.createObjectURL(file)
-      const { width, height } = await readImageDimensions(objectUrl)
-      const asset: ImageAsset = {
-        id: generateId('asset'),
-        projectId,
-        name: file.name,
-        mimeType: file.type,
-        size: file.size,
-        width,
-        height,
-        createdAt: new Date().toISOString(),
+      if (!file.type.startsWith('image/')) {
+        failed.push({ name: file.name, reason: 'Not an image file.' })
+        continue
       }
-      await putAsset(asset, file)
-      created.push(asset)
-      set((state) => ({ objectUrls: { ...state.objectUrls, [asset.id]: objectUrl } }))
+      const objectUrl = URL.createObjectURL(file)
+      // Each file is isolated. Before this, one undecodable file threw out of
+      // the whole loop, which (a) surfaced as an unhandled rejection rather
+      // than a message, (b) discarded every file picked alongside it, and
+      // (c) left the ones already written by `putAsset` orphaned in
+      // IndexedDB — stored, but never registered in `byProject`, so nothing
+      // could ever list or delete them again.
+      try {
+        const { width, height } = await readImageDimensions(objectUrl)
+        const asset: ImageAsset = {
+          id: generateId('asset'),
+          projectId,
+          name: file.name,
+          mimeType: file.type,
+          size: file.size,
+          width,
+          height,
+          createdAt: new Date().toISOString(),
+        }
+        await putAsset(asset, file)
+        imported.push(asset)
+        set((state) => ({ objectUrls: { ...state.objectUrls, [asset.id]: objectUrl } }))
+      } catch (error) {
+        // The object URL is only handed to the store on success, so a failed
+        // file's must be released here or it leaks for the page's lifetime.
+        URL.revokeObjectURL(objectUrl)
+        failed.push({ name: file.name, reason: error instanceof Error ? error.message : 'Could not be imported.' })
+      }
     }
+
     set((state) => ({
-      byProject: { ...state.byProject, [projectId]: [...(state.byProject[projectId] ?? []), ...created] },
+      byProject: { ...state.byProject, [projectId]: [...(state.byProject[projectId] ?? []), ...imported] },
     }))
-    return created
+    return { imported, failed }
+  },
+
+  clearProject: async (projectId) => {
+    // From IndexedDB, not from `byProject`: a project the user never opened
+    // this session has no assets in memory, and those are precisely the
+    // blobs that would otherwise be stranded under an id nothing can name.
+    const stored = await listAssetsForProject(projectId)
+    await Promise.all(stored.map((asset) => deleteAsset(asset.id)))
+    set((state) => {
+      const nextObjectUrls = { ...state.objectUrls }
+      for (const asset of stored) {
+        const url = nextObjectUrls[asset.id]
+        if (url) URL.revokeObjectURL(url)
+        delete nextObjectUrls[asset.id]
+      }
+      const nextByProject = { ...state.byProject }
+      delete nextByProject[projectId]
+      return { byProject: nextByProject, objectUrls: nextObjectUrls }
+    })
   },
 
   removeAsset: async (projectId, assetId) => {

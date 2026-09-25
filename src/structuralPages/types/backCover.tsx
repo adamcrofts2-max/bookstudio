@@ -37,7 +37,7 @@ import { useUiStore } from '@/store/uiStore'
 import { useSelectionStore } from '@/store/selectionStore'
 import { getAssetBlob } from '@/store/assetDb'
 import { blobToPng } from '@/pdf/imageForPdf'
-import { pickFont, pickItalicFont } from '@/pdf/fonts'
+import { italicSkew, pickFont, pickItalicFont } from '@/pdf/fonts'
 import { hexToPdfColor } from '@/pdf/color'
 import { wrapRuns } from '@/pdf/textWrap'
 import { drawWrappedLines, PX_TO_PT } from '@/pdf/drawBlockHelpers'
@@ -124,7 +124,7 @@ function BackCoverRender({ page, theme, pageBox, projectId, selected, onSelect, 
         />
       )}
       <StructuralImageDropZone
-        hasImage={!!imageUrl}
+        // audit-copy-ok: StructuralImageDropZone hides this label on touch
         label="Drop a back-cover image here"
         onDropAsset={(assetId) => onCommit({ imageAssetId: assetId })}
       />
@@ -398,8 +398,16 @@ async function drawBackCoverPdf(ctx: DrawCtx, page: StructuralPage, theme: Resol
     }
     const drawCtx: DrawCtx = { ...ctx, contentX: blurbContentX, contentWidthPt, cursorY: blurbCursorY }
     for (const paragraph of paragraphs) {
-      const lines = wrapRuns([{ text: paragraph, bold: false }], bodyFont, bodyFont, bodySize, contentWidthPt)
-      drawWrappedLines(drawCtx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont)
+      // Marked italic so a family with no italic face is drawn slanted,
+      // as the screen draws it (`italicSkew`); `bodyFont` is already the
+      // italic face where one exists, so the run resolves to it either way.
+      const lines = wrapRuns([{ text: paragraph, bold: false, italic: Boolean(typography?.italic) }], bodyFont, bodyFont, bodySize, contentWidthPt, {
+        italicFont: bodyFont,
+      })
+      drawWrappedLines(drawCtx, lines, bodySize, lineHeight, ink, bodyFont, bodyFont, {
+        italicFont: bodyFont,
+        italicSkew: typography?.italic ? italicSkew(ctx.fonts, blurbFontFamily) : undefined,
+      })
       drawCtx.cursorY -= lineHeight * 0.5
     }
   }

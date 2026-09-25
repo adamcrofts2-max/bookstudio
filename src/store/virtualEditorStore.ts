@@ -7,8 +7,18 @@ import type { Project } from '@/types/project'
 import type { StructuralPage } from '@/types/structuralPage'
 import type { ImageAsset } from '@/types/asset'
 import type { Layer0Bible } from '@/types/layer0'
-import type { EditorialReport, Finding, FindingStatus, IssueCategory, StyleGuide } from '@/virtualEditor/types'
-import { runPipeline } from '@/virtualEditor/pipeline'
+import type {
+  AiReviewProgress,
+  AiReviewResult,
+  AiReviewer,
+  CheckerContext,
+  EditorialReport,
+  Finding,
+  FindingStatus,
+  IssueCategory,
+  StyleGuide,
+} from '@/virtualEditor/types'
+import { mergeAiReview, runPipeline } from '@/virtualEditor/pipeline'
 import { useContentStore } from '@/store/contentStore'
 import { generateId } from '@/utils/id'
 
@@ -57,6 +67,31 @@ export interface Revision {
   summary: string
 }
 
+/** Where an editorial read stands for one project. In memory only, like
+ * `reportsByProject`: a read is paid for, so losing it on reload is a real
+ * cost — but its findings carry `suggestedFix.apply` functions that cannot
+ * be serialised, and a read replayed against a manuscript edited in another
+ * tab would be exactly the stale report `mergeAiReview` exists to prevent. */
+export type AiReviewState =
+  | { status: 'running'; progress: AiReviewProgress }
+  | { status: 'error'; message: string; result?: AiReviewResult }
+  | { status: 'done'; result: AiReviewResult }
+
+/** The in-flight request for each project, so it can be cancelled. Module
+ * scope, not state: an `AbortController` is not data anything renders. */
+const aiControllers = new Map<string, AbortController>()
+
+/**
+ * Whether "Fix All" / "Fix all in [category]" may apply this finding's fix.
+ * A deterministic fix is mechanical — a doubled space is a doubled space —
+ * so applying fifty at once is safe. Claude's rewordings are judgement, and
+ * each one changes the author's sentence; they are accepted one at a time,
+ * by someone who has read it, or not at all.
+ */
+export function isBulkFixable(finding: Finding): boolean {
+  return Boolean(finding.suggestedFix) && finding.source !== 'ai'
+}
+
 /** Stable empty references — see docs/STATUS.md's Zustand v5 warning about
  * selectors returning fresh `[]`/`{}` literals causing infinite re-renders. */
 export const EMPTY_REVISIONS: readonly Revision[] = []
@@ -74,9 +109,14 @@ interface VirtualEditorState {
    * look hung rather than working. Excluded from persistence by
    * `partialize` below, same as `reportsByProject`. */
   reviewingByProject: Record<string, boolean>
+  aiByProject: Record<string, AiReviewState | undefined>
 }
 
 interface VirtualEditorActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   /** Runs every registered checker against the current manuscript and
    * stores the resulting report, replacing any previous one for this
    * project. `styleGuide` is optional and simply forwarded to
@@ -101,6 +141,16 @@ interface VirtualEditorActions {
     assets?: ImageAsset[],
     layer0Bible?: Layer0Bible,
   ) => void
+  /**
+   * Asks `reviewer` for an editorial read and merges it into the report,
+   * running the deterministic review first if there is no report yet. Only
+   * ever called from an explicit click — a read spends the author's money.
+   * `ctx` is assembled by the caller for the same layer-separation reason as
+   * `runReview`'s arguments.
+   */
+  runAiReview: (projectId: string, reviewer: AiReviewer, ctx: CheckerContext) => Promise<void>
+  /** Stops an in-flight read. Whatever the previous read found is kept. */
+  cancelAiReview: (projectId: string) => void
   /** True while `runReview` is running for this project — see
    * `reviewingByProject`'s comment above. */
   isReviewing: (projectId: string) => boolean
@@ -116,7 +166,8 @@ interface VirtualEditorActions {
    * ignored — the "Ignore Similar" action from the spec. */
   ignoreSimilar: (projectId: string, finding: Finding) => void
   /** Applies every current 'new' finding that has a `suggestedFix`, across
-   * the whole report, via `acceptFix` (never duplicates its logic). */
+   * the whole report, via `acceptFix` (never duplicates its logic). AI
+   * rewordings are excluded — see `isBulkFixable`. */
   fixAll: (projectId: string) => void
   /** Same as `fixAll`, but scoped to a single category. */
   fixCategory: (projectId: string, category: IssueCategory) => void
@@ -134,6 +185,30 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
       findingStatusByProject: {},
       revisionsByProject: {},
       reviewingByProject: {},
+      aiByProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextReportsByProject = { ...state.reportsByProject }
+          delete nextReportsByProject[projectId]
+          const nextFindingStatusByProject = { ...state.findingStatusByProject }
+          delete nextFindingStatusByProject[projectId]
+          const nextRevisionsByProject = { ...state.revisionsByProject }
+          delete nextRevisionsByProject[projectId]
+          const nextReviewingByProject = { ...state.reviewingByProject }
+          delete nextReviewingByProject[projectId]
+          aiControllers.get(projectId)?.abort()
+          aiControllers.delete(projectId)
+          const nextAiByProject = { ...state.aiByProject }
+          delete nextAiByProject[projectId]
+          return {
+            aiByProject: nextAiByProject,
+            reportsByProject: nextReportsByProject,
+            findingStatusByProject: nextFindingStatusByProject,
+            revisionsByProject: nextRevisionsByProject,
+            reviewingByProject: nextReviewingByProject,
+          }
+        }),
 
       runReview: (projectId, manuscript, styleGuide, pages, project, structuralPages, assets, layer0Bible) => {
         set((state) => ({ reviewingByProject: { ...state.reviewingByProject, [projectId]: true } }))
@@ -143,13 +218,88 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
         // itself, but replaces "the app looks frozen" with a visible,
         // honest busy state.
         window.setTimeout(() => {
-          const report = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets, layer0Bible)
+          const deterministic = runPipeline(projectId, manuscript, styleGuide, pages, project, structuralPages, assets, layer0Bible)
+          // A paid-for editorial read outlives a free re-run: fold the last
+          // one back in, re-checked against the manuscript as it is now.
+          const lastRead = get().aiByProject[projectId]
+          const lastResult = lastRead && lastRead.status !== 'running' ? lastRead.result : undefined
+          const report = lastResult ? mergeAiReview(deterministic, lastResult, manuscript) : deterministic
           set((state) => ({
             reportsByProject: { ...state.reportsByProject, [projectId]: report },
             findingStatusByProject: { ...state.findingStatusByProject, [projectId]: {} },
             reviewingByProject: { ...state.reviewingByProject, [projectId]: false },
           }))
         }, 0)
+      },
+
+      runAiReview: async (projectId, reviewer, ctx) => {
+        aiControllers.get(projectId)?.abort()
+        const controller = new AbortController()
+        aiControllers.set(projectId, controller)
+        const previous = get().aiByProject[projectId]
+        const previousResult = previous && previous.status !== 'running' ? previous.result : undefined
+        const setAi = (next: AiReviewState) =>
+          set((state) => ({ aiByProject: { ...state.aiByProject, [projectId]: next } }))
+
+        setAi({ status: 'running', progress: { phase: 'thinking', receivedChars: 0 } })
+        try {
+          const result = await reviewer.run(ctx, {
+            signal: controller.signal,
+            onProgress: (progress) => {
+              if (aiControllers.get(projectId) === controller) setAi({ status: 'running', progress })
+            },
+          })
+          if (aiControllers.get(projectId) !== controller) return
+          // Merged into the report current *now*, not the one current when
+          // the read started — the author may have re-run the free review
+          // during the minutes Claude was reading.
+          const base =
+            get().reportsByProject[projectId] ??
+            runPipeline(
+              projectId,
+              ctx.manuscript,
+              ctx.styleGuide,
+              ctx.pages,
+              ctx.project,
+              ctx.structuralPages,
+              ctx.assets,
+              ctx.layer0Bible,
+            )
+          const manuscript = useContentStore.getState().getManuscript(projectId) ?? ctx.manuscript
+          const hadReport = Boolean(get().reportsByProject[projectId])
+          set((state) => ({
+            reportsByProject: { ...state.reportsByProject, [projectId]: mergeAiReview(base, result, manuscript) },
+            // Keep what the author already decided about the deterministic
+            // findings; the new AI findings start fresh either way.
+            findingStatusByProject: hadReport
+              ? state.findingStatusByProject
+              : { ...state.findingStatusByProject, [projectId]: {} },
+            aiByProject: { ...state.aiByProject, [projectId]: { status: 'done', result } },
+          }))
+        } catch (error) {
+          if (aiControllers.get(projectId) !== controller) return
+          const cancelled = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')
+          if (cancelled && previousResult) setAi({ status: 'done', result: previousResult })
+          else if (cancelled) {
+            set((state) => {
+              const next = { ...state.aiByProject }
+              delete next[projectId]
+              return { aiByProject: next }
+            })
+          } else {
+            setAi({
+              status: 'error',
+              message: error instanceof Error ? error.message : 'The editorial read could not be completed.',
+              result: previousResult,
+            })
+          }
+        } finally {
+          if (aiControllers.get(projectId) === controller) aiControllers.delete(projectId)
+        }
+      },
+
+      cancelAiReview: (projectId) => {
+        aiControllers.get(projectId)?.abort()
       },
 
       isReviewing: (projectId) => get().reviewingByProject[projectId] ?? false,
@@ -179,6 +329,9 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
         if (!manuscript || !chapter || !block) return
 
         const patch = finding.suggestedFix.apply(block)
+        // An AI fix recomputes against the block as it is now and returns
+        // nothing if its words have gone — record no revision for a no-op.
+        if (Object.keys(patch).length === 0) return
         const revision: Revision = {
           id: generateId('revision'),
           findingId: finding.id,
@@ -221,7 +374,7 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
         if (!report) return
         const statuses = get().findingStatusByProject[projectId] ?? {}
         for (const finding of report.findings) {
-          if (!finding.suggestedFix) continue
+          if (!isBulkFixable(finding)) continue
           if ((statuses[finding.id] ?? 'new') !== 'new') continue
           get().acceptFix(projectId, finding)
         }
@@ -233,7 +386,7 @@ export const useVirtualEditorStore = create<VirtualEditorState & VirtualEditorAc
         const statuses = get().findingStatusByProject[projectId] ?? {}
         for (const finding of report.findings) {
           if (finding.category !== category) continue
-          if (!finding.suggestedFix) continue
+          if (!isBulkFixable(finding)) continue
           if ((statuses[finding.id] ?? 'new') !== 'new') continue
           get().acceptFix(projectId, finding)
         }

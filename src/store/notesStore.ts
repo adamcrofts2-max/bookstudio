@@ -36,6 +36,10 @@ interface NotesStoreState {
 }
 
 interface NotesStoreActions {
+  /** Drops everything this store holds for a project. Called only from
+   * `useDeleteProject` — see that hook for why the coordination lives
+   * outside the stores. */
+  clearProject: (projectId: string) => void
   getNotes: (projectId: string) => Note[]
   getNotesForBlock: (projectId: string, blockId: string) => Note[]
   getNotesForStructuralPage: (projectId: string, pageId: string) => Note[]
@@ -59,6 +63,13 @@ export const useNotesStore = create<NotesStoreState & NotesStoreActions>()(
   persist(
     (set, get) => ({
       byProject: {},
+
+      clearProject: (projectId) =>
+        set((state) => {
+          const nextByProject = { ...state.byProject }
+          delete nextByProject[projectId]
+          return { byProject: nextByProject }
+        }),
 
       getNotes: (projectId) => get().byProject[projectId] ?? EMPTY_NOTES,
       getNotesForBlock: (projectId, blockId) => (get().byProject[projectId] ?? EMPTY_NOTES).filter((n) => n.blockId === blockId),

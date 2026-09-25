@@ -3,7 +3,7 @@ import type { ImageAsset } from '@/types/asset'
 import { generateId } from '@/utils'
 import { putAsset } from '@/store/assetDb'
 import { readZip } from '@/epub/zipReader'
-import { parseHtmlDocument } from '@/parser/html'
+import { parseHtmlDocument, verseLinesFrom } from '@/parser/html'
 import { ManuscriptImportError } from '@/parser/errors'
 
 /**
@@ -85,6 +85,17 @@ function flattenForImport(xhtml: string, doc: Document): string {
   const blocks: Element[] = []
   const walk = (node: Element) => {
     for (const child of Array.from(node.children)) {
+      // Verse first, and before the block-tag test: a poem's container is
+      // usually a plain `<div>` (walked straight past, emitting one
+      // paragraph per line and losing the fact that the breaks were the
+      // poet's) or a `<blockquote class="poem">` (kept whole, then read as
+      // a quote, losing the breaks outright). Either way the poem was the
+      // one thing in the book that could not survive import. Kept whole
+      // here so `parseHtmlDocument` can recognise it — see `verseLinesFrom`.
+      if (verseLinesFrom(child)) {
+        blocks.push(child)
+        continue
+      }
       if (BLOCK_TAGS.has(child.tagName)) {
         // A container that also holds block children (a <p> wrapping an
         // <img>, say) is kept whole — the existing parser already handles
@@ -93,11 +104,12 @@ function flattenForImport(xhtml: string, doc: Document): string {
         continue
       }
       // A non-block element whose children are all inline is a line of text
-      // in a container the spec doesn't name — most importantly a verse line
-      // (`<div class="line">`), which is how poetry is marked up throughout
-      // real EPUBs. Walking past these silently drops every line of verse in
-      // the book, so they are emitted as their own paragraph each, one per
-      // line, which is what preserves the shape of the poetry.
+      // in a container the spec doesn't name. Walking past these silently
+      // drops the text, so each is emitted as its own paragraph. Verse whose
+      // container *is* marked is handled above and never reaches here; this
+      // remains the fallback for line-like markup with nothing to identify
+      // it, where one paragraph per line at least keeps the words and the
+      // breaks.
       if (isTextLeaf(child)) {
         if ((child.textContent ?? '').trim() !== '') blocks.push(child)
         continue
@@ -126,9 +138,15 @@ function flattenForImport(xhtml: string, doc: Document): string {
       out.body.appendChild(heading)
       continue
     }
-    // A text-leaf that isn't already a recognised block (a verse line) is
-    // re-tagged as a paragraph, keeping its inline markup so emphasis and
-    // links survive `sanitiseInline`.
+    // A verse container passes through untouched — re-tagging it as a
+    // paragraph is exactly the loss this is here to prevent.
+    if (verseLinesFrom(clone)) {
+      out.body.appendChild(out.importNode(clone, true))
+      continue
+    }
+    // A text-leaf that isn't already a recognised block (a stray line in a
+    // container the spec doesn't name) is re-tagged as a paragraph, keeping
+    // its inline markup so emphasis and links survive `sanitiseInline`.
     if (!BLOCK_TAGS.has(clone.tagName)) {
       const paragraph = out.createElement('p')
       paragraph.innerHTML = clone.innerHTML
@@ -138,6 +156,59 @@ function flattenForImport(xhtml: string, doc: Document): string {
     out.body.appendChild(out.importNode(clone, true))
   }
   return out.body.innerHTML
+}
+
+
+/**
+ * The `epub:type` / ARIA `role` values that mark an element as a note rather
+ * than body text. Both spellings are checked because EPUB 2 toolchains emit
+ * `epub:type` and EPUB 3 increasingly emits `role`, and plenty of real books
+ * carry one, the other, or both.
+ */
+const NOTE_TYPES = new Set(['footnote', 'endnote', 'rearnote', 'doc-footnote', 'doc-endnote', 'note'])
+
+function isNoteElement(el: Element): boolean {
+  const values = `${el.getAttribute('epub:type') ?? ''} ${el.getAttribute('role') ?? ''}`
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+  return values.some((value) => NOTE_TYPES.has(value))
+}
+
+/** Every note in a document, in document order, with the id a reference
+ * would point at. An element with no id cannot be reattached to anything, so
+ * it is left to be imported as ordinary text. */
+function collectNotes(doc: Document): { id: string; html: string }[] {
+  const notes: { id: string; html: string }[] = []
+  for (const el of Array.from(doc.body?.querySelectorAll('*') ?? [])) {
+    if (!isNoteElement(el)) continue
+    const id = el.getAttribute('id')
+    if (!id) continue
+    // Skip a note nested inside another note — the outer one already carries
+    // its text, and emitting both would duplicate it.
+    if (el.parentElement?.closest('[epub\\:type], [role]') && notes.some((n) => n.id === el.closest('[id]')?.id)) continue
+    const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim()
+    if (text) notes.push({ id, html: text })
+  }
+  return notes
+}
+
+/**
+ * True when a spine document is a notes file rather than a chapter — the
+ * "Notes" section some toolchains gather at the back of a book.
+ *
+ * Judged by how much of the document's text lives inside note elements, not
+ * by its filename: `notes.xhtml` is a convention, not a rule, and a real
+ * chapter that happens to be called that would be destroyed by a filename
+ * test. A document that is mostly notes is a notes file; one with a couple
+ * of asides in it is a chapter, and stays one.
+ */
+function isNotesDocument(doc: Document, notes: { id: string; html: string }[]): boolean {
+  if (notes.length === 0) return false
+  const total = (doc.body?.textContent ?? '').replace(/\s+/g, ' ').trim().length
+  if (total === 0) return false
+  const inNotes = notes.reduce((sum, note) => sum + note.html.length, 0)
+  return inNotes / total > 0.6
 }
 
 async function imageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
@@ -229,6 +300,17 @@ export async function parseEpub(file: File, fallbackTitle: string, projectId: st
 
   const parser = new DOMParser()
   const chapters: Chapter[] = []
+  /**
+   * Notes gathered from documents that turned out to be notes files, waiting
+   * to be put back where they are referenced from.
+   *
+   * Some EPUB toolchains collect a whole book's footnotes into one file at
+   * the back. Imported literally, that file becomes a chapter of orphaned
+   * note text sitting after the end of the book — the notes survive, but
+   * attached to the wrong thing, which is worse than losing them because it
+   * looks deliberate.
+   */
+  const pendingNotes: { id: string; html: string }[] = []
 
   for (const idref of spine) {
     const item = manifest.get(idref)
@@ -245,6 +327,15 @@ export async function parseEpub(file: File, fallbackTitle: string, projectId: st
     const xhtml = decoder.decode(data)
     const doc = parser.parseFromString(xhtml, 'text/html')
     const docDir = path.includes('/') ? path.slice(0, path.lastIndexOf('/') + 1) : ''
+
+    // A notes file is set aside rather than imported as a chapter; its notes
+    // are reattached below to whichever chapter actually references them.
+    const notes = collectNotes(doc)
+    if (isNotesDocument(doc, notes)) {
+      pendingNotes.push(...notes)
+      continue
+    }
+
     const flattened = flattenForImport(xhtml, doc)
 
     const parsed = parseHtmlDocument(flattened, bookTitle || fallbackTitle, {
@@ -265,5 +356,53 @@ export async function parseEpub(file: File, fallbackTitle: string, projectId: st
   }
 
   if (chapters.length === 0) throw new EpubImportError('No readable text was found in this EPUB.')
+
+  reattachNotes(chapters, pendingNotes)
   return chapters
+}
+
+/**
+ * Puts each note back on the chapter that references it.
+ *
+ * The match is exact rather than positional: a noteref is a real link
+ * (`href="notes.xhtml#fn3"`), `sanitiseInline` keeps `<a>` elements, so the
+ * chapter that referenced a note still contains its id. Only when nothing
+ * references a note does this fall back to the last chapter — which is
+ * where an unreattached note would have ended up anyway, so the fallback
+ * cannot be worse than doing nothing.
+ *
+ * Notes land as paragraphs under a "Notes" heading at the end of their
+ * chapter. The Content layer has no footnote block (see `docs/ROADMAP.md`
+ * Phase D), so this is the honest representation: the right words in the
+ * right chapter, visibly marked as notes, rather than a block type invented
+ * here that nothing else in the pipeline would know how to lay out.
+ */
+function reattachNotes(chapters: Chapter[], notes: { id: string; html: string }[]) {
+  if (notes.length === 0) return
+
+  const chapterHtml = chapters.map((chapter) =>
+    chapter.blocks.map((block) => ('html' in block ? block.html : '')).join(' '),
+  )
+
+  const byChapter = new Map<number, { id: string; html: string }[]>()
+  for (const note of notes) {
+    let index = chapterHtml.findIndex((html) => html.includes(`#${note.id}"`) || html.includes(`#${note.id}'`))
+    if (index === -1) index = chapters.length - 1
+    const group = byChapter.get(index) ?? []
+    group.push(note)
+    byChapter.set(index, group)
+  }
+
+  for (const [index, group] of byChapter) {
+    const chapter = chapters[index]
+    if (!chapter) continue
+    chapter.blocks.push({ id: generateId('blk'), type: 'heading', level: 3, text: 'Notes' })
+    for (const note of group) {
+      chapter.blocks.push({
+        id: generateId('blk'),
+        type: 'paragraph',
+        html: note.html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+      })
+    }
+  }
 }
